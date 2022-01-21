@@ -78,13 +78,13 @@ type HandleT struct {
 	Uploader      warehouseutils.UploaderI
 }
 
-type credentialsT struct {
-	host      string
-	dbName    string
-	user      string
-	password  string
-	port      string
-	sslMode   string
+type CredentialsT struct {
+	Host      string
+	DBName    string
+	User      string
+	Password  string
+	Port      string
+	SSLMode   string
 	sslParams sslParamsT
 }
 
@@ -133,14 +133,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func connect(cred credentialsT) (*sql.DB, error) {
+func Connect(cred CredentialsT) (*sql.DB, error) {
 	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
-		cred.user,
-		cred.password,
-		cred.host,
-		cred.port,
-		cred.dbName,
-		cred.sslMode)
+		cred.User,
+		cred.Password,
+		cred.Host,
+		cred.Port,
+		cred.DBName,
+		cred.SSLMode)
 	// if cred.sslMode == verifyCA {
 	// 	url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
 	// }
@@ -163,7 +163,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 }
 
-func (pg *HandleT) getConnectionCredentials() credentialsT {
+func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
 	var sslParams sslParamsT
 	if sslMode == verifyCA {
@@ -176,13 +176,13 @@ func (pg *HandleT) getConnectionCredentials() credentialsT {
 		sslParams.saveToFileSystem()
 	}
 
-	return credentialsT{
-		host:      warehouseutils.GetConfigValue(host, pg.Warehouse),
-		dbName:    warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		user:      warehouseutils.GetConfigValue(user, pg.Warehouse),
-		password:  warehouseutils.GetConfigValue(password, pg.Warehouse),
-		port:      warehouseutils.GetConfigValue(port, pg.Warehouse),
-		sslMode:   warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
+	return CredentialsT{
+		Host:      warehouseutils.GetConfigValue(host, pg.Warehouse),
+		DBName:    warehouseutils.GetConfigValue(dbName, pg.Warehouse),
+		User:      warehouseutils.GetConfigValue(user, pg.Warehouse),
+		Password:  warehouseutils.GetConfigValue(password, pg.Warehouse),
+		Port:      warehouseutils.GetConfigValue(port, pg.Warehouse),
+		SSLMode:   warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
 		sslParams: sslParams,
 	}
 }
@@ -607,7 +607,7 @@ func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	pg.Warehouse = warehouse
-	pg.Db, err = connect(pg.getConnectionCredentials())
+	pg.Db, err = Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -636,14 +636,14 @@ func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	pg.Uploader = uploader
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 
-	pg.Db, err = connect(pg.getConnectionCredentials())
+	pg.Db, err = Connect(pg.getConnectionCredentials())
 	return err
 }
 
 func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	pg.Db, err = connect(pg.getConnectionCredentials())
+	pg.Db, err = Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
@@ -689,7 +689,7 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -767,7 +767,7 @@ func (pg *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}

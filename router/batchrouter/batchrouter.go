@@ -48,6 +48,7 @@ var (
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
 	warehouseDestinations              []string
+	timeWindowDestinations             []string
 	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
@@ -373,9 +374,15 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									if err != nil {
 										panic("JSON Unmarshal Failed" + err.Error())
 									}
+									internalStatusCode, ok := failedJobsResponse["status"].(string)
+									if internalStatusCode != "200" || !ok {
+										pkgLogger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(failedBodyBytes))
+										continue
+									}
 									metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
 									if !ok {
-										panic("Typecasting Failed Because of Transformer Response" + err.Error())
+										pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v with error %v", brt.destType, internalStatusCode, string(failedBodyBytes), err)
+										continue
 									}
 									failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
 									warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
@@ -915,7 +922,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}
@@ -944,7 +951,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if brt.destType == "S3_DATALAKE" {
+	if misc.Contains(timeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1910,8 +1917,8 @@ func IsWarehouseDestination(destType string) bool {
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if brt.destType != "S3_DATALAKE" {
-		// return only one batchJob if the destination type is not s3 datalake
+	if !misc.Contains(timeWindowDestinations, brt.destType) {
+		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
 	}
@@ -1981,7 +1988,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
+	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker

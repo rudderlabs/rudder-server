@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
@@ -13,12 +15,14 @@ import (
 const (
 	SQLClient = "SQLClient"
 	BQClient  = "BigQueryClient"
+	DBClient  = "DBClient"
 )
 
 type Client struct {
-	SQL  *sql.DB
-	BQ   *bigquery.Client
-	Type string
+	SQL       *sql.DB
+	BQ        *bigquery.Client
+	DBHandleT *databricks.DBHandleT
+	Type      string
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -88,10 +92,28 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
+func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
+	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
+		Config: cl.DBHandleT.CredConfig,
+		SqlStatement: statement,
+		Identifier:   cl.DBHandleT.CredIdentifier,
+	})
+	if err != nil {
+		return
+	}
+
+	for _, row := range executeResponse.GetRows() {
+		result.Values = append(result.Values, row.GetColumns())
+	}
+	return result, nil
+}
+
 func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
+	case DBClient:
+		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
 	}
@@ -101,6 +123,8 @@ func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
 		cl.BQ.Close()
+	case DBClient:
+		cl.DBHandleT.Close()
 	default:
 		cl.SQL.Close()
 	}

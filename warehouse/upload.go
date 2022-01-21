@@ -165,6 +165,7 @@ func setMaxParallelLoads() {
 		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 }
 
@@ -230,7 +231,7 @@ func (job *UploadJobT) initTableUploads() error {
 	return createTableUploads(job.upload.ID, tables)
 }
 
-func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
+func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	schemaHandle := SchemaHandleT{
 		warehouse:    job.warehouse,
 		stagingFiles: job.stagingFiles,
@@ -243,8 +244,8 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		return false, err
 	}
 
-	hasSchemaChanged = !compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
-	if hasSchemaChanged {
+	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
+	if schemaChanged {
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
@@ -252,7 +253,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
 	}
 
-	return hasSchemaChanged, nil
+	return schemaChanged, nil
 }
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
@@ -360,6 +361,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	for {
+		stateStartTime := time.Now()
 		err = nil
 
 		job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
@@ -542,6 +544,9 @@ func (job *UploadJobT) run() (err error) {
 			uploadStatusOpts.ReportingMetric = reportingMetric
 		}
 		job.setUploadStatus(uploadStatusOpts)
+
+		// record metric for time taken by the current state
+		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == ExportedData {
 			break
@@ -1286,12 +1291,14 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	defer job.uploadLock.Unlock()
 	upload := job.upload
 	newjobState := Waiting
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
 	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadata["retried"] = true
+	metadata["priority"] = 50
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err
@@ -1617,7 +1624,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		// }
 
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.MessageT
+		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:             job.upload.ID,
@@ -1637,7 +1644,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
-			if job.warehouse.Type == "S3_DATALAKE" {
+			if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 
@@ -1650,14 +1657,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			if err != nil {
 				panic(err)
 			}
-			message := pgnotifier.MessageT{
-				Payload: payloadJSON,
-			}
-			messages = append(messages, message)
+			messages = append(messages, payloadJSON)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
@@ -1771,13 +1775,6 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		// TODO: @chetty remove this when all the slaves have been upgraded to the version till it contains ContentLength
-		// When there is a mismatch between the master and the slave
-		// Then the ContentLength comes as empty, as it is not present in old builds.
-		if loadFile.ContentLength == 0 {
-			txn.Rollback()
-			panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", loadFile.TableName))
-		}
 		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {

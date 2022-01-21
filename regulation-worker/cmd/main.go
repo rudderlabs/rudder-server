@@ -15,11 +15,19 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
 
+	initialize.Init()
+	backendconfig.Init()
+
+	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -35,32 +43,43 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	apiManager := api.APIManager{
-		Client:           &http.Client{},
-		DestTransformURL: transformerURL,
+
+	dest := &destination.DestMiddleware{
+		Dest: &backendconfig.WorkspaceConfig{},
 	}
-	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
+	workspaceId, err := dest.GetWorkspaceId(ctx)
+	if err != nil {
+		panic("error while getting workspaceId")
+	}
+
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
+			Client:         &http.Client{},
+			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
+			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
+			WorkspaceID:    workspaceId,
 		},
-		DestDetail: &destination.DestMiddleware{
-			Dest: &backendconfig.WorkspaceConfig{},
-		},
-		Deleter: router,
+		DestDetail: dest,
+		Deleter: delete.NewRouter(
+			&kvstore.KVDeleteManager{},
+			&batch.BatchManager{},
+			&api.APIManager{
+				Client:           &http.Client{},
+				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
+			}),
 	}
+
+	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err := l.Loop(ctx)
+	err = l.Loop(ctx)
 	if err != nil {
+		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}
 
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {
-
 	return &service.Looper{
 		Svc: svc,
 	}

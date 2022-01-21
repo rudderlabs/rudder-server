@@ -16,12 +16,20 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/sync/errgroup"
+)
+
+const (
+	STATS_WORKER_IDLE_TIME                  = "worker_idle_time"
+	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
+	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
+	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
+	TAG_WORKERID                            = "workerId"
 )
 
 // Temporary store for processing staging file to load file
@@ -172,6 +180,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 	var stagingFileId = jobRun.job.StagingFileID
 
 	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
+	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
 	defer close(uploadJobChan)
@@ -187,24 +196,22 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					return // stop further processing
 				default:
 					tableName := uploadJob.tableName
+					loadFileUploadStart := time.Now()
 					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
 					if err != nil {
 						uploadErrorChan <- err
 						return
 					}
+					loadFileUploadTimer.Since(loadFileUploadStart)
 					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
 					if err != nil {
 						uploadErrorChan <- err
 						return
 					}
-					contentLength := loadFileStats.Size()
-					if contentLength == 0 {
-						panic(fmt.Errorf("[WH]: Empty load file generated in slave jobId: %v for tablename: %v", job.UploadID, uploadJob.tableName))
-					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
 						Location:      uploadOutput.Location,
-						ContentLength: contentLength,
+						ContentLength: loadFileStats.Size(),
 						TotalRows:     jobRun.tableEventCountMap[tableName],
 						StagingFileID: stagingFileId,
 					}
@@ -247,7 +254,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if job.DestinationType == "S3_DATALAKE" {
+	if misc.Contains(timeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
 		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
@@ -306,7 +313,7 @@ func (jobRun *JobRunT) cleanup() {
 	}
 }
 
-func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
+func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
 	columnVal, ok := event.Data[columnName]
 	if !ok {
 		return ColumnInfoT{}, false
@@ -330,13 +337,16 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
-
+	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
 	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	defer func() {
+		jobRun.timerStat("staging_files_total_processing_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+	}()
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -367,7 +377,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.outputFileWritersMap = make(map[string]warehouseutils.LoadFileWriterI)
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
-	misc.PrintMemUsage()
 
 	// Initilize Discards Table
 	discardsTable := job.getDiscardsTable()
@@ -413,7 +422,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
-			columnInfo, ok := batchRouterEvent.getColumnInfo(columnName)
+			columnInfo, ok := batchRouterEvent.GetColumnInfo(columnName)
 			if !ok {
 				eventLoader.AddEmptyColumn(columnName)
 				continue
@@ -431,10 +440,15 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			}
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
-			if ok && columnType != dataTypeInSchema {
+			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
+			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
 				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !ok {
-					eventLoader.AddEmptyColumn(columnName)
+				if !ok || violatedConstraints.isViolated {
+					if violatedConstraints.isViolated {
+						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
+					} else {
+						eventLoader.AddEmptyColumn(columnName)
+					}
 
 					discardWriter, err := jobRun.GetWriter(discardsTable)
 					if err != nil {
@@ -443,7 +457,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 					// add discardWriter to outputFileWritersMap
 					jobRun.outputFileWritersMap[discardsTable] = discardWriter
 
-					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
+					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
 
 					if err != nil {
 						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
@@ -482,7 +496,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
-	misc.PrintMemUsage()
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
@@ -652,25 +665,18 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	// return loadFileUploadOutputs, err
 }
 
-func freeWorker(workerIdx int) {
-	slaveWorkerRoutineBusy[workerIdx] = false
-	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
-}
-
-func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed bool) {
-	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
-	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
-	claimedJob, claimed = notifier.Claim(workerID)
-	return
-}
-
 func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+	claimProcessTimeStart := time.Now()
+	defer func() {
+		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+	}()
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
-		claim.ClaimResponseChan <- response
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
 	var job PayloadT
@@ -692,46 +698,48 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		Err:     err,
 		Payload: output,
 	}
-	claimedJob.ClaimResponseChan <- response
+	if response.Err != nil {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	} else {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
-func setupSlave() {
-	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
+func setupSlave(ctx context.Context) error {
+	g, ctx := errgroup.WithContext(ctx)
+
 	slaveID := uuid.Must(uuid.NewV4()).String()
-	rruntime.Go(func() {
-		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 2*noOfSlaveWorkerRoutines)
-		if err != nil {
-			panic(err)
-		}
-		for {
-			ev := <-jobNotificationChannel
-			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx] {
-					slaveWorkerRoutineBusy[workerIdx] = true
-					idx := workerIdx
-					claimedJob, claimed := claim(idx, slaveID)
-					if !claimed {
-						freeWorker(idx)
-						break
-					}
-					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-					rruntime.Go(func() {
-						processClaimedJob(claimedJob, idx)
-						freeWorker(idx)
-					})
-					break
-				}
+	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
+	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+		idx := workerIdx
+		g.Go(misc.WithBugsnag(func() error {
+			// create tags and timers
+			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
+			workerIdleTimeStart := time.Now()
+			for claimedJob := range jobNotificationChannel {
+				workerIdleTimer.Since(workerIdleTimeStart)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+
+				// process job
+				processClaimedJob(claimedJob, idx)
+				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				workerIdleTimeStart = time.Now()
 			}
-		}
-	})
+			return nil
+		}))
+	}
+	g.Go(misc.WithBugsnag(func() error {
+		return notifier.RunMaintenanceWorker(ctx)
+	}))
+	return g.Wait()
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, discardWriter warehouseutils.LoadFileWriterI) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if hasID && hasReceivedAt {
+	if (hasID && hasReceivedAt) || violatedConstraints.isViolated {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
@@ -752,7 +760,6 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 			pkgLogger.Errorf("[WH]: Failed to write event to discards table: %v", err)
 			return err
 		}
-
 	}
 	return nil
 }

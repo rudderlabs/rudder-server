@@ -136,15 +136,15 @@ type HandleT struct {
 	stats         stats.Stats
 }
 
-type credentialsT struct {
-	host          string
-	dbName        string
-	user          string
-	password      string
-	port          string
-	secure        string
-	skipVerify    string
-	tlsConfigName string
+type CredentialsT struct {
+	Host          string
+	DBName        string
+	User          string
+	Password      string
+	Port          string
+	Secure        string
+	SkipVerify    string
+	TLSConfigName string
 }
 
 type clickHouseStatT struct {
@@ -194,24 +194,24 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
-// connect connects to warehouse with provided credentials
-func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
+// Connect connects to warehouse with provided credentials
+func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
-		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
+		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
 	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
-		cred.host,
-		cred.port,
-		cred.user,
-		cred.password,
+		cred.Host,
+		cred.Port,
+		cred.User,
+		cred.Password,
 		blockSize,
 		poolSize,
 		queryDebugLogs,
-		cred.secure,
-		cred.skipVerify,
-		cred.tlsConfigName,
+		cred.Secure,
+		cred.SkipVerify,
+		cred.TLSConfigName,
 		dbNameParam,
 		readTimeout,
 		writeTimeout,
@@ -255,7 +255,7 @@ func registerTLSConfig(key string, certificate string) {
 }
 
 // getConnectionCredentials gives clickhouse credentials
-func (ch *HandleT) getConnectionCredentials() credentialsT {
+func (ch *HandleT) getConnectionCredentials() CredentialsT {
 	tlsName := ""
 	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
 	if len(strings.TrimSpace(certificate)) != 0 {
@@ -263,15 +263,15 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 		tlsName = ch.Warehouse.Destination.ID
 		registerTLSConfig(tlsName, certificate)
 	}
-	credentials := credentialsT{
-		host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
-		dbName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
-		user:          warehouseutils.GetConfigValue(user, ch.Warehouse),
-		password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
-		port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
-		secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
-		skipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
-		tlsConfigName: tlsName,
+	credentials := CredentialsT{
+		Host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
+		DBName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
+		User:          warehouseutils.GetConfigValue(user, ch.Warehouse),
+		Password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
+		Port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
+		Secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
+		SkipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
+		TLSConfigName: tlsName,
 	}
 	return credentials
 }
@@ -733,7 +733,7 @@ func (ch *HandleT) createSchema() (err error) {
 		pkgLogger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
 		return
 	}
-	dbHandle, err := connect(ch.getConnectionCredentials(), false)
+	dbHandle, err := Connect(ch.getConnectionCredentials(), false)
 	if err != nil {
 		return err
 	}
@@ -841,7 +841,7 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = connect(ch.getConnectionCredentials(), true)
+	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
@@ -871,7 +871,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.stats = stats.DefaultStats
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
-	ch.Db, err = connect(ch.getConnectionCredentials(), true)
+	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	return err
 }
 
@@ -883,7 +883,7 @@ func (ch *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ch.getConnectionCredentials(), true)
+	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
@@ -984,7 +984,7 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ch.getConnectionCredentials(), true)
+	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
 	}
