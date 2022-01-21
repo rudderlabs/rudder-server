@@ -110,27 +110,27 @@ type WareHouseTest struct {
 }
 
 var (
-	hold             bool = true
-	db               *sql.DB
-	redisClient      *redis.Client
-	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
-	httpPort         string
-	httpKafkaPort    string
-	dbHandle         *sql.DB
-	sourceJSON       backendconfig.ConfigT
-	webhookurl       string
-	disableDestinationwebhookurl     string
-	webhook          *WebhookRecorder
-	disableDestinationwebhook		 *WebhookRecorder
-	address          string
-	runIntegration   bool
-	writeKey         string
-	workspaceID      string
-	redisAddress     string
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
-	whTest           *WareHouseTest
+	hold                         bool = true
+	db                           *sql.DB
+	redisClient                  *redis.Client
+	DB_DSN                       = "root@tcp(127.0.0.1:3306)/service"
+	httpPort                     string
+	httpKafkaPort                string
+	dbHandle                     *sql.DB
+	sourceJSON                   backendconfig.ConfigT
+	webhookurl                   string
+	disableDestinationwebhookurl string
+	webhook                      *WebhookRecorder
+	disableDestinationwebhook    *WebhookRecorder
+	address                      string
+	runIntegration               bool
+	writeKey                     string
+	workspaceID                  string
+	redisAddress                 string
+	brokerPort                   string
+	localhostPort                string
+	localhostPortInt             int
+	whTest                       *WareHouseTest
 )
 
 type WebhookRecorder struct {
@@ -188,15 +188,15 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id		 string
-	user_id    			 string
-	count      		 	 string
-	context_myuniqueid	 string
-	context_id 			 string
-	context_ip 			 string
-	prop_key			 string
-	myuniqueid	 		 string
-	ip 					 string
+	anonymous_id       string
+	user_id            string
+	count              string
+	context_myuniqueid string
+	context_id         string
+	context_ip         string
+	prop_key           string
+	myuniqueid         string
+	ip                 string
 }
 
 type Author struct {
@@ -392,10 +392,10 @@ func run(m *testing.M) (int, error) {
 	}
 	defer func() {
 		if network == nil {
-		    return
+			return
 		}
-	        log.Printf("Purging kafka network resource: %s \n", err)
-	        if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+		log.Printf("Purging kafka network resource: %s \n", err)
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
 			log.Printf("Could not purge kafka network resource: %s \n", err)
 		}
 	}()
@@ -682,7 +682,7 @@ func run(m *testing.M) (int, error) {
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":                          webhookurl,
-			"disableDestinationwebhookUrl":                         disableDestinationwebhookurl,
+			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
 			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
@@ -853,7 +853,7 @@ func TestWebhook(t *testing.T) {
 		  "review_body" : "Average product, expected much more."
 		}
 	  }`)
-	SendEvent(payload_track, "track",writeKey)
+	SendEvent(payload_track, "track", writeKey)
 
 	// Sending page event
 	payload_page := strings.NewReader(`{
@@ -867,7 +867,7 @@ func TestWebhook(t *testing.T) {
 		  "url": "http://www.rudderstack.com"
 		}
 	  }`)
-	SendEvent(payload_page, "page",writeKey)
+	SendEvent(payload_page, "page", writeKey)
 
 	// Sending screen event
 	payload_screen := strings.NewReader(`{
@@ -880,7 +880,7 @@ func TestWebhook(t *testing.T) {
 		  "prop_key": "prop_value"
 		}
 	  }`)
-	SendEvent(payload_screen, "screen",writeKey)
+	SendEvent(payload_screen, "screen", writeKey)
 
 	// Sending alias event
 	payload_alias := strings.NewReader(`{
@@ -891,7 +891,7 @@ func TestWebhook(t *testing.T) {
 		"previousId": "name@surname.com",
 		"userId": "12345"
 	  }`)
-	SendEvent(payload_alias, "alias",writeKey)
+	SendEvent(payload_alias, "alias", writeKey)
 
 	// Sending group event
 	payload_group := strings.NewReader(`{
@@ -907,7 +907,7 @@ func TestWebhook(t *testing.T) {
 		  "plan": "basic"
 		}
 	  }`)
-	SendEvent(payload_group, "group",writeKey)
+	SendEvent(payload_group, "group", writeKey)
 	SendPixelEvents(writeKey)
 
 	require.Eventually(t, func() bool {
@@ -966,7 +966,6 @@ func TestPostgres(t *testing.T) {
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 
-
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
@@ -986,25 +985,24 @@ func TestPostgres(t *testing.T) {
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 
-
 	require.Eventually(t, func() bool {
-			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-			db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
+		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
-			eventSql = "select count(*) from dev_integration_test_1.screens"
-			db.QueryRow(eventSql).Scan(&myEvent.count)
-		return  myEvent.count == "1"
+		eventSql = "select count(*) from dev_integration_test_1.screens"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
-	
+
 	// Verify User Transformation
 	require.Eventually(t, func() bool {
-			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-			db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
-		return  myEvent.myuniqueid == "identified_user_idanonymousId_1"
+		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+		db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
+		return myEvent.myuniqueid == "identified_user_idanonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
-	
+
 	require.Equal(t, myEvent.prop_key, "prop_value_edited")
 	require.Equal(t, myEvent.ip, "0.0.0.0")
 }
