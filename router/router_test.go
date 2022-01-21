@@ -1,8 +1,12 @@
 package router
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime/pprof"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
@@ -25,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -68,6 +73,15 @@ type testContext struct {
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 	mockMultitenantI  *mocksMultitenant.MockMultiTenantI
+}
+
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+	return
+}
+func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
+	return
 }
 
 // Initiaze mocks and common expectations
@@ -130,11 +144,14 @@ var _ = Describe("Router", func() {
 	Context("Initialization", func() {
 
 		It("should initialize and recover after crash", func() {
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
 
@@ -150,13 +167,16 @@ var _ = Describe("Router", func() {
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
@@ -235,13 +255,17 @@ var _ = Describe("Router", func() {
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
-			router := &HandleT{}
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+			}
+
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
 
 			gaPayload := `{}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
@@ -298,30 +322,49 @@ var _ = Describe("Router", func() {
 				})
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+			fmt.Println("HERE")
+
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
+			fmt.Println("HERE 1")
+
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
+			fmt.Println("HERE 2")
+
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
 			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+
+			fmt.Println("HERE 3")
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(1))
+			fmt.Println("HERE 4")
 
-			time.Sleep(3 * time.Second)
+			c.mockMultitenantI.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+			router.Shutdown()
+			fmt.Println("HERE 5")
+
+			fmt.Print("\n\n")
+			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			fmt.Print("\n\n")
+
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
 			router_utils.JobRetention = time.Duration(24) * time.Hour
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
@@ -402,10 +445,14 @@ var _ = Describe("Router", func() {
 		})
 
 		It("can batch jobs together", func() {
-			router := &HandleT{}
 			Skip("FIXME skip this test for now")
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
+
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -413,7 +460,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 			router.enableBatching = true
 			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
@@ -543,9 +590,12 @@ var _ = Describe("Router", func() {
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
 			//Because we only allow one failure per job with this
@@ -557,7 +607,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 			router.enableBatching = true
 			noOfJobsToBatchInAWorker = 3
 
@@ -720,9 +770,12 @@ var _ = Describe("Router", func() {
 			[5] should be sent
 		*/
 		It("can transform jobs at router", func() {
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -730,7 +783,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 			noOfJobsToBatchInAWorker = 5
 			router.noOfWorkers = 1
 
@@ -936,9 +989,12 @@ var _ = Describe("Router", func() {
 				[3] should be dropped
 		*/
 		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
-			router := &HandleT{}
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: c.mockMultitenantI,
+			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -946,7 +1002,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
+			router.MultitenantI = mockMultitenantHandle
 			noOfJobsToBatchInAWorker = 3
 			router.noOfWorkers = 1
 

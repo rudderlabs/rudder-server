@@ -180,8 +180,11 @@ loop:
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting, multitenantStat)
+							router := router.HandleT{
+								Reporting: reporting,
+								MultitenantI: multitenantStat,
+							}
+							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition)
 							router.Start()
 							cleanup = append(cleanup, router.Shutdown)
 							dstToRouter[destination.DestinationDefinition.Name] = &router
