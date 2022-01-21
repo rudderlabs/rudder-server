@@ -405,6 +405,8 @@ func ReadLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+var logOnce sync.Once
+
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
 func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
@@ -414,7 +416,9 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
-			pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			logOnce.Do(func() {
+				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			})
 		}
 	}
 	if tmpdirPath == "" {

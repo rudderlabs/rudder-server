@@ -1168,6 +1168,8 @@ var _ = Describe("Processor", func() {
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 
+			SetMainLoopTimeout(1 * time.Second)
+
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
@@ -1177,8 +1179,12 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("ProcessorLoop Tests", func() {
+
 		var clearDB = false
 		It("Should be Pause and Resume", func() {
+
+			Skip("FIXME skip this test for now")
+
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 			Skip("FIXME skip this test for now")

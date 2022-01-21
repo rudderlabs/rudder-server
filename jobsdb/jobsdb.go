@@ -1358,6 +1358,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%s" (
                                       job_id BIGSERIAL PRIMARY KEY,
+									  workspace_id TEXT NOT NULL DEFAULT '',
 									  uuid UUID NOT NULL,
 									  user_id TEXT NOT NULL,
 									  parameters JSONB NOT NULL,

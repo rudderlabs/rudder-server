@@ -3,6 +3,10 @@ package misc
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	. "github.com/onsi/ginkgo"
@@ -10,9 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 func initMisc() {
@@ -36,8 +37,6 @@ var _ = Describe("Misc", func() {
 
 			var file *os.File
 			file, err = os.Create(path)
-			fmt.Println(path)
-			fmt.Println(targetDir)
 
 			Expect(err).To(BeNil())
 			Expect(FileExists(path)).To(BeTrue())
@@ -464,7 +463,6 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-
 			// /tmp/random/
 			// /tmp/
 			sourceFile = fmt.Sprintf(`%v`,
@@ -476,7 +474,6 @@ var _ = Describe("Misc", func() {
 			)
 
 			onPostFileCreation(sourceFile, targetDir)
-
 
 			// /tmp/
 			// /tmp/
