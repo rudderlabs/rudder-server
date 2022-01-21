@@ -294,10 +294,20 @@ type workspaceScore struct {
 	workspaceId     string
 }
 
-func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64) {
+func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 
+	customersWithJobs := make([]string, 0)
+	for custKey := range routerLatencyStat {
+		destWiseMap, ok := multitenantStat.RouterInMemoryJobCounts["router"][custKey]
+		if ok {
+			val, ok := destWiseMap[destType]
+			if ok && val > 0 {
+				customersWithJobs = append(customersWithJobs, custKey)
+			}
+		}
+	}
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
 	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
@@ -315,7 +325,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 
 	//Below two loops, normalize the values and compute the score of each workspace
 	//No need for sorting latency list before calling this function.
-	for _, customerKey := range sortedLatencyList {
+	for _, customerKey := range customersWithJobs {
 		if minLatency > latencyMap[customerKey].Value() {
 			minLatency = latencyMap[customerKey].Value()
 		}
@@ -324,8 +334,8 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 	}
 
-	scores := make([]workspaceScore, len(sortedLatencyList))
-	for i, customerKey := range sortedLatencyList {
+	scores := make([]workspaceScore, len(customersWithJobs))
+	for i, customerKey := range customersWithJobs {
 		scores[i] = workspaceScore{}
 		latencyScore := 0.0
 		if maxLatency-minLatency != 0 {
@@ -404,8 +414,8 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	}
 
 	//Sort by customers who can get to realtime quickly
-	scores = make([]workspaceScore, len(sortedLatencyList))
-	for i, customerKey := range sortedLatencyList {
+	scores = make([]workspaceScore, len(customersWithJobs))
+	for i, customerKey := range customersWithJobs {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = customerKey
 
