@@ -757,6 +757,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
 		destinationJob := routerJobResponse.destinationJob
 		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
+		attemptNum := destinationJobMetadata.AttemptNum
+		if attemptedToSendTheJob {
+			attemptNum++
+		}
+		status := jobsdb.JobStatusT{
+			JobID:      destinationJobMetadata.JobID,
+			AttemptNum: attemptNum,
+			ExecTime:   time.Now(),
+			RetryTime:  time.Now(),
+			Parameters: []byte(`{}`),
+		}
 		if !isSuccessStatus(respStatusCode) {
 			if prevFailedJobID, ok := userToJobIDMap[destinationJobMetadata.UserID]; ok {
 				//This means more than two jobs of the same user are in the batch & the batch job is failed
@@ -764,15 +775,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//Job order logic requires that at any point of time, we should have only one failed job per user
 				//This is introduced to ensure the above statement
 				resp := fmt.Sprintf(`{"blocking_id":"%d", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
-				status := jobsdb.JobStatusT{
-					JobID:         destinationJobMetadata.JobID,
-					AttemptNum:    destinationJobMetadata.AttemptNum,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					JobState:      jobsdb.Waiting.State,
-					ErrorResponse: []byte(resp), // check
-					Parameters:    []byte(`{}`),
-				}
+				status.JobState = jobsdb.Waiting.State
+				status.ErrorResponse = []byte(resp)
+				routerJobResponse.status = status
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 				continue
 			} else {
@@ -780,20 +785,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			}
 		}
 
-		attemptNum := destinationJobMetadata.AttemptNum
-		if attemptedToSendTheJob {
-			attemptNum++
+		status.ErrorResponse = []byte(`{}`)
+		status.ErrorCode = strconv.Itoa(respStatusCode)
+		if isSuccessStatus(respStatusCode) {
+			status.JobState = jobsdb.Succeeded.State
+		} else {
+			status.JobState = jobsdb.Failed.State
 		}
-
-		status := jobsdb.JobStatusT{
-			JobID:         destinationJobMetadata.JobID,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			AttemptNum:    attemptNum,
-			ErrorCode:     strconv.Itoa(respStatusCode),
-			ErrorResponse: []byte(`{}`),
-			Parameters:    []byte(`{}`),
-		}
+		routerJobResponse.status = status
 
 		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
 
@@ -802,21 +801,29 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		if attemptedToSendTheJob {
 			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
 		}
+	}
 
+	for _, routerJobResponse := range routerJobResponses {
 		//Sending only one destination live event for every destinationJob, if it was attemptedToSendTheJob
-		if _, ok := destLiveEventSentMap[destinationJob]; !ok && attemptedToSendTheJob {
-			payload := destinationJob.Message
-			if destinationJob.Message == nil {
-				payload = destinationJobMetadata.JobT.EventPayload
+		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok && routerJobResponse.attemptedToSendTheJob {
+			payload := routerJobResponse.destinationJob.Message
+			if routerJobResponse.destinationJob.Message == nil {
+				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
 			}
 			sourcesIDs := make([]string, 0)
-			for _, metadata := range destinationJob.JobMetadataArray {
+			eventTypes := make([]string, 0)
+			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
 				if !misc.Contains(sourcesIDs, metadata.SourceID) {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
+				eventType := gjson.GetBytes(metadata.JobT.Parameters, "event_type").String()
+				if !misc.Contains(eventTypes, eventType) {
+					eventTypes = append(eventTypes, eventType)
+				}
 			}
-			worker.sendDestinationResponseToConfigBackend(payload, destinationJobMetadata, &status, sourcesIDs)
-			destLiveEventSentMap[destinationJob] = struct{}{}
+			batchEventType := strings.Join(eventTypes, ", ")
+			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, &routerJobResponse.status, sourcesIDs, batchEventType)
+			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
 
@@ -850,6 +857,7 @@ type RouterJobResponse struct {
 	respStatusCode         int
 	respBody               string
 	attemptedToSendTheJob  bool
+	status                 jobsdb.JobStatusT
 }
 
 func (worker *workerT) recordCountsByDestAndUser(destID, userID string) {
@@ -1103,7 +1111,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
+func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string, eventType string) {
 	//Sending destination response to config backend
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
 		DestinationID: destinationJobMetadata.DestinationID,
@@ -1115,7 +1123,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 		ErrorResponse: status.ErrorResponse,
 		SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
 		EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
-		EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
+		EventType:     eventType,
 	}
 	destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 }
