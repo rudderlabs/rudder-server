@@ -1150,10 +1150,6 @@
             {
               "name": "require",
               "value": "require"
-            },
-            {
-              "name":"verify ca",
-              "value":"verify-ca"
             }
           ],
           "defaultOption": {
@@ -1161,45 +1157,6 @@
             "value": "disable"
           },
           "required": true
-        },
-        {
-          "type": "textInput",
-          "preRequisiteField": {
-            "name": "sslMode",
-            "selectedValue": "verify-ca"
-          },
-          "label": "Client Key Pem File",
-          "value": "clientKey",
-          "regex": "-----BEGIN RSA PRIVATE KEY-----.*-----END RSA PRIVATE KEY-----",
-          "required": true,
-          "placeholder": "-----BEGIN RSA PRIVATE KEY-----",
-          "secret": true
-        },
-        {
-          "type": "textInput",
-          "preRequisiteField": {
-            "name": "singleSelect",
-            "selectedValue": "verify-ca"
-          },
-          "label": "Client Cert Pem File",
-          "value": "clientCert",
-          "regex": "-----BEGIN CERTIFICATE-----.*-----END CERTIFICATE-----",
-          "required": true,
-          "placeholder": "-----BEGIN CERTIFICATE-----",
-          "secret": true
-        },
-        {
-          "type": "textInput",
-          "preRequisiteField": {
-            "name": "singleSelect",
-            "selectedValue": "verify-ca"
-          },
-          "label": "Server CA Pem File",
-          "value": "serverCA",
-          "regex": "-----BEGIN CERTIFICATE-----.*-----END CERTIFICATE-----",
-          "required": true,
-          "placeholder": "-----BEGIN CERTIFICATE-----",
-          "secret": true
         },
         {
           "type": "singleSelect",
