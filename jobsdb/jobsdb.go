@@ -84,6 +84,7 @@ type GetQueryParamsT struct {
 	StateFilters                  []string
 	JobCount                      int
 	EventCount                    int
+	PayloadSize                   int64
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
 	Before                        time.Time
@@ -277,6 +278,7 @@ type JobT struct {
 	CustomVal     string          `json:"CustomVal"`
 	EventCount    int             `json:"EventCount"`
 	EventPayload  json.RawMessage `json:"EventPayload"`
+	PayloadSize   int64           `json:"PayloadSize"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
@@ -2325,7 +2327,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		sqlStatement := fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
                                                jobs.created_at, jobs.expire_at, jobs.workspace_id,
+											   pg_column_size(jobs.event_payload) as payload_size,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
+											   sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
                                                job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
@@ -2341,11 +2345,22 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 
 		args := []interface{}{getTimeNowFunc()}
+
+		var wrapQuery []string
 		if params.EventCount > 0 {
-			sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) t WHERE running_event_counts - t.event_count + 1 <= $%d;`, len(args)+1)
 			// EXPLAIN `running_event_counts - t.event_count + 1`: If the event count limit "splits" a job we want this jobs to be returned.
 			//				`+1` prevents a job with event count of 1 to be returned.
+			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count + 1 <= $%d`, len(args)+1))
 			args = append(args, params.EventCount)
+		}
+
+		if params.PayloadSize > 0 {
+			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size + 1 <= $%d`, len(args)+1))
+			args = append(args, params.PayloadSize)
+		}
+
+		if len(wrapQuery) > 0 {
+			sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 		}
 
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -2360,7 +2375,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &_null, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
@@ -2411,15 +2426,19 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
 			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
-				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
-				`FROM "%[1]s" AS jobs `+
-				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
+				`	pg_column_size(jobs.event_payload) as payload_size, `+
+				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
+				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
+				`FROM %[1]s AS jobs `+
+				`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
 				`WHERE job_status.job_id is NULL `,
 			ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(
 			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
-				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
+				`	pg_column_size(jobs.event_payload) as payload_size, `+
+				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
+				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
 				` FROM AS jobs `+
 				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM "%[2]s" AS job_status)`,
 			ds.JobTable, ds.JobStatusTable)
@@ -2446,9 +2465,21 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		args = append(args, count)
 	}
 
+	var wrapQuery []string
 	if params.EventCount > 0 {
-		sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) AS subquery WHERE running_event_counts - event_count + 1 <= $%d;`, len(args)+1)
+		// EXPLAIN `running_event_counts - t.event_count + 1`: If the event count limit "splits" a job we want this jobs to be returned.
+		//				`+1` prevents a job with event count of 1 to be returned.
+		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - subquery.event_count + 1 <= $%d`, len(args)+1))
 		args = append(args, params.EventCount)
+	}
+
+	if params.PayloadSize > 0 {
+		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size + 1 <= $%d`, len(args)+1))
+		args = append(args, params.PayloadSize)
+	}
+
+	if len(wrapQuery) > 0 {
+		sqlStatement = `SELECT * FROM (` + sqlStatement + `) subquery WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
 	if params.UseTimeFilter {
@@ -2468,7 +2499,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &_null, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -3595,6 +3626,11 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
+	limitByPayloadSize := false
+	if params.PayloadSize > 0 {
+		limitByPayloadSize = true
+	}
+
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("cannot receive negative job count: %d", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
@@ -3612,6 +3648,17 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 			params.EventCount -= sumEventCount
 			// received event count could exceed the requested event count, by the spillover of the last selected job
 			if params.EventCount <= 0 {
+				break
+			}
+		}
+		if limitByPayloadSize {
+			sumPayloadSize := int64(0)
+			for _, j := range jobs {
+				sumPayloadSize += j.PayloadSize
+			}
+			params.PayloadSize -= sumPayloadSize
+			// received event count could exceed the requested event count, by the spillover of the last selected job
+			if params.PayloadSize <= 0 {
 				break
 			}
 		}
@@ -3814,6 +3861,11 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
+	limitByPayloadSize := false
+	if params.PayloadSize > 0 {
+		limitByPayloadSize = true
+	}
+
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
@@ -3833,6 +3885,18 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 			params.EventCount -= sumEventCount
 			// received event count could exceed the requested event count, by the spillover of the last selected job
 			if params.EventCount <= 0 {
+				break
+			}
+		}
+
+		if limitByPayloadSize {
+			sumPayloadSize := int64(0)
+			for _, j := range jobs {
+				sumPayloadSize += j.PayloadSize
+			}
+			params.PayloadSize -= sumPayloadSize
+			// received event count could exceed the requested event count, by the spillover of the last selected job
+			if params.PayloadSize <= 0 {
 				break
 			}
 		}
