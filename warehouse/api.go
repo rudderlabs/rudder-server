@@ -507,7 +507,11 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
-	query := fmt.Sprintf(`select count(*) from %s WHERE %s`, warehouseutils.WarehouseUploadsTable, whereClause)
+	query := fmt.Sprintf(`select count(*) from %s`, warehouseutils.WarehouseUploadsTable)
+	if whereClause != "" {
+		query += fmt.Sprintf(` %s`, whereClause)
+	}
+	uploadsReq.API.log.Info(query)
 	err := uploadsReq.API.dbHandle.QueryRow(query).Scan(&totalUploadCount)
 	return totalUploadCount, err
 }
@@ -544,7 +548,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
 	}
-	
+
 	// create response
 	uploadsRes.Uploads = uploads
 	uploadsRes.Pagination = &proto.Pagination{
@@ -561,7 +565,8 @@ func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, select
 	var totalUploadCount int32
 
 	// create query
-	query := fmt.Sprintf(`select %s from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
+	query := fmt.Sprintf(`select %s from %s`, selectFields, warehouseutils.WarehouseUploadsTable)
+	whereClause := ""
 	var whereClauses []string
 	if uploadsReq.SourceID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
@@ -575,7 +580,9 @@ func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, select
 	if uploadsReq.Status != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
 	}
-	whereClause := strings.Join(whereClauses, " AND ")
+	if len(whereClauses) > 0 {
+		whereClause = fmt.Sprintf(` WHERE %s`, strings.Join(whereClauses, " AND "))
+	}
 
 	query = query + whereClause + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
 	uploadsReq.API.log.Info(query)
@@ -596,11 +603,13 @@ func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, select
 	}
 
 	// create response
-	uploadsRes.Uploads = uploads
-	uploadsRes.Pagination = &proto.Pagination{
-		Limit:  uploadsReq.Limit,
-		Offset: uploadsReq.Offset,
-		Total:  totalUploadCount,
+	uploadsRes = &proto.WHUploadsResponse{
+		Uploads: uploads,
+		Pagination: &proto.Pagination{
+			Limit:  uploadsReq.Limit,
+			Offset: uploadsReq.Offset,
+			Total:  totalUploadCount,
+		},
 	}
 	return
 }
