@@ -749,7 +749,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
 	})
 
-	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
 	//Struct to hold unique users in the batch (worker.destinationJobs)
 	userToJobIDMap := make(map[string]int64)
 
@@ -803,6 +802,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		}
 	}
 
+	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
 	for _, routerJobResponse := range routerJobResponses {
 		//Sending only one destination live event for every destinationJob, if it was attemptedToSendTheJob
 		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok && routerJobResponse.attemptedToSendTheJob {
