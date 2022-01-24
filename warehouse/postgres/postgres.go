@@ -95,7 +95,8 @@ type sslParamsT struct {
 }
 
 func (ssl *sslParamsT) getFolderName() (folderName string) {
-	return fmt.Sprintf("/tmp/ssl-files-%s", "ssl.id")
+	// return fmt.Sprintf("/tmp/ssl-files-%s", "ssl.id")
+	return "/opt"
 }
 
 func (ssl *sslParamsT) saveToFileSystem() {
