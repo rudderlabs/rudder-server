@@ -339,8 +339,9 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-
-		os.Exit(1)
+		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) == true {
+			os.Exit(1)
+		}
 	}()
 
 	err := g.Wait()
