@@ -165,16 +165,15 @@ var _ = Describe("Router", func() {
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reportingNOOP{},
-				MultitenantI: c.mockMultitenantI,
+				MultitenantI: mockMultitenantHandle,
 			}
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
@@ -233,6 +232,10 @@ var _ = Describe("Router", func() {
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false)
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+			done := make(chan struct{})
+
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
@@ -241,13 +244,17 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(2))
+			<-done
 			router.Shutdown()
-			time.Sleep(3 * time.Second)
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
@@ -314,6 +321,7 @@ var _ = Describe("Router", func() {
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 
@@ -325,14 +333,19 @@ var _ = Describe("Router", func() {
 				})
 
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+
+			done := make(chan struct{})
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(1))
-
-			c.mockMultitenantI.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
-
+			<-done
+			router.Shutdown()
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
