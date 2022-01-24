@@ -163,12 +163,16 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 		endPoint = &tmp
 	}
 	if config["forcePathStyle"] != nil {
-		tmp := config["forcePathStyle"].(bool)
-		forcePathStyle = &tmp
+		tmp, ok := config["forcePathStyle"].(bool)
+		if ok {
+			forcePathStyle = &tmp
+		}
 	}
 	if config["disableSSL"] != nil {
-		tmp := config["disableSSL"].(bool)
-		disableSSL = &tmp
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
 	}
 	return &GCSConfig{
 		Bucket:         bucketName,

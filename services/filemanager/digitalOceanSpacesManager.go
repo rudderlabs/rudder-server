@@ -104,12 +104,12 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
-	parsedUrl, err := url.Parse(location)
+	parsedURL, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
+	trimedUrl := strings.TrimLeft(parsedURL.Path, "/")
+	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedURL.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
 	return trimedUrl, nil
@@ -143,12 +143,12 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int6
 func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
 	sess := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`error starting S3 session: %v`, err)
+		return fmt.Errorf(`get session: %v`, err)
 	}
 
-	var objects []*s3.ObjectIdentifier
-	for _, key := range keys {
-		objects = append(objects, &s3.ObjectIdentifier{Key: aws.String(key)})
+	objects := make([]*s3.ObjectIdentifier, len(keys))
+	for i, key := range keys {
+		objects[i] = &s3.ObjectIdentifier{Key: aws.String(key)}
 	}
 
 	svc := s3.New(sess)
@@ -170,12 +170,12 @@ func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
 				default:
-					pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
+					pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
 				}
 			} else {
 				// Print the error, cast err to awserr.Error to get the Code and
 				// Message from an error.
-				pkgLogger.Errorf(`Error while deleting S3 objects: %v`, aerr.Error())
+				pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v`, aerr.Error())
 			}
 			return err
 		}
@@ -211,12 +211,16 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 		region = &tmp
 	}
 	if config["forcePathStyle"] != nil {
-		tmp := config["forcePathStyle"].(bool)
-		forcePathStyle = &tmp
+		tmp, ok := config["forcePathStyle"].(bool)
+		if ok {
+			forcePathStyle = &tmp
+		}
 	}
 	if config["disableSSL"] != nil {
-		tmp := config["disableSSL"].(bool)
-		disableSSL = &tmp
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
 	}
 	return &DOSpacesConfig{
 		Bucket:         bucketName,

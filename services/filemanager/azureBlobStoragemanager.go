@@ -31,7 +31,7 @@ func supressMinorErrors(err error) error {
 	}
 	return err
 }
-func (manager *AzureBlobStorageManager) getBaseURL() string {
+func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	protocol := "https"
 	if manager.Config.DisableSSL != nil && *manager.Config.DisableSSL {
 		protocol = "http"
@@ -42,11 +42,17 @@ func (manager *AzureBlobStorageManager) getBaseURL() string {
 		endpoint = *manager.Config.EndPoint
 	}
 
-	baseURL := fmt.Sprintf("%s://%s.%s/%s/", protocol, manager.Config.AccountName, endpoint, manager.Config.Container)
-	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
-		baseURL = fmt.Sprintf("%s://%s/%s/%s/", protocol, *manager.Config.EndPoint, manager.Config.AccountName, manager.Config.Container)
+	baseURL := url.URL{
+		Scheme: protocol,
+		Host:   fmt.Sprintf("%s.%s", manager.Config.AccountName, endpoint),
+		Path:   manager.Config.Container,
 	}
-	return baseURL
+	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
+		baseURL.Host = endpoint
+		baseURL.Path = fmt.Sprintf("/%s/%s/", manager.Config.AccountName, manager.Config.Container)
+	}
+
+	return &baseURL
 }
 
 func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
@@ -68,25 +74,22 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
 
 	// From the Azure portal, get your storage account blob service URL endpoint.
-	URL := manager.getBaseURL()
-	url, err := url.Parse(URL)
-	if err != nil {
-		return azblob.ContainerURL{}, err
-	}
+	baseURL := manager.getBaseURL()
 
-	containerURL := azblob.NewContainerURL(*url, p)
+	containerURL := azblob.NewContainerURL(*baseURL, p)
 
 	return containerURL, nil
 }
 
 // Upload passed in file to Azure Blob Storage
 func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+	ctx := context.Background()
+
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return UploadOutput{}, err
 	}
 
-	ctx := context.Background()
 	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 	err = supressMinorErrors(err)
 	if err != nil {
@@ -120,6 +123,8 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 }
 
 func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	ctx := context.Background()
+
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
@@ -135,8 +140,7 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 	}
 
 	// List the blobs in the container
-	ctx := context.Background()
-	marker := string("")
+	var marker string
 	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
 	if err != nil {
 		return
@@ -150,6 +154,8 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 }
 
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
+	ctx := context.Background()
+
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return err
@@ -158,7 +164,6 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	blobURL := containerURL.NewBlockBlobURL(key)
 
 	// Here's how to download the blob
-	ctx := context.Background()
 	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
@@ -183,15 +188,14 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://account-name.blob.core.windows.net/container-name/key - >> key
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {
-	url := manager.getBaseURL()
-	str := strings.Split(location, url)
+	baseURL := manager.getBaseURL()
+	str := strings.Split(location, baseURL.Path)
 	return str[len(str)-1], nil
 }
 
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
-
-	url := manager.getBaseURL()
-	str := strings.Split(location, url)
+	baseURL := manager.getBaseURL()
+	str := strings.Split(location, baseURL.Path)
 	return str[len(str)-1]
 }
 
@@ -220,12 +224,16 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		endPoint = &tmp
 	}
 	if config["forcePathStyle"] != nil {
-		tmp := config["forcePathStyle"].(bool)
-		forcePathStyle = &tmp
+		tmp, ok := config["forcePathStyle"].(bool)
+		if ok {
+			forcePathStyle = &tmp
+		}
 	}
 	if config["disableSSL"] != nil {
-		tmp := config["disableSSL"].(bool)
-		disableSSL = &tmp
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
 	}
 	return &AzureBlobStorageConfig{
 		Container:      containerName,
@@ -249,13 +257,14 @@ type AzureBlobStorageConfig struct {
 }
 
 func (manager *AzureBlobStorageManager) DeleteObjects(keys []string) (err error) {
+	ctx := context.Background()
+
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return err
 	}
 	for _, key := range keys {
 		blobURL := containerURL.NewBlockBlobURL(key)
-		ctx := context.Background()
 		_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 		if err != nil {
 			return err

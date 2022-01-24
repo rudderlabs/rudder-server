@@ -278,16 +278,22 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		endPoint = &tmp
 	}
 	if config["s3ForcePathStyle"] != nil {
-		tmp := config["s3ForcePathStyle"].(bool)
-		s3ForcePathStyle = &tmp
+		tmp, ok := config["s3ForcePathStyle"].(bool)
+		if ok {
+			s3ForcePathStyle = &tmp
+		}
 	}
 	if config["disableSSL"] != nil {
-		tmp := config["disableSSL"].(bool)
-		disableSSL = &tmp
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
 	}
 	if config["region"] != nil {
-		tmp := config["region"].(string)
-		region = &tmp
+		tmp, ok := config["region"].(string)
+		if ok {
+			region = &tmp
+		}
 	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 	return &S3Config{

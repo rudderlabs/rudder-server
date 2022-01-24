@@ -54,7 +54,7 @@ func run(m *testing.M) int {
 	//docker pool setup
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		panic(fmt.Errorf("Could not connect to docker: %s", err))
 	}
 
 	// running minio container on docker
@@ -69,7 +69,7 @@ func run(m *testing.M) int {
 		},
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		panic(fmt.Errorf("Could not start resource: %s", err))
 	}
 	defer func() {
 		if err := pool.Purge(minioResource); err != nil {
@@ -268,39 +268,30 @@ func TestFileManager(t *testing.T) {
 				Config:   tt.config,
 			})
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
 			}
 
 			//upload all files
-			fmt.Println(" uploading files")
 			uploadOutputs := make([]filemanager.UploadOutput, 0)
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
-				if err != nil {
-					fmt.Println("error while opening testData file to upload: ", err)
-				}
+				require.NoError(t, err, "error while opening testData file to upload")
 				uploadOutput, err := fm.Upload(filePtr)
 				if err != nil {
-					panic(err)
+					t.Fatal(err)
 				}
 				uploadOutputs = append(uploadOutputs, uploadOutput)
 				filePtr.Close()
 			}
-			fmt.Println("file uploading successful... trying to list uploaded files")
 			//list files using ListFilesWithPrefix
 			originalFileObject, err := fm.ListFilesWithPrefix("", 1000)
-			if err != nil {
-				fmt.Println("error while getting file object: ", err)
-			}
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 
-			fmt.Println("trying to get object name from location")
 			//based on the obtained location, get object name by calling GetObjectNameFromLocation
 			objectName, err := fm.GetObjectNameFromLocation(uploadOutputs[0].Location)
 			require.NoError(t, err, "no error expected")
 			require.Equal(t, uploadOutputs[0].ObjectName, objectName, "actual object name different than expected")
 
-			fmt.Println("tring to get downloadkey from location")
 			//also get download key from file location by calling GetDownloadKeyFromFileLocation
 			expectedKey := uploadOutputs[0].ObjectName
 			key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
@@ -312,7 +303,6 @@ func TestFileManager(t *testing.T) {
 			prefix := fm.GetConfiguredPrefix()
 			require.Equal(t, expectedPrefix, prefix, "actual prefix different than expected")
 
-			fmt.Println("trying to download the uploaded file")
 			//download one of the files & assert if it matches the original one present locally.
 			filePtr, err := os.Open(fileList[0])
 			if err != nil {
@@ -346,12 +336,9 @@ func TestFileManager(t *testing.T) {
 
 			ans := strings.Compare(string(originalFile), string(downloadedFile))
 			require.Equal(t, 0, ans, "downloaded file different than actual file")
-			fmt.Println("verifying the downloaded file with the golden file succeeded")
 			//delete that file
-			fmt.Println("trying to delete an uploaded file")
 			err = fm.DeleteObjects([]string{key})
 			require.NoError(t, err, "expected no error while deleting object")
-			fmt.Println("delete successful")
 			// list files again & assert if that file is still present.
 			fmFactoryNew := filemanager.FileManagerFactoryT{}
 			fmNew, err := fmFactoryNew.New(&filemanager.SettingsT{

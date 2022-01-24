@@ -22,22 +22,25 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
-	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+
+	minioClient, err := manager.getClient()
 	if err != nil {
 		return UploadOutput{}, err
 	}
+
 	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
-		fmt.Println("error while creating bucket: ", err)
 		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
 		}
 	}
+
 	fileName := ""
 	splitFileName := strings.Split(file.Name(), "/")
 	if len(prefixes) > 0 {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
+
 	fileName += splitFileName[len(splitFileName)-1]
 	if manager.Config.Prefix != "" {
 		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
@@ -46,6 +49,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
+
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, err
@@ -55,7 +59,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 }
 
 func (manager *MinioManager) Download(file *os.File, key string) error {
-	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	minioClient, err := manager.getClient()
 	if err != nil {
 		return err
 	}
@@ -80,7 +84,6 @@ func (manager *MinioManager) GetObjectNameFromLocation(location string) (string,
 	return location[len(baseURL):], nil
 }
 
-//TODO complete this
 func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) string {
 	parsedUrl, err := url.Parse(location)
 	if err != nil {
@@ -88,6 +91,58 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
 	return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+}
+
+func (manager *MinioManager) DeleteObjects(keys []string) (err error) {
+
+	objectChannel := make(chan string, len(keys))
+	for _, key := range keys {
+		objectChannel <- key
+	}
+	close(objectChannel)
+
+	minioClient, err := manager.getClient()
+	if err != nil {
+		return err
+	}
+	tmp := <-minioClient.RemoveObjects(manager.Config.Bucket, objectChannel)
+	return tmp.Err
+}
+
+func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
+
+	// Created minio core
+	core, err := minio.NewCore(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	if err != nil {
+		return
+	}
+
+	// List the Objects in the bucket
+	bucket, err := core.ListObjects(manager.Config.Bucket, prefix, prefix, "", int(maxItems))
+	if err != nil {
+		return
+	}
+
+	for _, item := range bucket.Contents {
+		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
+	}
+	return
+}
+
+func (manager *MinioManager) getClient() (*minio.Client, error) {
+	var err error
+	if manager.client == nil {
+		manager.client, err = minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+		if err != nil {
+			return &minio.Client{}, err
+		}
+	}
+	return manager.client, nil
+}
+
+func (manager *MinioManager) GetConfiguredPrefix() string {
+	return manager.Config.Prefix
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
@@ -124,23 +179,9 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 }
 
-func (manager *MinioManager) DeleteObjects(keys []string) (err error) {
-	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
-	if err != nil {
-		return err
-	}
-
-	objectChannel := make(chan string, len(keys))
-	for _, key := range keys {
-		objectChannel <- key
-	}
-	close(objectChannel)
-	tmp := <-minioClient.RemoveObjects(manager.Config.Bucket, objectChannel)
-	return tmp.Err
-}
-
 type MinioManager struct {
 	Config *MinioConfig
+	client *minio.Client
 }
 
 type MinioConfig struct {
@@ -150,29 +191,4 @@ type MinioConfig struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	UseSSL          bool
-}
-
-func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
-	fileObjects = make([]*FileObject, 0)
-
-	// Created minio core
-	core, err := minio.NewCore(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
-	if err != nil {
-		return
-	}
-
-	// List the Objects in the bucket
-	bucket, err := core.ListObjects(manager.Config.Bucket, prefix, prefix, "", int(maxItems))
-	if err != nil {
-		return
-	}
-
-	for _, item := range bucket.Contents {
-		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
-	}
-	return
-}
-
-func (manager *MinioManager) GetConfiguredPrefix() string {
-	return manager.Config.Prefix
 }
