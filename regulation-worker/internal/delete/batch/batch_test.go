@@ -159,10 +159,11 @@ func (ff mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanag
 	if err != nil {
 		return nil, fmt.Errorf("error while running cp command: %s", err)
 	}
+	// mockBucketLocation = fmt.Sprintf("%s%s", tmpDirPath, "/mockBucket")
 	mockBucketLocation = fmt.Sprintf("%s/%s", tmpDirPath, mockBucket)
 	//store the location in mockBucketLocation.
 	return &mockFileManager{
-		mockBucketLocation: fmt.Sprintf("%s/%s", tmpDirPath, mockBucket),
+		mockBucketLocation: mockBucketLocation,
 	}, nil
 }
 
@@ -180,7 +181,7 @@ func (fm *mockFileManager) Upload(file *os.File, prefixes ...string) (filemanage
 	}
 	fileName += splitFileName[len(splitFileName)-1]
 	//copy the content of file to mockBucektLocation+fileName
-	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", fileName)
+	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return filemanager.UploadOutput{}, err
@@ -200,9 +201,11 @@ func (fm *mockFileManager) Upload(file *os.File, prefixes ...string) (filemanage
 //Given a file name download & simply save it in the given file pointer.
 func (fm *mockFileManager) Download(outputFilePtr *os.File, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
-
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0644)
 	if err != nil {
+		if strings.Contains(finalFileName, batch.StatusTrackerFileName) {
+			return nil
+		}
 		return err
 	}
 	_, err = io.Copy(outputFilePtr, uploadFilePtr)
