@@ -2042,10 +2042,14 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.failedEventsList = list.New()
 	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
-	netHandle := &NetHandleT{}
-	netHandle.logger = rt.logger.Child("network")
-	netHandle.Setup(destName, rt.netClientTimeout)
-	rt.netHandle = netHandle
+
+	if rt.netHandle == nil {
+		netHandle := &NetHandleT{}
+		netHandle.logger = rt.logger.Child("network")
+		netHandle.Setup(destName, rt.netClientTimeout)
+		rt.netHandle = netHandle
+	}
+
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
