@@ -599,7 +599,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	return misc.Contains(enabledWriteKeysSourceMap, writeKey)
+
+	_, ok := enabledWriteKeysSourceMap[writeKey]
+	return ok
 }
 
 func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {

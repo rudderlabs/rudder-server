@@ -394,6 +394,8 @@ func ReadLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+var logOnce sync.Once
+
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
 func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
@@ -403,7 +405,9 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
-			pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			logOnce.Do(func() {
+				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			})
 		}
 	}
 	if tmpdirPath == "" {
@@ -414,22 +418,16 @@ func CreateTMPDIR() (string, error) {
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
-	eventCount           int64
-	elapsedTime          time.Duration
-	lastPrintEventCount  int64
-	lastPrintElapsedTime time.Duration
-	lastPrintTime        time.Time
-	compStr              string
-	tmpStart             time.Time
-	instantRateCall      float64
-	printThres           int
+	eventCount      int64
+	elapsedTime     time.Duration
+	compStr         string
+	tmpStart        time.Time
+	instantRateCall float64
 }
 
 //Setup initializes the stat collector
 func (stats *PerfStats) Setup(comp string) {
 	stats.compStr = comp
-	stats.lastPrintTime = time.Now()
-	stats.printThres = 5 //seconds
 }
 
 //Start marks the start of event collection
@@ -449,19 +447,6 @@ func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
 	stats.elapsedTime += elapsed
 	stats.eventCount += int64(events)
 	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-//Print displays the stats
-func (stats *PerfStats) Print() {
-	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
-		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
-		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		pkgLogger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
-			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
-		stats.lastPrintEventCount = stats.eventCount
-		stats.lastPrintElapsedTime = stats.elapsedTime
-		stats.lastPrintTime = time.Now()
-	}
 }
 
 func (stats *PerfStats) Status() map[string]interface{} {
@@ -647,10 +632,6 @@ func SortedStructSliceValues(input interface{}, filedName string) []string {
 	return keys
 }
 
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
-
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	replacedStr := str
 	for regex, substitute := range expList {
@@ -762,20 +743,6 @@ func SingleQuoteLiteralJoin(slice []string) string {
 		str += QuoteLiteral(key)
 	}
 	return str
-}
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	pkgLogger.Debug("#########")
-	pkgLogger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
-	pkgLogger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	pkgLogger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
-	pkgLogger.Debugf("\tNumGC = %v\n", m.NumGC)
-	pkgLogger.Debug("#########")
 }
 
 type BufferedWriter struct {
@@ -1242,6 +1209,30 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
+func GetDatabricksVersion() (version string) {
+	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
+	resp, err := http.Get(url)
+	if err != nil {
+		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
+		return
+	}
+	if resp == nil {
+		version = "No response from warehouse."
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+			version = "Unable to read response from warehouse."
+			return
+		}
+		version = string(bodyBytes)
+	}
+	return
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
@@ -1339,4 +1330,3 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
-

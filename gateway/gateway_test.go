@@ -446,7 +446,7 @@ var _ = Describe("Gateway", func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler)
 		})
 
-		It("should store messages successfuly if rate limit is not reached for workspace", func() {
+		It("should store messages successfully if rate limit is not reached for workspace", func() {
 			workspaceID := "some-workspace-id"
 
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
