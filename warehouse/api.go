@@ -550,11 +550,13 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	}
 
 	// create response
-	uploadsRes.Uploads = uploads
-	uploadsRes.Pagination = &proto.Pagination{
-		Limit:  uploadsReq.Limit,
-		Offset: uploadsReq.Offset,
-		Total:  totalUploadCount,
+	uploadsRes = &proto.WHUploadsResponse{
+		Uploads: uploads,
+		Pagination: &proto.Pagination{
+			Limit:  uploadsReq.Limit,
+			Offset: uploadsReq.Offset,
+			Total:  totalUploadCount,
+		},
 	}
 	return
 }
