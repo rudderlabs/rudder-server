@@ -143,11 +143,28 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB *jobsdb.MultiT
 
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
-	monitorDestRouters(ctx, routerDB, batchRouterDB, procErrorDB, reporting, multitenantStat)
+
+	routerFactory := router.Factory{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		Reporting:     reporting,
+		Multitenant:   multitenantStat,
+		RouterDB:      routerDB,
+		ProcErrorDB:   procErrorDB,
+	}
+
+	batchrouterFactory := batchrouter.Factory{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		Reporting:     reporting,
+		Multitenant:   multitenantStat,
+		ProcErrorDB:   procErrorDB,
+		RouterDB:      batchRouterDB,
+	}
+
+	monitorDestRouters(ctx, routerFactory, batchrouterFactory)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerDB *jobsdb.MultiTenantHandleT, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
@@ -170,24 +187,19 @@ loop:
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							var brt batchrouter.HandleT
-							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting, multitenantStat)
+							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
 							brt.Start()
 							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							router := router.HandleT{
-								Reporting: reporting,
-								MultitenantI: multitenantStat,
-							}
-							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition)
+							router := routerFactory.New(destination.DestinationDefinition)
 							router.Start()
 							cleanup = append(cleanup, router.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
+							dstToRouter[destination.DestinationDefinition.Name] = router
 						}
 					}
 				}
