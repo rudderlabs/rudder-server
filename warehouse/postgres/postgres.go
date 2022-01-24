@@ -134,14 +134,15 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
+	pkgLogger.Infof("cred.SSLMODE is %s", cred.SSLMode)
 	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
 		cred.User,
 		cred.Password,
 		cred.Host,
 		cred.Port,
 		cred.DBName,
-		cred.SSLMode)
-	if cred.SSLMode == verifyCA {
+		verifyCA)
+	if true {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
 	}
 	pkgLogger.Infof("CONNECTION URL IS %s", url)
