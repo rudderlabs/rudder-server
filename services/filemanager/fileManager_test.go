@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v6"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -55,7 +57,7 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	running minio container on docker
+	// running minio container on docker
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
 		Tag:        "latest",
@@ -248,7 +250,7 @@ func TestFileManager(t *testing.T) {
 			name:     "testing GCS filemanager functionality",
 			destName: "GCS",
 			config: map[string]interface{}{
-				"bucketName": bucket,
+				"bucketName":       bucket,
 				"prefix":           "some-prefix",
 				"endPoint":         gcsURL,
 				"s3ForcePathStyle": true,
@@ -260,7 +262,7 @@ func TestFileManager(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			fmFactory := filemanager.FileManagerFasctoryT{}
+			fmFactory := filemanager.FileManagerFactoryT{}
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: tt.destName,
 				Config:   tt.config,
