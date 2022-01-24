@@ -55,78 +55,78 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	//running minio container on docker
-	// minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-	// 	Repository: "minio/minio",
-	// 	Tag:        "latest",
-	// 	Cmd:        []string{"server", "/data"},
-	// 	Env: []string{
-	// 		fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
-	// 		fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
-	// 		fmt.Sprintf("MINIO_SITE_REGION=%s", region),
-	// 	},
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Could not start resource: %s", err)
-	// }
-	// defer func() {
-	// 	if err := pool.Purge(minioResource); err != nil {
-	// 		log.Printf("Could not purge resource: %s \n", err)
-	// 	}
-	// }()
+	running minio container on docker
+	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "minio/minio",
+		Tag:        "latest",
+		Cmd:        []string{"server", "/data"},
+		Env: []string{
+			fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
+			fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
+			fmt.Sprintf("MINIO_SITE_REGION=%s", region),
+		},
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(minioResource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
-	// minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
+	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 
-	// //check if minio server is up & running.
-	// if err := pool.Retry(func() error {
-	// 	url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-	// 	resp, err := http.Get(url)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if resp.StatusCode != http.StatusOK {
-	// 		return fmt.Errorf("status code not OK")
-	// 	}
-	// 	return nil
-	// }); err != nil {
-	// 	log.Fatalf("Could not connect to docker: %s", err)
-	// }
-	// fmt.Println("minio is up & running properly")
+	//check if minio server is up & running.
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	fmt.Println("minio is up & running properly")
 
-	// useSSL := false
-	// minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("minioClient created successfully")
+	useSSL := false
+	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("minioClient created successfully")
 
-	// //creating bucket inside minio where testing will happen.
-	// err = minioClient.MakeBucket(bucket, "us-east-1")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("bucket created successfully")
+	//creating bucket inside minio where testing will happen.
+	err = minioClient.MakeBucket(bucket, "us-east-1")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("bucket created successfully")
 
-	// //Running Azure emulator, Azurite.
-	// AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-	// 	Repository: "mcr.microsoft.com/azure-storage/azurite",
-	// 	Tag:        "latest",
-	// 	Env: []string{
-	// 		fmt.Sprintf("AZURITE_ACCOUNTS=%s:%s", accessKeyId, base64Secret),
-	// 		fmt.Sprintf("DefaultEndpointsProtocol=%s", "http"),
-	// 	},
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Could not start azure resource: %s", err)
-	// }
-	// defer func() {
-	// 	if err := pool.Purge(AzuriteResource); err != nil {
-	// 		log.Printf("Could not purge resource: %s \n", err)
-	// 	}
-	// }()
-	// AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
-	// fmt.Println("Azurite endpoint", AzuriteEndpoint)
-	// fmt.Println("azurite resource successfully created")
+	//Running Azure emulator, Azurite.
+	AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "mcr.microsoft.com/azure-storage/azurite",
+		Tag:        "latest",
+		Env: []string{
+			fmt.Sprintf("AZURITE_ACCOUNTS=%s:%s", accessKeyId, base64Secret),
+			fmt.Sprintf("DefaultEndpointsProtocol=%s", "http"),
+		},
+	})
+	if err != nil {
+		log.Fatalf("Could not start azure resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(AzuriteResource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
+	fmt.Println("Azurite endpoint", AzuriteEndpoint)
+	fmt.Println("azurite resource successfully created")
 
 	// Running GCS emulator
 	GCSResource, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -159,7 +159,7 @@ func run(m *testing.M) int {
 	fmt.Println("bucket created successfully")
 
 	//getting list of files in `testData` directory while will be used to testing filemanager.
-	searchDir := "./testData"
+	searchDir := "./goldenDirectory"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
 			fileList = append(fileList, path)
@@ -186,77 +186,73 @@ func TestFileManager(t *testing.T) {
 		destName string
 		config   map[string]interface{}
 	}{
-		// {
-		// 	name:     "testing s3manager functionality",
-		// 	destName: "S3",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"accessKey":        secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing minio functionality",
-		// 	destName: "MINIO",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"secretAccessKey":  secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing digital ocean functionality",
-		// 	destName: "DIGITAL_OCEAN_SPACES",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":     bucket,
-		// 		"accessKeyID":    accessKeyId,
-		// 		"accessKey":      secretAccessKey,
-		// 		"prefix":         "some-prefix",
-		// 		"endPoint":       minioEndpoint,
-		// 		"forcePathStyle": true,
-		// 		"disableSSL":     true,
-		// 		"region":         region,
-		// 		"enableSSE":      false,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing Azure blob storage filemanager functionality",
-		// 	destName: "AZURE_BLOB",
-		// 	config: map[string]interface{}{
-		// 		"containerName":  bucket,
-		// 		"prefix":         "some-prefix",
-		// 		"accountName":    accessKeyId,
-		// 		"accountKey":     string(base64Secret),
-		// 		"endPoint":       AzuriteEndpoint,
-		// 		"forcePathStyle": true,
-		// 		"disableSSL":     true,
-		// 	},
-		// },
+		{
+			name:     "testing s3manager functionality",
+			destName: "S3",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing minio functionality",
+			destName: "MINIO",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"secretAccessKey":  secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing digital ocean functionality",
+			destName: "DIGITAL_OCEAN_SPACES",
+			config: map[string]interface{}{
+				"bucketName":     bucket,
+				"accessKeyID":    accessKeyId,
+				"accessKey":      secretAccessKey,
+				"prefix":         "some-prefix",
+				"endPoint":       minioEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
+				"region":         region,
+				"enableSSE":      false,
+			},
+		},
+		{
+			name:     "testing Azure blob storage filemanager functionality",
+			destName: "AZURE_BLOB",
+			config: map[string]interface{}{
+				"containerName":  bucket,
+				"prefix":         "some-prefix",
+				"accountName":    accessKeyId,
+				"accountKey":     string(base64Secret),
+				"endPoint":       AzuriteEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
+			},
+		},
 		{
 			name:     "testing GCS filemanager functionality",
 			destName: "GCS",
 			config: map[string]interface{}{
 				"bucketName": bucket,
-				// "accessKeyID":      accessKeyId,
-				// "accessKey":        secretAccessKey,
-				// "enableSSE":        false,
 				"prefix":           "some-prefix",
 				"endPoint":         gcsURL,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
-				// "region":           region,
 			},
 		},
 	}
@@ -264,7 +260,7 @@ func TestFileManager(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			fmFactory := filemanager.FileManagerFactoryT{}
+			fmFactory := filemanager.FileManagerFasctoryT{}
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: tt.destName,
 				Config:   tt.config,
