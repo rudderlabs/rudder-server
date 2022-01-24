@@ -34,8 +34,8 @@ type MultitenantStatsT struct {
 }
 
 type BackOffT struct {
-	backOff     *backoff.Backoff
 	timeToRetry time.Time
+	backOff     *backoff.Backoff
 }
 
 type MultiTenantI interface {
