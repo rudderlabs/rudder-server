@@ -811,18 +811,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
 			}
 			sourcesIDs := make([]string, 0)
-			eventTypes := make([]string, 0)
 			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
 				if !misc.Contains(sourcesIDs, metadata.SourceID) {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
-				eventType := gjson.GetBytes(metadata.JobT.Parameters, "event_type").String()
-				if !misc.Contains(eventTypes, eventType) {
-					eventTypes = append(eventTypes, eventType)
-				}
 			}
-			batchEventType := strings.Join(eventTypes, ", ")
-			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, &routerJobResponse.status, sourcesIDs, batchEventType)
+			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, &routerJobResponse.status, sourcesIDs)
 			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
@@ -1111,7 +1105,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string, eventType string) {
+func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	//Sending destination response to config backend
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
 		DestinationID: destinationJobMetadata.DestinationID,
@@ -1123,7 +1117,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 		ErrorResponse: status.ErrorResponse,
 		SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
 		EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
-		EventType:     eventType,
+		EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 	}
 	destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 }
