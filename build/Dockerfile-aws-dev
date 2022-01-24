@@ -2,6 +2,10 @@ FROM frolvlad/alpine-glibc:alpine-3.13_glibc-2.33
 RUN apk add --no-cache ca-certificates postgresql-client curl
 ADD rudder-server /
 ADD rudder-server-with-race /
+ADD client-cert.pem /opt/client-cert.pem
+ADD client-key.pem /opt/client-key.pem
+ADD server-ca.pem /opt/server-ca.pem
+RUN chmod 600 /opt/client-key.pem
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ADD build/regulation-worker /
 ADD build/wait-for /
