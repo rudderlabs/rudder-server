@@ -108,9 +108,12 @@ func (ssl *sslParamsT) saveToFileSystem() {
 	ssl.id = uuid.Must(uuid.NewV4()).String()
 	var err error
 	sslBasePath := ssl.getFolderName()
-	if err = os.MkdirAll(sslBasePath, 700); err != nil {
+	if err = os.Mkdir(sslBasePath, 700); err != nil {
 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
 	}
+	// if err = os.MkdirAll(sslBasePath, 700); err != nil {
+	// 	panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
+	// }
 	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
 	}
