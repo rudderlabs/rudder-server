@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,30 +96,30 @@ type sslParamsT struct {
 }
 
 func (ssl *sslParamsT) getFolderName() (folderName string) {
-	// return fmt.Sprintf("/tmp/ssl-files-%s", "ssl.id")
-	return "/opt"
+	return fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
+	// return "/opt"
 }
 
 func (ssl *sslParamsT) saveToFileSystem() {
-	///sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
-	// if ssl.id != "" {
-	// 	return
-	// }
-	// ssl.id = uuid.Must(uuid.NewV4()).String()
-	// var err error
-	// sslBasePath := ssl.getFolderName()
-	// if err = os.MkdirAll(sslBasePath, 700); err != nil {
-	// 	panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
-	// }
-	// if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
-	// 	panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
-	// }
-	// if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 600); err != nil {
-	// 	panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
-	// }
-	// if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 600); err != nil {
-	// 	panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
-	// }
+	// /sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
+	if ssl.id != "" {
+		return
+	}
+	ssl.id = uuid.Must(uuid.NewV4()).String()
+	var err error
+	sslBasePath := ssl.getFolderName()
+	if err = os.MkdirAll(sslBasePath, 700); err != nil {
+		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
+	}
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
+		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
+	}
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 600); err != nil {
+		panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
+	}
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 600); err != nil {
+		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
+	}
 
 }
 
