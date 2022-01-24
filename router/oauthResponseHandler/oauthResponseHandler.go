@@ -196,7 +196,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		// Empty Response(valid while many GetToken calls are happening)
 		return http.StatusOK, &AuthResponse{
 			Account: AccountSecret{
-				Secret: nil,
+				Secret: []byte(""),
 			},
 			Err: "",
 		}
@@ -265,8 +265,10 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-			Account: AccountSecret{},
-			Err:     "Empty secret",
+			Account: AccountSecret{
+				Secret: []byte(""),
+			},
+			Err: "Empty secret",
 		}
 		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 		return http.StatusInternalServerError
@@ -308,9 +310,6 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 	} else if gjson.Get(response, "body.code").String() == INVALID_REFRESH_TOKEN_GRANT {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		message = INVALID_REFRESH_TOKEN_GRANT
-		// } else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
-		// 	// Status is 200, but no accesstoken is sent
-		// 	message = `Empty Token cannot be processed further`
 	}
 	return message
 }
