@@ -141,8 +141,8 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.Host,
 		cred.Port,
 		cred.DBName,
-		verifyCA)
-	if true {
+		cred.SSLMode)
+	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
 	}
 	pkgLogger.Infof("CONNECTION URL IS %s", url)
@@ -184,7 +184,7 @@ func (pg *HandleT) getConnectionCredentials() CredentialsT {
 		User:      warehouseutils.GetConfigValue(user, pg.Warehouse),
 		Password:  warehouseutils.GetConfigValue(password, pg.Warehouse),
 		Port:      warehouseutils.GetConfigValue(port, pg.Warehouse),
-		SSLMode:   warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
+		SSLMode:   sslMode,
 		sslParams: sslParams,
 	}
 }
