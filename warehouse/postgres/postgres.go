@@ -117,7 +117,7 @@ func (ssl *sslParamsT) saveToFileSystem() {
 	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
 	}
-	if err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s-server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
+	if err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), []byte(ssl.serverCa), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
 	}
 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 600); err != nil {
