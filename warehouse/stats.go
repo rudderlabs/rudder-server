@@ -20,16 +20,16 @@ type tag struct {
 	value string
 }
 
-func getWarehouseTagName(destID, sourceName, destName string) string {
+func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName)
 }
 
 func (job *UploadJobT) warehouseID() string {
-	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name)
+	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
 func (jobRun *JobRunT) warehouseID() string {
-	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName)
+	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
 func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
@@ -194,20 +194,20 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName string) {
+func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName, sourceID string) {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
 	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }
 
-func getUploadStatusStat(name, destType, destID, sourceName, destName string) stats.RudderStats {
+func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.RudderStats {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
 	return stats.NewTaggedStat(name, stats.CountType, tags)
 }
