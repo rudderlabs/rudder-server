@@ -24,6 +24,8 @@ var (
 	mockBucketLocation  string
 )
 
+const mockBucket = "mockBucket"
+
 func TestBatchDelete(t *testing.T) {
 
 	initialize.Init()
@@ -88,7 +90,7 @@ func TestBatchDelete(t *testing.T) {
 				return nil
 			})
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
 			}
 			sort.Strings(cleanedFilesList)
 
@@ -101,36 +103,36 @@ func TestBatchDelete(t *testing.T) {
 				return nil
 			})
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
 			}
 			sort.Strings(goldenFilesList)
 			require.Equal(t, len(goldenFilesList), len(cleanedFilesList), "actual number of files in destination bucket different than expected")
 			for i := 0; i < len(goldenFilesList); i++ {
-				goldenFilePtr, err := os.OpenFile(goldenFilesList[i], os.O_RDWR, 0644)
+				goldenFilePtr, err := os.Open(goldenFilesList[i])
 				if err != nil {
-					panic(err)
+					t.Fatal(err)
 				}
 				defer goldenFilePtr.Close()
 				goldenFileContent, err := io.ReadAll(goldenFilePtr)
 				if err != nil {
-					panic(err)
+					t.Fatal(err)
 				}
 
-				cleanedFilePtr, err := os.OpenFile(goldenFilesList[i], os.O_RDWR, 0644)
+				cleanedFilePtr, err := os.Open(goldenFilesList[i])
 				if err != nil {
-					panic(err)
+					t.Fatal(err)
 				}
 				defer cleanedFilePtr.Close()
 				cleanedFileContent, err := io.ReadAll(cleanedFilePtr)
 				if err != nil {
-					panic(err)
+					t.Fatal(err)
 				}
 
 				require.Equal(t, 0, strings.Compare(string(goldenFileContent), string(cleanedFileContent)), "actual file different than expected")
 			}
 			err = os.RemoveAll(mockBucketLocation)
 			if err != nil {
-				fmt.Println("error while cleaning tmp mock bucket")
+				t.Fatal(err)
 			}
 		})
 
@@ -153,14 +155,14 @@ func (ff mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanag
 		panic(err)
 	}
 	//copy all content of testData in the tmp directory
-	_, err = exec.Command("cp", "-r", "./mockBucket", tmpDirPath).Output()
+	_, err = exec.Command("cp", "-r", mockBucket, tmpDirPath).Output()
 	if err != nil {
 		return nil, fmt.Errorf("error while running cp command: %s", err)
 	}
-	mockBucketLocation = fmt.Sprintf("%s%s", tmpDirPath, "/mockBucket")
+	mockBucketLocation = fmt.Sprintf("%s/%s", tmpDirPath, mockBucket)
 	//store the location in mockBucketLocation.
 	return &mockFileManager{
-		mockBucketLocation: fmt.Sprintf("%s%s", tmpDirPath, "/mockBucket"),
+		mockBucketLocation: fmt.Sprintf("%s/%s", tmpDirPath, mockBucket),
 	}, nil
 }
 
@@ -181,12 +183,12 @@ func (fm *mockFileManager) Upload(file *os.File, prefixes ...string) (filemanage
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", fileName)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Println("error: ", err, " while opening file: ", fileName)
+		return filemanager.UploadOutput{}, err
 	}
 	defer uploadFilePtr.Close()
 	_, err = io.Copy(uploadFilePtr, file)
 	if err != nil {
-		fmt.Println("error: ", err, " while coping file: ", fileName)
+		return filemanager.UploadOutput{}, err
 	}
 
 	return filemanager.UploadOutput{
@@ -201,13 +203,11 @@ func (fm *mockFileManager) Download(outputFilePtr *os.File, location string) err
 
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0644)
 	if err != nil {
-		fmt.Println("error: ", err, " while opening file: ", location)
-		return nil
+		return err
 	}
 	_, err = io.Copy(outputFilePtr, uploadFilePtr)
 	if err != nil {
-		fmt.Println("error: ", err, " while copying file")
-		return nil
+		return err
 	}
 
 	return nil
@@ -219,7 +219,7 @@ func (fm *mockFileManager) DeleteObjects(keys []string) error {
 		fileLocation := fmt.Sprint(fm.mockBucketLocation, "/", key)
 		_, err := exec.Command("rm", "-rf", fileLocation).Output()
 		if err != nil {
-			fmt.Println("error: ", err, " while deleting file: ", key)
+			return err
 		}
 	}
 	return nil
@@ -233,7 +233,7 @@ func (fm *mockFileManager) ListFilesWithPrefix(prefix string, maxItems int64) (f
 	fm.listCalled = true
 	searchDir := fm.mockBucketLocation
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-		splitStr := strings.Split(path, "mockBucket")
+		splitStr := strings.Split(path, mockBucket)
 		finalStr := strings.TrimLeft(splitStr[len(splitStr)-1], "/")
 		if finalStr != "" {
 			fileObjects = append(fileObjects, &filemanager.FileObject{Key: splitStr[len(splitStr)-1]})
