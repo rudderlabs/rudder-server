@@ -165,6 +165,7 @@ func loadConfig() {
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
+	pkgLogger.Infof("SSLMODE IN getConnectionCredentials %s", sslMode)
 	var sslParams sslParamsT
 	if sslMode == verifyCA {
 		sslParams = sslParamsT{
