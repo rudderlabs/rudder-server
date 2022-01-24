@@ -21,7 +21,7 @@ type tag struct {
 }
 
 func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
-	return misc.GetTagName(destID, sourceName, destName)
+	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
 func (job *UploadJobT) warehouseID() string {
