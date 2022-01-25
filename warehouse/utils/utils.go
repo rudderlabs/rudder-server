@@ -769,6 +769,7 @@ func formatSSLFile(content string) (formattedContent string) {
 // content is not already written
 func WriteSSLKeys(destination backendconfig.DestinationT) {
 	var err error
+	var existingChecksum string
 	clientKey := formatSSLFile(destination.Config["clientKey"].(string))
 	clientCert := formatSSLFile(destination.Config["clientCert"].(string))
 	serverCert := formatSSLFile(destination.Config["serverCA"].(string))
@@ -784,7 +785,14 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
 	clientKeyPemFile := fmt.Sprintf("%s/client-key.pem", sslDirPath)
 	serverCertPemFile := fmt.Sprintf("%s/server-ca.pem", sslDirPath)
-	checkSumFile := fmt.Sprintf("%s/%s", sslDirPath, sslHash)
+	checkSumFile := fmt.Sprintf("%s/checksum", sslDirPath)
+	if fileContent, fileReadErr := os.ReadFile(checkSumFile); fileReadErr == nil {
+		existingChecksum = string(fileContent)
+	}
+	if existingChecksum == sslHash {
+		// Pems files already written to FS
+		return
+	}
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
 		pkgLogger.Errorf("Error saving file %s error::%v", clientCertPemFile, err)
 		return
@@ -797,7 +805,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 		pkgLogger.Errorf("Error saving file %s error::%v", serverCertPemFile, err)
 		return
 	}
-	if err = os.WriteFile(checkSumFile, []byte(""), 0700); err != nil {
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0700); err != nil {
 		pkgLogger.Errorf("Error saving file %s error::%v", checkSumFile, err)
 		return
 	}
