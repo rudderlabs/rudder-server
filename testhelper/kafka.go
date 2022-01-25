@@ -1,51 +1,19 @@
 package main_test
 
 import (
-	"bufio"
-	"bytes"
-	"context"
 	"database/sql"
-	b64 "encoding/base64"
 	_ "encoding/json"
-	"flag"
-	"fmt"
-	"html/template"
-	"io"
 	"log"
-	"math/rand"
-	"net/http"
-	"net/http/httptest"
-	"net/http/httputil"
-	"os"
-	"os/signal"
-	"strconv"
-	"strings"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
-
-	"github.com/gofrs/uuid"
-	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/tidwall/gjson"
-
-	"github.com/Shopify/sarama"
+"fmt"
+"strconv"
+	_ "github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
-	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 
 	"github.com/phayes/freeport"
-	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -81,7 +49,9 @@ var (
 	VersionID                string
 )
 
-func SetZookeeper() *dockertest.Resource {
+func SetZookeeper(kafkapool *dockertest.Pool) *dockertest.Resource {
+	pool = kafkapool
+	fmt.Println("Set zookeper")
 		network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 		if err != nil {
 			log.Printf("Could not create docker network: %s", err)
