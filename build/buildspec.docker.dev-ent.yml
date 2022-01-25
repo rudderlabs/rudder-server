@@ -29,6 +29,7 @@ phases:
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull yandex/clickhouse-server:21-alpine
       - docker pull mcr.microsoft.com/mssql/server:2019-CU10-ubuntu-20.04
+      - docker pull zookeeper:3.5
       - go mod download
 
   build:
