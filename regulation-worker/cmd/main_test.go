@@ -329,8 +329,7 @@ func TestFlow(t *testing.T) {
 
 		require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
 
-		err := verifyBatchDelete()
-		require.NoError(t, err, "batch delete verification failed")
+		verifyBatchDelete(t)
 	})
 
 }
@@ -411,7 +410,8 @@ func getWorkspaceConfig(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func verifyBatchDelete() error {
+func verifyBatchDelete(t *testing.T) {
+	t.Helper()
 	var goldenFileList []string
 	err := filepath.Walk(goldenDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
@@ -420,19 +420,19 @@ func verifyBatchDelete() error {
 		return nil
 	})
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	if len(goldenFileList) == 0 {
-		return fmt.Errorf("golden file list empty.")
+		require.NoError(t, fmt.Errorf("golden file list empty."), "expected no error")
 	}
 
 	filePtr, err := os.Open(goldenFileList[0])
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	goldenFile, err := io.ReadAll(filePtr)
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	filePtr.Close()
 
@@ -442,36 +442,35 @@ func verifyBatchDelete() error {
 		Config:   minioConfig,
 	})
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 
 	DownloadedFileName := "TmpDownloadedFile"
 	filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	defer os.Remove(DownloadedFileName)
 	key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
 	err = fm.Download(filePtr, key)
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	filePtr.Close()
 
 	filePtr, err = os.Open(DownloadedFileName)
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	downloadedFile, err := io.ReadAll(filePtr)
 	if err != nil {
-		return err
+		require.NoError(t, err, "batch verification failed")
 	}
 	filePtr.Close()
 	equal := strings.Compare(string(goldenFile), string(downloadedFile))
 	if equal != 0 {
-		return fmt.Errorf("downloaded file different than golden file")
+		require.NoError(t, fmt.Errorf("downloaded file different than golden file"), "batch verification failed")
 	}
-	return nil
 }
 
 func blockOnHold() {
