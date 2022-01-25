@@ -113,7 +113,6 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 	}
 	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
-		fmt.Println("error while getting new reader to read from server")
 		return err
 	}
 	defer rc.Close()
@@ -150,17 +149,28 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 	var forcePathStyle, disableSSL *bool
 
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["credentials"] != nil {
-		credentials = config["credentials"].(string)
+		tmp, ok := config["credentials"].(string)
+		if ok {
+			credentials = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		tmp := config["endPoint"].(string)
-		endPoint = &tmp
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = &tmp
+		}
 	}
 	if config["forcePathStyle"] != nil {
 		tmp, ok := config["forcePathStyle"].(bool)

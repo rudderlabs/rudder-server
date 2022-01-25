@@ -189,8 +189,8 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {
 	baseURL := manager.getBaseURL()
-	str := strings.Split(location, baseURL.Path)
-	return str[len(str)-1], nil
+	strToken := strings.Split(location, baseURL.Path)
+	return strToken[len(strToken)-1], nil
 }
 
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
@@ -208,20 +208,34 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 	var endPoint *string
 	var forcePathStyle, disableSSL *bool
 	if config["containerName"] != nil {
-		containerName = config["containerName"].(string)
+		tmp, ok := config["containerName"].(string)
+		if ok {
+			containerName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["accountName"] != nil {
-		accountName = config["accountName"].(string)
+		tmp, ok := config["accountName"].(string)
+		if ok {
+			accountName = tmp
+		}
 	}
 	if config["accountKey"] != nil {
-		accountKey = config["accountKey"].(string)
+		tmp, ok := config["accountKey"].(string)
+		if ok {
+			accountKey = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		tmp := config["endPoint"].(string)
-		endPoint = &tmp
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = &tmp
+		}
 	}
 	if config["forcePathStyle"] != nil {
 		tmp, ok := config["forcePathStyle"].(bool)

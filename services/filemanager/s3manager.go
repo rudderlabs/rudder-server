@@ -254,16 +254,28 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	var enableSSE, ok bool
 	var s3ForcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
+		tmp, ok := config["accessKey"].(string)
+		if ok {
+			accessKey = tmp
+		}
 	}
 	if config["enableSSE"] != nil {
 		if enableSSE, ok = config["enableSSE"].(bool); !ok {
@@ -271,11 +283,16 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		}
 	}
 	if config["startAfter"] != nil {
-		startAfter = config["startAfter"].(string)
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		tmp := config["endPoint"].(string)
-		endPoint = &tmp
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = &tmp
+		}
 	}
 	if config["s3ForcePathStyle"] != nil {
 		tmp, ok := config["s3ForcePathStyle"].(bool)

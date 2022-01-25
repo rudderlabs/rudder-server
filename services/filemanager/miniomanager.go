@@ -149,19 +149,34 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL, ok bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		endPoint = config["endPoint"].(string)
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["secretAccessKey"] != nil {
-		secretAccessKey = config["secretAccessKey"].(string)
+		tmp, ok := config["secretAccessKey"].(string)
+		if ok {
+			secretAccessKey = tmp
+		}
 	}
 	if config["useSSL"] != nil {
 		if useSSL, ok = config["useSSL"].(bool); !ok {

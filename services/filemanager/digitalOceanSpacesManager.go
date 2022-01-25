@@ -59,10 +59,9 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 		Key:    aws.String(fileName),
 		Body:   file,
 	}
-
 	uploadSession := manager.getSession()
-	s3manager := SpacesManager.NewUploader(uploadSession)
-	output, err := s3manager.Upload(uploadInput)
+	DOmanager := SpacesManager.NewUploader(uploadSession)
+	output, err := DOmanager.Upload(uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -192,23 +191,40 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var region *string
 	var forcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		endPoint = config["endPoint"].(string)
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
+		tmp, ok := config["accessKey"].(string)
+		if ok {
+			accessKey = tmp
+		}
 	}
 	if config["region"] != nil {
-		tmp := config["region"].(string)
-		region = &tmp
+		tmp, ok := config["region"].(string)
+		if ok {
+			region = &tmp
+		}
 	}
 	if config["forcePathStyle"] != nil {
 		tmp, ok := config["forcePathStyle"].(bool)
