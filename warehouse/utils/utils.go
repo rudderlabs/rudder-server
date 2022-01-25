@@ -770,10 +770,15 @@ func formatSSLFile(content string) (formattedContent string) {
 func WriteSSLKeys(destination backendconfig.DestinationT) {
 	var err error
 	var existingChecksum string
+	var directoryName string
+	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
+		return
+	}
 	clientKey := formatSSLFile(destination.Config["clientKey"].(string))
 	clientCert := formatSSLFile(destination.Config["clientCert"].(string))
 	serverCert := formatSSLFile(destination.Config["serverCA"].(string))
-	sslDirPath := fmt.Sprintf("dest-ssls/ssl-for-%s", destination.ID)
+	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
 	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
 		pkgLogger.Errorf("Error creating SSL root directory for destination %s %v", destination.ID, err)
 		return
@@ -812,6 +817,12 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 }
 
 func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
-	sslDirPath := fmt.Sprintf("dest-ssls/ssl-for-%s", destinationID)
+	var err error
+	var directoryName string
+	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
+		return
+	}
+	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
 	return sslDirPath
 }
