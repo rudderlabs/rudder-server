@@ -111,9 +111,6 @@ func (ssl *sslParamsT) saveToFileSystem() {
 	if err = os.Mkdir(sslBasePath, 700); err != nil {
 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
 	}
-	// if err = os.MkdirAll(sslBasePath, 700); err != nil {
-	// 	panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
-	// }
 	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 0600); err != nil {
 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
 	}
