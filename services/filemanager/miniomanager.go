@@ -27,7 +27,6 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		return UploadOutput{}, err
 	}
 	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
-		fmt.Println("error while creating bucket: ", err)
 		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
