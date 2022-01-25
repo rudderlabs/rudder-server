@@ -791,6 +791,6 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 }
 
 func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
-	// sslDirPath := fmt.Sprintf("/tmp/ssl-for-%s", destinationID)
-	return
+	sslDirPath := fmt.Sprintf("/tmp/ssl-for-%s", destinationID)
+	return sslDirPath
 }
