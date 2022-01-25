@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,53 +78,54 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host      string
-	DBName    string
-	User      string
-	Password  string
-	Port      string
-	SSLMode   string
-	sslParams sslParamsT
+	Host     string
+	DBName   string
+	User     string
+	Password string
+	Port     string
+	SSLMode  string
+	SSLDir   string
+	// sslParams sslParamsT
 }
 
-type sslParamsT struct {
-	serverCa   string
-	clientCert string
-	clientKey  string
-	id         string
-}
+// type sslParamsT struct {
+// 	serverCa   string
+// 	clientCert string
+// 	clientKey  string
+// 	id         string
+// }
 
-func (ssl *sslParamsT) getFolderName() (folderName string) {
-	return fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
-	// return "/opt"
-}
+// func (ssl *sslParamsT) getFolderName() (folderName string) {
+// 	return fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
+// 	// return "/opt"
+// }
 
-func (ssl *sslParamsT) saveToFileSystem() {
-	// /sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
-	if ssl.id != "" {
-		return
-	}
-	ssl.id = uuid.Must(uuid.NewV4()).String()
-	var err error
-	sslBasePath := ssl.getFolderName()
-	if err = os.Mkdir(sslBasePath, 700); err != nil {
-		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
-	}
-	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 0600); err != nil {
-		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
-	}
-	if err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), []byte(ssl.serverCa), 600); err != nil {
-		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
-	}
-	os.Chmod(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), 600)
-	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 0600); err != nil {
-		panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
-	}
-	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 0600); err != nil {
-		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
-	}
+// func (ssl *sslParamsT) saveToFileSystem() {
+// 	// /sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
+// 	if ssl.id != "" {
+// 		return
+// 	}
+// 	ssl.id = uuid.Must(uuid.NewV4()).String()
+// 	var err error
+// 	sslBasePath := ssl.getFolderName()
+// 	if err = os.Mkdir(sslBasePath, 700); err != nil {
+// 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
+// 	}
+// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 0600); err != nil {
+// 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
+// 	}
+// 	if err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), []byte(ssl.serverCa), 600); err != nil {
+// 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
+// 	}
+// 	os.Chmod(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), 600)
+// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 0600); err != nil {
+// 		panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
+// 	}
+// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 0600); err != nil {
+// 		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
+// 	}
 
-}
+// }
 
 var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
@@ -148,7 +148,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.DBName,
 		cred.SSLMode)
 	if cred.SSLMode == verifyCA {
-		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
+		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
 	pkgLogger.Infof("CONNECTION URL IS %s", url)
 	var err error
@@ -171,26 +171,14 @@ func loadConfig() {
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
-	pkgLogger.Infof("SSLMODE IN getConnectionCredentials %s", sslMode)
-	var sslParams sslParamsT
-	if sslMode == verifyCA {
-		sslParams = sslParamsT{
-			warehouseutils.GetConfigValue(serverCAPem, pg.Warehouse),
-			warehouseutils.GetConfigValue(clientSSLCert, pg.Warehouse),
-			warehouseutils.GetConfigValue(clientSSLKey, pg.Warehouse),
-			"",
-		}
-		sslParams.saveToFileSystem()
-	}
-
 	return CredentialsT{
-		Host:      warehouseutils.GetConfigValue(host, pg.Warehouse),
-		DBName:    warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		User:      warehouseutils.GetConfigValue(user, pg.Warehouse),
-		Password:  warehouseutils.GetConfigValue(password, pg.Warehouse),
-		Port:      warehouseutils.GetConfigValue(port, pg.Warehouse),
-		SSLMode:   sslMode,
-		sslParams: sslParams,
+		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
+		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
+		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
+		Password: warehouseutils.GetConfigValue(password, pg.Warehouse),
+		Port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		SSLMode:  sslMode,
+		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 	}
 }
 
