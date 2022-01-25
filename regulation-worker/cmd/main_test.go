@@ -71,18 +71,6 @@ var (
 const searchDir = "./testData"
 const goldenDir = "./goldenDir"
 
-// map[string]interface{}{
-// 	"bucketName":       minioBucket,
-// 	"accessKeyID":      minioAccessKeyId,
-// 	"secretAccessKey":  minioSecretAccessKey,
-// 	"enableSSE":        false,
-// 	"prefix":           "some-prefix",
-// 	"endPoint":         minioEndpoint,
-// 	"s3ForcePathStyle": true,
-// 	"useSSL":           false,
-// 	"region":           minioRegion,
-// }
-
 func TestMain(m *testing.M) {
 	initialize.Init()
 	os.Exit(run(m))
