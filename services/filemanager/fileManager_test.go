@@ -188,43 +188,43 @@ func TestFileManager(t *testing.T) {
 		destName string
 		config   map[string]interface{}
 	}{
-		// {
-		// 	name:     "testing s3manager functionality",
-		// 	destName: "S3",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"accessKey":        secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing minio functionality",
-		// 	destName: "MINIO",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"secretAccessKey":  secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
+		{
+			name:     "testing s3manager functionality",
+			destName: "S3",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing minio functionality",
+			destName: "MINIO",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"secretAccessKey":  secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
 		{
 			name:     "testing digital ocean functionality",
 			destName: "DIGITAL_OCEAN_SPACES",
 			config: map[string]interface{}{
 				"bucketName":     bucket,
 				"accessKeyID":    accessKeyId,
-				"accessKey":      "secretAccessKey",
+				"accessKey":      secretAccessKey,
 				"prefix":         "some-prefix",
 				"endPoint":       minioEndpoint,
 				"forcePathStyle": true,
@@ -233,30 +233,30 @@ func TestFileManager(t *testing.T) {
 				"enableSSE":      false,
 			},
 		},
-		// {
-		// 	name:     "testing Azure blob storage filemanager functionality",
-		// 	destName: "AZURE_BLOB",
-		// 	config: map[string]interface{}{
-		// 		"containerName":  bucket,
-		// 		"prefix":         "some-prefix",
-		// 		"accountName":    accessKeyId,
-		// 		"accountKey":     string(base64Secret),
-		// 		"endPoint":       AzuriteEndpoint,
-		// 		"forcePathStyle": true,
-		// 		"disableSSL":     true,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing GCS filemanager functionality",
-		// 	destName: "GCS",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         gcsURL,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 	},
-		// },
+		{
+			name:     "testing Azure blob storage filemanager functionality",
+			destName: "AZURE_BLOB",
+			config: map[string]interface{}{
+				"containerName":  bucket,
+				"prefix":         "some-prefix",
+				"accountName":    accessKeyId,
+				"accountKey":     string(base64Secret),
+				"endPoint":       AzuriteEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
+			},
+		},
+		{
+			name:     "testing GCS filemanager functionality",
+			destName: "GCS",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"prefix":           "some-prefix",
+				"endPoint":         gcsURL,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+			},
+		},
 	}
 
 	for _, tt := range tests {
