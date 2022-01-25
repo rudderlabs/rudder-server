@@ -750,15 +750,28 @@ func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
+func formatSSLFile(content string) (formattedContent string) {
+	formattedContent = strings.ReplaceAll(content, "\n", "")
+	// Add new line at the end of -----BEGIN CERTIFICATE-----
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN CERTIFICATE-----", "-----BEGIN CERTIFICATE-----\n", 1)
+	// Add new line at the end of -----BEGIN RSA PRIVATE KEY-----
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n", 1)
+	// Add new line at the start and end of -----END CERTIFICATE-----
+	formattedContent = strings.Replace(formattedContent, "-----END CERTIFICATE-----", "\n-----END CERTIFICATE-----\n", 1)
+	// Add new line at the start and end of -----END RSA PRIVATE KEY-----
+	formattedContent = strings.Replace(formattedContent, "-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----\n", 1)
+	return formattedContent
+}
+
 // WriteSSLKeys writes the ssl key(s) present in the destination config
 // to the file system, this function checks whether a given config is
 // already written to the file system, writes to the file system if the
 // content is not already written
 func WriteSSLKeys(destination backendconfig.DestinationT) {
 	var err error
-	clientKey := destination.Config["clientKey"].(string)
-	clientCert := destination.Config["clientCert"].(string)
-	serverCert := destination.Config["serverCA"].(string)
+	clientKey := formatSSLFile(destination.Config["clientKey"].(string))
+	clientCert := formatSSLFile(destination.Config["clientCert"].(string))
+	serverCert := formatSSLFile(destination.Config["serverCA"].(string))
 	sslDirPath := fmt.Sprintf("/tmp/ssl-for-%s", destination.ID)
 	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
 		pkgLogger.Errorf("Error creating SSL root directory for destination %s %v", destination.ID, err)
