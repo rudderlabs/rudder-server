@@ -85,47 +85,7 @@ type CredentialsT struct {
 	Port     string
 	SSLMode  string
 	SSLDir   string
-	// sslParams sslParamsT
 }
-
-// type sslParamsT struct {
-// 	serverCa   string
-// 	clientCert string
-// 	clientKey  string
-// 	id         string
-// }
-
-// func (ssl *sslParamsT) getFolderName() (folderName string) {
-// 	return fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
-// 	// return "/opt"
-// }
-
-// func (ssl *sslParamsT) saveToFileSystem() {
-// 	// /sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
-// 	if ssl.id != "" {
-// 		return
-// 	}
-// 	ssl.id = uuid.Must(uuid.NewV4()).String()
-// 	var err error
-// 	sslBasePath := ssl.getFolderName()
-// 	if err = os.Mkdir(sslBasePath, 700); err != nil {
-// 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
-// 	}
-// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 0600); err != nil {
-// 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
-// 	}
-// 	if err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), []byte(ssl.serverCa), 600); err != nil {
-// 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
-// 	}
-// 	os.Chmod(fmt.Sprintf("/tmp/%s-server-ca.pem", ssl.id), 600)
-// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 0600); err != nil {
-// 		panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
-// 	}
-// 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 0600); err != nil {
-// 		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
-// 	}
-
-// }
 
 var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
@@ -150,7 +110,6 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
-	pkgLogger.Infof("CONNECTION URL IS %s", url)
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("postgres", url); err != nil {
