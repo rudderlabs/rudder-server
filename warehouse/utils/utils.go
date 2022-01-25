@@ -1,6 +1,7 @@
 package warehouseutils
 
 import (
+	"crypto/sha1"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -17,7 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
-
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -748,4 +748,49 @@ func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
 		tags[extraTag.Name] = extraTag.Value
 	}
 	return stats.NewTaggedStat(name, stats.CountType, tags)
+}
+
+// WriteSSLKeys writes the ssl key(s) present in the destination config
+// to the file system, this function checks whether a given config is
+// already written to the file system, writes to the file system if the
+// content is not already written
+func WriteSSLKeys(destination backendconfig.DestinationT) {
+	var err error
+	clientKey := destination.Config["clientKey"].(string)
+	clientCert := destination.Config["clientCert"].(string)
+	serverCert := destination.Config["serverCA"].(string)
+	sslDirPath := fmt.Sprintf("/tmp/ssl-for-%s", destination.ID)
+	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
+		pkgLogger.Errorf("Error creating SSL root directory for destination %s %v", destination.ID, err)
+		return
+	}
+	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
+	h := sha1.New()
+	h.Write([]byte(combinedString))
+	sslHash := fmt.Sprintf("%x", h.Sum(nil))
+	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
+	clientKeyPemFile := fmt.Sprintf("%s/client-key.pem", sslDirPath)
+	serverCertPemFile := fmt.Sprintf("%s/server-cert.pem", sslDirPath)
+	checkSumFile := fmt.Sprintf("%s/%s", sslDirPath, sslHash)
+	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
+		pkgLogger.Errorf("Error saving file %s error::%v", clientCertPemFile, err)
+		return
+	}
+	if err = os.WriteFile(clientKeyPemFile, []byte(clientKey), 0600); err != nil {
+		pkgLogger.Errorf("Error saving file %s error::%v", clientKeyPemFile, err)
+		return
+	}
+	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0600); err != nil {
+		pkgLogger.Errorf("Error saving file %s error::%v", serverCertPemFile, err)
+		return
+	}
+	if err = os.WriteFile(checkSumFile, []byte(""), 0700); err != nil {
+		pkgLogger.Errorf("Error saving file %s error::%v", checkSumFile, err)
+		return
+	}
+}
+
+func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
+	// sslDirPath := fmt.Sprintf("/tmp/ssl-for-%s", destinationID)
+	return
 }
