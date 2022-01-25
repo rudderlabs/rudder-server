@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"net/http"
 	"runtime"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
