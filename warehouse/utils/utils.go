@@ -770,7 +770,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 	sslHash := fmt.Sprintf("%x", h.Sum(nil))
 	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
 	clientKeyPemFile := fmt.Sprintf("%s/client-key.pem", sslDirPath)
-	serverCertPemFile := fmt.Sprintf("%s/server-cert.pem", sslDirPath)
+	serverCertPemFile := fmt.Sprintf("%s/server-ca.pem", sslDirPath)
 	checkSumFile := fmt.Sprintf("%s/%s", sslDirPath, sslHash)
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
 		pkgLogger.Errorf("Error saving file %s error::%v", clientCertPemFile, err)
