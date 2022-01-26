@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"github.com/joho/godotenv"
 
 	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
@@ -41,16 +42,14 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
-	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	k "github.com/rudderlabs/rudder-server/testhelper"
+	k "github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -113,26 +112,22 @@ type WareHouseTest struct {
 var (
 	hold                         bool = true
 	db                           *sql.DB
-	redisClient                  *redis.Client
 	DB_DSN                       = "root@tcp(127.0.0.1:3306)/service"
 	httpPort                     string
-	httpKafkaPort                string
 	dbHandle                     *sql.DB
 	sourceJSON                   backendconfig.ConfigT
 	webhookurl                   string
 	disableDestinationwebhookurl string
 	webhook                      *WebhookRecorder
 	disableDestinationwebhook    *WebhookRecorder
-	address                      string
 	runIntegration               bool
 	writeKey                     string
 	workspaceID                  string
 	redisAddress                 string
-	brokerPort                   string
-	localhostPort                string
-	localhostPortInt             int
 	whTest                       *WareHouseTest
 	resourceKafka 				*dockertest.Resource
+	resourceRedis				*dockertest.Resource
+	resourcePostgres			*dockertest.Resource
 )
 
 type WebhookRecorder struct {
@@ -380,90 +375,42 @@ func run(m *testing.M) (int, error) {
 	}()
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
-	if err != nil {
-		return 0, fmt.Errorf("could not connect to docker: %w", err)
-	}
+	if err != nil {return 0, fmt.Errorf("could not connect to docker: %w", err)}
+
 	z := k.SetZookeeper(pool)
-	defer func() {
-		if err := pool.Purge(z); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	defer func() {if err := pool.Purge(z); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
+
 	resourceKafka = k.SetKafka(z)
-	defer func() {
-		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	defer func() {if err := pool.Purge(resourceKafka); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
 	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+
+	redisAddress, resourceRedis = k.SetRedis()
+	defer func() {if err := pool.Purge(resourceRedis); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
+
+	db, resourcePostgres = k.SetJobsDB()
+	defer func() {if err := pool.Purge(resourcePostgres); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
+
+	transformerRes := k.SetTransformer()
+	defer func() {if err := pool.Purge(transformerRes); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
+
+	transformURL := fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
+	waitUntilReady(
+		context.Background(),
+		fmt.Sprintf("%s/health", transformURL),
+		time.Minute,
+		time.Second,
+	)
+
+	minioEndpoint, minioBucketName,  resource := k.SetMINIO()
+	defer func() {if err := pool.Purge(resource); err != nil {log.Printf("Could not purge resource: %s \n", err)}}()
+
+	if err := godotenv.Load("testhelper/.env"); err != nil {
+		fmt.Println("INFO: No .env file found.")
 	}
-	defer func() {
-		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
-	if err := pool.Retry(func() error {
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     redisAddress,
-			Password: "",
-			DB:       0,
-		})
-
-		_, err := redisClient.Ping().Result()
-		return err
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	database := "jobsdb"
-	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
-	if err != nil {
-		return 0, fmt.Errorf("Could not start resource Postgres: %w", err)
-	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-
-	os.Setenv("JOBS_DB_HOST", "localhost")
-	os.Setenv("JOBS_DB_NAME", "jobsdb")
-	os.Setenv("JOBS_DB_DB_NAME", "jobsdb")
-	os.Setenv("JOBS_DB_USER", "rudder")
-	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	os.Setenv("JOBS_DB_SSL_MODE", "disable")
-
-	os.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	os.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
-	os.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
-	os.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
-	os.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", DB_DSN)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		return 0, fmt.Errorf("Could not connect to postgres %q: %w", DB_DSN, err)
-	}
-	fmt.Println("DB_DSN:", DB_DSN)
+	os.Setenv("DEST_TRANSFORM_URL", transformURL)
+	
 
 	// initWHConfig()
 
@@ -473,43 +420,6 @@ func run(m *testing.M) (int, error) {
 	// defer SetWHMssqlDestination(pool)()
 
 	// AddWHSpecificSqlFunctionsToJobsDb()
-
-	// ----------
-	// Set Rudder Transformer
-	// pulls an image, creates a container based on it and runs it
-	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderlabs/rudder-transformer",
-		Tag:          "latest",
-		ExposedPorts: []string{"9090"},
-		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",
-		},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
-	}
-	defer func() {
-		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	transformURL := fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
-	waitUntilReady(
-		context.Background(),
-		fmt.Sprintf("%s/health", transformURL),
-		time.Minute,
-		time.Second,
-	)
-	os.Setenv("DEST_TRANSFORM_URL", transformURL)
-
-	os.Setenv("RUDDER_ADMIN_PASSWORD", "password")
-
-	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-
-	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
-
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -533,70 +443,7 @@ func run(m *testing.M) (int, error) {
 	defer disableDestinationwebhook.Close()
 	disableDestinationwebhookurl = disableDestinationwebhook.Server.URL
 
-	minioPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panic(err)
-	}
-	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
-	log.Println("minioPort:", minioPort)
-
-	// Setup MINIO
-	var minioClient *minio.Client
-
-	options := &dockertest.RunOptions{
-		Repository: "minio/minio",
-		Tag:        "latest",
-		Cmd:        []string{"server", "/data"},
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
-		},
-		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
-	}
-
-	resource, err := pool.RunWithOptions(options)
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
-	}
-	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
-	if err := pool.Retry(func() error {
-		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-		resp, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("status code not OK")
-		}
-		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-	// now we can instantiate minio client
-	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
-	if err != nil {
-		log.Println("Failed to create minio client:", err)
-		panic(err)
-	}
-	log.Printf("%#v\n", minioClient) // minioClient is now set up
-
-	// Create bucket for MINIO
-	// Create a bucket at region 'us-east-1' with object locking enabled.
-	minioBucketName := "devintegrationtest"
-	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
-	if err != nil {
-		log.Println(err)
-		panic(err)
-	}
-
+	
 	writeKey = randString(27)
 	workspaceID = randString(27)
 
@@ -639,27 +486,7 @@ func run(m *testing.M) (int, error) {
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
-	os.Setenv("CONFIG_PATH", "./config/config.yaml")
-	os.Setenv("TEST_SINK_URL", "http://localhost:8181")
-	os.Setenv("GO_ENV", "production")
-	os.Setenv("LOG_LEVEL", "INFO")
-	os.Setenv("INSTANCE_ID", "1")
-	os.Setenv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
-	os.Setenv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects")
-	os.Setenv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
-	os.Setenv("ALERT_PROVIDER", "pagerduty")
-	os.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-	os.Setenv("JOBS_BACKUP_BUCKET", "devintegrationtest")
-	os.Setenv("JOBS_BACKUP_PREFIX", "test")
-	os.Setenv("MINIO_ENDPOINT", "localhost:9000")
-	os.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
-	os.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
-	os.Setenv("MINIO_SSL", "false")
-	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
-	os.Setenv("CP_ROUTER_USE_TLS", "true")
-	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
-	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
-	os.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
+
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -685,10 +512,6 @@ func run(m *testing.M) (int, error) {
 
 	tearDownStart = time.Now()
 	return code, nil
-}
-
-func SetZookeeper() {
-	panic("unimplemented")
 }
 
 func TestWebhook(t *testing.T) {
@@ -875,7 +698,6 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-	t.Skip()
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
@@ -955,9 +777,7 @@ func TestKafka(t *testing.T) {
 	config.Consumer.Return.Errors = true
 
 	kafkaEndpoint := fmt.Sprintf("localhost:%s", resourceKafka.GetPort("9092/tcp"))
-	fmt.Println("kafkaEndpoint",kafkaEndpoint)
 	brokers := []string{kafkaEndpoint}
-	fmt.Println("brokers",brokers)
 
 	// Create new consumer
 	master, err := sarama.NewConsumer(brokers, config)
@@ -965,7 +785,6 @@ func TestKafka(t *testing.T) {
 		panic(err)
 	}
 	topics, _ := master.Topics()
-fmt.Println("topics",topics)
 	consumer, errors := consume(topics, master)
 	defer func() {
 		if err := master.Close(); err != nil {
@@ -980,7 +799,7 @@ fmt.Println("topics",topics)
 	msgCount := 0
 	// Get signnal for finish
 	expectedCount := 10
-out:
+	out:
 	for {
 		fmt.Println("msgcount",msgCount)
 		select {
