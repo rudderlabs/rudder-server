@@ -411,14 +411,14 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("DEST_TRANSFORM_URL", transformURL)
 	
 
-	// initWHConfig()
+	initWHConfig()
 
-	// defer SetWHPostgresDestination(pool)()
-	// defer SetWHClickHouseDestination(pool)()
-	// defer SetWHClickHouseClusterDestination(pool)()
-	// defer SetWHMssqlDestination(pool)()
+	defer SetWHPostgresDestination(pool)()
+	defer SetWHClickHouseDestination(pool)()
+	defer SetWHClickHouseClusterDestination(pool)()
+	defer SetWHMssqlDestination(pool)()
 
-	// AddWHSpecificSqlFunctionsToJobsDb()
+	AddWHSpecificSqlFunctionsToJobsDb()
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -458,14 +458,14 @@ func run(m *testing.M) (int, error) {
 			"minioEndpoint":                       minioEndpoint,
 			"minioBucketName":                     minioBucketName,
 			"kafkaPort":                           resourceKafka.GetPort("9092/tcp"),
-			// "postgresEventWriteKey":               whTest.pgTest.writeKey,
-			// "clickHouseEventWriteKey":             whTest.chTest.writeKey,
-			// "clickHouseClusterEventWriteKey":      whTest.chClusterTest.writeKey,
-			// "mssqlEventWriteKey":                  whTest.mssqlTest.writeKey,
-			// "rwhPostgresDestinationPort":          whTest.pgTest.credentials.Port,
-			// "rwhClickHouseDestinationPort":        whTest.chTest.credentials.Port,
-			// "rwhClickHouseClusterDestinationPort": whTest.chClusterTest.credentials.Port,
-			// "rwhMSSqlDestinationPort":             whTest.mssqlTest.credentials.Port,
+			"postgresEventWriteKey":               whTest.pgTest.writeKey,
+			"clickHouseEventWriteKey":             whTest.chTest.writeKey,
+			"clickHouseClusterEventWriteKey":      whTest.chClusterTest.writeKey,
+			"mssqlEventWriteKey":                  whTest.mssqlTest.writeKey,
+			"rwhPostgresDestinationPort":          whTest.pgTest.credentials.Port,
+			"rwhClickHouseDestinationPort":        whTest.chTest.credentials.Port,
+			"rwhClickHouseClusterDestinationPort": whTest.chClusterTest.credentials.Port,
+			"rwhMSSqlDestinationPort":             whTest.mssqlTest.credentials.Port,
 		},
 	)
 	defer func() {
@@ -1356,7 +1356,6 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 
 // Verify Event in WareHouse Postgres
 func TestWHPostgresDestination(t *testing.T) {
-	t.Skip()
 	pgTest := whTest.pgTest
 
 	whDestTest := &WareHouseDestinationTest{
@@ -1376,7 +1375,6 @@ func TestWHPostgresDestination(t *testing.T) {
 
 // Verify Event in WareHouse ClickHouse
 func TestWHClickHouseDestination(t *testing.T) {
-	t.Skip()
 	chTest := whTest.chTest
 
 	whDestTest := &WareHouseDestinationTest{
@@ -1396,7 +1394,6 @@ func TestWHClickHouseDestination(t *testing.T) {
 
 // Verify Event in WareHouse ClickHouse Cluster
 func TestWHClickHouseClusterDestination(t *testing.T) {
-	t.Skip()
 	chClusterTest := whTest.chClusterTest
 
 	whDestTest := &WareHouseDestinationTest{
@@ -1433,7 +1430,6 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 
 // Verify Event in WareHouse MSSQL
 func TestWHMssqlDestination(t *testing.T) {
-	t.Skip()
 	whDestTest := &WareHouseDestinationTest{
 		db:               whTest.mssqlTest.db,
 		whEventsCountMap: whTest.mssqlTest.eventsMap,
