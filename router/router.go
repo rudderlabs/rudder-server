@@ -731,6 +731,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch := worker.trackStuckDelivery()
 
 				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
+
 				if worker.localResultSet.id < resultSetID {
 					resultSet := worker.rt.getResultSet(resultSetID)
 					worker.localResultSet.id = resultSetID
@@ -1278,7 +1279,7 @@ func (rt *HandleT) initWorkers() {
 			routerProxyStat:           stats.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap:          make(map[string]int),
 			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
-			localResultSet:            &resultSetT{},
+			localResultSet:            &resultSetT{resultSetBeginTime: time.Now()},
 		}
 		rt.workers[i] = worker
 
