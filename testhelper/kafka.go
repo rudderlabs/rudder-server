@@ -1,85 +1,57 @@
 package main_test
 
 import (
-	"database/sql"
 	_ "encoding/json"
-	"log"
-"fmt"
-"strconv"
+	"fmt"
 	_ "github.com/Shopify/sarama"
-	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
-
 	"github.com/phayes/freeport"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"log"
+	"strconv"
 )
 
 var (
-	pool                     *dockertest.Pool
-	err                      error
-	network                  *dc.Network
-	transformURL             string
-	minioEndpoint            string
-	minioBucketName          string
-	timescaleDB_DSN_Internal string
-	reportingserviceURL      string
-	hold                     bool = true
-	db                       *sql.DB
-	rs_db                    *sql.DB
-	redisClient              *redis.Client
-	DB_DSN                   = "root@tcp(127.0.0.1:3306)/service"
-	httpPort                 string
-	httpKafkaPort            string
-	dbHandle                 *sql.DB
-	sourceJSON               backendconfig.ConfigT
-	webhookurl               string
-	webhookDestinationurl    string
-	address                  string
-	runIntegration           bool
-	writeKey                 string
-	webhookEventWriteKey     string
-	workspaceID              string
-	redisAddress             string
-	brokerPort               string
-	localhostPort            string
-	localhostPortInt         int
-	EventID                  string
-	VersionID                string
+	pool             *dockertest.Pool
+	err              error
+	network          *dc.Network
+	brokerPort       string
+	localhostPort    string
+	localhostPortInt int
 )
 
 func SetZookeeper(kafkapool *dockertest.Pool) *dockertest.Resource {
 	pool = kafkapool
 	fmt.Println("Set zookeper")
-		network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-		if err != nil {
-			log.Printf("Could not create docker network: %s", err)
-		}
-		zookeeperPortInt, err := freeport.GetFreePort()
-		if err != nil {
-			fmt.Println(err)
-		}
-		zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
-		zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
-		log.Println("zookeeper Port:", zookeeperPort)
-		log.Println("zookeeper client Port :", zookeeperclientPort)
-	
-		z, err := pool.RunWithOptions(&dockertest.RunOptions{
-			Repository: "confluentinc/cp-zookeeper",
-			Tag:        "latest",
-			NetworkID:  network.ID,
-			Hostname:   "zookeeper",
-			PortBindings: map[dc.Port][]dc.PortBinding{
-				"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
-			},
-			Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
-		})
-		if err != nil {
-			fmt.Println(err)
-		}
-		return z
+	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+	if err != nil {
+		log.Printf("Could not create docker network: %s", err)
 	}
+	zookeeperPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		fmt.Println(err)
+	}
+	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
+	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
+	log.Println("zookeeper Port:", zookeeperPort)
+	log.Println("zookeeper client Port :", zookeeperclientPort)
+
+	z, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-zookeeper",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "zookeeper",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
+		},
+		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+	return z
+}
 
 func SetKafka(z *dockertest.Resource) *dockertest.Resource {
 	// Set Kafka: pulls an image, creates a container based on it and runs it
@@ -129,4 +101,3 @@ func SetKafka(z *dockertest.Resource) *dockertest.Resource {
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	return resourceKafka
 }
-	

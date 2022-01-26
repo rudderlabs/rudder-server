@@ -957,6 +957,7 @@ func TestKafka(t *testing.T) {
 	kafkaEndpoint := fmt.Sprintf("localhost:%s", resourceKafka.GetPort("9092/tcp"))
 	fmt.Println("kafkaEndpoint",kafkaEndpoint)
 	brokers := []string{kafkaEndpoint}
+	fmt.Println("brokers",brokers)
 
 	// Create new consumer
 	master, err := sarama.NewConsumer(brokers, config)
@@ -982,7 +983,6 @@ fmt.Println("topics",topics)
 out:
 	for {
 		fmt.Println("msgcount",msgCount)
-		fmt.Println(<-consumer)
 		select {
 		case msg := <-consumer:
 			msgCount++
