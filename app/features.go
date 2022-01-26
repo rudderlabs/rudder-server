@@ -13,7 +13,7 @@ import (
 // MigratorFeature handles migration of nodes during cluster's scale up/down.
 type MigratorFeature interface {
 	Run(context.Context, *jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT, func(), func())
-	PrepareJobsdbsForImport(*jobsdb.HandleT, *jobsdb.MultiTenantHandleT, *jobsdb.HandleT)
+	PrepareJobsdbsForImport(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT)
 }
 
 // MigratorFeatureSetup is a function that initializes a Migrator feature, based on application instance
@@ -86,7 +86,7 @@ Replay Feature
 
 // ReplayFeature handles inserting of failed jobs into repsective gw/rt jobsdb
 type ReplayFeature interface {
-	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.MultiTenantHandleT)
+	Setup(replayDB, gwDB, routerDB *jobsdb.HandleT)
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature

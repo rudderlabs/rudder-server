@@ -59,7 +59,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	var gatewayDB jobsdb.HandleT
-	var routerDB jobsdb.MultiTenantHandleT
+	var routerDB jobsdb.HandleT
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
@@ -85,7 +85,15 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 	}
-	multitenantStats := multitenant.NewStats(&routerDB)
+
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+
+	if config.GetBool("EnableMultitenancy", true) {
+		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		multitenantStats = multitenant.NewStats(tenantRouterDB)
+	}
+
 
 	enableGateway := true
 	var reportingI types.ReportingI
@@ -104,7 +112,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			}
 			startRouterFunc := func() {
 				g.Go(misc.WithBugsnag(func() error {
-					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				}))
 			}
@@ -115,7 +123,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 
 			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -132,7 +140,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return nil
 	})
 	g.Go(func() error {
-		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 

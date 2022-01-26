@@ -36,7 +36,6 @@ type ProcessorApp struct {
 
 var (
 	gatewayDB         jobsdb.HandleT
-	routerDB          jobsdb.MultiTenantHandleT
 	batchRouterDB     jobsdb.HandleT
 	procErrorDB       jobsdb.HandleT
 	ReadTimeout       time.Duration
@@ -93,6 +92,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
 
+	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
@@ -105,9 +105,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		defer procErrorDB.TearDown()
 	}
 
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB} //FIXME copy locks ?
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+
 	if config.GetBool("EnableMultitenancy", true) {
-		multitenantStats = multitenant.NewStats(&routerDB)
+		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
 
 	var reportingI types.ReportingI
@@ -127,7 +130,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
-					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				})
 			}
@@ -136,7 +139,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -153,7 +156,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return nil
 	})
 	g.Go(func() error {
-		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 
