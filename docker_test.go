@@ -270,7 +270,6 @@ func GetEvent(url string, method string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		return "", err
