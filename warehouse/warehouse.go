@@ -1572,29 +1572,6 @@ func getConnectionString() string {
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
 }
-
-func startHealthWebHandler(ctx context.Context) (err error) {
-	if !isStandAlone() {
-		return
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
-	srv := http.Server{
-		Addr:    fmt.Sprintf(":%d", webPort),
-		Handler: bugsnag.Handler(mux),
-	}
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
-
-	return g.Wait()
-}
-
 func startWebHandler(ctx context.Context) error {
 	mux := http.NewServeMux()
 
@@ -1602,19 +1579,21 @@ func startWebHandler(ctx context.Context) error {
 	if isStandAlone() {
 		mux.HandleFunc("/health", healthHandler)
 	}
-	if isMaster() {
-		if err := backendconfig.WaitForConfig(ctx); err != nil {
-			return err
+	if runningMode != DegradedMode {
+		if isMaster() {
+			if err := backendconfig.WaitForConfig(ctx); err != nil {
+				return err
+			}
+			mux.HandleFunc("/v1/process", processHandler)
+			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
+			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			// triggers uploads for a source
+			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
+			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
+		} else {
+			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 		}
-		mux.HandleFunc("/v1/process", processHandler)
-		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
-		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
-		// triggers uploads for a source
-		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
-		mux.HandleFunc("/databricksVersion", databricksVersionHandler)
-		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
-	} else {
-		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 
 	srv := http.Server{
@@ -1715,7 +1694,7 @@ func Start(ctx context.Context, app app.Interface) error {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
-		return startHealthWebHandler(ctx)
+		return startWebHandler(ctx)
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
