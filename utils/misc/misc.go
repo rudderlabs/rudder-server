@@ -29,8 +29,6 @@ import (
 	"time"
 	"unicode"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
@@ -48,7 +46,6 @@ import (
 var AppStartTime int64
 var errorStorePath string
 var reservedFolderPaths []*RFP
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -206,7 +203,7 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
-	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
+	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
 		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
@@ -515,15 +512,6 @@ func GetIPFromReq(req *http.Request) string {
 }
 
 func ContainsString(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
-func ContainsInt(slice []int, str int) bool {
 	for _, s := range slice {
 		if s == str {
 			return true

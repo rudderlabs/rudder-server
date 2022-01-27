@@ -4,14 +4,13 @@ package transformer
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
-
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -28,8 +27,6 @@ const (
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type MetadataT struct {
 	SourceID            string                            `json:"sourceId"`
@@ -287,7 +284,7 @@ func statsTags(event TransformerEventT) stats.Tags {
 
 func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
 	//Call remote transformation
-	rawJSON, err := jsonfast.Marshal(data)
+	rawJSON, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -357,7 +354,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 	var transformerResponses []TransformerResponseT
 	if resp.StatusCode == http.StatusOK {
 		integrations.CollectIntgTransformErrorStats(respData)
-		err = jsonfast.Unmarshal(respData, &transformerResponses)
+		err = json.Unmarshal(respData, &transformerResponses)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		if err != nil {

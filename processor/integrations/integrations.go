@@ -1,11 +1,11 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -17,8 +17,6 @@ import (
 )
 
 var (
-	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
 	destTransformURL      string
 	postParametersTFields []string
 )
@@ -85,7 +83,7 @@ type TransResponseT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := jsonfast.Unmarshal(input, &integrationStat)
+	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -95,7 +93,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := jsonfast.Unmarshal(input, &integrationStats)
+	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -108,7 +106,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := jsonfast.Marshal(transformRawParams)
+	transformRaw, err := json.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}
