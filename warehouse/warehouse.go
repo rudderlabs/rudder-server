@@ -1572,6 +1572,7 @@ func getConnectionString() string {
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
 }
+
 func startWebHandler(ctx context.Context) error {
 	mux := http.NewServeMux()
 
