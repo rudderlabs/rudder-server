@@ -775,7 +775,6 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 		for _, modelsByWriteKey := range manager.schemaVersionMap {
 			for _, version := range modelsByWriteKey {
 				if timeutil.Now().Sub(version.LastSeen) > offloadThreshold {
-					pkgLogger.Infof("offloading schema version: %s", version.UUID)
 					if _, ok := offloadedSchemaVersions[version.EventModelID]; !ok {
 						offloadedSchemaVersions[version.EventModelID] = make(map[string]*OffloadedSchemaVersionT)
 					}

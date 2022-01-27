@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
 	"strconv"
 	"strings"
 
@@ -44,6 +45,8 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/admin/profiler"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
@@ -118,7 +121,7 @@ func Init() {
 }
 
 func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion()}
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +174,7 @@ func runAllInit() {
 	warehouse.Init3()
 	warehouse.Init4()
 	warehouse.Init5()
+	warehouse.Init6()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
@@ -282,6 +286,11 @@ func Run(ctx context.Context) {
 		return admin.StartServer(ctx)
 	})
 
+	g.Go(func() error {
+		p := &profiler.Profiler{}
+		return p.StartServer(ctx)
+	})
+
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
@@ -330,8 +339,9 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-
-		os.Exit(1)
+		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) == true {
+			os.Exit(1)
+		}
 	}()
 
 	err := g.Wait()

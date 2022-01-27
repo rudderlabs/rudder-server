@@ -1624,7 +1624,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		// }
 
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.MessageT
+		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:             job.upload.ID,
@@ -1657,14 +1657,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			if err != nil {
 				panic(err)
 			}
-			message := pgnotifier.MessageT{
-				Payload: payloadJSON,
-			}
-			messages = append(messages, message)
+			messages = append(messages, payloadJSON)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
@@ -1778,13 +1775,6 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		// TODO: @chetty remove this when all the slaves have been upgraded to the version till it contains ContentLength
-		// When there is a mismatch between the master and the slave
-		// Then the ContentLength comes as empty, as it is not present in old builds.
-		if loadFile.ContentLength == 0 {
-			txn.Rollback()
-			panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", loadFile.TableName))
-		}
 		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {

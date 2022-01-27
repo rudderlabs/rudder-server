@@ -22,14 +22,15 @@ import (
 )
 
 var (
-	sourceTransformerURL  string
-	webhookBatchTimeout   time.Duration
-	maxTransformerProcess int
-	maxWebhookBatchSize   int
-	webhookRetryMax       int
-	webhookRetryWaitMax   time.Duration
-	webhookRetryWaitMin   time.Duration
-	pkgLogger             logger.LoggerI
+	sourceTransformerURL       string
+	webhookBatchTimeout        time.Duration
+	maxTransformerProcess      int
+	maxWebhookBatchSize        int
+	webhookRetryMax            int
+	webhookRetryWaitMax        time.Duration
+	webhookRetryWaitMin        time.Duration
+	pkgLogger                  logger.LoggerI
+	sourceListForParsingParams []string
 )
 
 func Init() {
@@ -245,6 +246,22 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if err != nil {
 				req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
+			}
+
+			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+				queryParams := req.request.URL.Query()
+				paramsBytes, err := json.Marshal(queryParams)
+
+				if err != nil {
+					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
+					continue
+				}
+
+				closingBraceIdx := bytes.LastIndexByte(body, '}')
+				appendData := []byte(`, "query_parameters": `)
+				appendData = append(appendData, paramsBytes...)
+				body = append(body[:closingBraceIdx], appendData...)
+				body = append(body, '}')
 			}
 
 			if !json.Valid(body) {

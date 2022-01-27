@@ -32,7 +32,7 @@ import (
 var (
 	pkgLogger             = logger.NewLogger().Child("batch")
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
-	statusTrackerFileName = "rudderDeleteTracker.txt"
+	StatusTrackerFileName = "rudderDeleteTracker.txt"
 	supportedDestinations = []string{"S3"}
 )
 
@@ -451,7 +451,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		//since those files are already cleaned.
 		var cleanedFiles []string
 		absStatusTrackerFileName, err := func() (string, error) {
-			absStatusTrackerFileName, err := batch.download(ctx, filepath.Join(destConfig["prefix"].(string), statusTrackerFileName))
+			absStatusTrackerFileName, err := batch.download(ctx, filepath.Join(destConfig["prefix"].(string), StatusTrackerFileName))
 			if err != nil {
 				pkgLogger.Errorf("error while downloading statusTrackerFile: %v", err)
 				return "", fmt.Errorf("error while downloading statusTrackerFile: %w", err)
@@ -491,7 +491,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 						pkgLogger.Errorf("error while creating temporary directory: %v", err)
 						return "", fmt.Errorf("error while creating temporary directory: %w", err)
 					}
-					statusTrackerFilePtr, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, statusTrackerFileName), os.O_CREATE|os.O_RDWR, 0644)
+					statusTrackerFilePtr, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, StatusTrackerFileName), os.O_CREATE|os.O_RDWR, 0644)
 					if err != nil {
 						pkgLogger.Errorf("error while opening file, %v", err)
 						return "", fmt.Errorf("error while opening file, %w", err)
@@ -588,7 +588,7 @@ func getFileSize(fileAbsPath string) int {
 
 func (b *Batch) cleanup(prefix string) {
 	pkgLogger.Debugf("removing all temporary files & directory locally & from destination.")
-	err := b.FM.DeleteObjects([]string{filepath.Join(prefix, statusTrackerFileName)})
+	err := b.FM.DeleteObjects([]string{filepath.Join(prefix, StatusTrackerFileName)})
 	if err != nil {
 		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}
