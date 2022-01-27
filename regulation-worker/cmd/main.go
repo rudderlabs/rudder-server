@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -62,7 +63,9 @@ func Run(ctx context.Context) {
 		DestDetail: dest,
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
-			&batch.BatchManager{},
+			&batch.BatchManager{
+				FMFactory: &filemanager.FileManagerFactoryT{},
+			},
 			&api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
