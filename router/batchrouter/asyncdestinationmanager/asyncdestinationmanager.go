@@ -158,7 +158,7 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, HTTPTimeout)
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
-	uploadTimeStat.SendTiming(time.Since(startTime))
+	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
 	var httpFailed bool
 	var statusCode string
