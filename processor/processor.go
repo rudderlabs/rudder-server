@@ -22,6 +22,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	uuid "github.com/gofrs/uuid"
+	jsoniter "github.com/json-iterator/go"
+
+	gluuid "github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -40,6 +43,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+func init() {
+	gluuid.EnableRandPool()
+}
 
 func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
@@ -651,7 +660,7 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
 
-	eventBytes, err := json.Marshal(singularEvent)
+	eventBytes, err := jsonfast.Marshal(singularEvent)
 	if err != nil {
 		//Marshalling should never fail. But still panicking.
 		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v", singularEvent))
@@ -725,7 +734,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 		}
 		for _, job := range jobs {
 			var params map[string]interface{}
-			err := json.Unmarshal(job.Parameters, &params)
+			err := jsonfast.Unmarshal(job.Parameters, &params)
 			if err != nil {
 				pkgLogger.Errorf("Error while UnMarshaling live event parameters: %w", err)
 				continue
@@ -738,14 +747,14 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			statusCode := fmt.Sprint(params["status_code"])
 			sentAt := time.Now().Format(misc.RFC3339Milli)
 			events := make([]map[string]interface{}, 0)
-			err = json.Unmarshal(job.EventPayload, &events)
+			err = jsonfast.Unmarshal(job.EventPayload, &events)
 			if err != nil {
 				pkgLogger.Errorf("Error while UnMarshaling live event payload: %w", err)
 				continue
 			}
 			for i := range events {
 				event := &events[i]
-				eventPayload, err := json.Marshal(*event)
+				eventPayload, err := jsonfast.Marshal(*event)
 				if err != nil {
 					pkgLogger.Errorf("Error while Marshaling live event payload: %w", err)
 					continue
@@ -856,7 +865,7 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		var eventType string
 		eventName = event.Metadata.EventName
 		eventType = event.Metadata.EventType
-		countKey := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, eventName, METRICKEYDELIMITER, eventType)
+		countKey := strings.Join([]string{event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, eventName, eventType}, METRICKEYDELIMITER)
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
 		}
@@ -898,14 +907,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		} else {
 			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent)
 		}
-		payload, err := json.Marshal(messages)
+		payload, err := jsonfast.Marshal(messages)
 		if err != nil {
 			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal list of failed events: %v`, err)
 			continue
 		}
 
 		for _, message := range messages {
-			sampleEvent, err := json.Marshal(message)
+			sampleEvent, err := jsonfast.Marshal(message)
 			if err != nil {
 				proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
 				sampleEvent = []byte(`{}`)
@@ -913,7 +922,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
-		id := uuid.Must(uuid.NewV4())
+		id := uuid.FromStringOrNil(gluuid.New().String())
 
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
@@ -929,7 +938,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		if castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
 		}
-		marshalledParams, err := json.Marshal(params)
+		marshalledParams, err := jsonfast.Marshal(params)
 		if err != nil {
 			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
 			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
@@ -1133,7 +1142,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			//Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1786,7 +1795,7 @@ func (proc *HandleT) transformSrcDest(
 
 	//Save the JSON in DB. This is what the router uses
 	for _, destEvent := range response.Events {
-		destEventJSON, err := json.Marshal(destEvent.Output)
+		destEventJSON, err := jsonfast.Marshal(destEvent.Output)
 		//Should be a valid JSON since its our transformation
 		//but we handle anyway
 		if err != nil {
@@ -1794,7 +1803,7 @@ func (proc *HandleT) transformSrcDest(
 		}
 
 		//Need to replace UUID his with messageID from client
-		id := uuid.Must(uuid.NewV4())
+		id := uuid.FromStringOrNil(gluuid.New().String())
 		// read source_id from metadata that is replayed back from transformer
 		// in case of custom transformations metadata of first event is returned along with all events in session
 		// source_id will be same for all events belong to same user in a session
@@ -1842,7 +1851,7 @@ func (proc *HandleT) transformSrcDest(
 			RecordID:                recordId,
 			WorkspaceId:             workspaceId,
 		}
-		marshalledParams, err := json.Marshal(params)
+		marshalledParams, err := jsonfast.Marshal(params)
 		if err != nil {
 			proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
 			panic(err)
@@ -1857,7 +1866,7 @@ func (proc *HandleT) transformSrcDest(
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
 		}
-		if misc.Contains(batchDestinations, newJob.CustomVal) {
+		if misc.ContainsString(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)
 		} else {
 			destJobs = append(destJobs, &newJob)
