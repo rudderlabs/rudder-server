@@ -396,7 +396,6 @@ func (job *UploadJobT) run() (err error) {
 				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState)
 				break
 			}
-
 			err = job.setLoadFileIDs(startLoadFileID, endLoadFileID)
 			if err != nil {
 				break
@@ -404,7 +403,27 @@ func (job *UploadJobT) run() (err error) {
 
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
+			if job.warehouse.Type == "S3_DATALAKE" {
+				for tableName := range job.upload.UploadSchema {
+					loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+						Table:   tableName,
+						StartID: startLoadFileID,
+						EndID:   endLoadFileID,
+					})
+					// This is best done every 100 files, since it's a batch request for updates in Glue
+					partitionBatchSize := 99
+					timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
+					for i := 0; i < len(loadFiles) && timeWindowFormat != ""; i += partitionBatchSize {
+						end := i + partitionBatchSize
 
+						if end > len(loadFiles) {
+							end = len(loadFiles)
+						}
+
+						whManager.RefreshPartitions(tableName, loadFiles[i:end])
+					}
+				}
+			}
 			newStatus = nextUploadState.completed
 
 		case UpdatedTableUploadsCounts:
@@ -1643,11 +1662,15 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
+			if job.warehouse.Type == "S3_DATALAKE" {
+				timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
+				if timeWindowFormat != "" {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
+				} else if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 
-			if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
-				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+				}
 			}
-
 			// set merged schema as upload schema if the load file type is parquet
 			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 				payload.UploadSchema = job.upload.MergedSchema
@@ -1677,11 +1700,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by pgnotifier is set on corresponding staging_gile
-				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				// 1. any error returned by pgnotifier is set on corresponding staging_file
+				// 2. any error affecting a batch/all of the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
-					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					pkgLogger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
 					sampleError = fmt.Errorf(resp.Error)
 					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
@@ -1703,6 +1726,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				saveLoadFileErrs = append(saveLoadFileErrs, err)
 			}
 			job.setStagingFileSuccess(successfulStagingFileIDs)
+
 			wg.Done()
 		})
 	}

@@ -14,3 +14,6 @@ junit*.xml
 **/profile.out
 .idea/*
 build/regulation-worker
+build/wait-for-go/wait-for-go.x
+**/profile.out*
+vendor/

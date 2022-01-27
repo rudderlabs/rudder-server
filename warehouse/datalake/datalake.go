@@ -105,3 +105,7 @@ func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
 func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
+
+func (wh *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
+	return wh.SchemaRepository.RefreshPartitions(tableName, loadFiles)
+}

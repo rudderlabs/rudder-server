@@ -3,18 +3,19 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/proto/databricks"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/grpc"
-	"strings"
-	"time"
 )
 
 // Database configuration
@@ -921,4 +922,8 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 	}
 	databricksBuildVersion = versionResponse.GetVersion()
 	return
+}
+
+func (*HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
 }

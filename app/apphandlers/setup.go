@@ -136,7 +136,7 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB
 	}
 
 	if !routerLoaded.First() {
-		pkgLogger.Debug("processor started by an other go routine")
+		pkgLogger.Debug("processor started by another go routine")
 		return
 	}
 
