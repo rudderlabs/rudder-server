@@ -146,20 +146,19 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	uploadTimeStat := stats.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
-		"url":      url,
 	})
 
 	payloadSizeStat := stats.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
-		"url":      url,
 	})
-	uploadTimeStat.Start()
+
+	startTime := time.Now()
 	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, HTTPTimeout)
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
-	uploadTimeStat.End()
+	uploadTimeStat.SendTiming(time.Since(startTime))
 	var bodyBytes []byte
 	var httpFailed bool
 	var statusCode string
@@ -170,20 +169,9 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 		bodyBytes = responseBody
 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	}
-	eventsDeliveredStat := stats.NewTaggedStat("events_delivery_success", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-		"url":      url,
-	})
-	eventsFailedStat := stats.NewTaggedStat("events_delivery_failed", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-		"url":      url,
-	})
 	eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
-		"url":      url,
 	})
 
 	var uploadResponse AsyncUploadOutput
@@ -213,12 +201,10 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 		if err != nil {
 			panic("Errored in Marshalling" + err.Error())
 		}
-		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
-		eventsFailedStat.Count(len(failedJobIDsTrans))
-		eventsDeliveredStat.Count(len(succesfulJobIDs))
+		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 
 		uploadResponse = AsyncUploadOutput{
-			ImportingJobIDs:     succesfulJobIDs,
+			ImportingJobIDs:     successfulJobIDs,
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
 			ImportingParameters: json.RawMessage(importParameters),
@@ -232,11 +218,10 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
-		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
-		eventsFailedStat.Count(len(failedJobIDsTrans))
-		eventsAbortedStat.Count(len(succesfulJobIDs))
+		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = AsyncUploadOutput{
-			AbortJobIDs:   succesfulJobIDs,
+			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
 			AbortReason:   string(bodyBytes),
@@ -254,6 +239,7 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	}
 	return uploadResponse
 }
+
 func GetTransformedData(payload json.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }
