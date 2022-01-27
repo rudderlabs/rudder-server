@@ -4,18 +4,18 @@ import (
 	_ "encoding/json"
 	"fmt"
 	_ "github.com/Shopify/sarama"
+	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
 	"log"
-	"github.com/go-redis/redis"
 )
 
 var (
-	redisAddress                 string
-	redisClient                  *redis.Client
+	redisAddress string
+	redisClient  *redis.Client
 )
 
-func SetRedis()(string,  *dockertest.Resource ){
+func SetRedis() (string, *dockertest.Resource) {
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
@@ -34,5 +34,5 @@ func SetRedis()(string,  *dockertest.Resource ){
 	}); err != nil {
 		log.Printf("Could not connect to docker: %s", err)
 	}
-	return redisAddress,resourceRedis
+	return redisAddress, resourceRedis
 }

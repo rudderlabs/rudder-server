@@ -1,25 +1,25 @@
 package main_test
 
 import (
+	"database/sql"
 	_ "encoding/json"
 	"fmt"
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
-	"log"
-	"database/sql"
-	"github.com/phayes/freeport"
-	"strconv"
 	"github.com/minio/minio-go"
-	"net/http"
+	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
+	"github.com/phayes/freeport"
+	"log"
+	"net/http"
+	"strconv"
 )
 
 var (
-	DB_DSN                       = "root@tcp(127.0.0.1:3306)/service"
-	db                           *sql.DB
-	minioEndpoint 	string
-	minioBucketName	string
+	DB_DSN          = "root@tcp(127.0.0.1:3306)/service"
+	db              *sql.DB
+	minioEndpoint   string
+	minioBucketName string
 )
 
 func SetJobsDB() (*sql.DB, *dockertest.Resource) {
@@ -49,7 +49,7 @@ func SetJobsDB() (*sql.DB, *dockertest.Resource) {
 	return db, resourcePostgres
 }
 
-func SetTransformer() ( *dockertest.Resource) {
+func SetTransformer() *dockertest.Resource {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
 	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -63,10 +63,10 @@ func SetTransformer() ( *dockertest.Resource) {
 	if err != nil {
 		log.Println("Could not start resource transformer: %w", err)
 	}
-	return  transformerRes
+	return transformerRes
 }
 
-func SetMINIO() (string , string , *dockertest.Resource) {
+func SetMINIO() (string, string, *dockertest.Resource) {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -81,7 +81,7 @@ func SetMINIO() (string , string , *dockertest.Resource) {
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
+			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
 		},
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
@@ -124,5 +124,5 @@ func SetMINIO() (string , string , *dockertest.Resource) {
 		log.Println(err)
 		panic(err)
 	}
-	return minioEndpoint, minioBucketName,resource
+	return minioEndpoint, minioBucketName, resource
 }
