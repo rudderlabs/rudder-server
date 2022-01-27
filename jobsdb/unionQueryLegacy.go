@@ -1,6 +1,6 @@
 package jobsdb
 
-type gstMultiTenantLegacy struct {
+type MultiTenantLegacy struct {
 	HandleT
 }
 
