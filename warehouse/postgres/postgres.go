@@ -99,7 +99,6 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-	pkgLogger.Infof("cred.SSLMODE is %s", cred.SSLMode)
 	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
 		cred.User,
 		cred.Password,
