@@ -291,6 +291,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 
 			for key := range destinationsMap {
 				if IsAsyncDestination(brt.destType) {
+					pkgLogger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
 					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 					for _, param := range QueryFilters.ParameterFilters {
 						parameterFilter := jobsdb.ParameterFilterT{
@@ -316,11 +317,11 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							panic("JSON Marshal Failed" + err.Error())
 						}
 
-						brt.pollTimeStat.Start()
+						startPollTime := time.Now()
 						pkgLogger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
 						pkgLogger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
-						brt.pollTimeStat.End()
+						brt.pollTimeStat.Since(startPollTime)
 
 						if err != nil {
 							panic("HTTP Request Failed" + err.Error())
@@ -357,11 +358,11 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								} else {
 									failedJobUrl := asyncResponse.FailedJobsURL
 									payload = asyncdestinationmanager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
-									brt.failedJobsTimeStat.Start()
+									startFailedJobsPollTime := time.Now()
 									pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
 									failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+failedJobUrl, payload, asyncdestinationmanager.HTTPTimeout)
 									pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
-									brt.failedJobsTimeStat.End()
+									brt.failedJobsTimeStat.Since(startFailedJobsPollTime)
 
 									if statusCode != 200 {
 										continue
