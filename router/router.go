@@ -600,6 +600,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
+	routerJobResponses := make([]*RouterJobResponse, 0)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
 		respBodyArr := make([]string, 0)
@@ -710,7 +711,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
 				respStatusCode = 500
-				respBody = "skipping sending to destination because previous job (of user) in batch is failed."
+				if !worker.rt.enableBatching {
+					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
+				}
 			}
 		} else {
 			respStatusCode = destinationJob.StatusCode
@@ -725,44 +728,98 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			}
 		}
 
-		var sourceIDs []string
-		for i, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		//assigning the destinationJob to a local variable (_destinationJob), so that
+		//elements in routerJobResponses have pointer to the right job.
+		_destinationJob := destinationJob
+
+		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
-			attemptNum := destinationJobMetadata.AttemptNum
-			if attemptedToSendTheJob {
-				attemptNum++
-			}
+			//assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
+			//elements in routerJobResponses have pointer to the right destinationJobMetadata.
+			_destinationJobMetadata := destinationJobMetadata
 
-			status := jobsdb.JobStatusT{
-				JobID:         destinationJobMetadata.JobID,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				AttemptNum:    attemptNum,
-				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: []byte(`{}`),
-				Parameters:    []byte(`{}`),
-			}
+			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
+				jobID:                  destinationJobMetadata.JobID,
+				destinationJob:         &_destinationJob,
+				destinationJobMetadata: &_destinationJobMetadata,
+				respStatusCode:         respStatusCode,
+				respBody:               respBody,
+				attemptedToSendTheJob:  attemptedToSendTheJob,
+			})
+		}
+	}
 
-			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, &destinationJobMetadata, &status)
+	sort.Slice(routerJobResponses, func(i, j int) bool {
+		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
+	})
 
-			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
+	//Struct to hold unique users in the batch (worker.destinationJobs)
+	userToJobIDMap := make(map[string]int64)
 
-			if attemptedToSendTheJob {
-				worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
-			}
-			payload := destinationJob.Message
-			if destinationJob.Message == nil {
-				payload = destinationJobMetadata.JobT.EventPayload
-			}
+	for _, routerJobResponse := range routerJobResponses {
+		destinationJobMetadata := routerJobResponse.destinationJobMetadata
+		destinationJob := routerJobResponse.destinationJob
+		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
+		attemptNum := destinationJobMetadata.AttemptNum
+		if attemptedToSendTheJob {
+			attemptNum++
+		}
+		status := jobsdb.JobStatusT{
+			JobID:      destinationJobMetadata.JobID,
+			AttemptNum: attemptNum,
+			ExecTime:   time.Now(),
+			RetryTime:  time.Now(),
+			Parameters: []byte(`{}`),
+		}
 
-			if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
-				sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
+		routerJobResponse.status = &status
+
+		if !isSuccessStatus(respStatusCode) {
+			if prevFailedJobID, ok := userToJobIDMap[destinationJobMetadata.UserID]; ok {
+				//This means more than two jobs of the same user are in the batch & the batch job is failed
+				//Only one job is marked failed and the rest are marked waiting
+				//Job order logic requires that at any point of time, we should have only one failed job per user
+				//This is introduced to ensure the above statement
+				resp := fmt.Sprintf(`{"blocking_id":"%d", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
+				status.JobState = jobsdb.Waiting.State
+				status.ErrorResponse = []byte(resp)
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+				continue
+			} else {
+				userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 			}
-			//Sending only one destination live event for every destinationJob.
-			if i == len(destinationJob.JobMetadataArray)-1 {
-				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
+		}
+
+		status.ErrorResponse = []byte(`{}`)
+		status.ErrorCode = strconv.Itoa(respStatusCode)
+
+		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
+
+		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
+
+		if attemptedToSendTheJob {
+			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
+		}
+	}
+
+	//NOTE: Sending live events to config backend after the status objects are built completely.
+	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
+	for _, routerJobResponse := range routerJobResponses {
+		//Sending only one destination live event for every destinationJob, if it was attemptedToSendTheJob
+		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok && routerJobResponse.attemptedToSendTheJob {
+			payload := routerJobResponse.destinationJob.Message
+			if routerJobResponse.destinationJob.Message == nil {
+				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
 			}
+			sourcesIDs := make([]string, 0)
+			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
+				if !misc.Contains(sourcesIDs, metadata.SourceID) {
+					sourcesIDs = append(sourcesIDs, metadata.SourceID)
+				}
+			}
+			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
+			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
 
@@ -787,6 +844,16 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	}
 
 	worker.batchTimeStat.End()
+}
+
+type RouterJobResponse struct {
+	jobID                  int64
+	destinationJob         *types.DestinationJobT
+	destinationJobMetadata *types.JobMetadataT
+	respStatusCode         int
+	respBody               string
+	attemptedToSendTheJob  bool
+	status                 *jobsdb.JobStatusT
 }
 
 func (worker *workerT) recordCountsByDestAndUser(destID, userID string) {
@@ -2102,7 +2169,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
 			return http.StatusInternalServerError, fmt.Sprintf(`{
-				Error: %v, 
+				Error: %v,
 				(trRespStCd, trRespBody): (%v, %v),
 			}`, destError, trRespStatusCode, trRespBody)
 		}

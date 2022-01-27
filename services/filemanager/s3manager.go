@@ -19,11 +19,6 @@ import (
 
 // Upload passed in file to s3
 func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
-	uploadSession, err := manager.getSession()
-	if err != nil {
-		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
-	}
-	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 
@@ -49,6 +44,11 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
 
+	uploadSession, err := manager.getSession()
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
+	}
+	s3manager := awsS3Manager.NewUploader(uploadSession)
 	output, err := s3manager.Upload(uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
@@ -86,17 +86,17 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 GetObjectNameFromLocation gets the object name/key name from the object location url
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
-
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
 	parsedUrl, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
 	return trimedUrl, nil
+
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -105,7 +105,7 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 		fmt.Println("error while parsing location url: ", err)
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 	}
 	return trimedUrl
@@ -228,6 +228,9 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 	if err != nil {
 		return
 	}
+	if resp.IsTruncated != nil {
+		manager.Config.IsTruncated = *resp.IsTruncated
+	}
 	manager.Config.IsTruncated = *resp.IsTruncated
 	manager.Config.ContinuationToken = resp.NextContinuationToken
 	for _, item := range resp.Contents {
@@ -251,16 +254,28 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	var enableSSE, ok bool
 	var s3ForcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
+		tmp, ok := config["accessKey"].(string)
+		if ok {
+			accessKey = tmp
+		}
 	}
 	if config["enableSSE"] != nil {
 		if enableSSE, ok = config["enableSSE"].(bool); !ok {
@@ -268,7 +283,34 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		}
 	}
 	if config["startAfter"] != nil {
-		startAfter = config["startAfter"].(string)
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
+		}
+	}
+	if config["endPoint"] != nil {
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = &tmp
+		}
+	}
+	if config["s3ForcePathStyle"] != nil {
+		tmp, ok := config["s3ForcePathStyle"].(bool)
+		if ok {
+			s3ForcePathStyle = &tmp
+		}
+	}
+	if config["disableSSL"] != nil {
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
+	}
+	if config["region"] != nil {
+		tmp, ok := config["region"].(string)
+		if ok {
+			region = &tmp
+		}
 	}
 	if config["endPoint"] != nil {
 		tmp := config["endPoint"].(string)

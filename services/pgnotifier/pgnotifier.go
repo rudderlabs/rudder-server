@@ -5,10 +5,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"math/rand"
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/spaolacci/murmur3"
+
+	pglock "github.com/allisson/go-pglock/v2"
 	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -16,17 +21,15 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
-	queueName                      string
-	maxAttempt                     int
-	retriggerInterval              time.Duration
-	retriggerCount                 int
-	retriggerExecutingTimeLimitInS int
-	trackBatchInterval             time.Duration
-	pkgLogger                      logger.LoggerI
+	queueName          string
+	maxAttempt         int
+	trackBatchInterval time.Duration
+	maxPollSleep       time.Duration
+	jobOrphanTimeout   time.Duration
+	pkgLogger          logger.LoggerI
 )
 
 var (
@@ -57,15 +60,7 @@ type PgNotifierT struct {
 	workspaceIdentifier string
 }
 
-type MessageT struct {
-	Payload json.RawMessage
-}
-
-type NotificationT struct {
-	ID      int64
-	BatchID string `json:"batch_id"`
-	Status  string
-}
+type JobPayload json.RawMessage
 
 type ResponseT struct {
 	JobID  int64
@@ -75,12 +70,12 @@ type ResponseT struct {
 }
 
 type ClaimT struct {
-	ID            int64
-	BatchID       string
-	Status        string
-	Workspace     string
-	Payload       json.RawMessage
-	Attempt       int
+	ID        int64
+	BatchID   string
+	Status    string
+	Workspace string
+	Payload   json.RawMessage
+	Attempt   int
 }
 
 type ClaimResponseT struct {
@@ -97,9 +92,8 @@ func loadPGNotifierConfig() {
 	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(3, &maxAttempt, false, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	config.RegisterIntConfigVariable(500, &retriggerCount, false, 1, "PgNotifier.retriggerCount")
-	config.RegisterIntConfigVariable(120, &retriggerExecutingTimeLimitInS, false, 1, "PgNotifier.retriggerExecutingTimeLimitInS")
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
+	config.RegisterDurationConfigVariable(time.Duration(120), &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
 //New Given default connection info return pg notifiew object from it
@@ -143,24 +137,19 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 	return notifier.dbHandle
 }
 
-func (notifier PgNotifierT) AddTopic(ctx context.Context, topic string) (err error) {
+func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
 
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
-		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s' AND topic ='%s'", queueName, notifier.workspaceIdentifier, topic)
-		pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s'", queueName, notifier.workspaceIdentifier)
+		pkgLogger.Infof("PgNotifier: Deleting all jobs for workspace: %s", notifier.workspaceIdentifier)
 		_, err = notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			return
 		}
 	}
-	err = notifier.createTrigger(topic)
-	if err != nil {
-		return
-	}
 
-	notifier.triggerPending(ctx, topic)
 	return
 }
 
@@ -179,51 +168,6 @@ func GetPGNotifierConnectionString() string {
 		"password=%s dbname=%s sslmode=%s",
 		pgNotifierDBhost, pgNotifierDBport, pgNotifierDBuser,
 		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
-}
-
-func (notifier *PgNotifierT) triggerPending(ctx context.Context, topic string) {
-	for {
-		select {
-		case <-time.After(retriggerInterval):
-		case <-ctx.Done():
-			return
-		}
-		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
-								updated_at = '%[2]s'
-								WHERE id IN (
-									SELECT id FROM %[1]s
-									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
-									AND workspace='%[7]s'
-									ORDER BY priority ASC, id ASC
-									FOR UPDATE SKIP LOCKED
-									LIMIT %[8]v
-								) RETURNING id`,
-			queueName,
-			GetCurrentSQLTimestamp(),
-			WaitingState,
-			FailedState,
-			ExecutingState,
-			retriggerExecutingTimeLimitInS,
-			notifier.workspaceIdentifier,
-			retriggerCount)
-		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
-		rows, err := notifier.dbHandle.Query(stmt)
-		if err != nil {
-			panic(err)
-		}
-		var ids []int64
-		for rows.Next() {
-			var id int64
-			err := rows.Scan(&id)
-			if err != nil {
-				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
-				continue
-			}
-			ids = append(ids, id)
-		}
-		rows.Close()
-		pkgLogger.Debugf("PgNotifier: Retriggerd job ids: %v", ids)
-	}
 }
 
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
@@ -311,10 +255,10 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 	//})
 }
 
-func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
+func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	claimStartTime := time.Now()
 	defer func() {
-		if !claimed {
+		if err != nil {
 			pgNotifierClaimFailedTime.Since(claimStartTime)
 			pgNotifierClaimFailed.Increment()
 			return
@@ -368,10 +312,10 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 		Attempt:   attempt,
 		Workspace: workspace,
 	}
-	return claim, true
+	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -388,16 +332,16 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace", "priority"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
 		return
 	}
 	defer stmt.Close()
 
 	batchID := uuid.Must(uuid.NewV4()).String()
-	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
-	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier, priority)
+	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
+	for _, job := range jobs {
+		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
 		if err != nil {
 			return
 		}
@@ -412,102 +356,41 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
-	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
+	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"batchID":   batchID,
 		"module":    "pg_notifier",
-	}).Count(len(messages))
+	}).Count(len(jobs))
 	notifier.trackBatch(batchID, &ch)
 	return
 }
 
-func (notifier *PgNotifierT) Subscribe(topic string, channelSize int) (ch chan NotificationT, err error) {
-	//Create a listener & start listening -- TODO: check if panic is required
-	listener := pq.NewListener(notifier.URI,
-		10*time.Second,
-		time.Minute,
-		func(ev pq.ListenerEventType, err error) {
-			pkgLogger.Debugf("PgNotifier: Event received in pq listener %v", ev)
-			if err != nil {
-				pkgLogger.Debugf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
-			}
-		})
-	err = listener.Listen(topic)
-	if err != nil {
-		return
-	}
+func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
 
-	ch = make(chan NotificationT, channelSize)
+	jobs := make(chan ClaimT, jobsBufferSize)
 	rruntime.Go(func() {
+		pollSleep := time.Duration(0)
+		defer close(jobs)
 		for {
-			select {
-			case notification := <-listener.Notify:
-				if notification != nil {
-					var event NotificationT
-					err = json.Unmarshal([]byte(notification.Extra), &event)
-					if err != nil {
-						panic(err)
-					}
-					pkgLogger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
-					if event.Status == WaitingState || event.Status == FailedState {
-						ch <- event
-					} else {
-						pkgLogger.Debugf("PgNotifier: Not notifying subscriber for event with id: %d type: %s", event.ID, event.Status)
-					}
+			claimedJob, err := notifier.claim(workerId)
+			if err == nil {
+				jobs <- claimedJob
+				pollSleep = time.Duration(0)
+			} else {
+				pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
+				if pollSleep > maxPollSleep {
+					pollSleep = maxPollSleep
 				}
-			case <-time.After(90 * time.Second):
-				pkgLogger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
-				go func() {
-					listener.Ping()
-				}()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(pollSleep):
 			}
 		}
 	})
-	return
-}
-
-func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
-	//create a postgres function that notifies on the specified channel
-	sqlStmt := fmt.Sprintf(`DO $$
-							BEGIN
-							CREATE OR REPLACE FUNCTION pgnotifier_notify() RETURNS TRIGGER AS '
-								DECLARE
-									notification json;
-								BEGIN
-									-- Contruct the notification as a JSON string.
-									notification = json_build_object(
-													''id'', NEW.id,
-													''batch_id'', NEW.batch_id,
-													''status'', NEW.status);
-
-									-- Execute pg_notify(channel, notification)
-									PERFORM pg_notify(''%s'',notification::text);
-
-									-- Result is ignored since this is an AFTER trigger
-									RETURN NULL;
-								END;' LANGUAGE plpgsql;
-							END $$  `, topic)
-
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error creating trigger func: %v", err)
-		return
-	}
-
-	//create the trigger
-	sqlStmt = fmt.Sprintf(`DO $$ BEGIN
-									CREATE TRIGGER %[1]s_status_trigger
-											AFTER INSERT OR UPDATE OF status
-											ON %[1]s
-											FOR EACH ROW
-										EXECUTE PROCEDURE pgnotifier_notify();
-									EXCEPTION
-										WHEN others THEN null;
-								END $$`, queueName)
-
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	return
+	return jobs
 }
 
 func (notifier *PgNotifierT) setupQueue() (err error) {
@@ -536,4 +419,71 @@ func GetCurrentSQLTimestamp() string {
 func GetSQLTimestamp(t time.Time) string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return t.Format(SQLTimeFormat)
+}
+
+// RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
+// which were left behind by dead workers in executing state
+//
+func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
+	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
+	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
+	if err != nil {
+		return err
+	}
+	for {
+		locked, err := maintenanceWorkerLock.Lock(ctx)
+		if err != nil {
+			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
+		}
+		if locked {
+			defer maintenanceWorkerLock.Unlock(ctx)
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(jobOrphanTimeout / 5):
+		}
+	}
+	for {
+
+		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
+ 								updated_at = '%[2]s'
+ 								WHERE id IN (
+ 									SELECT id FROM %[1]s
+ 									WHERE status='%[4]s' AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds'
+ 									FOR UPDATE SKIP LOCKED
+ 								) RETURNING id`,
+			queueName,
+			GetCurrentSQLTimestamp(),
+			WaitingState,
+			ExecutingState,
+			int(jobOrphanTimeout/time.Second))
+		pkgLogger.Debugf("PgNotifier: retriggering zombie jobs: %v", stmt)
+		rows, err := notifier.dbHandle.Query(stmt)
+		if err != nil {
+			panic(err)
+		}
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			err := rows.Scan(&id)
+			if err != nil {
+				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		pkgLogger.Debugf("PgNotifier: Retriggered job ids: %v", ids)
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(jobOrphanTimeout / 5):
+		}
+
+	}
+
 }

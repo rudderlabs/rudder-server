@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -15,23 +16,29 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+func (manager *DOSpacesManager) getSession() *session.Session {
+
+	var region string
+	if manager.Config.Region != nil {
+		region = *manager.Config.Region
+	} else {
+		region = misc.GetSpacesLocation(manager.Config.EndPoint)
+	}
+	return session.Must(session.NewSession(&aws.Config{
+		Region:           aws.String(region),
+		Credentials:      credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		Endpoint:         aws.String(manager.Config.EndPoint),
+		DisableSSL:       manager.Config.DisableSSL,
+		S3ForcePathStyle: manager.Config.ForcePathStyle,
+	}))
+}
+
 // Upload passed in file to spaces
 func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
 
-	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	uploadSession, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-		Endpoint:    aws.String(manager.Config.EndPoint),
-	})
-	if err != nil {
-		return UploadOutput{}, fmt.Errorf("Encountered error while creating digitalOcean Session : %w", err)
-	}
-
-	s3Client := s3.New(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
@@ -45,34 +52,32 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
-	uploadInput := s3.PutObjectInput{
+
+	uploadInput := &SpacesManager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
 	}
-	_, err = s3Client.PutObject(&uploadInput)
+	uploadSession := manager.getSession()
+	DOmanager := SpacesManager.NewUploader(uploadSession)
+	output, err := DOmanager.Upload(uploadInput)
 	if err != nil {
+		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
+			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
+		}
 		return UploadOutput{}, err
 	}
-	location := manager.Config.Bucket + "." + manager.Config.EndPoint + "." + fileName
-	return UploadOutput{Location: location, ObjectName: fileName}, err
+
+	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
 func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 
-	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	downloadSession, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-		Endpoint:    aws.String(manager.Config.EndPoint),
-	})
-	if err != nil {
-		return fmt.Errorf("Encountered error while creating digitalOcean Session : %w", err)
-	}
+	downloadSession := manager.getSession()
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
-	_, err = downloader.Download(output,
+	_, err := downloader.Download(output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -81,9 +86,16 @@ func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 	return err
 }
 
-//TODO complete this
 func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
-	return location
+	parsedUrl, err := url.Parse(location)
+	if err != nil {
+		fmt.Println("error while parsing location url: ", err)
+	}
+	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+	}
+	return trimedUrl
 }
 
 /*
@@ -91,27 +103,21 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
-	uri, err := url.Parse(location)
+	parsedURL, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	host := uri.Host
-	path := uri.Path[1:]
-	if strings.Contains(host, manager.Config.Bucket) {
-		return path, nil
+	trimedUrl := strings.TrimLeft(parsedURL.Path, "/")
+	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedURL.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
-	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
+	return trimedUrl, nil
 }
 
 func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
-	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-		Endpoint:    aws.String(manager.Config.EndPoint),
-	}))
+	sess := manager.getSession()
 
 	// Create S3 service client
 	svc := s3.New(sess)
@@ -133,8 +139,47 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int6
 	return
 }
 
-func (manager *DOSpacesManager) DeleteObjects(locations []string) (err error) {
-	return
+func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
+	sess := manager.getSession()
+	if err != nil {
+		return fmt.Errorf(`get session: %v`, err)
+	}
+
+	objects := make([]*s3.ObjectIdentifier, len(keys))
+	for i, key := range keys {
+		objects[i] = &s3.ObjectIdentifier{Key: aws.String(key)}
+	}
+
+	svc := s3.New(sess)
+
+	batchSize := 1000 // max accepted by DeleteObjects API
+	for i := 0; i < len(objects); i += batchSize {
+		j := i + batchSize
+		if j > len(objects) {
+			j = len(objects)
+		}
+		input := &s3.DeleteObjectsInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Delete: &s3.Delete{
+				Objects: objects[i:j],
+			},
+		}
+		_, err := svc.DeleteObjects(input)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				default:
+					pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
+				}
+			} else {
+				// Print the error, cast err to awserr.Error to get the Code and
+				// Message from an error.
+				pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v`, aerr.Error())
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 type DOSpacesManager struct {
@@ -143,30 +188,77 @@ type DOSpacesManager struct {
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, accessKey string
+	var region *string
+	var forcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["endPoint"] != nil {
-		endPoint = config["endPoint"].(string)
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
+		tmp, ok := config["accessKey"].(string)
+		if ok {
+			accessKey = tmp
+		}
 	}
-	return &DOSpacesConfig{Bucket: bucketName, EndPoint: endPoint, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey}
+	if config["region"] != nil {
+		tmp, ok := config["region"].(string)
+		if ok {
+			region = &tmp
+		}
+	}
+	if config["forcePathStyle"] != nil {
+		tmp, ok := config["forcePathStyle"].(bool)
+		if ok {
+			forcePathStyle = &tmp
+		}
+	}
+	if config["disableSSL"] != nil {
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
+	}
+	return &DOSpacesConfig{
+		Bucket:         bucketName,
+		EndPoint:       endPoint,
+		Prefix:         prefix,
+		AccessKeyID:    accessKeyID,
+		AccessKey:      accessKey,
+		Region:         region,
+		ForcePathStyle: forcePathStyle,
+		DisableSSL:     disableSSL,
+	}
 }
 
 type DOSpacesConfig struct {
-	Bucket      string
-	Prefix      string
-	EndPoint    string
-	AccessKeyID string
-	AccessKey   string
+	Bucket         string
+	Prefix         string
+	EndPoint       string
+	AccessKeyID    string
+	AccessKey      string
+	Region         *string
+	ForcePathStyle *bool
+	DisableSSL     *bool
 }
 
 func (manager *DOSpacesManager) GetConfiguredPrefix() string {
