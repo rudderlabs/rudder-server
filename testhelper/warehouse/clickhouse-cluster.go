@@ -55,7 +55,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	pwd, err := os.Getwd()
 	if err != nil {
-		panic(fmt.Errorf("Could not get working directory: %w", err))
+		panic(fmt.Errorf("could not get working directory: %s", err.Error()))
 	}
 
 	var chSetupError error
@@ -70,7 +70,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		},
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster network: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster network: %s", err.Error()))
 	}
 
 	if chClusterTest.Zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
@@ -80,7 +80,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Name:       "clickhouse-zookeeper",
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster zookeeper: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster zookeeper: %s", err.Error()))
 	}
 
 	if chClusterTest.Clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
@@ -97,7 +97,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Links:        []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster 1: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster 1: %s", err.Error()))
 	}
 	if chClusterTest.Clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
@@ -108,7 +108,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster 2: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster 2: %s", err.Error()))
 	}
 	if chClusterTest.Clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
@@ -119,7 +119,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster 3: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster 3: %s", err.Error()))
 	}
 	if chClusterTest.Clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
@@ -130,7 +130,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		chSetupError = err
-		log.Println("Could not create clickhouse cluster 4: %w", err)
+		log.Println(fmt.Errorf("could not create clickhouse cluster 4: %s", err.Error()))
 	}
 
 	if chClusterTest.Network != nil {
@@ -142,7 +142,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			}); err != nil {
 				chSetupError = err
-				log.Println("Could not configure clickhouse clutser zookeeper network: %w", err)
+				log.Println(fmt.Errorf("could not configure clickhouse clutser zookeeper network: %s", err.Error()))
 			}
 		}
 
@@ -154,7 +154,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			}); err != nil {
 				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 1 network: %w", err)
+				log.Println(fmt.Errorf("could not configure clickhouse cluster 1 network: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse02 != nil {
@@ -165,7 +165,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			}); err != nil {
 				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 2 network: %w", err)
+				log.Println(fmt.Errorf("could not configure clickhouse cluster 2 network: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse03 != nil {
@@ -176,7 +176,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			}); err != nil {
 				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 3 network: %w", err)
+				log.Println(fmt.Errorf("could not configure clickhouse cluster 3 network: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse04 != nil {
@@ -187,53 +187,53 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			}); err != nil {
 				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 4 network: %w", err)
+				log.Println(fmt.Errorf("could not configure clickhouse cluster 4 network: %s", err.Error()))
 			}
 		}
 	}
 
 	purgeResources := func() {
 		if chClusterTest.Zookeeper != nil {
-			log.Printf("Purging clickhouse cluster zookeeper resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging clickhouse cluster zookeeper resource: %s", err.Error()))
 			if err := pool.Purge(chClusterTest.Zookeeper); err != nil {
-				log.Printf("Could not purge clickhouse cluster zookeeper resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster zookeeper resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse01 != nil {
-			log.Printf("Purging clickhouse cluster 1 resource: %s \n", err)
+			log.Printf(fmt.Sprintf("Purging clickhouse cluster 1 resource: %s", err.Error()))
 			if err := pool.Purge(chClusterTest.Clickhouse01); err != nil {
-				log.Printf("Could not purge clickhouse cluster 1 resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster 1 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse02 != nil {
-			log.Printf("Purging clickhouse cluster 2 resource: %s \n", err)
+			log.Printf(fmt.Sprintf("Purging clickhouse cluster 2 resource: %s", err.Error()))
 			if err := pool.Purge(chClusterTest.Clickhouse02); err != nil {
-				log.Printf("Could not purge clickhouse cluster 2 resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster 2 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse03 != nil {
-			log.Printf("Purging clickhouse cluster 3 resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging clickhouse cluster 3 resource: %s", err.Error()))
 			if err := pool.Purge(chClusterTest.Clickhouse03); err != nil {
-				log.Printf("Could not purge clickhouse cluster 3 resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster 3 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse04 != nil {
-			log.Printf("Purging clickhouse cluster 4 resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging clickhouse cluster 4 resource: %s", err.Error()))
 			if err := pool.Purge(chClusterTest.Clickhouse04); err != nil {
-				log.Printf("Could not purge clickhouse cluster 4 resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster 4 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Network != nil {
-			log.Printf("Purging clickhouse cluster network resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging clickhouse cluster network resource: %s", err.Error()))
 			if err := pool.Client.RemoveNetwork(chClusterTest.Network.ID); err != nil {
-				log.Printf("Could not purge clickhouse cluster network resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge clickhouse cluster network resource: %s", err.Error()))
 			}
 		}
 	}
 
 	if chSetupError != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not create WareHouse ClickHouse Cluster: %v\n", chSetupError))
+		panic(fmt.Errorf("could not create WareHouse ClickHouse Cluster: %s", chSetupError.Error()))
 	}
 
 	// Getting at which port the container is running
@@ -249,7 +249,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		return chClusterTest.DB.Ping()
 	}); err != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not connect to warehouse clickhouse cluster with error: %w\n", err))
+		panic(fmt.Errorf("could not connect to warehouse clickhouse cluster with error: %s", err.Error()))
 	}
 	cleanup = purgeResources
 	return

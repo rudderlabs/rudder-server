@@ -52,7 +52,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("CLICKHOUSE_USER=%s", credentials.User),
 	}); err != nil {
-		panic(fmt.Errorf("Could not create WareHouse ClickHouse: %v\n", err))
+		panic(fmt.Errorf("could not create WareHouse ClickHouse: %s", err.Error()))
 	}
 
 	// Getting at which port the clickhouse container is running
@@ -60,9 +60,9 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chTest.Resource != nil {
-			log.Printf("Purging warehouse clickhouse resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging warehouse clickhouse resource: %s", err.Error()))
 			if err := pool.Purge(chTest.Resource); err != nil {
-				log.Printf("Could not purge warehouse clickhouse resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge warehouse clickhouse resource: %s", err.Error()))
 			}
 		}
 	}
@@ -76,7 +76,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 		return chTest.DB.Ping()
 	}); err != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not connect to warehouse clickhouse with error: %w\n", err))
+		panic(fmt.Errorf("could not connect to warehouse clickhouse with error: %s", err.Error()))
 	}
 	cleanup = purgeResources
 	return

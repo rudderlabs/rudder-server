@@ -50,7 +50,7 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 		fmt.Sprintf("POSTGRES_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("POSTGRES_USER=%s", credentials.User),
 	}); err != nil {
-		panic(fmt.Errorf("Could not create WareHouse Postgres: %v\n", err))
+		panic(fmt.Errorf("could not create WareHouse Postgres: %s", err.Error()))
 	}
 
 	// Getting at which port the postgres container is running
@@ -58,9 +58,9 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if pgTest.Resource != nil {
-			log.Printf("Purging warehouse postgres resource: %s \n", err)
+			log.Println(fmt.Sprintf("Purging warehouse postgres resource: %s", err.Error()))
 			if err := pool.Purge(pgTest.Resource); err != nil {
-				log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge warehouse postgres resource: %s", err.Error()))
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 		return pgTest.DB.Ping()
 	}); err != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not connect to warehouse postgres with error: %w\n", err))
+		panic(fmt.Errorf("could not connect to warehouse postgres with error: %s", err.Error()))
 	}
 	cleanup = purgeResources
 	return

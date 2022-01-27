@@ -51,7 +51,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 		fmt.Sprintf("SA_DB=%s", credentials.DBName),
 		fmt.Sprintf("SA_USER=%s", credentials.User),
 	}); err != nil {
-		panic(fmt.Errorf("Could not create WareHouse Mssql: %v\n", err))
+		panic(fmt.Errorf("could not create WareHouse Mssql: %s", err.Error()))
 	}
 
 	// Getting at which port the mssql container is running
@@ -59,8 +59,9 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if mssqlTest.Resource != nil {
+			log.Println(fmt.Sprintf("Purging warehouse mssql resource: %s", err.Error()))
 			if err := pool.Purge(mssqlTest.Resource); err != nil {
-				log.Printf("Could not purge warehouse mssql resource: %s \n", err)
+				log.Println(fmt.Errorf("could not purge warehouse mssql resource: %s", err.Error()))
 			}
 		}
 	}
@@ -74,7 +75,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 		return mssqlTest.DB.Ping()
 	}); err != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not connect to warehouse mssql with error: %w\n", err))
+		panic(fmt.Errorf("could not connect to warehouse mssql with error: %s", err.Error()))
 	}
 	cleanup = purgeResources
 	return

@@ -819,13 +819,13 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 	var err error
 	_, err = db.Exec(wht.Test.GatewayJobsSqlFunction)
 	if err != nil {
-		panic(fmt.Errorf("Error occurred with executing gw jobs function for events count with err %v\n", err))
+		panic(fmt.Errorf("error occurred with executing gw jobs function for events count with err %v", err.Error()))
 		return
 	}
 
 	_, err = db.Exec(wht.Test.BatchRouterJobsSqlFunction)
 	if err != nil {
-		panic(fmt.Errorf("Error occurred with executing brt jobs function for events count with err %v\n", err))
+		panic(fmt.Errorf("error occurred with executing brt jobs function for events count with err %s", err.Error()))
 		return
 	}
 }
@@ -1227,6 +1227,7 @@ func whGatewayTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	}, time.Minute, 10*time.Millisecond)
 
 	// Getting gateway job ids
+	t.Log("Getting gateway job ids")
 	var jobIds []string
 	require.Eventually(t, func() bool {
 		jobIds = make([]string, 0)
@@ -1261,6 +1262,7 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	brtEvents := wdt.EventsCountMap["batchRT"]
 
 	// Checking for the batch router jobs
+	t.Log("Checking for the batch router jobs")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf(`select count(*) from brt_jobs_for_user_id('%s') as job_ids`, wdt.UserId)
@@ -1270,6 +1272,7 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	}, 2*time.Minute, 100*time.Millisecond)
 
 	// Getting batch router job ids
+	t.Log("Getting batch router job ids")
 	var jobIds []string
 	require.Eventually(t, func() bool {
 		jobIds = make([]string, 0)
@@ -1287,6 +1290,8 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		return brtEvents == len(jobIds)
 	}, 2*time.Minute, 100*time.Millisecond)
 
+	// Checking for the batch router jobs state
+	t.Log("Checking for the batch router jobs state")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
