@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/storage v1.10.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
-	github.com/BurntSushi/toml v0.3.1
 	github.com/ClickHouse/clickhouse-go v1.5.1
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -58,7 +57,6 @@ require (
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
-	github.com/segmentio/ksuid v1.0.2
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/snowflakedb/gosnowflake v1.6.3
@@ -80,7 +78,6 @@ require (
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20210927094055-39ccf1dd6fa6 // indirect
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/tools v0.1.6 // indirect
 	google.golang.org/api v0.39.0
 	google.golang.org/grpc v1.39.0
