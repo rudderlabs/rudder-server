@@ -71,17 +71,32 @@ type ClickHouseTest struct {
 	writeKey    string
 }
 
+type ClickHouseClusterResource struct {
+	Name        string
+	HostName    string
+	IPAddress   string
+	Credentials *clickhouse.CredentialsT
+	Port        string
+	Resource    *dockertest.Resource
+	DB          *sql.DB
+}
+
+type ClickHouseClusterResources []*ClickHouseClusterResource
+
+func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource {
+	if len(resources.resources) == 0 {
+		panic("No such clickhouse cluster resource available.")
+	}
+	return resources.resources[0]
+}
+
 type ClickHouseClusterTest struct {
-	network      *dc.Network
-	zookeeper    *dockertest.Resource
-	clickhouse01 *dockertest.Resource
-	clickhouse02 *dockertest.Resource
-	clickhouse03 *dockertest.Resource
-	clickhouse04 *dockertest.Resource
-	credentials  *clickhouse.CredentialsT
-	db           *sql.DB
-	eventsMap    WHEventsCountMap
-	writeKey     string
+	network   *dc.Network
+	zookeeper *dockertest.Resource
+	resources ClickHouseClusterResources
+	db        *sql.DB
+	eventsMap WHEventsCountMap
+	writeKey  string
 }
 
 type MSSQLTest struct {
@@ -140,7 +155,7 @@ type WebhookRecorder struct {
 }
 
 type User struct {
-	trait1 string `redis:"name"`
+	trait1 string `redis:"Name"`
 }
 
 func NewWebhook() *WebhookRecorder {
@@ -200,7 +215,7 @@ type Event struct {
 }
 
 type Author struct {
-	Name string `json:"name"`
+	Name string `json:"Name"`
 	Age  int    `json:"age"`
 }
 
@@ -394,9 +409,9 @@ func run(m *testing.M) (int, error) {
 		if network == nil {
 			return
 		}
-		log.Printf("Purging kafka network resource: %s \n", err)
+		log.Printf("Purging kafka network Resource: %s \n", err)
 		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			log.Printf("Could not purge kafka network resource: %s \n", err)
+			log.Printf("Could not purge kafka network Resource: %s \n", err)
 		}
 	}()
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
@@ -419,7 +434,7 @@ func run(m *testing.M) (int, error) {
 	}
 	defer func() {
 		if err := pool.Purge(z); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 
@@ -469,18 +484,18 @@ func run(m *testing.M) (int, error) {
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Fatalf("Could not start Resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
@@ -506,11 +521,11 @@ func run(m *testing.M) (int, error) {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		return 0, fmt.Errorf("Could not start resource Postgres: %w", err)
+		return 0, fmt.Errorf("Could not start Resource Postgres: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 
@@ -564,11 +579,11 @@ func run(m *testing.M) (int, error) {
 		},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
+		return 0, fmt.Errorf("Could not start Resource transformer: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 
@@ -633,11 +648,11 @@ func run(m *testing.M) (int, error) {
 
 	resource, err := pool.RunWithOptions(options)
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Fatalf("Could not start Resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge Resource: %s \n", err)
 		}
 	}()
 
@@ -696,7 +711,7 @@ func run(m *testing.M) (int, error) {
 			"mssqlEventWriteKey":                  whTest.mssqlTest.writeKey,
 			"rwhPostgresDestinationPort":          whTest.pgTest.credentials.Port,
 			"rwhClickHouseDestinationPort":        whTest.chTest.credentials.Port,
-			"rwhClickHouseClusterDestinationPort": whTest.chClusterTest.credentials.Port,
+			"rwhClickHouseClusterDestinationPort": whTest.chClusterTest.GetResource().Credentials.Port,
 			"rwhMSSqlDestinationPort":             whTest.mssqlTest.credentials.Port,
 		},
 	)
@@ -788,7 +803,7 @@ func TestWebhook(t *testing.T) {
 		  },
 		  "ip": "14.5.67.21",
 		  "library": {
-			  "name": "http"
+			  "Name": "http"
 		  }
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
@@ -806,7 +821,7 @@ func TestWebhook(t *testing.T) {
 		  },
 		  "ip": "14.5.67.21",
 		  "library": {
-			  "name": "http"
+			  "Name": "http"
 		  }
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
@@ -830,7 +845,7 @@ func TestWebhook(t *testing.T) {
 					"ip": "14.5.67.21",
 					"library":
 					{
-						"name": "http"
+						"Name": "http"
 					}
 				},
 				"timestamp": "2020-02-02T00:23:09.544Z"
@@ -861,7 +876,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "page",
-		"name": "Home",
+		"Name": "Home",
 		"properties": {
 		  "title": "Home | RudderStack",
 		  "url": "http://www.rudderstack.com"
@@ -875,7 +890,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "screen",
-		"name": "Main",
+		"Name": "Main",
 		"properties": {
 		  "prop_key": "prop_value"
 		}
@@ -888,7 +903,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "alias",
-		"previousId": "name@surname.com",
+		"previousId": "Name@surname.com",
 		"userId": "12345"
 	  }`)
 	SendEvent(payload_alias, "alias", writeKey)
@@ -901,7 +916,7 @@ func TestWebhook(t *testing.T) {
 		"type": "group",
 		"groupId": "12345",
 		"traits": {
-		  "name": "MyGroup",
+		  "Name": "MyGroup",
 		  "industry": "IT",
 		  "employees": 450,
 		  "plan": "basic"
@@ -1205,9 +1220,9 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if pgTest.resource != nil {
-			log.Printf("Purging warehouse postgres resource: %s \n", err)
+			log.Printf("Purging warehouse postgres Resource: %s \n", err)
 			if err := pool.Purge(pgTest.resource); err != nil {
-				log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+				log.Printf("Could not purge warehouse postgres Resource: %s \n", err)
 			}
 		}
 	}
@@ -1271,9 +1286,9 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chTest.resource != nil {
-			log.Printf("Purging warehouse clickhouse resource: %s \n", err)
+			log.Printf("Purging warehouse clickhouse Resource: %s \n", err)
 			if err := pool.Purge(chTest.resource); err != nil {
-				log.Printf("Could not purge warehouse clickhouse resource: %s \n", err)
+				log.Printf("Could not purge warehouse clickhouse Resource: %s \n", err)
 			}
 		}
 	}
@@ -1297,15 +1312,6 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	whTest.chClusterTest = &ClickHouseClusterTest{
 		writeKey: randString(27),
-		credentials: &clickhouse.CredentialsT{
-			Host:          "localhost",
-			User:          "rudder",
-			Password:      "rudder-password",
-			DBName:        "rudderdb",
-			Secure:        "false",
-			SkipVerify:    "true",
-			TLSConfigName: "",
-		},
 		eventsMap: WHEventsCountMap{
 			"identifies":    1,
 			"users":         1,
@@ -1318,14 +1324,79 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
+		resources: []*ClickHouseClusterResource{
+			{
+				Name:      "clickhouse01",
+				HostName:  "clickhouse01",
+				IPAddress: "172.23.0.11",
+				Credentials: &clickhouse.CredentialsT{
+					Host:          "localhost",
+					User:          "rudder",
+					Password:      "rudder-password",
+					DBName:        "rudderdb",
+					Secure:        "false",
+					SkipVerify:    "true",
+					TLSConfigName: "",
+				},
+			},
+			{
+				Name:      "clickhouse02",
+				HostName:  "clickhouse02",
+				IPAddress: "172.23.0.12",
+				Credentials: &clickhouse.CredentialsT{
+					Host:          "localhost",
+					User:          "rudder",
+					Password:      "rudder-password",
+					DBName:        "rudderdb",
+					Secure:        "false",
+					SkipVerify:    "true",
+					TLSConfigName: "",
+				},
+			},
+			{
+				Name:      "clickhouse03",
+				HostName:  "clickhouse03",
+				IPAddress: "172.23.0.13",
+				Credentials: &clickhouse.CredentialsT{
+					Host:          "localhost",
+					User:          "rudder",
+					Password:      "rudder-password",
+					DBName:        "rudderdb",
+					Secure:        "false",
+					SkipVerify:    "true",
+					TLSConfigName: "",
+				},
+			},
+			{
+				Name:      "clickhouse04",
+				HostName:  "clickhouse04",
+				IPAddress: "172.23.0.14",
+				Credentials: &clickhouse.CredentialsT{
+					Host:          "localhost",
+					User:          "rudder",
+					Password:      "rudder-password",
+					DBName:        "rudderdb",
+					Secure:        "false",
+					SkipVerify:    "true",
+					TLSConfigName: "",
+				},
+			},
+		},
 	}
 	chClusterTest := whTest.chClusterTest
-	credentials := chClusterTest.credentials
 	cleanup = func() {}
 
 	pwd, err := os.Getwd()
 	if err != nil {
 		panic(fmt.Errorf("Could not get working directory: %w", err))
+	}
+
+	for i, resource := range chClusterTest.resources {
+		freePort, err := freeport.GetFreePort()
+		if err != nil {
+			panic(fmt.Errorf("could not get free port for clickhouse Resource:%d with error: %w", i, err))
+		}
+		resource.Port = strconv.Itoa(freePort)
 	}
 
 	var chSetupError error
@@ -1353,54 +1424,22 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		log.Println("Could not create clickhouse cluster zookeeper: %w", err)
 	}
 
-	if chClusterTest.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "yandex/clickhouse-server",
-		Tag:        "21-alpine",
-		Hostname:   "clickhouse01",
-		Name:       "clickhouse01",
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"8123": {{HostIP: "127.0.0.1", HostPort: "8123"}},
-			"9000": {{HostIP: "127.0.0.1", HostPort: "9000"}},
-		},
-		ExposedPorts: []string{"8123", "9000"},
-		Mounts:       []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse01:/etc/clickhouse-server`, pwd)},
-		Links:        []string{"clickhouse-zookeeper"},
-	}); err != nil {
-		chSetupError = err
-		log.Println("Could not create clickhouse cluster 1: %w", err)
-	}
-	if chClusterTest.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "yandex/clickhouse-server",
-		Tag:        "21-alpine",
-		Hostname:   "clickhouse02",
-		Name:       "clickhouse02",
-		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse02:/etc/clickhouse-server`, pwd)},
-		Links:      []string{"clickhouse-zookeeper"},
-	}); err != nil {
-		chSetupError = err
-		log.Println("Could not create clickhouse cluster 2: %w", err)
-	}
-	if chClusterTest.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "yandex/clickhouse-server",
-		Tag:        "21-alpine",
-		Hostname:   "clickhouse03",
-		Name:       "clickhouse03",
-		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse03:/etc/clickhouse-server`, pwd)},
-		Links:      []string{"clickhouse-zookeeper"},
-	}); err != nil {
-		chSetupError = err
-		log.Println("Could not create clickhouse cluster 3: %w", err)
-	}
-	if chClusterTest.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "yandex/clickhouse-server",
-		Tag:        "21-alpine",
-		Hostname:   "clickhouse04",
-		Name:       "clickhouse04",
-		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse04:/etc/clickhouse-server`, pwd)},
-		Links:      []string{"clickhouse-zookeeper"},
-	}); err != nil {
-		chSetupError = err
-		log.Println("Could not create clickhouse cluster 4: %w", err)
+	for i, chResource := range chClusterTest.resources {
+		if chResource.Resource, err = pool.RunWithOptions(&dockertest.RunOptions{
+			Repository: "yandex/clickhouse-server",
+			Tag:        "21-alpine",
+			Hostname:   chResource.HostName,
+			Name:       chResource.Name,
+			PortBindings: map[dc.Port][]dc.PortBinding{
+				"9000": {{HostIP: "127.0.0.1", HostPort: chResource.Port}},
+			},
+			ExposedPorts: []string{chResource.Port},
+			Mounts:       []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/%s:/etc/clickhouse-server`, pwd, chResource.Name)},
+			Links:        []string{"clickhouse-zookeeper"},
+		}); err != nil {
+			chSetupError = err
+			log.Println(fmt.Sprintf("could not create clickhouse cluster %d: %v", i, err))
+		}
 	}
 
 	if chClusterTest.network != nil {
@@ -1416,87 +1455,40 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			}
 		}
 
-		if chClusterTest.clickhouse01 != nil {
-			if err = pool.Client.ConnectNetwork(chClusterTest.network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.clickhouse01.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.11",
-				},
-			}); err != nil {
-				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 1 network: %w", err)
-			}
-		}
-		if chClusterTest.clickhouse02 != nil {
-			if err = pool.Client.ConnectNetwork(chClusterTest.network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.clickhouse02.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.12",
-				},
-			}); err != nil {
-				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 2 network: %w", err)
-			}
-		}
-		if chClusterTest.clickhouse03 != nil {
-			if err = pool.Client.ConnectNetwork(chClusterTest.network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.clickhouse03.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.13",
-				},
-			}); err != nil {
-				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 3 network: %w", err)
-			}
-		}
-		if chClusterTest.clickhouse04 != nil {
-			if err = pool.Client.ConnectNetwork(chClusterTest.network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.clickhouse04.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.14",
-				},
-			}); err != nil {
-				chSetupError = err
-				log.Println("Could not configure clickhouse cluster 4 network: %w", err)
+		for i, chResource := range chClusterTest.resources {
+			if chResource.Resource != nil {
+				if err = pool.Client.ConnectNetwork(chClusterTest.network.ID, dc.NetworkConnectionOptions{
+					Container: chResource.Resource.Container.Name,
+					EndpointConfig: &dc.EndpointConfig{
+						IPAddress: chResource.IPAddress,
+					},
+				}); err != nil {
+					chSetupError = err
+					log.Println(fmt.Sprintf("Could not configure clickhouse cluster %d network: %v", i, err))
+				}
 			}
 		}
 	}
 
 	purgeResources := func() {
 		if chClusterTest.zookeeper != nil {
-			log.Printf("Purging clickhouse cluster zookeeper resource: %s \n", err)
+			log.Printf("Purging clickhouse cluster zookeeper Resource: %s \n", err)
 			if err := pool.Purge(chClusterTest.zookeeper); err != nil {
-				log.Printf("Could not purge clickhouse cluster zookeeper resource: %s \n", err)
+				log.Printf("Could not purge clickhouse cluster zookeeper Resource: %s \n", err)
 			}
 		}
-		if chClusterTest.clickhouse01 != nil {
-			log.Printf("Purging clickhouse cluster 1 resource: %s \n", err)
-			if err := pool.Purge(chClusterTest.clickhouse01); err != nil {
-				log.Printf("Could not purge clickhouse cluster 1 resource: %s \n", err)
-			}
-		}
-		if chClusterTest.clickhouse02 != nil {
-			log.Printf("Purging clickhouse cluster 2 resource: %s \n", err)
-			if err := pool.Purge(chClusterTest.clickhouse02); err != nil {
-				log.Printf("Could not purge clickhouse cluster 2 resource: %s \n", err)
-			}
-		}
-		if chClusterTest.clickhouse03 != nil {
-			log.Printf("Purging clickhouse cluster 3 resource: %s \n", err)
-			if err := pool.Purge(chClusterTest.clickhouse03); err != nil {
-				log.Printf("Could not purge clickhouse cluster 3 resource: %s \n", err)
-			}
-		}
-		if chClusterTest.clickhouse04 != nil {
-			log.Printf("Purging clickhouse cluster 4 resource: %s \n", err)
-			if err := pool.Purge(chClusterTest.clickhouse04); err != nil {
-				log.Printf("Could not purge clickhouse cluster 4 resource: %s \n", err)
+		for i, chResource := range chClusterTest.resources {
+			if chResource.Resource != nil {
+				log.Printf("Purging clickhouse cluster %d Resource: %s \n", i, err)
+				if err := pool.Purge(chResource.Resource); err != nil {
+					log.Printf("Could not purge clickhouse cluster %d Resource: %s \n", i, err)
+				}
 			}
 		}
 		if chClusterTest.network != nil {
-			log.Printf("Purging clickhouse cluster network resource: %s \n", err)
+			log.Printf("Purging clickhouse cluster network Resource: %s \n", err)
 			if err := pool.Client.RemoveNetwork(chClusterTest.network.ID); err != nil {
-				log.Printf("Could not purge clickhouse cluster network resource: %s \n", err)
+				log.Printf("Could not purge clickhouse cluster network Resource: %s \n", err)
 			}
 		}
 	}
@@ -1506,20 +1498,27 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		panic(fmt.Errorf("Could not create WareHouse ClickHouse Cluster: %v\n", chSetupError))
 	}
 
-	// Getting at which port the container is running
-	credentials.Port = chClusterTest.clickhouse01.GetPort("9000/tcp")
+	for i, chResource := range chClusterTest.resources {
+		// Getting at which port the container is running
+		chResource.Credentials.Port = chResource.Resource.GetPort("9000/tcp")
 
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		chClusterTest.db, err = clickhouse.Connect(*credentials, true)
-		if err != nil {
-			return err
+		// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+		if err := pool.Retry(func() error {
+			var err error
+			chResource.DB, err = clickhouse.Connect(*chResource.Credentials, true)
+			if err != nil {
+				return err
+			}
+			return chResource.DB.Ping()
+		}); err != nil {
+			chSetupError = fmt.Errorf("Could not connect to warehouse clickhouse cluster: %d  with error: %w\n", i, err)
+			log.Println(fmt.Errorf("Could not connect to warehouse clickhouse cluster: %d  with error: %w\n", i, err))
 		}
-		return chClusterTest.db.Ping()
-	}); err != nil {
+	}
+
+	if chSetupError != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not connect to warehouse clickhouse cluster with error: %w\n", err))
+		panic(fmt.Errorf("Could not connect to WareHouse ClickHouse Cluster: %v\n", chSetupError))
 	}
 	cleanup = purgeResources
 	return
@@ -1569,7 +1568,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 	purgeResources := func() {
 		if mssqlTest.resource != nil {
 			if err := pool.Purge(mssqlTest.resource); err != nil {
-				log.Printf("Could not purge warehouse mssql resource: %s \n", err)
+				log.Printf("Could not purge warehouse mssql Resource: %s \n", err)
 			}
 		}
 	}
@@ -1648,7 +1647,7 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	chClusterTest := whTest.chClusterTest
 
 	whDestTest := &WareHouseDestinationTest{
-		db:               chClusterTest.db,
+		db:               chClusterTest.GetResource().DB,
 		whEventsCountMap: chClusterTest.eventsMap,
 		writeKey:         chClusterTest.writeKey,
 		userId:           "userId_clickhouse_cluster",
@@ -1712,7 +1711,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			  },
 			  "ip": "14.5.67.21",
 			  "library": {
-				  "name": "http"
+				  "Name": "http"
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
@@ -1747,7 +1746,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
-			"name": "Home",
+			"Name": "Home",
 			"properties": {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
@@ -1764,7 +1763,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
-			"name": "Main",
+			"Name": "Main",
 			"properties": {
 			  "prop_key": "prop_value"
 			}
@@ -1780,7 +1779,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
-			"previousId": "name@surname.com"
+			"previousId": "Name@surname.com"
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
 			SendEvent(payloadAlias, "alias", wdt.writeKey)
 		}
@@ -1795,7 +1794,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"type": "group",
 			"groupId": "groupId",
 			"traits": {
-			  "name": "MyGroup",
+			  "Name": "MyGroup",
 			  "industry": "IT",
 			  "employees": 450,
 			  "plan": "basic"
@@ -1824,7 +1823,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			  },
 			  "ip": "14.5.67.21",
 			  "library": {
-				  "name": "http"
+				  "Name": "http"
 			  }
 			},
 			"traits": {
@@ -1888,7 +1887,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
-			"name": "Home",
+			"Name": "Home",
 			"properties": {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
@@ -1896,7 +1895,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"name": "http"
+					"Name": "http"
 				}
 			  }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1911,14 +1910,14 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
-			"name": "Main",
+			"Name": "Main",
 			"properties": {
 			  "prop_key": "prop_value"
 			},
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"name": "http"
+					"Name": "http"
 				}
 			  }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1933,14 +1932,14 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
-			"previousId": "name@surname.com",
+			"previousId": "Name@surname.com",
 			"context": {
 				"traits": {
 				   "trait1": "new-val"
 				},
 				"ip": "14.5.67.21",
 				"library": {
-					"name": "http"
+					"Name": "http"
 				}
             }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1957,7 +1956,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"type": "group",
 			"groupId": "groupId",
 			"traits": {
-			  "name": "MyGroup",
+			  "Name": "MyGroup",
 			  "industry": "IT",
 			  "employees": 450,
 			  "plan": "basic"
@@ -1968,7 +1967,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 				},
 				"ip": "14.5.67.21",
 				"library": {
-					"name": "http"
+					"Name": "http"
 				}
 			}
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -2093,14 +2092,14 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 	// Rename tables to tables_shard
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
-		_, err := chClusterTest.db.Exec(sqlStatement)
+		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Create distribution views for tables
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(received_at), id)));", table)
-		_, err := chClusterTest.db.Exec(sqlStatement)
+		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 }
