@@ -50,7 +50,7 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
@@ -744,7 +744,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//And Infact , the timeout should be more than the maximum latency allowed by these workers.
 				//Assuming 10s maximum latency
 				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
-					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
+					respStatusCode, respBody = types.RouterTimedOut, "1113 Jobs took more time than expected. Will be retried"
 					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -879,7 +879,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	sort.Slice(routerJobResponses, func(i, j int) bool {
 		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
 	})
-
 
 	//Struct to hold unique users in the batch (worker.destinationJobs)
 	userToJobIDMap := make(map[string]int64)
@@ -1915,7 +1914,7 @@ func (rt *HandleT) readAndProcess() int {
 	if rt.recentJobInResultSet == nil {
 		rt.recentJobInResultSet = make(map[string]time.Time)
 	}
-	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, rt.routerLatencyStat, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
+	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
 	rt.customerCount = pickupMap
 	rt.timeGained = 0
 

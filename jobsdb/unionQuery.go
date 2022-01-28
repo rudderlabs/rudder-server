@@ -44,7 +44,7 @@ func (c *JobsDBStatusCache) UpdateCache(ds dataSetT, customer string, stateFilte
 	c.a.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
 }
 
-func (c *JobsDBStatusCache)initCache() {
+func (c *JobsDBStatusCache) initCache() {
 	c.once.Do(func() {
 		if c.a.dsEmptyResultCache == nil {
 			c.a.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}

@@ -1,6 +1,7 @@
 package multitenant
 
 import (
+	"math/rand"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -57,43 +58,69 @@ var _ = Describe("tenantStats", func() {
 			Expect(tenantStats.failureRate[workspaceID1][destType1].Value()).To(Equal(0.0))
 			Expect(tenantStats.RouterSuccessRatioLoopCount[workspaceID1][destType1]["drained"]).To(Equal(1))
 			Expect(tenantStats.lastDrainedTimestamps[workspaceID1][destType1]).To(BeTemporally("~", time.Now(), time.Second))
+			Expect(tenantStats.getLastDrainedTimestamp(workspaceID1, destType1)).To(BeTemporally("~", time.Now(), time.Second))
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
 		})
 
-		// It("Cache timeout", func() {
-		// 	c := Cache{
-		// 		KeyTTL:      10 * time.Millisecond,
-		// 		CleanupFreq: 10 * time.Millisecond,
-		// 	}
-		// 	c.Update(testKey, testValue)
-		// 	Expect(len(c.cacheMap)).To(Equal(1))
-		// 	Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
-		// 	Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
-		// 	Eventually(func() int { return len(c.cacheMap) }).Should(Equal(0))
-		// })
+		It("Generate Success Rate Map", func() {
+			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+				tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, true, false)
+				tenantStats.CalculateSuccessFailureCounts(workspaceID2, destType1, false, false)
+			}
 
-		// It("Cache readAndPopData", func() {
-		// 	var c Cache
-		// 	c.Update(testKey, testValue)
-		// 	v := c.ReadAndPopData(testKey)
-		// 	Expect(v).To(Equal([][]byte{testValue}))
-		// 	Expect(len(c.cacheMap)).To(Equal(0))
-		// })
+			for i := 0; i < int(misc.AVG_METRIC_AGE)/2; i++ {
+				tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, false)
+				tenantStats.CalculateSuccessFailureCounts(workspaceID2, destType1, true, false)
+			}
+			customerSuccessRate, customerDrainedMap := tenantStats.GenerateSuccessRateMap(destType1)
+			Expect(customerSuccessRate[workspaceID1]).To(Equal(0.6666666666666666))
+			Expect(customerSuccessRate[workspaceID2]).To(Equal(0.3333333333333333))
+			Expect(customerDrainedMap[workspaceID2]).To(Equal(0.0))
+			Expect(customerDrainedMap[workspaceID2]).To(Equal(0.0))
 
-		// It("Cache data store limit", func() {
-		// 	c := Cache{
-		// 		Size: 2,
-		// 	}
-		// 	testValue2 := []byte("test_value2")
-		// 	testValue3 := []byte("test_value3")
-		// 	c.Update(testKey, testValue)
-		// 	c.Update(testKey, testValue2)
-		// 	c.Update(testKey, testValue3)
-		// 	Expect(len(c.cacheMap)).To(Equal(1))
-		// 	Expect(len(c.cacheMap[testKey].data)).To(Equal(2))
-		// 	Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue2))
-		// 	Expect(c.cacheMap[testKey].data[1]).To(Equal(testValue3))
-		// })
+		})
 
+		It("Add and Remove from InMemory Counts", func() {
+			addJobWID1 := rand.Intn(10)
+			addJobWID2 := rand.Intn(10)
+			removeJobWID1 := rand.Intn(10)
+			removeJobWID2 := rand.Intn(10)
+			for i := 0; i < addJobWID1; i++ {
+				tenantStats.AddToInMemoryCount(workspaceID1, destType1, 1, "router")
+			}
+			for i := 0; i < removeJobWID2; i++ {
+				tenantStats.RemoveFromInMemoryCount(workspaceID2, destType1, 1, "router")
+			}
+			for i := 0; i < addJobWID2; i++ {
+				tenantStats.AddToInMemoryCount(workspaceID2, destType1, 1, "router")
+			}
+			for i := 0; i < removeJobWID1; i++ {
+				tenantStats.RemoveFromInMemoryCount(workspaceID1, destType1, 1, "router")
+			}
+
+			netCountWID1 := addJobWID1 - removeJobWID1
+			netCountWID2 := addJobWID2 - removeJobWID2
+			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID1][destType1]).To(Equal(netCountWID1))
+			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID2][destType1]).To(Equal(netCountWID2))
+		})
+
+		It("Add and Remove from InMemory Counts", func() {
+			addJobWID1 := rand.Intn(10)
+			addJobWID2 := rand.Intn(10)
+			input := make(map[string]map[string]int)
+			input[workspaceID1] = make(map[string]int)
+			input[workspaceID2] = make(map[string]int)
+			input[workspaceID1][destType1] = addJobWID1
+			input[workspaceID2][destType1] = addJobWID2
+
+			tenantStats.ReportProcLoopAddStats(input, time.Second, "router")
+			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
+			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
+			Expect(tenantStats.RouterInputRates["router"][workspaceID1][destType1].Value()).To(Equal(float64(addJobWID1)))
+			Expect(tenantStats.RouterInputRates["router"][workspaceID2][destType1].Value()).To(Equal(float64(addJobWID2)))
+		})
+		It("Should Correctly Calculate the Router PickUp Jobs", func() {
+
+		})
 	})
 })
