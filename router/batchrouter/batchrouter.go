@@ -795,15 +795,14 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 						continue
 					}
 
-					timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
-					brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-					if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > brt.asyncUploadTimeout) {
-						brt.asyncDestinationStruct[destinationID].CanUpload = true
-						uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-						brt.asyncStructCleanUp(destinationID)
-						brt.setMultipleJobStatus(uploadResponse)
-					}
-					brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
+				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
+				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
+				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > brt.asyncUploadTimeout) {
+					brt.asyncDestinationStruct[destinationID].CanUpload = true
+					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					brt.asyncStructCleanUp(destinationID)
+					//TODO : We only know the Job ID's which are to be aborted from Upload call.So not saving the jobs to errorDB in this step
+					brt.setMultipleJobStatus(uploadResponse)
 				}
 			}
 		}

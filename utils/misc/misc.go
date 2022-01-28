@@ -338,7 +338,7 @@ func GetReservedFolderPaths() []*RFP {
 		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 1},
 		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
 		{path: RudderRedshiftManifests, levelsToKeep: 0},
-		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 2},
 		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
 	}
 }
