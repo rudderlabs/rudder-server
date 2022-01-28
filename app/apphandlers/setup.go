@@ -154,6 +154,14 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 
 	cleanup := make([]func(), 0)
 
+	//Crash recover routerDB, batchRouterDB
+	//Note: The following cleanups can take time if there are too many
+	//rt / batch_rt tables and there would be a delay readin from channel `ch`
+	//However, this shouldn't be the problem since backend config pushes config
+	//to its subscribers in separate goroutines to prevent blocking.
+	routerDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	batchRouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+
 loop:
 	for {
 		select {
