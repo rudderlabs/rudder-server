@@ -169,10 +169,6 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 		bodyBytes = responseBody
 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	}
-	eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
 
 	var uploadResponse AsyncUploadOutput
 	if httpFailed {
@@ -218,6 +214,10 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
+		eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": destType,
+		})
 		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = AsyncUploadOutput{
