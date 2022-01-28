@@ -286,6 +286,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if connectionsMap[destination.ID] == nil {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
+				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+					warehouseutils.WriteSSLKeys(warehouse.Destination)
+				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
 
