@@ -154,7 +154,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
 	if skipMetricTagForEachEventTable {
 		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !misc.ContaContainsString(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if !misc.ContainsString(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}

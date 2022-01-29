@@ -529,6 +529,15 @@ func ContainsInt64(slice []int64, val int64) bool {
 	return false
 }
 
+func ContainsInt(slice []int, val int) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
 func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual
