@@ -148,21 +148,13 @@ var _ = Describe("Router", func() {
 				MultitenantI: c.mockMultitenantI,
 			}
 
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
 		})
 	})
 
 	Context("normal operation - ga", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
-			//Uncomment it if running only a single test or single context
-			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
@@ -427,30 +419,6 @@ var _ = Describe("Router", func() {
 	Context("Router Batching", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
-			//Uncomment it if running only a single test or single context
-			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
-		})
-
-		It("can batch jobs together", func() {
-			// Skip("FIXME skip this test for now")
-
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &HandleT{
-				Reporting:    &reportingNOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
-			}
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
-
-			router.transformer = mockTransformer
-
-			router.enableBatching = true
 			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
 			router.routerTimeout = time.Duration(math.MaxInt64)
@@ -737,11 +705,6 @@ var _ = Describe("Router", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
 			jobsBatchTimeout = 10 * time.Second
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
-			//Uncomment it if running only a single test or single context
-			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 		/*
 			Router transform
@@ -761,14 +724,6 @@ var _ = Describe("Router", func() {
 		It("can transform jobs at router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &HandleT{
-				Reporting:    &reportingNOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
-			}
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
-			router.transformer = mockTransformer
 			noOfJobsToBatchInAWorker = 5
 			router.noOfWorkers = 1
 

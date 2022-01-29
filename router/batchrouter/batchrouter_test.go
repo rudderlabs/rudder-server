@@ -150,7 +150,6 @@ var _ = Describe("BatchRouter", func() {
 		It("should initialize and recover after crash", func() {
 			batchrouter := &HandleT{}
 
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
 			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI)
@@ -160,7 +159,6 @@ var _ = Describe("BatchRouter", func() {
 	Context("normal operation - s3 - do not readPerDestination", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 		})
 

@@ -2063,7 +2063,8 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
+	//Perform any crash recover items here.
+	//None as of now
 }
 
 func Init() {
