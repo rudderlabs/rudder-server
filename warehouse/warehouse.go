@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"net/http"
 	"runtime"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
@@ -284,6 +285,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 				connectionsMapLock.Lock()
 				if connectionsMap[destination.ID] == nil {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
+				}
+				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+					warehouseutils.WriteSSLKeys(warehouse.Destination)
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
@@ -961,7 +965,7 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
+			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name, warehouse.Source.ID).Count(uploaded)
 		}
 		select {
 		case <-ctx.Done():
@@ -1268,7 +1272,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name)
+	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name, stagingFile.BatchDestination.Source.ID)
 }
 
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1580,19 +1584,21 @@ func startWebHandler(ctx context.Context) error {
 	if isStandAlone() {
 		mux.HandleFunc("/health", healthHandler)
 	}
-	if isMaster() {
-		if err := backendconfig.WaitForConfig(ctx); err != nil {
-			return err
+	if runningMode != DegradedMode {
+		if isMaster() {
+			if err := backendconfig.WaitForConfig(ctx); err != nil {
+				return err
+			}
+			mux.HandleFunc("/v1/process", processHandler)
+			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
+			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			// triggers uploads for a source
+			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
+			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
+		} else {
+			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 		}
-		mux.HandleFunc("/v1/process", processHandler)
-		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
-		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
-		// triggers uploads for a source
-		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
-		mux.HandleFunc("/databricksVersion", databricksVersionHandler)
-		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
-	} else {
-		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 
 	srv := http.Server{
@@ -1693,7 +1699,7 @@ func Start(ctx context.Context, app app.Interface) error {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
-		return nil
+		return startWebHandler(ctx)
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))

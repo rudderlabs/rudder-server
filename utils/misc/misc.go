@@ -92,6 +92,10 @@ type RFP struct {
 
 var pkgLogger logger.LoggerI
 
+func init() {
+	gluuid.EnableRandPool()
+}
+
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
@@ -331,7 +335,7 @@ func GetReservedFolderPaths() []*RFP {
 		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 1},
 		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
 		{path: RudderRedshiftManifests, levelsToKeep: 0},
-		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 2},
 		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
 	}
 }
