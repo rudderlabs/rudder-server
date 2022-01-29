@@ -148,7 +148,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: c.mockMultitenantI,
 			}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
 
@@ -419,6 +419,24 @@ var _ = Describe("Router", func() {
 	Context("Router Batching", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
+		})
+
+		It("can batch jobs together", func() {
+			// Skip("FIXME skip this test for now")
+
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+
+			router.transformer = mockTransformer
+
+			router.enableBatching = true
 			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
 			router.routerTimeout = time.Duration(math.MaxInt64)
@@ -724,6 +742,14 @@ var _ = Describe("Router", func() {
 		It("can transform jobs at router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+			router.transformer = mockTransformer
 			noOfJobsToBatchInAWorker = 5
 			router.noOfWorkers = 1
 
