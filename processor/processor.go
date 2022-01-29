@@ -1133,7 +1133,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			//Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+				if enableDedup && misc.ContainsString(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1857,7 +1857,7 @@ func (proc *HandleT) transformSrcDest(
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
 		}
-		if misc.Contains(batchDestinations, newJob.CustomVal) {
+		if misc.ContainsString(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)
 		} else {
 			destJobs = append(destJobs, &newJob)
@@ -1905,7 +1905,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 			}
 
 			messageType = strings.TrimSpace(strings.ToLower(messageType))
-			if misc.Contains(supportedTypes, messageType) {
+			if misc.ContainsString(supportedTypes, messageType) {
 				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 				responses = append(responses, resp)
 			} else {

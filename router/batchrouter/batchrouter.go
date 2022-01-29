@@ -1900,17 +1900,17 @@ func IsAsyncDestination(destType string) bool {
 }
 
 func (brt *HandleT) crashRecover() {
-	if misc.Contains(objectStorageDestinations, brt.destType) {
+	if misc.ContainsString(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
 	}
 }
 
 func IsObjectStorageDestination(destType string) bool {
-	return misc.Contains(objectStorageDestinations, destType)
+	return misc.ContainsString(objectStorageDestinations, destType)
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.Contains(warehouseDestinations, destType)
+	return misc.ContainsString(warehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
