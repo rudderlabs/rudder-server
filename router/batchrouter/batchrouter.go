@@ -415,7 +415,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 									for _, job := range importingList {
 										jobID := job.JobID
-										if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
+										if misc.ContainsInt64(append(succeededKeys, warningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Succeeded.State,
@@ -425,7 +425,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
 											}
-										} else if misc.Contains(failedKeys, job.JobID) {
+										} else if misc.ContainsInt64(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
@@ -846,7 +846,7 @@ func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix s
 func isDateFormatExists(connIdentifier string) bool {
 	dateFormatMapLock.RLock()
 	defer dateFormatMapLock.RUnlock()
-	return misc.Contains(dateFormatMap, connIdentifier)
+	return misc.Contains(dateFormatMap, connIdentifier) // TODO : Get Rid of misc.Contains
 }
 
 func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
@@ -951,7 +951,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if misc.Contains(timeWindowDestinations, brt.destType) {
+	if misc.ContainsString(timeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1494,7 +1494,7 @@ func (worker *workerT) workerProcess() {
 						}
 					}
 					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
-					if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
+					if !misc.ContainsString(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
 						drainStatsbyDest[batchDest.Destination.ID].Reasons = append(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason)
 					}
 				} else {
@@ -1896,7 +1896,7 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 }
 
 func IsAsyncDestination(destType string) bool {
-	return misc.Contains(asyncDestinations, destType)
+	return misc.ContainsString(asyncDestinations, destType)
 }
 
 func (brt *HandleT) crashRecover() {
@@ -1915,7 +1915,7 @@ func IsWarehouseDestination(destType string) bool {
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if !misc.Contains(timeWindowDestinations, brt.destType) {
+	if !misc.ContainsString(timeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches

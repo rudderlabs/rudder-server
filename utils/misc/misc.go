@@ -520,6 +520,15 @@ func ContainsString(slice []string, str string) bool {
 	return false
 }
 
+func ContainsInt64(slice []int64, val int64) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
 func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual
