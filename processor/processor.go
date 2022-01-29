@@ -15,14 +15,12 @@ import (
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/router"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"golang.org/x/sync/errgroup"
-
-	uuid "github.com/gofrs/uuid"
-	jsoniter "github.com/json-iterator/go"
 
 	gluuid "github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -46,9 +44,6 @@ import (
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func init() {
-	gluuid.EnableRandPool()
-}
 
 func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
@@ -922,7 +917,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
-		id := uuid.FromStringOrNil(gluuid.New().String())
+		id := misc.FastUUID()
 
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
@@ -1803,7 +1798,7 @@ func (proc *HandleT) transformSrcDest(
 		}
 
 		//Need to replace UUID his with messageID from client
-		id := uuid.FromStringOrNil(gluuid.New().String())
+		id := misc.FastUUID()
 		// read source_id from metadata that is replayed back from transformer
 		// in case of custom transformations metadata of first event is returned along with all events in session
 		// source_id will be same for all events belong to same user in a session

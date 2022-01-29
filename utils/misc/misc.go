@@ -35,6 +35,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
 	uuid "github.com/gofrs/uuid"
+	gluuid "github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
@@ -984,6 +985,11 @@ IsValidUUID will check if provided string is a valid UUID
 func IsValidUUID(uuid string) bool {
 	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
+}
+
+func FastUUID() uuid.UUID {
+	b, _ := gluuid.New().MarshalBinary()
+	return uuid.FromBytesOrNil(b)
 }
 
 func HasAWSKeysInConfig(config interface{}) bool {
