@@ -94,7 +94,6 @@ type ClickHouseClusterTest struct {
 	network   *dc.Network
 	zookeeper *dockertest.Resource
 	resources ClickHouseClusterResources
-	db        *sql.DB
 	eventsMap WHEventsCountMap
 	writeKey  string
 }
@@ -409,9 +408,9 @@ func run(m *testing.M) (int, error) {
 		if network == nil {
 			return
 		}
-		log.Printf("Purging kafka network Resource: %s \n", err)
+		log.Printf("Purging kafka network resource: %s \n", err)
 		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			log.Printf("Could not purge kafka network Resource: %s \n", err)
+			log.Printf("Could not purge kafka network resource: %s \n", err)
 		}
 	}()
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
@@ -434,7 +433,7 @@ func run(m *testing.M) (int, error) {
 	}
 	defer func() {
 		if err := pool.Purge(z); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
@@ -484,18 +483,18 @@ func run(m *testing.M) (int, error) {
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
-		log.Fatalf("Could not start Resource: %s", err)
+		log.Fatalf("Could not start resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
@@ -521,11 +520,11 @@ func run(m *testing.M) (int, error) {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		return 0, fmt.Errorf("Could not start Resource Postgres: %w", err)
+		return 0, fmt.Errorf("Could not start resource Postgres: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
@@ -579,11 +578,11 @@ func run(m *testing.M) (int, error) {
 		},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("Could not start Resource transformer: %w", err)
+		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
@@ -648,11 +647,11 @@ func run(m *testing.M) (int, error) {
 
 	resource, err := pool.RunWithOptions(options)
 	if err != nil {
-		log.Fatalf("Could not start Resource: %s", err)
+		log.Fatalf("Could not start resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge Resource: %s \n", err)
+			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
@@ -1220,9 +1219,9 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if pgTest.resource != nil {
-			log.Printf("Purging warehouse postgres Resource: %s \n", err)
+			log.Printf("Purging warehouse postgres resource: %s \n", err)
 			if err := pool.Purge(pgTest.resource); err != nil {
-				log.Printf("Could not purge warehouse postgres Resource: %s \n", err)
+				log.Printf("Could not purge warehouse postgres resource: %s \n", err)
 			}
 		}
 	}
@@ -1286,9 +1285,9 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chTest.resource != nil {
-			log.Printf("Purging warehouse clickhouse Resource: %s \n", err)
+			log.Printf("Purging warehouse clickhouse resource: %s \n", err)
 			if err := pool.Purge(chTest.resource); err != nil {
-				log.Printf("Could not purge warehouse clickhouse Resource: %s \n", err)
+				log.Printf("Could not purge warehouse clickhouse resource: %s \n", err)
 			}
 		}
 	}
@@ -1394,7 +1393,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	for i, resource := range chClusterTest.resources {
 		freePort, err := freeport.GetFreePort()
 		if err != nil {
-			panic(fmt.Errorf("could not get free port for clickhouse Resource:%d with error: %w", i, err))
+			panic(fmt.Errorf("could not get free port for clickhouse resource:%d with error: %w", i, err))
 		}
 		resource.Port = strconv.Itoa(freePort)
 	}
@@ -1472,23 +1471,23 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chClusterTest.zookeeper != nil {
-			log.Printf("Purging clickhouse cluster zookeeper Resource: %s \n", err)
+			log.Printf("Purging clickhouse cluster zookeeper resource: %s \n", err)
 			if err := pool.Purge(chClusterTest.zookeeper); err != nil {
-				log.Printf("Could not purge clickhouse cluster zookeeper Resource: %s \n", err)
+				log.Printf("Could not purge clickhouse cluster zookeeper resource: %s \n", err)
 			}
 		}
 		for i, chResource := range chClusterTest.resources {
 			if chResource.Resource != nil {
-				log.Printf("Purging clickhouse cluster %d Resource: %s \n", i, err)
+				log.Printf("Purging clickhouse cluster %d resource: %s \n", i, err)
 				if err := pool.Purge(chResource.Resource); err != nil {
-					log.Printf("Could not purge clickhouse cluster %d Resource: %s \n", i, err)
+					log.Printf("Could not purge clickhouse cluster %d resource: %s \n", i, err)
 				}
 			}
 		}
 		if chClusterTest.network != nil {
-			log.Printf("Purging clickhouse cluster network Resource: %s \n", err)
+			log.Printf("Purging clickhouse cluster network resource: %s \n", err)
 			if err := pool.Client.RemoveNetwork(chClusterTest.network.ID); err != nil {
-				log.Printf("Could not purge clickhouse cluster network Resource: %s \n", err)
+				log.Printf("Could not purge clickhouse cluster network resource: %s \n", err)
 			}
 		}
 	}
@@ -1568,7 +1567,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 	purgeResources := func() {
 		if mssqlTest.resource != nil {
 			if err := pool.Purge(mssqlTest.resource); err != nil {
-				log.Printf("Could not purge warehouse mssql Resource: %s \n", err)
+				log.Printf("Could not purge warehouse mssql resource: %s \n", err)
 			}
 		}
 	}
