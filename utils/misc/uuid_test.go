@@ -5,6 +5,7 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/stretchr/testify/require"
 
 	gluuid "github.com/google/uuid"
 )
@@ -14,6 +15,15 @@ var uuidGOFRS uuid.UUID
 
 func init() {
 	gluuid.EnableRandPool()
+}
+
+func Test_fastUUID(t *testing.T) {
+	t.Run("test google conversion gofrs", func(t *testing.T) {
+		uuidGOOGLE = gluuid.New()
+		b, _ := uuidGOOGLE.MarshalBinary()
+		uuidGOFRS = uuid.FromBytesOrNil(b)
+		require.Equal(t, uuidGOOGLE.String(), uuidGOFRS.String())
+	})
 }
 
 func Benchmark_GOOGLE_UUID(b *testing.B) {
