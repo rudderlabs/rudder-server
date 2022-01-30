@@ -155,7 +155,7 @@ type WebhookRecorder struct {
 }
 
 type User struct {
-	trait1 string `redis:"Name"`
+	trait1 string `redis:"name"`
 }
 
 func NewWebhook() *WebhookRecorder {
@@ -215,7 +215,7 @@ type Event struct {
 }
 
 type Author struct {
-	Name string `json:"Name"`
+	Name string `json:"name"`
 	Age  int    `json:"age"`
 }
 
@@ -803,7 +803,7 @@ func TestWebhook(t *testing.T) {
 		  },
 		  "ip": "14.5.67.21",
 		  "library": {
-			  "Name": "http"
+			  "name": "http"
 		  }
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
@@ -821,7 +821,7 @@ func TestWebhook(t *testing.T) {
 		  },
 		  "ip": "14.5.67.21",
 		  "library": {
-			  "Name": "http"
+			  "name": "http"
 		  }
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
@@ -845,7 +845,7 @@ func TestWebhook(t *testing.T) {
 					"ip": "14.5.67.21",
 					"library":
 					{
-						"Name": "http"
+						"name": "http"
 					}
 				},
 				"timestamp": "2020-02-02T00:23:09.544Z"
@@ -876,7 +876,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "page",
-		"Name": "Home",
+		"name": "Home",
 		"properties": {
 		  "title": "Home | RudderStack",
 		  "url": "http://www.rudderstack.com"
@@ -890,7 +890,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "screen",
-		"Name": "Main",
+		"name": "Main",
 		"properties": {
 		  "prop_key": "prop_value"
 		}
@@ -903,7 +903,7 @@ func TestWebhook(t *testing.T) {
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "alias",
-		"previousId": "Name@surname.com",
+		"previousId": "name@surname.com",
 		"userId": "12345"
 	  }`)
 	SendEvent(payload_alias, "alias", writeKey)
@@ -916,7 +916,7 @@ func TestWebhook(t *testing.T) {
 		"type": "group",
 		"groupId": "12345",
 		"traits": {
-		  "Name": "MyGroup",
+		  "name": "MyGroup",
 		  "industry": "IT",
 		  "employees": 450,
 		  "plan": "basic"
@@ -1742,7 +1742,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
-			"Name": "Home",
+			"name": "Home",
 			"properties": {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
@@ -1759,7 +1759,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
-			"Name": "Main",
+			"name": "Main",
 			"properties": {
 			  "prop_key": "prop_value"
 			}
@@ -1775,7 +1775,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
-			"previousId": "Name@surname.com"
+			"previousId": "name@surname.com"
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
 			SendEvent(payloadAlias, "alias", wdt.writeKey)
 		}
@@ -1790,7 +1790,7 @@ func sendWHEvents(wdt *WareHouseDestinationTest) {
 			"type": "group",
 			"groupId": "groupId",
 			"traits": {
-			  "Name": "MyGroup",
+			  "name": "MyGroup",
 			  "industry": "IT",
 			  "employees": 450,
 			  "plan": "basic"
@@ -1817,7 +1817,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			  },
 			  "ip": "14.5.67.21",
 			  "library": {
-				  "Name": "http"
+				  "name": "http"
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
@@ -1844,7 +1844,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"Name": "http"
+					"name": "http"
 				}
  			}
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1859,7 +1859,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
-			"Name": "Home",
+			"name": "Home",
 			"properties": {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
@@ -1867,7 +1867,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"Name": "http"
+					"name": "http"
 				}
 			  }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1882,14 +1882,14 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
-			"Name": "Main",
+			"name": "Main",
 			"properties": {
 			  "prop_key": "prop_value"
 			},
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"Name": "http"
+					"name": "http"
 				}
 			  }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1904,11 +1904,11 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
-			"previousId": "Name@surname.com",
+			"previousId": "name@surname.com",
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"Name": "http"
+					"name": "http"
 				}
             }
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
@@ -1925,7 +1925,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"type": "group",
 			"groupId": "groupId",
 			"traits": {
-			  "Name": "MyGroup",
+			  "name": "MyGroup",
 			  "industry": "IT",
 			  "employees": 450,
 			  "plan": "basic"
@@ -1933,7 +1933,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 			"context": {
 				"ip": "14.5.67.21",
 				"library": {
-					"Name": "http"
+					"name": "http"
 				}
 			}
 		  }`, wdt.userId, uuid.Must(uuid.NewV4()).String()))
