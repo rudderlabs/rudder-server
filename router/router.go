@@ -939,7 +939,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			}
 			sourcesIDs := make([]string, 0)
 			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
-				if !misc.Contains(sourcesIDs, metadata.SourceID) {
+				if !misc.ContainsString(sourcesIDs, metadata.SourceID) {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
 			}
@@ -1977,7 +1977,7 @@ func (rt *HandleT) readAndProcess() int {
 				}
 			}
 			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
-			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
+			if !misc.ContainsString(drainStatsbyDest[destID].Reasons, reason) {
 				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
 
