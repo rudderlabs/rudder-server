@@ -2,6 +2,9 @@ package multitenant
 
 import (
 	"math/rand"
+	"sync"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -12,6 +15,8 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -139,3 +144,66 @@ var _ = Describe("tenantStats", func() {
 		})
 	})
 })
+
+func Benchmark_Counts(b *testing.B) {
+	mockCtrl := gomock.NewController(b)
+	mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
+	// crash recovery check
+	mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
+	tenantStats := NewStats(mockRouterJobsDB)
+
+	b.ResetTimer()
+
+	const writeRatio = 10
+
+	errgroup := errgroup.Group{}
+	errgroup.Go(func() error {
+		for i := 0; i < b.N; i++ {
+			tenantStats.AddToInMemoryCount(workspaceID1, destType1, writeRatio+1, "router")
+		}
+		return nil
+	})
+	for i := 0; i < writeRatio; i++ {
+		errgroup.Go(func() error {
+			for i := 0; i < b.N; i++ {
+				tenantStats.RemoveFromInMemoryCount(workspaceID1, destType1, 1, "router")
+			}
+			return nil
+		})
+	}
+	errgroup.Wait()
+
+	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1])
+}
+
+func Benchmark_Counts_Atomic(b *testing.B) {
+	m := sync.Map{}
+	b.ResetTimer()
+
+	const writeRatio = 10
+
+	errgroup := errgroup.Group{}
+	errgroup.Go(func() error {
+		for i := 0; i < b.N; i++ {
+			aa := int64(0)
+			a, _ := m.LoadOrStore(workspaceID1, &aa)
+			atomic.AddInt64(a.(*int64), writeRatio+1)
+		}
+		return nil
+	})
+	for i := 0; i < writeRatio; i++ {
+		errgroup.Go(func() error {
+			for i := 0; i < b.N; i++ {
+				aa := int64(0)
+				a, _ := m.LoadOrStore(workspaceID1, &aa)
+				atomic.AddInt64(a.(*int64), -1)
+			}
+			return nil
+		})
+	}
+	errgroup.Wait()
+
+	a, _ := m.LoadOrStore(workspaceID1, int64(0))
+
+	require.Equal(b, int64(b.N), atomic.LoadInt64(a.(*int64)))
+}
