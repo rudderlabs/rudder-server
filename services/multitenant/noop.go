@@ -13,10 +13,6 @@ type noop struct{}
 func (*noop) CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool) {
 }
 
-func (*noop) GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64) {
-	return map[string]float64{}, map[string]float64{}
-}
-
 func (*noop) AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 }
 

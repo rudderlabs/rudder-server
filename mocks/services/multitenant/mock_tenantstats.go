@@ -59,21 +59,6 @@ func (mr *MockMultiTenantIMockRecorder) CalculateSuccessFailureCounts(arg0, arg1
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CalculateSuccessFailureCounts", reflect.TypeOf((*MockMultiTenantI)(nil).CalculateSuccessFailureCounts), arg0, arg1, arg2, arg3)
 }
 
-// GenerateSuccessRateMap mocks base method.
-func (m *MockMultiTenantI) GenerateSuccessRateMap(arg0 string) (map[string]float64, map[string]float64) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateSuccessRateMap", arg0)
-	ret0, _ := ret[0].(map[string]float64)
-	ret1, _ := ret[1].(map[string]float64)
-	return ret0, ret1
-}
-
-// GenerateSuccessRateMap indicates an expected call of GenerateSuccessRateMap.
-func (mr *MockMultiTenantIMockRecorder) GenerateSuccessRateMap(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateSuccessRateMap", reflect.TypeOf((*MockMultiTenantI)(nil).GenerateSuccessRateMap), arg0)
-}
-
 // GetRouterPickupJobs mocks base method.
 func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.Duration, arg3 map[string]misc.MovingAverage, arg4 int, arg5 float64) (map[string]int, map[string]float64) {
 	m.ctrl.T.Helper()

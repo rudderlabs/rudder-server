@@ -51,7 +51,6 @@ var _ = Describe("tenantStats", func() {
 
 			Expect(len(tenantStats.routerInputRates)).To(Equal(2))
 			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(2))
-			Expect(len(tenantStats.routerSuccessRatioLoopCount)).To(Equal(0))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
 		})
@@ -64,8 +63,6 @@ var _ = Describe("tenantStats", func() {
 
 			Expect(tenantStats.failureRate[workspaceID1][destType1].Value()).To(Equal(0.0))
 			Expect(tenantStats.failureRate[workspaceID2][destType1].Value()).To(Equal(1.0))
-			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID1][destType1]["success"]).To(Equal(int(misc.AVG_METRIC_AGE)))
-			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID2][destType1]["failure"]).To(Equal(int(misc.AVG_METRIC_AGE)))
 			Expect(tenantStats.getFailureRate(workspaceID2, destType1)).To(Equal(1.0))
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
 		})
@@ -74,28 +71,9 @@ var _ = Describe("tenantStats", func() {
 			tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, true)
 
 			Expect(tenantStats.failureRate[workspaceID1][destType1].Value()).To(Equal(0.0))
-			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID1][destType1]["drained"]).To(Equal(1))
 			Expect(tenantStats.lastDrainedTimestamps[workspaceID1][destType1]).To(BeTemporally("~", time.Now(), time.Second))
 			Expect(tenantStats.getLastDrainedTimestamp(workspaceID1, destType1)).To(BeTemporally("~", time.Now(), time.Second))
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
-		})
-
-		It("Generate Success Rate Map", func() {
-			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
-				tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, true, false)
-				tenantStats.CalculateSuccessFailureCounts(workspaceID2, destType1, false, false)
-			}
-
-			for i := 0; i < int(misc.AVG_METRIC_AGE)/2; i++ {
-				tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, false)
-				tenantStats.CalculateSuccessFailureCounts(workspaceID2, destType1, true, false)
-			}
-			customerSuccessRate, customerDrainedMap := tenantStats.GenerateSuccessRateMap(destType1)
-			Expect(customerSuccessRate[workspaceID1]).To(Equal(0.6666666666666666))
-			Expect(customerSuccessRate[workspaceID2]).To(Equal(0.3333333333333333))
-			Expect(customerDrainedMap[workspaceID2]).To(Equal(0.0))
-			Expect(customerDrainedMap[workspaceID2]).To(Equal(0.0))
-
 		})
 
 		It("Add and Remove from InMemory Counts", func() {

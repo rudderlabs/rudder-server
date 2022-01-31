@@ -51,7 +51,6 @@ type reporter interface {
 type tenantStats interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
@@ -1897,8 +1896,6 @@ func (rt *HandleT) readAndProcess() int {
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 	}
-
-	//successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
 
 	timeOut := rt.routerTimeout
 
