@@ -94,9 +94,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
 
-
 	enableGateway := true
-	var reportingI types.ReportingI
+	var reportingI types.ReportingI = &app.ReportingNOOP{}
 	if embedded.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}

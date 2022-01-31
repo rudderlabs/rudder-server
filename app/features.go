@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -78,6 +79,22 @@ var reportingFeatureSetup ReportingFeatureSetup
 // RegisterReportingFeature registers a config env feature implementation
 func RegisterReportingFeature(f ReportingFeatureSetup) {
 	reportingFeatureSetup = f
+}
+
+type ReportingNOOP struct {
+}
+
+func (n *ReportingNOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+}
+
+func (n *ReportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+}
+
+func (n *ReportingNOOP) AddClient(ctx context.Context, c types.Config) {
+}
+
+func (n *ReportingNOOP) GetClient(clientName string) *types.Client {
+	return nil
 }
 
 /*********************************
