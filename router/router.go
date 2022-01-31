@@ -235,7 +235,6 @@ var (
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
-	once                                                          sync.Once
 )
 
 type requestMetric struct {
@@ -1528,9 +1527,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
-		cd, ok := connectionDetailsMap[key]
+		_, ok = connectionDetailsMap[key]
 		if !ok {
-			cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 			connectionDetailsMap[key] = cd
 			transformedAtMap[key] = parameters.TransformAt
 		}

@@ -27,9 +27,7 @@ func (*noop) GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut
 }
 
 func (*noop) RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	return
 }
 
 func (*noop) ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
-	return
 }

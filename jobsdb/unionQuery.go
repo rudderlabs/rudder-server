@@ -277,9 +277,7 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 
 	//removed count assert, because that params.count is not used..?
 	var tablesQueried int
-	var tablesQueriedStat stats.RudderStats
-	var queryTime stats.RudderStats
-	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+	queryTime := stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":    "unprocessed",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -298,7 +296,7 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	tablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":    "unprocessed",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -399,9 +397,7 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	outJobs := make([]*JobT, 0)
 
 	var tablesQueried int
-	var tablesQueriedStat stats.RudderStats
-	var queryTime stats.RudderStats
-	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+	queryTime := stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -418,7 +414,7 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	tablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -649,9 +645,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 	outJobs := make([]*JobT, 0)
 
 	var tablesQueried int
-	var tablesQueriedStat stats.RudderStats
-	var queryTime stats.RudderStats
-	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+	queryTime := stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -671,7 +665,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	tablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],

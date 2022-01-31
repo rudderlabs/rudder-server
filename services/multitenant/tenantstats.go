@@ -14,11 +14,7 @@ import (
 )
 
 var (
-	pkgLogger     logger.LoggerI
-	minBackOff    time.Duration
-	maxBackOff    time.Duration
-	backOffFactor float64
-	boostedFactor float64
+	pkgLogger logger.LoggerI
 )
 
 type MultitenantStatsT struct {
@@ -304,7 +300,7 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(customersW
 		scores[i].workspaceId = customerKey
 	}
 
-	sort.Slice(scores[:], func(i, j int) bool {
+	sort.Slice(scores, func(i, j int) bool {
 		return scores[i].score < scores[j].score
 	})
 	return scores
@@ -331,7 +327,7 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(c
 		scores[i].secondary_score = float64(customerCountKey[destType] - customerPickUpCount[customerKey])
 	}
 
-	sort.Slice(scores[:], func(i, j int) bool {
+	sort.Slice(scores, func(i, j int) bool {
 		if scores[i].score == math.MaxFloat64 && scores[j].score == math.MaxFloat64 {
 			return scores[i].secondary_score < scores[j].secondary_score
 		}

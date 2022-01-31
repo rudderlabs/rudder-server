@@ -77,10 +77,8 @@ type testContext struct {
 type reportingNOOP struct{}
 
 func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
-	return
 }
 func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
-	return
 }
 
 // Initiaze mocks and common expectations
