@@ -60,7 +60,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chTest.Resource != nil {
-			log.Println(fmt.Sprintf("Purging warehouse clickhouse resource: %s", err.Error()))
+			log.Println("Purging warehouse clickhouse resource")
 			if err := pool.Purge(chTest.Resource); err != nil {
 				log.Println(fmt.Errorf("could not purge warehouse clickhouse resource: %s", err.Error()))
 			}

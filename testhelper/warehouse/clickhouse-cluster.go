@@ -194,37 +194,37 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if chClusterTest.Zookeeper != nil {
-			log.Println(fmt.Sprintf("Purging clickhouse cluster zookeeper resource: %s", err.Error()))
+			log.Println("Purging clickhouse cluster zookeeper resource")
 			if err := pool.Purge(chClusterTest.Zookeeper); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster zookeeper resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse01 != nil {
-			log.Printf(fmt.Sprintf("Purging clickhouse cluster 1 resource: %s", err.Error()))
+			log.Printf("Purging clickhouse cluster 1 resource")
 			if err := pool.Purge(chClusterTest.Clickhouse01); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster 1 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse02 != nil {
-			log.Printf(fmt.Sprintf("Purging clickhouse cluster 2 resource: %s", err.Error()))
+			log.Printf("Purging clickhouse cluster 2 resource")
 			if err := pool.Purge(chClusterTest.Clickhouse02); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster 2 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse03 != nil {
-			log.Println(fmt.Sprintf("Purging clickhouse cluster 3 resource: %s", err.Error()))
+			log.Println("Purging clickhouse cluster 3 resource")
 			if err := pool.Purge(chClusterTest.Clickhouse03); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster 3 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Clickhouse04 != nil {
-			log.Println(fmt.Sprintf("Purging clickhouse cluster 4 resource: %s", err.Error()))
+			log.Println("Purging clickhouse cluster 4 resource")
 			if err := pool.Purge(chClusterTest.Clickhouse04); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster 4 resource: %s", err.Error()))
 			}
 		}
 		if chClusterTest.Network != nil {
-			log.Println(fmt.Sprintf("Purging clickhouse cluster network resource: %s", err.Error()))
+			log.Println("Purging clickhouse cluster network resource")
 			if err := pool.Client.RemoveNetwork(chClusterTest.Network.ID); err != nil {
 				log.Println(fmt.Errorf("could not purge clickhouse cluster network resource: %s", err.Error()))
 			}

@@ -59,7 +59,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if mssqlTest.Resource != nil {
-			log.Println(fmt.Sprintf("Purging warehouse mssql resource: %s", err.Error()))
+			log.Println("Purging warehouse mssql resource")
 			if err := pool.Purge(mssqlTest.Resource); err != nil {
 				log.Println(fmt.Errorf("could not purge warehouse mssql resource: %s", err.Error()))
 			}

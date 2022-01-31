@@ -58,7 +58,7 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	purgeResources := func() {
 		if pgTest.Resource != nil {
-			log.Println(fmt.Sprintf("Purging warehouse postgres resource: %s", err.Error()))
+			log.Println("Purging warehouse postgres resource")
 			if err := pool.Purge(pgTest.Resource); err != nil {
 				log.Println(fmt.Errorf("could not purge warehouse postgres resource: %s", err.Error()))
 			}
