@@ -87,17 +87,17 @@ func (mr *MockMultiTenantJobsDBMockRecorder) DeleteExecuting(arg0 interface{}) *
 }
 
 // GetAllJobs mocks base method.
-func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 map[string]int, arg1 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 map[string]int, arg1 jobsdb.GetQueryParamsT, arg2 int) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAllJobs", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetAllJobs", arg0, arg1, arg2)
 	ret0, _ := ret[0].([]*jobsdb.JobT)
 	return ret0
 }
 
 // GetAllJobs indicates an expected call of GetAllJobs.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetAllJobs(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockMultiTenantJobsDBMockRecorder) GetAllJobs(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllJobs", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetAllJobs), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllJobs", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetAllJobs), arg0, arg1, arg2)
 }
 
 // GetCustomerCounts mocks base method.
