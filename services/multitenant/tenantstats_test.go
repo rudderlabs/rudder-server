@@ -12,12 +12,25 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var workspaceID1 = uuid.Must(uuid.NewV4()).String()
-var workspaceID2 = uuid.Must(uuid.NewV4()).String()
-var workspaceID3 = uuid.Must(uuid.NewV4()).String()
-var destType1 = "GA"
+const (
+	destType1         = "GA"
+	noOfWorkers       = 64
+	routerTimeOut     = 10 * time.Second
+	jobQueryBatchSize = 10000
+	timeGained        = 0.0
+)
+
+var (
+	workspaceID1 = uuid.Must(uuid.NewV4()).String()
+	workspaceID2 = uuid.Must(uuid.NewV4()).String()
+	workspaceID3 = uuid.Must(uuid.NewV4()).String()
+)
 
 var _ = Describe("tenantStats", func() {
+
+	BeforeEach(func() {
+
+	})
 
 	Context("cache testing", func() {
 		mockCtrl := gomock.NewController(GinkgoT())
@@ -122,7 +135,18 @@ var _ = Describe("tenantStats", func() {
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
+			addJobWID1 := rand.Intn(10)
+			addJobWID2 := rand.Intn(10)
+			addJobWID3 := rand.Intn(10)
+			input := make(map[string]map[string]int)
+			input[workspaceID1] = make(map[string]int)
+			input[workspaceID2] = make(map[string]int)
+			input[workspaceID1][destType1] = addJobWID1
+			input[workspaceID2][destType1] = addJobWID2
+			input[workspaceID3][destType1] = addJobWID3
 
+			tenantStats.ReportProcLoopAddStats(input, time.Second, "router")
+			tenantStats.GetRouterPickupJobs(destType1)
 		})
 	})
 })

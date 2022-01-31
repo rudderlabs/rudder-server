@@ -692,7 +692,6 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 	for customer, jobCount := range customerCountStat {
 		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
 			"customer": customer,
-			"state":    params.StateFilters[0],
 			"module":   mj.tablePrefix,
 			"destType": params.CustomValFilters[0],
 		})
@@ -723,7 +722,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	var err error
 
 	stmt, err := mj.dbHandle.Prepare(queryString)
-	mj.logger.Debug(queryString)
+	mj.logger.Info(queryString)
 	mj.assertError(err)
 	defer func(stmt *sql.Stmt) {
 		err := stmt.Close()
@@ -882,7 +881,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
                                                         )
                                                 ) AS job_latest_state ON jobs.job_id = job_latest_state.job_id
                                             WHERE
-                                                jobs.workspaceid IN %[7]s AND %[3]s %[4]s %[5]s %[6]s`,
+                                                jobs.workspace_id IN %[7]s %[3]s %[4]s %[5]s %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
 	return sqlStatement + ")"
 }

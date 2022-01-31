@@ -1,5 +1,5 @@
 {{range .Datasets}}
     {{ if eq $.Prefix "rt" }} 
-        CREATE INDEX IF NOT EXISTS customval_customer_{{.}} ON {{$.Prefix}}_jobs_{{.}} (custom_val,workspaceid);
+        CREATE INDEX IF NOT EXISTS customval_customer_{{.}} ON {{$.Prefix}}_jobs_{{.}} (custom_val,workspace_id);
     {{end}}
 {{end}}
