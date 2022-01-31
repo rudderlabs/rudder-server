@@ -528,9 +528,18 @@ func ContainsString(slice []string, str string) bool {
 	return false
 }
 
-func ContainsInt(slice []int, str int) bool {
+func ContainsInt64(slice []int64, val int64) bool {
 	for _, s := range slice {
-		if s == str {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
+func ContainsInt(slice []int, val int) bool {
+	for _, s := range slice {
+		if s == val {
 			return true
 		}
 	}

@@ -1913,25 +1913,32 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	for _, event := range events {
 		destinationDef := event.Destination.DestinationDefinition
 		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
-		if ok && filterUnsupportedMessageTypes {
-			messageType, typOk := event.Message["type"].(string)
-			if !typOk {
-				// add to FailedEvents
-				errMessage = "Invalid message type. Type assertion failed"
-				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-				failedEvents = append(failedEvents, resp)
-				continue
-			}
+		if ok {
+			supportedTypesArr, ok := supportedTypes.([]string)
+			if ok && filterUnsupportedMessageTypes {
+				messageType, typOk := event.Message["type"].(string)
+				if !typOk {
+					// add to FailedEvents
+					errMessage = "Invalid message type. Type assertion failed"
+					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+					failedEvents = append(failedEvents, resp)
+					continue
+				}
 
-			messageType = strings.TrimSpace(strings.ToLower(messageType))
-			if misc.Contains(supportedTypes, messageType) {
+				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				if misc.ContainsString(supportedTypesArr, messageType) {
+					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+					responses = append(responses, resp)
+				} else {
+					// add to FailedEvents
+					errMessage = "Message type " + messageType + " not supported"
+					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+					failedEvents = append(failedEvents, resp)
+				}
+			} else {
+				// allow event
 				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 				responses = append(responses, resp)
-			} else {
-				// add to FailedEvents
-				errMessage = "Message type " + messageType + " not supported"
-				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-				failedEvents = append(failedEvents, resp)
 			}
 		} else {
 			// allow event

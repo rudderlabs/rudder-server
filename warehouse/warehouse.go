@@ -990,7 +990,7 @@ func (wh *HandleT) Disable() {
 }
 
 func (wh *HandleT) setInterruptedDestinations() {
-	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
+	if !misc.ContainsString(crashRecoverWarehouses, wh.destType) {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
@@ -1096,7 +1096,7 @@ func minimalConfigSubscriber() {
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
 			for _, destination := range source.Destinations {
-				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
 						dbHandle: dbHandle,
 						destType: destination.DestinationDefinition.Name,
@@ -1161,7 +1161,7 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+			if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
 				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if !ok {
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
