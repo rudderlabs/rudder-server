@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,jobs.running_event_counts `
+	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,jobs.running_event_counts `
 )
 
 type MultiTenantHandleT struct {
@@ -93,7 +93,7 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 			  j.custom_val as customVal,
 			  s.id as statusID,
 			  s.job_state as jobState,
-			  j.workspaceid as customer
+			  j.workspace_id as customer
 			from
 			  %[1]s j
 			  left join (
@@ -159,7 +159,7 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 	mj.dsListLock.RLock()
 	defer mj.dsMigrationLock.RUnlock()
 	defer mj.dsListLock.RUnlock()
-	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select workspaceid, count(job_id) from %s group by workspaceid;`, mj.getDSList(false)[0].JobTable))
+	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select workspace_id, count(job_id) from %s group by workspace_id;`, mj.getDSList(false)[0].JobTable))
 	mj.assertError(err)
 
 	for rows.Next() {
@@ -217,13 +217,13 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 				  jobs.event_count,
 				  jobs.created_at,
 				  jobs.expire_at,
-				  jobs.workspaceid ,
+				  jobs.workspace_id ,
 				  0 as running_event_counts
 
 				FROM
 				%[1]s jobs LEFT JOIN %[2]s AS job_status ON jobs.job_id = job_status.job_id
 					WHERE
-					job_status.job_id is NULL AND jobs.workspaceid IN %[3]s
+					job_status.job_id is NULL AND jobs.workspace_id IN %[3]s
 			  `,
 		ds.JobTable, ds.JobStatusTable, customerString)
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
@@ -249,7 +249,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 	sqlStatement = fmt.Sprintf(
 		selectQuery+
 			`FROM %[1]s AS jobs `+
-			`WHERE jobs.workspaceid='%[2]s'`,
+			`WHERE jobs.workspace_id='%[2]s'`,
 		"rt_jobs_view", customer)
 	orderQuery := " ORDER BY jobs.job_id"
 	sqlStatement += orderQuery
@@ -569,7 +569,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
 	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
 										SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
+                                               jobs.created_at, jobs.expire_at, jobs.workspace_id,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -580,7 +580,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
                                                  error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
-                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.workspaceid IN %[7]s
+                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.workspace_id IN %[7]s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
@@ -603,7 +603,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 	sqlStatement = fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
+                                               jobs.created_at, jobs.expire_at, jobs.workspace_id,
 											   jobs.running_event_counts,
                                                jobs.job_state, jobs.attempt,
                                                jobs.exec_time, jobs.retry_time,
@@ -611,7 +611,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                             FROM
                                                %[1]s
                                                AS jobs
-                                            WHERE jobs.workspaceid='%[3]s' %[4]s %[2]s`,
+                                            WHERE jobs.workspace_id='%[3]s' %[4]s %[2]s`,
 		"rt_jobs_view", limitQuery, customer, orderQuery)
 
 	return sqlStatement
@@ -845,7 +845,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 		                                    SELECT
                                                 jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val,
                                                 jobs.event_payload, jobs.event_count, jobs.created_at,
-                                                jobs.expire_at, jobs.workspaceid,
+                                                jobs.expire_at, jobs.workspace_id,
                                                 sum(jobs.event_count) over (
                                                     order by jobs.job_id asc
                                                 ) as running_event_counts,
@@ -872,7 +872,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
                                                     job_latest_state.job_id IS NULL
                                                     %[3]s
                                                 )
-                                                AND jobs.workspaceid IN %[5]s
+                                                AND jobs.workspace_id IN %[5]s
                                                 %[4]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, customerString)
 	return sqlStatement + ")"

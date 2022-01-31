@@ -1366,8 +1366,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW(),
-									  workspaceid TEXT NOT NULL DEFAULT '');`, newDS.JobTable)
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -1375,7 +1374,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	//TODO : Evaluate a way to handle indexes only for particular tables
 
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,workspaceid)`, newDSIdx, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,workspace_id)`, newDSIdx, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1836,7 +1835,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	dsList := jd.getDSList(false)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
-			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspaceid as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspace_id as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
 		),
 		x as (
 			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
@@ -1873,9 +1872,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-			"event_payload", "event_count", "created_at", "expire_at", "workspaceid"))
+			"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
 	} else {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspaceid"))
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
 	}
 
 	if err != nil {
@@ -2131,7 +2130,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
                                   jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                  jobs.created_at, jobs.expire_at, jobs.workspaceid,
+                                  jobs.created_at, jobs.expire_at, jobs.workspace_id,
 								  sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
@@ -2151,7 +2150,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
+                                               jobs.created_at, jobs.expire_at, jobs.workspace_id,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -2237,7 +2236,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	if useJoinForUnprocessed {
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,`+
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
 				`FROM "%[1]s" AS jobs `+
 				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
@@ -2245,7 +2244,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 			ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,`+
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
 				` FROM AS jobs `+
 				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM "%[2]s" AS job_status)`,
