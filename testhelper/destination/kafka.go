@@ -20,6 +20,7 @@ type KafkaTest struct {
 	localhostPort    string
 	localhostPortInt int
 }
+
 var (
 	Test *KafkaTest
 )

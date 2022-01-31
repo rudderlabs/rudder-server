@@ -16,13 +16,15 @@ import (
 )
 
 var (
-	DB_DSN          = "root@tcp(127.0.0.1:3306)/service"
+	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
 )
+
 type ServerTest struct {
 	db              *sql.DB
 	minioEndpoint   string
 	minioBucketName string
 }
+
 var (
 	PostgresTest *ServerTest
 )

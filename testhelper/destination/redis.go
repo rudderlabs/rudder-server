@@ -14,6 +14,7 @@ type RedisDesTest struct {
 	redisAddress string
 	redisClient  *redis.Client
 }
+
 var (
 	RedisTest *RedisDesTest
 )
