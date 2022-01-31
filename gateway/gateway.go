@@ -419,7 +419,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 			//Should be function of body
 			configSubscriberLock.RLock()
-			workspaceId, _ := enabledWriteKeyWorkspaceMap[writeKey]
+			workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
 			configSubscriberLock.RUnlock()
 
 			sourceTagMap["workspaceId"] = workspaceId
