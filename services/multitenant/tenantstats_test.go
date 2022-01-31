@@ -30,12 +30,12 @@ var _ = Describe("tenantStats", func() {
 
 		It("TenantStats init", func() {
 
-			Expect(len(tenantStats.RouterInputRates)).To(Equal(2))
-			Expect(len(tenantStats.RouterInMemoryJobCounts)).To(Equal(2))
-			Expect(len(tenantStats.RouterSuccessRatioLoopCount)).To(Equal(0))
+			Expect(len(tenantStats.routerInputRates)).To(Equal(2))
+			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(2))
+			Expect(len(tenantStats.routerSuccessRatioLoopCount)).To(Equal(0))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
-			Expect(len(tenantStats.RouterCircuitBreakerMap)).To(Equal(0))
+			Expect(len(tenantStats.routerCircuitBreakerMap)).To(Equal(0))
 		})
 
 		It("Calculate Success Failure Counts , Failure Rate", func() {
@@ -46,8 +46,8 @@ var _ = Describe("tenantStats", func() {
 
 			Expect(tenantStats.failureRate[workspaceID1][destType1].Value()).To(Equal(0.0))
 			Expect(tenantStats.failureRate[workspaceID2][destType1].Value()).To(Equal(1.0))
-			Expect(tenantStats.RouterSuccessRatioLoopCount[workspaceID1][destType1]["success"]).To(Equal(int(misc.AVG_METRIC_AGE)))
-			Expect(tenantStats.RouterSuccessRatioLoopCount[workspaceID2][destType1]["failure"]).To(Equal(int(misc.AVG_METRIC_AGE)))
+			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID1][destType1]["success"]).To(Equal(int(misc.AVG_METRIC_AGE)))
+			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID2][destType1]["failure"]).To(Equal(int(misc.AVG_METRIC_AGE)))
 			Expect(tenantStats.getFailureRate(workspaceID2, destType1)).To(Equal(1.0))
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
 		})
@@ -56,7 +56,7 @@ var _ = Describe("tenantStats", func() {
 			tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, true)
 
 			Expect(tenantStats.failureRate[workspaceID1][destType1].Value()).To(Equal(0.0))
-			Expect(tenantStats.RouterSuccessRatioLoopCount[workspaceID1][destType1]["drained"]).To(Equal(1))
+			Expect(tenantStats.routerSuccessRatioLoopCount[workspaceID1][destType1]["drained"]).To(Equal(1))
 			Expect(tenantStats.lastDrainedTimestamps[workspaceID1][destType1]).To(BeTemporally("~", time.Now(), time.Second))
 			Expect(tenantStats.getLastDrainedTimestamp(workspaceID1, destType1)).To(BeTemporally("~", time.Now(), time.Second))
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
@@ -100,8 +100,8 @@ var _ = Describe("tenantStats", func() {
 
 			netCountWID1 := addJobWID1 - removeJobWID1
 			netCountWID2 := addJobWID2 - removeJobWID2
-			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID1][destType1]).To(Equal(netCountWID1))
-			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID2][destType1]).To(Equal(netCountWID2))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(netCountWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(netCountWID2))
 		})
 
 		It("Add and Remove from InMemory Counts", func() {
@@ -114,11 +114,12 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID2][destType1] = addJobWID2
 
 			tenantStats.ReportProcLoopAddStats(input, time.Second, "router")
-			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
-			Expect(tenantStats.RouterInMemoryJobCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
-			Expect(tenantStats.RouterInputRates["router"][workspaceID1][destType1].Value()).To(Equal(float64(addJobWID1)))
-			Expect(tenantStats.RouterInputRates["router"][workspaceID2][destType1].Value()).To(Equal(float64(addJobWID2)))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
+			Expect(tenantStats.routerInputRates["router"][workspaceID1][destType1].Value()).To(Equal(float64(addJobWID1)))
+			Expect(tenantStats.routerInputRates["router"][workspaceID2][destType1].Value()).To(Equal(float64(addJobWID2)))
 		})
+
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
 
 		})

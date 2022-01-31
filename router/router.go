@@ -147,8 +147,7 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	customerCount        map[string]int
-	recentJobInResultSet map[string]time.Time
+	customerCount map[string]int
 
 	resultSetMeta    map[int64]*resultSetT
 	resultSetLock    sync.RWMutex
@@ -1911,9 +1910,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	rt.lastQueryRunTime = time.Now()
-	if rt.recentJobInResultSet == nil {
-		rt.recentJobInResultSet = make(map[string]time.Time)
-	}
+
 	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
 	rt.customerCount = pickupMap
 	rt.timeGained = 0
@@ -1952,8 +1949,6 @@ func (rt *HandleT) readAndProcess() int {
 	throttledAtTime := time.Now()
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
-		rt.recentJobInResultSet[job.WorkspaceId] = job.CreatedAt
-
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
 		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
