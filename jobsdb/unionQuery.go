@@ -757,7 +757,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 				&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		} else {
 			var _nullJS sql.NullString
-			var _nullA sql.NullInt16
+			var _nullA sql.NullInt64
 			var _nullET sql.NullTime
 			var _nullRT sql.NullTime
 			var _nullEC sql.NullString
