@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"golang.org/x/sync/errgroup"
@@ -104,6 +105,14 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		defer procErrorDB.TearDown()
 	}
 
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB} //FIXME copy locks ?
+	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+
+	if config.GetBool("EnableMultitenancy", true) {
+		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		multitenantStats = multitenant.NewStats(tenantRouterDB)
+	}
+
 	reportingI := processor.App.Features().Reporting.GetReportingInstance()
 
 	if processor.App.Features().Migrator != nil {
@@ -111,14 +120,14 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			startProcessorFunc := func() {
 				g.Go(func() error {
 					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 
 					return nil
 				})
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
-					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				})
 			}
@@ -140,11 +149,11 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}))
 
 	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 	g.Go(func() error {
-		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 

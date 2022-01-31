@@ -9,21 +9,15 @@ import (
 
 type Factory struct {
 	Reporting     types.ReportingI
+	Multitenant   multitenant.MultiTenantI
 	BackendConfig backendconfig.BackendConfig
-	RouterDB      *jobsdb.HandleT
+	RouterDB      jobsdb.JobsDB
 	ProcErrorDB   jobsdb.JobsDB
-	Multitenant   bool
 }
 
 func (f *Factory) New(destType string) *HandleT {
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
-
-	if f.Multitenant {
-		multitenantStats = multitenant.NewStats(&jobsdb.MultiTenantHandleT{HandleT: f.RouterDB})
-	}
-
 	r := &HandleT{}
 
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, multitenantStats)
+	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant)
 	return r
 }

@@ -112,12 +112,8 @@ func rudderCoreBaseSetup() {
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 }
 
-func enableMultitenancy() bool {
-	return enableMultitenancy()
-}
-
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableProcessor {
 		return
 	}
@@ -129,20 +125,13 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 
 	var processorInstance = processor.NewProcessor()
 	processor.ProcessorManagerSetup(processorInstance)
-
-	var multitenantStat multitenant.MultiTenantI = multitenant.NOOP
-
-	if enableMultitenancy() {
-		multitenantStat = multitenant.NewStats(&jobsdb.MultiTenantHandleT{HandleT: routerDB})
-	}
-
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(ctx context.Context, enableRouter bool, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableRouter {
 		return
 	}
@@ -156,17 +145,17 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB *jobsdb.Handle
 	batchrouter.BatchRoutersManagerSetup()
 
 	routerFactory := router.Factory{
-		Multitenant:   enableMultitenancy(),
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		Reporting:     reporting,
+		Multitenant:   multitenantStat,
 		RouterDB:      routerDB,
 		ProcErrorDB:   procErrorDB,
 	}
 
 	batchrouterFactory := batchrouter.Factory{
-		Multitenant:   enableMultitenancy(),
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		Reporting:     reporting,
+		Multitenant:   multitenantStat,
 		ProcErrorDB:   procErrorDB,
 		RouterDB:      batchRouterDB,
 	}
