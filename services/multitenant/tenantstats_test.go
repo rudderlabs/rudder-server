@@ -8,7 +8,9 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -18,6 +20,7 @@ const (
 	routerTimeOut     = 10 * time.Second
 	jobQueryBatchSize = 10000
 	timeGained        = 0.0
+	procLoopTime      = 200 * time.Millisecond
 )
 
 var (
@@ -29,10 +32,12 @@ var (
 var _ = Describe("tenantStats", func() {
 
 	BeforeEach(func() {
-
+		config.Load()
+		logger.Init()
+		Init()
 	})
 
-	Context("cache testing", func() {
+	Context("Tenant Stats Testing", func() {
 		mockCtrl := gomock.NewController(GinkgoT())
 		mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 		var tenantStats *MultitenantStatsT
@@ -49,7 +54,6 @@ var _ = Describe("tenantStats", func() {
 			Expect(len(tenantStats.routerSuccessRatioLoopCount)).To(Equal(0))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
-			Expect(len(tenantStats.routerCircuitBreakerMap)).To(Equal(0))
 		})
 
 		It("Calculate Success Failure Counts , Failure Rate", func() {
@@ -135,18 +139,25 @@ var _ = Describe("tenantStats", func() {
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
-			addJobWID1 := rand.Intn(10)
-			addJobWID2 := rand.Intn(10)
-			addJobWID3 := rand.Intn(10)
+			addJobWID1 := rand.Intn(2000)
+			addJobWID2 := rand.Intn(2000)
+			addJobWID3 := rand.Intn(2000)
 			input := make(map[string]map[string]int)
 			input[workspaceID1] = make(map[string]int)
 			input[workspaceID2] = make(map[string]int)
+			input[workspaceID3] = make(map[string]int)
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-
-			tenantStats.ReportProcLoopAddStats(input, time.Second, "router")
-			tenantStats.GetRouterPickupJobs(destType1)
+			latencyMap := map[string]misc.MovingAverage{workspaceID1: misc.NewMovingAverage(), workspaceID2: misc.NewMovingAverage(), workspaceID3: misc.NewMovingAverage()}
+			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
+			routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, latencyMap, jobQueryBatchSize, timeGained)
+			Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
+			Expect(routerPickUpJobs[workspaceID2]).To(Equal(addJobWID2))
+			Expect(routerPickUpJobs[workspaceID3]).To(Equal(addJobWID3))
+			Expect(usedLatencies[workspaceID1]).To(Equal(0.0))
+			Expect(usedLatencies[workspaceID2]).To(Equal(0.0))
+			Expect(usedLatencies[workspaceID3]).To(Equal(0.0))
 		})
 	})
 })

@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jpillora/backoff"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -30,13 +28,7 @@ type MultitenantStatsT struct {
 	routerSuccessRatioLoopCount map[string]map[string]map[string]int
 	lastDrainedTimestamps       map[string]map[string]time.Time
 	failureRate                 map[string]map[string]misc.MovingAverage
-	routerCircuitBreakerMap     map[string]map[string]BackOffT
 	routerSuccessRateMutex      sync.RWMutex
-}
-
-type BackOffT struct {
-	timeToRetry time.Time
-	backOff     *backoff.Backoff
 }
 
 type MultiTenantI interface {
@@ -49,10 +41,6 @@ type MultiTenantI interface {
 }
 
 func Init() {
-	config.RegisterDurationConfigVariable(time.Duration(10), &minBackOff, false, time.Second, "tenantStats.minBackOff")
-	config.RegisterDurationConfigVariable(time.Duration(300), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
-	config.RegisterFloat64ConfigVariable(1.5, &backOffFactor, false, "tenantStats.backOffFactor")
-	config.RegisterFloat64ConfigVariable(1.3, &boostedFactor, false, "tenantStats.boostedFactor")
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
 }
 
@@ -67,7 +55,6 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat.routerSuccessRatioLoopCount = make(map[string]map[string]map[string]int)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerCircuitBreakerMap = make(map[string]map[string]BackOffT)
 	pileUpStatMap := make(map[string]map[string]int)
 	routerDB.GetPileUpCounts(pileUpStatMap)
 	for customer := range pileUpStatMap {
@@ -278,7 +265,7 @@ func getBoostedRouterTimeOut(routerTimeOut time.Duration, timeGained float64, no
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
 	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
-	return time.Duration(boostedFactor*float64(routerTimeOut)) + time.Duration(timeGained*float64(time.Second)/float64(noOfWorkers))
+	return time.Duration(1.3*float64(routerTimeOut)) + time.Duration(timeGained*float64(time.Second)/float64(noOfWorkers))
 }
 
 func getMinMaxCustomerLatency(customersWithJobs []string, latencyMap map[string]misc.MovingAverage) (float64, float64) {
@@ -358,7 +345,6 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 
 	customersWithJobs := multitenantStat.getCustomersWithPendingJobs(destType, latencyMap)
-
 	boostedRouterTimeOut := getBoostedRouterTimeOut(routerTimeOut, timeGained, noOfWorkers)
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
@@ -419,7 +405,6 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 
 	//Sort by customers who can get to realtime quickly
 	secondaryScores := multitenantStat.getSortedWorkspaceSecondaryScoreList(customersWithJobs, customerPickUpCount, destType, latencyMap)
-
 	for _, scoredWorkspace := range secondaryScores {
 		customerKey := scoredWorkspace.workspaceId
 		customerCountKey, ok := multitenantStat.routerNonTerminalCounts["router"][customerKey]
@@ -433,10 +418,10 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 
 		pickUpCount := 0
 		if latencyMap[customerKey].Value() == 0 {
-			pickUpCount = misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
+			pickUpCount = misc.MinInt(customerCountKey[destType]-customerPickUpCount[customerKey], runningJobCount)
 		} else {
 			tmpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
-			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), customerCountKey[destType]-customerPickUpCount[destType])
+			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), customerCountKey[destType]-customerPickUpCount[customerKey])
 		}
 		usedLatencies[customerKey] = latencyMap[customerKey].Value()
 		customerPickUpCount[customerKey] += pickUpCount
