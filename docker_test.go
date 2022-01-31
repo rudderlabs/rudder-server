@@ -1478,7 +1478,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		}
 		for i, chResource := range chClusterTest.resources {
 			if chResource.Resource != nil {
-				log.Printf(fmt.Sprintf("Purging clickhouse cluster %d resource", i))
+				log.Println(fmt.Sprintf("Purging clickhouse cluster %d resource", i))
 				if err := pool.Purge(chResource.Resource); err != nil {
 					log.Println(fmt.Errorf("could not purge clickhouse cluster %d resource: %s", i, err.Error()))
 				}
