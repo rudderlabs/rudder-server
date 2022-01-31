@@ -113,10 +113,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
 
-	var reportingI types.ReportingI = &app.ReportingNOOP{}
-	if processor.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-		reportingI = processor.App.Features().Reporting.GetReportingInstance()
-	}
+	reportingI := processor.App.Features().Reporting.GetReportingInstance()
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {

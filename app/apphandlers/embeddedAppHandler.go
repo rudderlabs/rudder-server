@@ -95,10 +95,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	enableGateway := true
-	var reportingI types.ReportingI = &app.ReportingNOOP{}
-	if embedded.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
-	}
+	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
