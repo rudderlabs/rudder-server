@@ -1775,9 +1775,9 @@ func (proc *HandleT) transformSrcDest(
 				connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 				statusDetailsMap := make(map[string]*types.StatusDetail)
 				successCountMap := make(map[string]int64)
-				for _, destEvent := range response.Events {
+				for i := range response.Events {
 					//Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, destEvent, jobsdb.Succeeded.State, []byte(`{}`))
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, response.Events[i], jobsdb.Succeeded.State, []byte(`{}`))
 				}
 				types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
