@@ -58,7 +58,7 @@ type MultiTenantJobsDB interface {
 
 	GetUnprocessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
 	GetProcessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
-	GetAllJobs(map[string]int, GetQueryParamsT) []*JobT
+	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 	GetCustomerCounts(int) map[string]int
 
 	GetImportingList(params GetQueryParamsT) []*JobT
@@ -633,7 +633,9 @@ func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 	}
 }
 
-func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params GetQueryParamsT) []*JobT {
+//All
+
+func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -654,7 +656,6 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
-	params.StateFilters = []string{Waiting.State, Failed.State, NotProcessed.State}
 
 	start := time.Now()
 	for _, ds := range dsList {
@@ -662,6 +663,9 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
 		if len(customerCount) == 0 {
+			break
+		}
+		if tablesQueried > maxDSQuerySize {
 			break
 		}
 	}
@@ -816,6 +820,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(customerCount map[string]int, 
 func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, params GetQueryParamsT, order bool, customerCount map[string]int) string {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
+	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
 	//some stats
@@ -825,7 +830,9 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 	}
 	customerString := "(" + strings.Join(customerArray, ", ") + ")"
 
-	var stateQuery, customValQuery string
+	var stateQuery, customValQuery, limitQuery, sourceQuery string
+
+	stateQuery = "((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
 
 	if len(stateFilters) > 0 {
 		stateQuery = " OR " + constructQuery(mj, "job_latest_state.job_state", stateFilters, "OR")
@@ -839,6 +846,13 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
 	} else {
 		customValQuery = ""
+	}
+
+	if len(parameterFilters) > 0 {
+		// mj.assert(!getAll, "getAll is true")
+		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	} else {
+		sourceQuery = ""
 	}
 
 	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
@@ -868,12 +882,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
                                                         )
                                                 ) AS job_latest_state ON jobs.job_id = job_latest_state.job_id
                                             WHERE
-                                                (
-                                                    job_latest_state.job_id IS NULL
-                                                    %[3]s
-                                                )
-                                                AND jobs.workspace_id IN %[5]s
-                                                %[4]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, customerString)
+                                                jobs.workspaceid IN %[7]s AND %[3]s %[4]s %[5]s %[6]s`,
+		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
 	return sqlStatement + ")"
 }

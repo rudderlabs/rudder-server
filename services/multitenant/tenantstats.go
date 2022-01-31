@@ -323,6 +323,36 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(customersW
 	return scores
 }
 
+func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(customersWithJobs []string, customerPickUpCount map[string]int, destType string, latencyMap map[string]misc.MovingAverage) []workspaceScore {
+	//Sort by customers who can get to realtime quickly
+	scores := make([]workspaceScore, len(customersWithJobs))
+	for i, customerKey := range customersWithJobs {
+		scores[i] = workspaceScore{}
+		scores[i].workspaceId = customerKey
+
+		customerCountKey, ok := multitenantStat.routerNonTerminalCounts["router"][customerKey]
+		if !ok || customerCountKey[destType]-customerPickUpCount[customerKey] <= 0 {
+			scores[i].score = math.MaxFloat64
+			scores[i].secondary_score = 0
+			continue
+		}
+		if multitenantStat.getFailureRate(customerKey, destType) == 1 {
+			scores[i].score = math.MaxFloat64
+		} else {
+			scores[i].score = float64(customerCountKey[destType]-customerPickUpCount[customerKey]) * latencyMap[customerKey].Value() / (1 - multitenantStat.getFailureRate(customerKey, destType))
+		}
+		scores[i].secondary_score = float64(customerCountKey[destType] - customerPickUpCount[customerKey])
+	}
+
+	sort.Slice(scores[:], func(i, j int) bool {
+		if scores[i].score == math.MaxFloat64 && scores[j].score == math.MaxFloat64 {
+			return scores[i].secondary_score < scores[j].secondary_score
+		}
+		return scores[i].score < scores[j].score
+	})
+	return scores
+}
+
 func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
@@ -358,7 +388,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 					}
 					continue
 				}
-
+				//TODO : Get rid of unReliableLatencyORInRate hack
 				unReliableLatencyORInRate := false
 				if latencyMap[customerKey].Value() != 0 {
 					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value())))
@@ -381,9 +411,6 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 				}
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
-				if customerPickUpCount[customerKey] == 0 {
-					delete(customerPickUpCount, customerKey)
-				}
 				usedLatencies[customerKey] = latencyMap[customerKey].Value()
 				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), destTypeCount.Value())
 			}
@@ -391,33 +418,9 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	}
 
 	//Sort by customers who can get to realtime quickly
-	scores = make([]workspaceScore, len(customersWithJobs))
-	for i, customerKey := range customersWithJobs {
-		scores[i] = workspaceScore{}
-		scores[i].workspaceId = customerKey
+	secondaryScores := multitenantStat.getSortedWorkspaceSecondaryScoreList(customersWithJobs, customerPickUpCount, destType, latencyMap)
 
-		customerCountKey, ok := multitenantStat.routerNonTerminalCounts["router"][customerKey]
-		if !ok || customerCountKey[destType]-customerPickUpCount[customerKey] <= 0 {
-			scores[i].score = math.MaxFloat64
-			scores[i].secondary_score = 0
-			continue
-		}
-		if multitenantStat.getFailureRate(customerKey, destType) == 1 {
-			scores[i].score = math.MaxFloat64
-		} else {
-			scores[i].score = float64(customerCountKey[destType]-customerPickUpCount[customerKey]) * latencyMap[customerKey].Value() / (1 - multitenantStat.getFailureRate(customerKey, destType))
-		}
-		scores[i].secondary_score = float64(customerCountKey[destType] - customerPickUpCount[customerKey])
-	}
-
-	sort.Slice(scores[:], func(i, j int) bool {
-		if scores[i].score == math.MaxFloat64 && scores[j].score == math.MaxFloat64 {
-			return scores[i].secondary_score < scores[j].secondary_score
-		}
-		return scores[i].score < scores[j].score
-	})
-
-	for _, scoredWorkspace := range scores {
+	for _, scoredWorkspace := range secondaryScores {
 		customerKey := scoredWorkspace.workspaceId
 		customerCountKey, ok := multitenantStat.routerNonTerminalCounts["router"][customerKey]
 		if !ok || customerCountKey[destType] <= 0 {
