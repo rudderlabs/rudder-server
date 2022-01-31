@@ -1757,7 +1757,7 @@ func (rt *HandleT) readAndProcess() int {
 	//unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	//combinedList := append(nonTerminalList, unprocessedList...)
-	combinedList := rt.jobsDB.GetAllJobs(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
+	combinedList := rt.jobsDB.GetAllJobs(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
