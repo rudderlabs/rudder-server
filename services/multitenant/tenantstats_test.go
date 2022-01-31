@@ -14,6 +14,7 @@ import (
 
 var workspaceID1 = uuid.Must(uuid.NewV4()).String()
 var workspaceID2 = uuid.Must(uuid.NewV4()).String()
+var workspaceID3 = uuid.Must(uuid.NewV4()).String()
 var destType1 = "GA"
 
 var _ = Describe("tenantStats", func() {
