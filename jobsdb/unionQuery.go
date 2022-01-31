@@ -18,7 +18,7 @@ const (
 )
 
 type MultiTenantHandleT struct {
-	HandleT
+	*HandleT
 	Cache CacheOperator
 }
 

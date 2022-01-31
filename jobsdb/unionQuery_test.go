@@ -17,7 +17,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	migrationMode := ""
 
 	maxDSSize := 2
-	jobDB := MultiTenantHandleT{HandleT: HandleT{MaxDSSize: &maxDSSize}}
+	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
