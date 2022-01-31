@@ -12,21 +12,25 @@ import (
 	"strconv"
 )
 
-var (
+type KafkaTest struct {
 	pool             *dockertest.Pool
 	err              error
 	network          *dc.Network
 	brokerPort       string
 	localhostPort    string
 	localhostPortInt int
+}
+var (
+	Test *KafkaTest
 )
 
 func SetZookeeper(kafkapool *dockertest.Pool) *dockertest.Resource {
-	pool = kafkapool
+	Test = &KafkaTest{}
+	Test.pool = kafkapool
 	fmt.Println("Set zookeper")
-	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-	if err != nil {
-		log.Printf("Could not create docker network: %s", err)
+	Test.network, Test.err = Test.pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+	if Test.err != nil {
+		log.Printf("Could not create docker network: %s", Test.err)
 	}
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -37,10 +41,10 @@ func SetZookeeper(kafkapool *dockertest.Pool) *dockertest.Resource {
 	log.Println("zookeeper Port:", zookeeperPort)
 	log.Println("zookeeper client Port :", zookeeperclientPort)
 
-	z, err := pool.RunWithOptions(&dockertest.RunOptions{
+	z, err := Test.pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
-		NetworkID:  network.ID,
+		NetworkID:  Test.network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
@@ -62,29 +66,29 @@ func SetKafka(z *dockertest.Resource) *dockertest.Resource {
 	if err != nil {
 		fmt.Println(err)
 	}
-	brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
-	log.Println("broker Port:", brokerPort)
+	Test.brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
+	log.Println("broker Port:", Test.brokerPort)
 
-	localhostPortInt, err = freeport.GetFreePort()
+	Test.localhostPortInt, err = freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
 	}
-	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
-	log.Println("localhost Port:", localhostPort)
+	Test.localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(Test.localhostPortInt))
+	log.Println("localhost Port:", Test.localhostPort)
 
-	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
+	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(Test.localhostPortInt))
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
 
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
-	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
+	resourceKafka, err := Test.pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
 		Tag:        "7.0.0",
-		NetworkID:  network.ID,
+		NetworkID:  Test.network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
-			"9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
+			"29092/tcp": {{HostIP: "broker", HostPort: Test.brokerPort}},
+			"9092/tcp":  {{HostIP: "localhost", HostPort: Test.localhostPort}},
 		},
 		Env: []string{
 			"KAFKA_BROKER_ID=1",
