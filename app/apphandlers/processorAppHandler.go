@@ -105,7 +105,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		defer procErrorDB.TearDown()
 	}
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB} //FIXME copy locks ?
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
 	if config.GetBool("EnableMultitenancy", true) {
