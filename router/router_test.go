@@ -413,8 +413,6 @@ var _ = Describe("Router", func() {
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(0))
-
-			time.Sleep(10 * time.Second)
 		})
 	})
 
