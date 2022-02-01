@@ -494,6 +494,7 @@ var _ = Describe("Router", func() {
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
