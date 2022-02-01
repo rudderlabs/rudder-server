@@ -995,7 +995,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	defer func() {
 		if err != nil {
 			gateway.logger.Debug(err.Error())
-			http.Error(w, response.GetStatus(err.Error()), 400)
+			http.Error(w, err.Error(), 400)
 		}
 	}()
 
@@ -1015,7 +1015,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if reqPayload.TaskRunID == "" {
-		err = errors.New("Empty task run id")
+		err = errors.New("empty task run id")
 		return
 	}
 	var resp []byte
@@ -1113,8 +1113,13 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(errorMessage)))
-			http.Error(w, response.GetStatus(errorMessage), 400)
+			if strings.Contains(errorMessage, response.GetStatus(response.TooManyRequests)) {
+				gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage))
+				http.Error(w, errorMessage, http.StatusTooManyRequests)
+				return
+			}
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+			http.Error(w, errorMessage, 400)
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
