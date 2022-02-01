@@ -1883,8 +1883,8 @@ const (
 )
 
 type cacheEntry struct {
-	value cacheValue
-	t     time.Time
+	Value cacheValue `json:"value"`
+	T     time.Time  `json:"set_at"`
 }
 
 /*
@@ -1935,10 +1935,10 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 		for _, st := range stateFilters {
 			previous := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous.value {
+			if checkAndSet == nil || *checkAndSet == previous.Value {
 				jd.dsEmptyResultCache[ds][cVal][pVal][st] = cacheEntry{
-					value: value,
-					t:     time.Now(),
+					Value: value,
+					T:     time.Now(),
 				}
 			}
 		}
@@ -1989,7 +1989,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 		for _, st := range stateFilters {
 			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if !ok || mark.value != noJobs || time.Now().After(mark.t.Add(cacheExpiration)) {
+			if !ok || mark.Value != noJobs || time.Now().After(mark.T.Add(cacheExpiration)) {
 				return false
 			}
 		}
