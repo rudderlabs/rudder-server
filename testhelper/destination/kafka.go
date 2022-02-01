@@ -21,11 +21,8 @@ type KafkaTest struct {
 	localhostPortInt int
 }
 
-var (
-	Test *KafkaTest
-)
 
-func SetZookeeper(kafkapool *dockertest.Pool) *dockertest.Resource {
+func SetupKafka(kafkapool *dockertest.Pool) *KafkaTest {
 	Test = &KafkaTest{}
 	Test.pool = kafkapool
 	fmt.Println("Set zookeper")
