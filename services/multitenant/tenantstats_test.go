@@ -72,6 +72,16 @@ var _ = Describe("tenantStats", func() {
 			Expect(tenantStats.getFailureRate(workspaceID1, destType1)).To(Equal(0.0))
 		})
 
+		It("Should Update Latency Map", func() {
+			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1, 1)
+				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2, 2)
+			}
+
+			Expect(tenantStats.routerTenantLatencyStat[destType1][workspaceID1].Value()).To(Equal(1.0))
+			Expect(tenantStats.routerTenantLatencyStat[destType1][workspaceID2].Value()).To(Equal(2.0))
+		})
+
 		It("Calculate Success Failure Counts , Drain Map Check", func() {
 			tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, true)
 
@@ -133,9 +143,9 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
 			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
-			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1,0)
-			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2,0)
-			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID3,0)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1, 0)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2, 0)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID3, 0)
 			routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, jobQueryBatchSize, timeGained)
 			Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
 			Expect(routerPickUpJobs[workspaceID2]).To(Equal(addJobWID2))

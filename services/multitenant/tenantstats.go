@@ -68,19 +68,6 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	return &multitenantStat
 }
 
-func (multitenantStat *MultitenantStatsT) AddCustomerToLatencyMap(destType string, workspaceID string) {
-	multitenantStat.routerLatencyMutex.Lock()
-	defer multitenantStat.routerLatencyMutex.Unlock()
-	_, ok := multitenantStat.routerTenantLatencyStat[destType]
-	if !ok {
-		multitenantStat.routerTenantLatencyStat[destType] = make(map[string]misc.MovingAverage)
-	}
-	_, ok = multitenantStat.routerTenantLatencyStat[destType][workspaceID]
-	if !ok {
-		multitenantStat.routerTenantLatencyStat[destType][workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
-	}
-}
-
 func (multitenantStat *MultitenantStatsT) UpdateCustomerLatencyMap(destType string, workspaceID string, val float64) {
 	multitenantStat.routerLatencyMutex.Lock()
 	defer multitenantStat.routerLatencyMutex.Unlock()
