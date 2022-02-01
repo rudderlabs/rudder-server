@@ -39,7 +39,7 @@ type FileManager interface {
 	Download(*os.File, string) error
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
-	DeleteObjects(locations []string) error
+	DeleteObjects(keys []string) error
 	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
 }
