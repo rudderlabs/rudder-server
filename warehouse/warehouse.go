@@ -286,6 +286,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if connectionsMap[destination.ID] == nil {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
+				pkgLogger.Infof("DESTINATION SSL MODE IS %s", warehouse.Destination.Config["sslMode"])
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					warehouseutils.WriteSSLKeys(warehouse.Destination)
 				}
