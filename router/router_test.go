@@ -347,6 +347,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
@@ -413,7 +414,7 @@ var _ = Describe("Router", func() {
 			count := router.readAndProcess()
 			Expect(count).To(Equal(0))
 
-			time.Sleep(3 * time.Second)
+			time.Sleep(10 * time.Second)
 		})
 	})
 
