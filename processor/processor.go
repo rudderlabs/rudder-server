@@ -1890,20 +1890,21 @@ func (proc *HandleT) transformSrcDest(
 				panic(err)
 			}
 
-		newJob := jobsdb.JobT{
-			UUID:         id,
-			UserID:       rudderID,
-			Parameters:   marshalledParams,
-			CreatedAt:    time.Now(),
-			ExpireAt:     time.Now(),
-			CustomVal:    destType,
-			EventPayload: destEventJSON,
-			WorkspaceId:  workspaceId,
-		}
-		if misc.ContainsString(batchDestinations, newJob.CustomVal) {
-			batchDestJobs = append(batchDestJobs, &newJob)
-		} else {
-			destJobs = append(destJobs, &newJob)
+			newJob := jobsdb.JobT{
+				UUID:         id,
+				UserID:       rudderID,
+				Parameters:   marshalledParams,
+				CreatedAt:    time.Now(),
+				ExpireAt:     time.Now(),
+				CustomVal:    destType,
+				EventPayload: destEventJSON,
+				WorkspaceId:  workspaceId,
+			}
+			if misc.ContainsString(batchDestinations, newJob.CustomVal) {
+				batchDestJobs = append(batchDestJobs, &newJob)
+			} else {
+				destJobs = append(destJobs, &newJob)
+			}
 		}
 	})
 	return transformSrcDestOutput{
