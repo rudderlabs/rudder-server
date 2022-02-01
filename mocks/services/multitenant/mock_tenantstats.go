@@ -9,7 +9,6 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	misc "github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // MockMultiTenantI is a mock of MultiTenantI interface.
@@ -33,6 +32,18 @@ func NewMockMultiTenantI(ctrl *gomock.Controller) *MockMultiTenantI {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockMultiTenantI) EXPECT() *MockMultiTenantIMockRecorder {
 	return m.recorder
+}
+
+// AddCustomerToLatencyMap mocks base method.
+func (m *MockMultiTenantI) AddCustomerToLatencyMap(arg0, arg1 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AddCustomerToLatencyMap", arg0, arg1)
+}
+
+// AddCustomerToLatencyMap indicates an expected call of AddCustomerToLatencyMap.
+func (mr *MockMultiTenantIMockRecorder) AddCustomerToLatencyMap(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddCustomerToLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).AddCustomerToLatencyMap), arg0, arg1)
 }
 
 // AddToInMemoryCount mocks base method.
@@ -60,18 +71,18 @@ func (mr *MockMultiTenantIMockRecorder) CalculateSuccessFailureCounts(arg0, arg1
 }
 
 // GetRouterPickupJobs mocks base method.
-func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.Duration, arg3 map[string]misc.MovingAverage, arg4 int, arg5 float64) (map[string]int, map[string]float64) {
+func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.Duration, arg3 int, arg4 float64) (map[string]int, map[string]float64) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3, arg4, arg5)
+	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(map[string]int)
 	ret1, _ := ret[1].(map[string]float64)
 	return ret0, ret1
 }
 
 // GetRouterPickupJobs indicates an expected call of GetRouterPickupJobs.
-func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4, arg5)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4)
 }
 
 // RemoveFromInMemoryCount mocks base method.
@@ -96,4 +107,16 @@ func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int
 func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1, arg2)
+}
+
+// UpdateCustomerLatencyMap mocks base method.
+func (m *MockMultiTenantI) UpdateCustomerLatencyMap(arg0, arg1 string, arg2 float64) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateCustomerLatencyMap", arg0, arg1, arg2)
+}
+
+// UpdateCustomerLatencyMap indicates an expected call of UpdateCustomerLatencyMap.
+func (mr *MockMultiTenantIMockRecorder) UpdateCustomerLatencyMap(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateCustomerLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).UpdateCustomerLatencyMap), arg0, arg1, arg2)
 }

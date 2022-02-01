@@ -50,10 +50,12 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
+	AddCustomerToLatencyMap(destType string, workspaceID string)
+	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
 }
 
 type PauseT struct {
@@ -136,7 +138,7 @@ type HandleT struct {
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
 	saveDestinationResponseOverride        bool
-	routerLatencyStat                      map[string]misc.MovingAverage
+	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
 	routerCustomerJobStatusCount           map[string]map[string]int // TODO : Remove This
@@ -805,10 +807,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
 				if respStatusCode != types.RouterTimedOut {
-					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
+					worker.rt.MultitenantI.UpdateCustomerLatencyMap(worker.rt.destName, workspaceID, float64(timeTaken)/float64(time.Second))
 				}
 
-				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", worker.rt.routerLatencyStat[workspaceID], workspaceID)
 				//Using response status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled
 				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
@@ -1907,7 +1908,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	rt.lastQueryRunTime = time.Now()
 
-	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
+	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize, rt.timeGained)
 	rt.customerCount = pickupMap
 	rt.timeGained = 0
 
@@ -2076,7 +2077,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.generatorResumeChannel = make(chan bool)
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
-	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
+	rt.workspaceSet = make(map[string]struct{})
 	//TODO : Remove this
 	rt.routerCustomerJobStatusCount = make(map[string]map[string]int)
 
@@ -2235,8 +2236,9 @@ func (rt *HandleT) backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
-			if _, ok := rt.routerLatencyStat[workspaceID]; !ok {
-				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+			if _, ok := rt.workspaceSet[workspaceID]; !ok {
+				rt.workspaceSet[workspaceID] = struct{}{}
+				rt.MultitenantI.AddCustomerToLatencyMap(rt.destName, workspaceID)
 			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
@@ -2254,7 +2256,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		rt.routerLatencyStat[""] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+		rt.MultitenantI.AddCustomerToLatencyMap(rt.destName, "")
 		if !rt.isBackendConfigInitialized {
 			rt.isBackendConfigInitialized = true
 			rt.backendConfigInitialized <- true
