@@ -2545,6 +2545,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Total migrated %d jobs", jd.tablePrefix, totalJobsMigrated)
 
 				if totalJobsMigrated <= 0 {
 					jd.dsListLock.Lock()
@@ -2552,6 +2553,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 					jd.inProgressMigrationTargetDS = nil
 					jd.dsListLock.Unlock()
 				}
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate DONE", jd.tablePrefix)
 
 				jd.JournalMarkDone(opID)
 			}
