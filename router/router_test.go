@@ -208,7 +208,7 @@ var _ = Describe("Router", func() {
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
@@ -284,7 +284,7 @@ var _ = Describe("Router", func() {
 			customerCount[workspaceID] = len(unprocessedJobsList)
 			customerCountOut := customerCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
@@ -374,7 +374,7 @@ var _ = Describe("Router", func() {
 			customerCount[workspaceID] = len(unprocessedJobsList)
 			customerCountOut := customerCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
@@ -493,7 +493,7 @@ var _ = Describe("Router", func() {
 			customerCountOut := customerCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(jobsList).After(callGetRouterPickupJobs)
@@ -633,7 +633,7 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(customerCountOut, map[string]float64{})
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(customerCountOut, map[string]float64{})
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Return(toRetryJobsList).Times(
@@ -830,7 +830,7 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(
@@ -1023,7 +1023,7 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)

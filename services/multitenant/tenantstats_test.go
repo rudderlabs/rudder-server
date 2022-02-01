@@ -132,8 +132,10 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-			latencyMap := map[string]misc.MovingAverage{workspaceID1: misc.NewMovingAverage(), workspaceID2: misc.NewMovingAverage(), workspaceID3: misc.NewMovingAverage()}
 			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
+			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID1)
+			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID2)
+			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID3)
 			routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, jobQueryBatchSize, timeGained)
 			Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
 			Expect(routerPickUpJobs[workspaceID2]).To(Equal(addJobWID2))
