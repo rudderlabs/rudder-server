@@ -2233,7 +2233,12 @@ func (rt *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
 		for _, source := range allSources.Sources {
+			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
+			if _, ok := rt.workspaceSet[workspaceID]; !ok {
+				rt.workspaceSet[workspaceID] = struct{}{}
+				rt.MultitenantI.UpdateCustomerLatencyMap(rt.destName, workspaceID, 0)
+			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {

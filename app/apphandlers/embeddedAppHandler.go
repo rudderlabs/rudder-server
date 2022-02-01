@@ -89,7 +89,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
-	if config.GetBool("EnableMultitenancy", false) {
+	if config.GetBool("EnableMultitenancy", true) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
 		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}

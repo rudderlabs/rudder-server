@@ -88,7 +88,7 @@ func (c *testContext) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+	mockMultitenantI := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
@@ -98,7 +98,7 @@ func (c *testContext) Setup() {
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
 		Return().Times(1)
-
+	mockMultitenantI.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	c.dbReadBatchSize = 10000
 }
 
@@ -141,9 +141,10 @@ var _ = Describe("Router", func() {
 	Context("Initialization", func() {
 
 		It("should initialize and recover after crash", func() {
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reportingNOOP{},
-				MultitenantI: c.mockMultitenantI,
+				MultitenantI: mockMultitenantHandle,
 			}
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
@@ -221,7 +222,7 @@ var _ = Describe("Router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -296,7 +297,7 @@ var _ = Describe("Router", func() {
 				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -341,15 +342,15 @@ var _ = Describe("Router", func() {
 
 		It("aborts events that are older than a configurable duration", func() {
 			router_utils.JobRetention = time.Duration(24) * time.Hour
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reportingNOOP{},
-				MultitenantI: c.mockMultitenantI,
+				MultitenantI: mockMultitenantHandle,
 			}
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -541,7 +542,7 @@ var _ = Describe("Router", func() {
 					})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -694,7 +695,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -929,7 +930,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -1091,7 +1092,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
