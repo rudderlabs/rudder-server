@@ -54,7 +54,6 @@ type tenantStats interface {
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
-	AddCustomerToLatencyMap(destType string, workspaceID string)
 	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
 }
 
@@ -2234,12 +2233,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
 		for _, source := range allSources.Sources {
-			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
-			if _, ok := rt.workspaceSet[workspaceID]; !ok {
-				rt.workspaceSet[workspaceID] = struct{}{}
-				rt.MultitenantI.AddCustomerToLatencyMap(rt.destName, workspaceID)
-			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
@@ -2256,7 +2250,6 @@ func (rt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		rt.MultitenantI.AddCustomerToLatencyMap(rt.destName, "")
 		if !rt.isBackendConfigInitialized {
 			rt.isBackendConfigInitialized = true
 			rt.backendConfigInitialized <- true

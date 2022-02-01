@@ -221,6 +221,7 @@ var _ = Describe("Router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -295,6 +296,7 @@ var _ = Describe("Router", func() {
 				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -539,6 +541,7 @@ var _ = Describe("Router", func() {
 					})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -691,6 +694,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -925,6 +929,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -1086,6 +1091,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(),gomock.Any(),gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 

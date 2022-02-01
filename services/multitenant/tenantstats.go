@@ -34,7 +34,6 @@ type MultiTenantI interface {
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
-	AddCustomerToLatencyMap(destType string, workspaceID string)
 	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
 }
 
@@ -85,6 +84,14 @@ func (multitenantStat *MultitenantStatsT) AddCustomerToLatencyMap(destType strin
 func (multitenantStat *MultitenantStatsT) UpdateCustomerLatencyMap(destType string, workspaceID string, val float64) {
 	multitenantStat.routerLatencyMutex.Lock()
 	defer multitenantStat.routerLatencyMutex.Unlock()
+	_, ok := multitenantStat.routerTenantLatencyStat[destType]
+	if !ok {
+		multitenantStat.routerTenantLatencyStat[destType] = make(map[string]misc.MovingAverage)
+	}
+	_, ok = multitenantStat.routerTenantLatencyStat[destType][workspaceID]
+	if !ok {
+		multitenantStat.routerTenantLatencyStat[destType][workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+	}
 	multitenantStat.routerTenantLatencyStat[destType][workspaceID].Add(val)
 }
 

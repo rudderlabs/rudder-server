@@ -133,9 +133,9 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
 			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
-			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID1)
-			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID2)
-			tenantStats.AddCustomerToLatencyMap(destType1, workspaceID3)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1,0)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2,0)
+			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID3,0)
 			routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, jobQueryBatchSize, timeGained)
 			Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
 			Expect(routerPickUpJobs[workspaceID2]).To(Equal(addJobWID2))
