@@ -154,20 +154,6 @@ func (mr *MockMultiTenantJobsDBMockRecorder) GetPileUpCounts(arg0 interface{}) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPileUpCounts", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetPileUpCounts), arg0)
 }
 
-// GetProcessedUnion mocks base method.
-func (m *MockMultiTenantJobsDB) GetProcessedUnion(arg0 map[string]int, arg1 jobsdb.GetQueryParamsT, arg2 int) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProcessedUnion", arg0, arg1, arg2)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetProcessedUnion indicates an expected call of GetProcessedUnion.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetProcessedUnion(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessedUnion", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetProcessedUnion), arg0, arg1, arg2)
-}
-
 // GetToRetry mocks base method.
 func (m *MockMultiTenantJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
@@ -194,20 +180,6 @@ func (m *MockMultiTenantJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*j
 func (mr *MockMultiTenantJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetUnprocessed), arg0)
-}
-
-// GetUnprocessedUnion mocks base method.
-func (m *MockMultiTenantJobsDB) GetUnprocessedUnion(arg0 map[string]int, arg1 jobsdb.GetQueryParamsT, arg2 int) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUnprocessedUnion", arg0, arg1, arg2)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetUnprocessedUnion indicates an expected call of GetUnprocessedUnion.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetUnprocessedUnion(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessedUnion", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetUnprocessedUnion), arg0, arg1, arg2)
 }
 
 // JournalDeleteEntry mocks base method.
