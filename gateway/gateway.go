@@ -427,23 +427,24 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			body := req.requestPayload
 
-			if enableRateLimit {
-				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
-				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- response.GetStatus(response.TooManyRequests)
-					preDbStoreCount++
-					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
-					continue
-				}
-			}
-
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
+
+			if enableRateLimit {
+				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				if gateway.rateLimiter.LimitReached(restrictorKey) {
+					req.done <- response.GetStatus(response.TooManyRequests)
+					preDbStoreCount++
+					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
+					continue
+				}
+			}
+
 			gateway.requestSizeStat.Observe(float64(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
