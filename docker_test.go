@@ -315,14 +315,14 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
 
-	z := k.SetZookeeper(pool)
+	Test, z := k.SetupKafka(pool)
 	defer func() {
 		if err := pool.Purge(z); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	resourceKafka = k.SetKafka(z)
+	resourceKafka = k.SetKafka(Test, z)
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -330,21 +330,21 @@ func run(m *testing.M) (int, error) {
 	}()
 	// pulls an redis image, creates a container based on it and runs it
 
-	redisAddress, resourceRedis = k.SetRedis()
+	redisAddress, resourceRedis = k.SetRedis(Test)
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	db, resourcePostgres = k.SetJobsDB()
+	db, resourcePostgres = k.SetJobsDB(Test)
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	transformerRes := k.SetTransformer()
+	transformerRes := k.SetTransformer(Test)
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -359,7 +359,7 @@ func run(m *testing.M) (int, error) {
 		time.Second,
 	)
 
-	minioEndpoint, minioBucketName, resource := k.SetMINIO()
+	minioEndpoint, minioBucketName, resource := k.SetMINIO(Test)
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -759,11 +759,9 @@ func TestKafka(t *testing.T) {
 	expectedCount := 10
 out:
 	for {
-		fmt.Println("msgcount", msgCount)
 		select {
 		case msg := <-consumer:
 			msgCount++
-			fmt.Println("msgcount", msgCount)
 			t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "identified_user_id")

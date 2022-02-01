@@ -15,12 +15,8 @@ type RedisDesTest struct {
 	redisClient  *redis.Client
 }
 
-var (
-	RedisTest *RedisDesTest
-)
-
-func SetRedis() (string, *dockertest.Resource) {
-	RedisTest = &RedisDesTest{}
+func SetRedis(Test *Test) (string, *dockertest.Resource) {
+	RedisTest := &RedisDesTest{}
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := Test.pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {

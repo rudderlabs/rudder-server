@@ -12,7 +12,7 @@ import (
 	"strconv"
 )
 
-type KafkaTest struct {
+type Test struct {
 	pool             *dockertest.Pool
 	err              error
 	network          *dc.Network
@@ -21,9 +21,8 @@ type KafkaTest struct {
 	localhostPortInt int
 }
 
-
-func SetupKafka(kafkapool *dockertest.Pool) *KafkaTest {
-	Test = &KafkaTest{}
+func SetupKafka(kafkapool *dockertest.Pool) (*Test, *dockertest.Resource) {
+	Test := &Test{}
 	Test.pool = kafkapool
 	fmt.Println("Set zookeper")
 	Test.network, Test.err = Test.pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
@@ -52,10 +51,10 @@ func SetupKafka(kafkapool *dockertest.Pool) *KafkaTest {
 	if err != nil {
 		fmt.Println(err)
 	}
-	return z
+	return Test, z
 }
 
-func SetKafka(z *dockertest.Resource) *dockertest.Resource {
+func SetKafka(Test *Test, z *dockertest.Resource) *dockertest.Resource {
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
 	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
