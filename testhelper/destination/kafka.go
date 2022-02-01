@@ -21,9 +21,9 @@ type Test struct {
 	localhostPortInt int
 }
 
-func SetupKafka(kafkapool *dockertest.Pool) (*Test, *dockertest.Resource) {
+func SetupKafka(pool *dockertest.Pool) (*Test, *dockertest.Resource) {
 	Test := &Test{}
-	Test.pool = kafkapool
+	Test.pool = pool
 	fmt.Println("Set zookeper")
 	Test.network, Test.err = Test.pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if Test.err != nil {
