@@ -2002,9 +2002,9 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 		}
 
 		for _, st := range stateFilters {
-			previous := jd.dsEmptyResultCache[ds][cVal][pVal][st]
+			previous := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
 			if checkAndSet == nil || *checkAndSet == previous.Value {
-				jd.dsEmptyResultCache[ds][cVal][pVal][st] = cacheEntry{
+				jd.dsEmptyResultCache[ds][customer][cVal][pVal][st] = cacheEntry{
 					Value: value,
 					T:     time.Now(),
 				}
@@ -2061,7 +2061,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []st
 		}
 
 		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
+			mark, ok := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
 			if !ok || mark.Value != noJobs || time.Now().After(mark.T.Add(cacheExpiration)) {
 				return false
 			}
