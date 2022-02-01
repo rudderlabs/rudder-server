@@ -88,7 +88,6 @@ func (c *testContext) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	mockMultitenantI := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
@@ -98,7 +97,6 @@ func (c *testContext) Setup() {
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
 		Return().Times(1)
-	mockMultitenantI.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	c.dbReadBatchSize = 10000
 }
 
@@ -146,7 +144,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
-
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
@@ -164,6 +162,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -256,6 +255,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -432,6 +432,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			router.transformer = mockTransformer
@@ -577,6 +578,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
@@ -751,6 +753,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			router.transformer = mockTransformer
 			noOfJobsToBatchInAWorker = 5
@@ -969,6 +972,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
+			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
