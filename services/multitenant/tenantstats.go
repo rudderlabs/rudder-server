@@ -76,7 +76,7 @@ func (multitenantStat *MultitenantStatsT) AddCustomerToLatencyMap(destType strin
 	if !ok {
 		multitenantStat.routerTenantLatencyStat[destType] = make(map[string]misc.MovingAverage)
 	}
-	_, ok = multitenantStat.routerTenantLatencyStat[destType]
+	_, ok = multitenantStat.routerTenantLatencyStat[destType][workspaceID]
 	if !ok {
 		multitenantStat.routerTenantLatencyStat[destType][workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
 	}
@@ -214,7 +214,6 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	minLatency, maxLatency := getMinMaxCustomerLatency(customersWithJobs, multitenantStat.routerTenantLatencyStat[destType])
 
 	scores := multitenantStat.getSortedWorkspaceScoreList(customersWithJobs, maxLatency, minLatency, multitenantStat.routerTenantLatencyStat[destType], destType)
-
 	//TODO : Optimise the loop only for customers having jobs
 	//Latency sorted input rate pass
 	for _, scoredWorkspace := range scores {
