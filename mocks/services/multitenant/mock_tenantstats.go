@@ -34,18 +34,6 @@ func (m *MockMultiTenantI) EXPECT() *MockMultiTenantIMockRecorder {
 	return m.recorder
 }
 
-// AddCustomerToLatencyMap mocks base method.
-func (m *MockMultiTenantI) AddCustomerToLatencyMap(arg0, arg1 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddCustomerToLatencyMap", arg0, arg1)
-}
-
-// AddCustomerToLatencyMap indicates an expected call of AddCustomerToLatencyMap.
-func (mr *MockMultiTenantIMockRecorder) AddCustomerToLatencyMap(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddCustomerToLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).AddCustomerToLatencyMap), arg0, arg1)
-}
-
 // AddToInMemoryCount mocks base method.
 func (m *MockMultiTenantI) AddToInMemoryCount(arg0, arg1 string, arg2 int, arg3 string) {
 	m.ctrl.T.Helper()
