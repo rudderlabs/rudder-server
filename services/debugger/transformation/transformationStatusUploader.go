@@ -1,10 +1,11 @@
 package transformationdebugger
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -62,13 +63,14 @@ type UploadT struct {
 	Payload []interface{} `json:"payload"`
 }
 
-var uploader debugger.UploaderI
-
 var (
+	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 	configBackendURL             string
 	disableTransformationUploads bool
-	pkgLogger              logger.LoggerI
-	transformationCacheMap debugger.Cache
+	uploader                     debugger.UploaderI
+	pkgLogger                    logger.LoggerI
+	transformationCacheMap       debugger.Cache
 )
 
 var uploadEnabledTransformations map[string]bool
@@ -122,7 +124,7 @@ func (transformationStatusUploader *TransformationStatusUploader) Transform(data
 	eventBuffer := data.([]interface{})
 	uploadT := UploadT{Payload: eventBuffer}
 
-	rawJSON, err := json.Marshal(uploadT)
+	rawJSON, err := jsonfast.Marshal(uploadT)
 	if err != nil {
 		pkgLogger.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
 		return nil, err
@@ -178,7 +180,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		} else {
 			tStatusUpdated := *tStatus
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdatedData, _ := json.Marshal(tStatusUpdated)
+			tStatusUpdatedData, _ := jsonfast.Marshal(tStatusUpdated)
 			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
 		}
 	}
@@ -227,7 +229,7 @@ func recordHistoricTransformations(tIDs []string) {
 		tStatuses := transformationCacheMap.ReadAndPopData(tID)
 		for _, tStatus := range tStatuses {
 			var tStatusData TransformationStatusT
-			if err := json.Unmarshal(tStatus, &tStatusData); err != nil {
+			if err := jsonfast.Unmarshal(tStatus, &tStatusData); err != nil {
 				panic(err)
 			}
 			processRecordTransformationStatus(&tStatusData, tID)

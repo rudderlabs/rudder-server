@@ -4,13 +4,16 @@ package transformer
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
+	"runtime/trace"
 	"strconv"
 	"sync"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -27,6 +30,8 @@ const (
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type MetadataT struct {
 	SourceID            string                            `json:"sourceId"`
@@ -88,7 +93,7 @@ type HandleT struct {
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
-	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
+	Transform(ctx context.Context, clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -189,7 +194,7 @@ func GetVersion() (transformerBuildVersion string) {
 }
 
 //Transform function is used to invoke transformer API
-func (trans *HandleT) Transform(clientEvents []TransformerEventT,
+func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
 	if len(clientEvents) == 0 {
@@ -215,6 +220,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		stats.HistogramType,
 		sTags,
 	).Observe(float64(batchCount))
+	trace.Logf(ctx, "request", "batch_count: %d", batchCount)
 
 	transformResponse := make([][]TransformerResponseT, batchCount)
 
@@ -229,7 +235,9 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		}
 		trans.guardConcurrency <- struct{}{}
 		go func() {
-			transformResponse[i] = trans.request(url, clientEvents[from:to])
+			trace.WithRegion(ctx, "request", func() {
+				transformResponse[i] = trans.request(ctx, url, clientEvents[from:to])
+			})
 			<-trans.guardConcurrency
 			wg.Done()
 		}()
@@ -267,7 +275,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 
 func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
-	return trans.Transform(clientEvents, url, batchSize)
+	return trans.Transform(context.TODO(), clientEvents, url, batchSize)
 }
 
 func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
@@ -282,9 +290,17 @@ func statsTags(event TransformerEventT) stats.Tags {
 	}
 }
 
-func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
+func (trans *HandleT) request(ctx context.Context, url string, data []TransformerEventT) []TransformerResponseT {
 	//Call remote transformation
-	rawJSON, err := json.Marshal(data)
+	var (
+		rawJSON []byte
+		err     error
+	)
+
+	trace.WithRegion(ctx, "marshal", func() {
+		rawJSON, err = jsonfast.Marshal(data)
+	})
+	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
 		panic(err)
 	}
@@ -302,8 +318,9 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 
 	for {
 		s := time.Now()
-		resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-
+		trace.WithRegion(ctx, "request/post", func() {
+			resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+		})
 		if err == nil {
 			//If no err returned by client.Post, reading body.
 			//If reading body fails, retrying.
@@ -354,7 +371,11 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 	var transformerResponses []TransformerResponseT
 	if resp.StatusCode == http.StatusOK {
 		integrations.CollectIntgTransformErrorStats(respData)
-		err = json.Unmarshal(respData, &transformerResponses)
+
+		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
+		trace.WithRegion(ctx, "Unmarshal", func() {
+			err = jsonfast.Unmarshal(respData, &transformerResponses)
+		})
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		if err != nil {

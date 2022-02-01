@@ -29,10 +29,13 @@ import (
 	"time"
 	"unicode"
 
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
 	uuid "github.com/gofrs/uuid"
+	gluuid "github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
@@ -46,6 +49,7 @@ import (
 var AppStartTime int64
 var errorStorePath string
 var reservedFolderPaths []*RFP
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -87,6 +91,10 @@ type RFP struct {
 }
 
 var pkgLogger logger.LoggerI
+
+func init() {
+	gluuid.EnableRandPool()
+}
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
@@ -203,7 +211,7 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
-	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
+	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
 		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
@@ -990,6 +998,11 @@ IsValidUUID will check if provided string is a valid UUID
 func IsValidUUID(uuid string) bool {
 	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
+}
+
+func FastUUID() uuid.UUID {
+	b, _ := gluuid.New().MarshalBinary()
+	return uuid.FromBytesOrNil(b)
 }
 
 func HasAWSKeysInConfig(config interface{}) bool {
