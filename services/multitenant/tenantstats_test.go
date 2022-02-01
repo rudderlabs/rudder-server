@@ -154,6 +154,30 @@ var _ = Describe("tenantStats", func() {
 			Expect(usedLatencies[workspaceID2]).To(Equal(0.0))
 			Expect(usedLatencies[workspaceID3]).To(Equal(0.0))
 		})
+
+		It("Should Pick BETA for slower jobs", func() {
+			addJobWID1 := 300
+			addJobWID2 := rand.Intn(2000)
+			addJobWID3 := rand.Intn(2000)
+			input := make(map[string]map[string]int)
+			input[workspaceID1] = make(map[string]int)
+			input[workspaceID2] = make(map[string]int)
+			input[workspaceID3] = make(map[string]int)
+			input[workspaceID1][destType1] = addJobWID1
+			input[workspaceID2][destType1] = addJobWID2
+			input[workspaceID3][destType1] = addJobWID3
+			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
+			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1, 1)
+				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2, 2)
+				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID3, 3)
+			}
+			routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 300, timeGained)
+			Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
+			Expect(routerPickUpJobs[workspaceID2]).To(Equal(1))
+			Expect(routerPickUpJobs[workspaceID3]).To(Equal(1))
+			Expect(usedLatencies[workspaceID1]).To(Equal(1.0))
+		})
 	})
 })
 
