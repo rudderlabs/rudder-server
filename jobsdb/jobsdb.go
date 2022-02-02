@@ -1719,7 +1719,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		customValParamMap := make(map[string]map[string]map[string]struct{})
 		var customers []string //for bursting old cache
 		for _, job := range jobList {
-			if !misc.Contains(customers, job.WorkspaceId) {
+			if !misc.ContainsString(customers, job.WorkspaceId) {
 				customers = append(customers, job.WorkspaceId)
 			}
 			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
