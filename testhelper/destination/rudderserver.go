@@ -15,12 +15,16 @@ import (
 	"strconv"
 )
 
-var (
-	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
-)
+// var (
+// 	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
+// )
 
 type ServerTest struct {
-	db *sql.DB
+	DB       *sql.DB
+	DB_DSN   string
+	database string
+	password string
+	user     string
 }
 
 type MINIO struct {
@@ -28,32 +32,35 @@ type MINIO struct {
 	minioBucketName string
 }
 
-func SetJobsDB(Test *Test) (*sql.DB, *dockertest.Resource) {
+func SetJobsDB(Test *Test) (*ServerTest, *dockertest.Resource) {
 	PostgresTest := &ServerTest{}
-	database := "jobsdb"
+	PostgresTest.database = "jobsdb"
+	PostgresTest.password = "password"
+	PostgresTest.user = "rudder"
+
 	// pulls an image, creates a container based on it and runs it
 	resourcePostgres, err := Test.pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
+		"POSTGRES_PASSWORD=" + PostgresTest.password,
+		"POSTGRES_DB=" + PostgresTest.database,
+		"POSTGRES_USER=" + PostgresTest.user,
 	})
 	if err != nil {
 		log.Println("Could not start resource Postgres: %w", err)
 	}
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	PostgresTest.DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), PostgresTest.database)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := Test.pool.Retry(func() error {
 		var err error
-		PostgresTest.db, err = sql.Open("postgres", DB_DSN)
+		PostgresTest.DB, err = sql.Open("postgres", PostgresTest.DB_DSN)
 		if err != nil {
 			return err
 		}
-		return PostgresTest.db.Ping()
+		return PostgresTest.DB.Ping()
 	}); err != nil {
-		log.Println("Could not connect to postgres", DB_DSN, err)
+		log.Println("Could not connect to postgres", PostgresTest.DB_DSN, err)
 	}
-	fmt.Println("DB_DSN:", DB_DSN)
-	return PostgresTest.db, resourcePostgres
+	fmt.Println("DB_DSN:", PostgresTest.DB_DSN)
+	return PostgresTest, resourcePostgres
 }
 
 func SetTransformer(Test *Test) *dockertest.Resource {

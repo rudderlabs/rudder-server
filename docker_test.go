@@ -337,7 +337,8 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 
-	db, resourcePostgres = k.SetJobsDB(Test)
+	JobsDBTest, resourcePostgres := k.SetJobsDB(Test)
+	db = JobsDBTest.DB
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
