@@ -127,8 +127,6 @@ var _ = Describe("Router", func() {
 		It("should initialize and recover after crash", func() {
 			router := &HandleT{}
 
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
 		})
 	})
@@ -136,9 +134,6 @@ var _ = Describe("Router", func() {
 	Context("normal operation - ga", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
@@ -344,9 +339,6 @@ var _ = Describe("Router", func() {
 	Context("Router Batching", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 
 		It("can batch jobs together", func() {
@@ -604,8 +596,8 @@ var _ = Describe("Router", func() {
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Failed.State, "500", 0)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Failed.State, "500", 0)
+					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Waiting.State, "", 0)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
 			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
@@ -623,8 +615,6 @@ var _ = Describe("Router", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
 			jobsBatchTimeout = 10 * time.Second
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 		/*
 			Router transform

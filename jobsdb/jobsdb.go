@@ -1353,6 +1353,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
+									  workspace_id TEXT NOT NULL DEFAULT '',
 									  uuid UUID NOT NULL,
 									  user_id TEXT NOT NULL,
 									  parameters JSONB NOT NULL,
@@ -1882,8 +1883,8 @@ const (
 )
 
 type cacheEntry struct {
-	value cacheValue
-	t     time.Time
+	Value cacheValue `json:"value"`
+	T     time.Time  `json:"set_at"`
 }
 
 /*
@@ -1934,10 +1935,10 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 		for _, st := range stateFilters {
 			previous := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous.value {
+			if checkAndSet == nil || *checkAndSet == previous.Value {
 				jd.dsEmptyResultCache[ds][cVal][pVal][st] = cacheEntry{
-					value: value,
-					t:     time.Now(),
+					Value: value,
+					T:     time.Now(),
 				}
 			}
 		}
@@ -1988,7 +1989,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 		for _, st := range stateFilters {
 			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if !ok || mark.value != noJobs || time.Now().After(mark.t.Add(cacheExpiration)) {
+			if !ok || mark.Value != noJobs || time.Now().After(mark.T.Add(cacheExpiration)) {
 				return false
 			}
 		}
@@ -2461,6 +2462,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Total migrated %d jobs", jd.tablePrefix, totalJobsMigrated)
 
 				if totalJobsMigrated <= 0 {
 					jd.dsListLock.Lock()
@@ -2468,6 +2470,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 					jd.inProgressMigrationTargetDS = nil
 					jd.dsListLock.Unlock()
 				}
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate DONE", jd.tablePrefix)
 
 				jd.JournalMarkDone(opID)
 			}

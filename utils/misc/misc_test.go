@@ -3,6 +3,10 @@ package misc
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	. "github.com/onsi/ginkgo"
@@ -10,9 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 func initMisc() {
@@ -36,8 +37,6 @@ var _ = Describe("Misc", func() {
 
 			var file *os.File
 			file, err = os.Create(path)
-			fmt.Println(path)
-			fmt.Println(targetDir)
 
 			Expect(err).To(BeNil())
 			Expect(FileExists(path)).To(BeTrue())
@@ -318,10 +317,10 @@ var _ = Describe("Misc", func() {
 		})
 
 		It("Rudder Warehouse Json Uploads Tmp", func() {
-			localTmpDirName := fmt.Sprintf(`/%s/`, RudderWarehouseJsonUploadsTmp)
+			localTmpDirName := fmt.Sprintf(`/%s/_0/`, RudderWarehouseJsonUploadsTmp)
 
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/rudderstack-events/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/rudderstack-events/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
 			sourceFile := fmt.Sprintf(`%v%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
@@ -336,8 +335,8 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
 			sourceFile = fmt.Sprintf(`%v%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
@@ -352,8 +351,8 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
 			sourceFile = fmt.Sprintf(`%v%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
@@ -368,8 +367,8 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
 			sourceFile = fmt.Sprintf(`%v%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
@@ -384,8 +383,8 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
-			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/_0/DestinationType_DestinationID/
 			sourceFile = fmt.Sprintf(`%v%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
@@ -464,7 +463,6 @@ var _ = Describe("Misc", func() {
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
 
-
 			// /tmp/random/
 			// /tmp/
 			sourceFile = fmt.Sprintf(`%v`,
@@ -476,7 +474,6 @@ var _ = Describe("Misc", func() {
 			)
 
 			onPostFileCreation(sourceFile, targetDir)
-
 
 			// /tmp/
 			// /tmp/

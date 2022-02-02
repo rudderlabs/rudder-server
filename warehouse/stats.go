@@ -20,16 +20,16 @@ type tag struct {
 	value string
 }
 
-func getWarehouseTagName(destID, sourceName, destName string) string {
-	return misc.GetTagName(destID, sourceName, destName)
+func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
+	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
 func (job *UploadJobT) warehouseID() string {
-	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name)
+	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
 func (jobRun *JobRunT) warehouseID() string {
-	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName)
+	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
 func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
@@ -146,7 +146,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+	if misc.ContainsString(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to event table for eg.track call)
 		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	}
@@ -154,7 +154,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
 	if skipMetricTagForEachEventTable {
 		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if !misc.ContainsString(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}
@@ -194,20 +194,20 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName string) {
+func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName, sourceID string) {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
 	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }
 
-func getUploadStatusStat(name, destType, destID, sourceName, destName string) stats.RudderStats {
+func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.RudderStats {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
 	return stats.NewTaggedStat(name, stats.CountType, tags)
 }

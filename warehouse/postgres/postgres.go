@@ -29,12 +29,16 @@ var (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host          = "host"
+	dbName        = "database"
+	user          = "user"
+	password      = "password"
+	port          = "port"
+	sslMode       = "sslMode"
+	serverCAPem   = "serverCA"
+	clientSSLCert = "clientCert"
+	clientSSLKey  = "clientKey"
+	verifyCA      = "verify-ca"
 )
 
 const PROVIDER = "POSTGRES"
@@ -80,6 +84,7 @@ type CredentialsT struct {
 	Password string
 	Port     string
 	SSLMode  string
+	SSLDir   string
 }
 
 var primaryKeyMap = map[string]string{
@@ -101,7 +106,9 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.Port,
 		cred.DBName,
 		cred.SSLMode)
-
+	if cred.SSLMode == verifyCA {
+		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
+	}
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("postgres", url); err != nil {
@@ -121,13 +128,15 @@ func loadConfig() {
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
+	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
 	return CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
 		Password: warehouseutils.GetConfigValue(password, pg.Warehouse),
 		Port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
-		SSLMode:  warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
+		SSLMode:  sslMode,
+		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 	}
 }
 
