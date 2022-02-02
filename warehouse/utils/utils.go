@@ -597,7 +597,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if misc.Contains(ObjectStorageMap, destType) {
+	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {

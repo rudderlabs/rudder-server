@@ -557,42 +557,6 @@ func ContainsInt(slice []int, val int) bool {
 	return false
 }
 
-func equal(expected, actual interface{}) bool {
-	if expected == nil || actual == nil {
-		return expected == actual
-	}
-	return reflect.DeepEqual(expected, actual)
-}
-
-// Contains returns true if an element is present in a iteratee.
-// https://github.com/thoas/go-funk
-func Contains(in interface{}, elem interface{}) bool {
-	inValue := reflect.ValueOf(in)
-	elemValue := reflect.ValueOf(elem)
-	inType := inValue.Type()
-
-	switch inType.Kind() {
-	case reflect.String:
-		return strings.Contains(inValue.String(), elemValue.String())
-	case reflect.Map:
-		for _, key := range inValue.MapKeys() {
-			if equal(key.Interface(), elem) {
-				return true
-			}
-		}
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < inValue.Len(); i++ {
-			if equal(inValue.Index(i).Interface(), elem) {
-				return true
-			}
-		}
-	default:
-		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
-	}
-
-	return false
-}
-
 // IncrementMapByKey starts with 1 and increments the counter of a key
 func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]

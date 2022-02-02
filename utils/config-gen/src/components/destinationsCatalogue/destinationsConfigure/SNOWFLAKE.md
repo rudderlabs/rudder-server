@@ -1,1 +1,0 @@
-- Conventional data platforms and big data solutions struggle to deliver on their fundamental purpose: to enable any user to work with any data, without limits on scale, performance or flexibility. Whether you’re a data analyst, data scientist, data engineer, or any other business or technology professional, you’ll get more from your data with Snowflake.

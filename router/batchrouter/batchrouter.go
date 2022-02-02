@@ -875,7 +875,8 @@ func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix s
 func isDateFormatExists(connIdentifier string) bool {
 	dateFormatMapLock.RLock()
 	defer dateFormatMapLock.RUnlock()
-	return misc.Contains(dateFormatMap, connIdentifier) // TODO : Get Rid of misc.Contains
+	_, ok := dateFormatMap[connIdentifier]
+	return ok
 }
 
 func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
