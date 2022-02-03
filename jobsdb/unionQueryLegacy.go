@@ -30,7 +30,3 @@ func (mj *MultiTenantLegacy) GetUnprocessedUnion(customerCount map[string]int, p
 func (mj *MultiTenantLegacy) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 	return []*JobT{}
 }
-
-func (mj *MultiTenantLegacy) GetCustomerCounts(defaultBatchSize int) map[string]int {
-	return map[string]int{}
-}
