@@ -100,34 +100,6 @@ func (mr *MockMultiTenantJobsDBMockRecorder) GetAllJobs(arg0, arg1, arg2 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllJobs", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetAllJobs), arg0, arg1, arg2)
 }
 
-// GetCustomerCounts mocks base method.
-func (m *MockMultiTenantJobsDB) GetCustomerCounts(arg0 int) map[string]int {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCustomerCounts", arg0)
-	ret0, _ := ret[0].(map[string]int)
-	return ret0
-}
-
-// GetCustomerCounts indicates an expected call of GetCustomerCounts.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetCustomerCounts(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCustomerCounts", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetCustomerCounts), arg0)
-}
-
-// GetImportingList mocks base method.
-func (m *MockMultiTenantJobsDB) GetImportingList(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetImportingList", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetImportingList indicates an expected call of GetImportingList.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetImportingList(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImportingList", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetImportingList), arg0)
-}
-
 // GetJournalEntries mocks base method.
 func (m *MockMultiTenantJobsDB) GetJournalEntries(arg0 string) []jobsdb.JournalEntryT {
 	m.ctrl.T.Helper()
@@ -152,34 +124,6 @@ func (m *MockMultiTenantJobsDB) GetPileUpCounts(arg0 map[string]map[string]int) 
 func (mr *MockMultiTenantJobsDBMockRecorder) GetPileUpCounts(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPileUpCounts", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetPileUpCounts), arg0)
-}
-
-// GetToRetry mocks base method.
-func (m *MockMultiTenantJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetToRetry", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetToRetry indicates an expected call of GetToRetry.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetToRetry(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetToRetry", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetToRetry), arg0)
-}
-
-// GetUnprocessed mocks base method.
-func (m *MockMultiTenantJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUnprocessed", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetUnprocessed indicates an expected call of GetUnprocessed.
-func (mr *MockMultiTenantJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetUnprocessed), arg0)
 }
 
 // JournalDeleteEntry mocks base method.
