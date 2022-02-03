@@ -686,6 +686,8 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 				_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType, eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON), string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
 				assertTxnError(err, txn)
+
+				// Add stats for number of updates.
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
