@@ -1342,6 +1342,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 		// send req to webHandler
 		gateway.webHandler(w, r, reqType)
 	} else {
+		gateway.logger.Infof("IP: %s -- %s -- Error while handling beacon request: Write Key not found", misc.GetIPFromReq(r), r.URL.Path)
 		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 	}
 }
