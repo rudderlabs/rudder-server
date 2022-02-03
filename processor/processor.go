@@ -102,6 +102,7 @@ type HandleT struct {
 	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
+	statPipelineEventsCount        stats.RudderStats
 	logger                         logger.LoggerI
 	eventSchemaHandler             types.EventSchemasI
 	dedupHandler                   dedup.DedupI
@@ -359,6 +360,10 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
+
+	//event Count test stats.
+	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_events_count", stats.GaugeType)
+
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -2124,7 +2129,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
-
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
 	go func() {
@@ -2165,6 +2169,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				proc.statPipelineEventsCount.Gauge(events)
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
