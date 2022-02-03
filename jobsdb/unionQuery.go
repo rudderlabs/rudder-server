@@ -53,13 +53,7 @@ func (c *JobsDBStatusCache) initCache() {
 }
 
 type MultiTenantJobsDB interface {
-	GetToRetry(params GetQueryParamsT) []*JobT
-	GetUnprocessed(params GetQueryParamsT) []*JobT
-
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
-	GetCustomerCounts(int) map[string]int
-
-	GetImportingList(params GetQueryParamsT) []*JobT
 
 	BeginGlobalTransaction() *sql.Tx
 	CommitTransaction(*sql.Tx)
@@ -144,33 +138,6 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 			mj.assertError(err)
 		}
 	}
-}
-
-//used to get pickup-counts during server start-up
-func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
-	customerCount := make(map[string]int)
-	//just using first DS here
-	//get all jobs all over DSs and then calculate
-	//use DSListLock also
-
-	mj.dsMigrationLock.RLock()
-	mj.dsListLock.RLock()
-	defer mj.dsMigrationLock.RUnlock()
-	defer mj.dsListLock.RUnlock()
-	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select workspace_id, count(job_id) from %s group by workspace_id;`, mj.getDSList(false)[0].JobTable))
-	mj.assertError(err)
-
-	for rows.Next() {
-		var customer string
-		var count int
-		err := rows.Scan(&customer, &count)
-		mj.assertError(err)
-		customerCount[customer] = count
-	}
-	if err = rows.Err(); err != nil {
-		mj.assertError(err)
-	}
-	return customerCount
 }
 
 func (mj *MultiTenantHandleT) getSingleCustomerQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
