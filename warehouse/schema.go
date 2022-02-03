@@ -282,6 +282,11 @@ WarehouseSchema: https://jsonformatter.org/ca43d2
 LocalSchema: https://jsonformatter.org/1c2dd2
 */
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+	if localSchema == nil && schemaInWarehouse != nil && len(schemaInWarehouse) != 0 {
+		// If there is no seen schema locally but
+		// there is schema present on remote, consider it as  schema change
+		return true
+	}
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
@@ -310,7 +315,6 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		ColumnMap:     make(map[string]string),
 		UpdatedSchema: make(map[string]string),
 	}
-
 	var currentTableSchema map[string]string
 	var ok bool
 	if currentTableSchema, ok = currentSchema[tableName]; !ok {
@@ -324,9 +328,10 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		return diff
 	}
 
-	for columnName, columnType := range currentSchema[tableName] {
-		diff.UpdatedSchema[columnName] = columnType
-	}
+	// for columnName, columnType := range currentSchema[tableName] {
+	// 	diff.UpdatedSchema[columnName] = columnType
+	// }
+	diff.UpdatedSchema = currentTableSchema
 
 	diff.ColumnMap = make(map[string]string)
 	for columnName, columnType := range uploadSchema[tableName] {
