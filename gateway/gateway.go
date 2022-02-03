@@ -1114,7 +1114,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	defer func() {
 		if errorMessage != "" {
 			if strings.Contains(errorMessage, response.GetStatus(response.TooManyRequests)) {
-				gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage))
+				gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage)
 				http.Error(w, errorMessage, http.StatusTooManyRequests)
 				return
 			}
