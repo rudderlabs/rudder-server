@@ -140,7 +140,6 @@ type HandleT struct {
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
-	routerCustomerJobStatusCount           map[string]map[string]int // TODO : Remove This
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -707,7 +706,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				//pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -1519,10 +1517,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		if !ok {
 			routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 		}
-		_, ok = rt.routerCustomerJobStatusCount[workspaceID]
-		if !ok {
-			rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
-		}
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
@@ -1550,7 +1544,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState != jobsdb.Failed.State {
 			if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
-				rt.routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 				routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 				sd.Count++
 			}
@@ -1604,12 +1597,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 	}
 	//REPORTING - ROUTER - END
-
-	for customer, value := range rt.routerCustomerJobStatusCount {
-		for destType, count := range value {
-			rt.logger.Debugf("removal_router_stat is %v for customer %v destType %v", count, customer, destType)
-		}
-	}
 
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
@@ -2077,8 +2064,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.workspaceSet = make(map[string]struct{})
-	//TODO : Remove this
-	rt.routerCustomerJobStatusCount = make(map[string]map[string]int)
 
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)

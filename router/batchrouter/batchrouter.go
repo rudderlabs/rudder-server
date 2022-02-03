@@ -113,7 +113,6 @@ type HandleT struct {
 	asyncUploadWorkerResumeChannel chan bool
 	pollAsyncStatusPauseChannel    chan *PauseT
 	pollAsyncStatusResumeChannel   chan bool
-	maxDSQuerySize                 int
 	pollTimeStat                   stats.RudderStats
 	failedJobsTimeStat             stats.RudderStats
 	successfulJobCount             stats.RudderStats
@@ -124,8 +123,6 @@ type HandleT struct {
 	backgroundCtx    context.Context
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
-
-	customerCount map[string]int
 }
 
 type BatchDestinationDataT struct {
@@ -1483,10 +1480,7 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					// retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-					// toQuery -= len(retryList)
-					// unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
@@ -1821,10 +1815,8 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat.Start()
 		toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			//retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}}, brt.maxDSQuerySize)
 			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			toQuery -= len(retryList)
-			//unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}}, brt.maxDSQuerySize)
 			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			brtQueryStat.End()
 
@@ -1851,7 +1843,6 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case <-time.After(mainLoopSleep):
-			brt.updateCustomerCount()
 			brt.readAndProcess()
 		}
 	}
@@ -2125,8 +2116,6 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
-	maxDSQuerySizeKeys := []string{"BatchRouter." + brt.destType + "." + "maxDSQuery", "BatchRouter." + "maxDSQuery"}
-	config.RegisterIntConfigVariable(10, &brt.maxDSQuerySize, true, 1, maxDSQuerySizeKeys...)
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
@@ -2194,8 +2183,6 @@ func (brt *HandleT) Start() {
 	ctx := brt.backgroundCtx
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		<-brt.backendConfigInitialized
-		brt.customerCount = make(map[string]int)
-		brt.setupCustomerCount()
 		brt.mainLoop(ctx)
 
 		return nil
@@ -2276,26 +2263,4 @@ func (brt *HandleT) Resume() {
 	brt.asyncUploadWorkerResumeChannel <- true
 
 	brt.paused = false
-}
-
-func (brt *HandleT) setupCustomerCount() {
-	brt.configSubscriberLock.RLock()
-	var customers []string
-	for _, destConfig := range brt.destinationsMap {
-		for _, source := range destConfig.Sources {
-			if !misc.ContainsString(customers, source.WorkspaceID) {
-				customers = append(customers, source.WorkspaceID)
-			}
-		}
-	}
-	brt.configSubscriberLock.RUnlock()
-
-	for idx := range customers {
-		brt.customerCount[customers[idx]] = int(brt.jobQueryBatchSize / len(customers))
-	}
-}
-
-func (brt *HandleT) updateCustomerCount() {
-	//TODO
-	brt.setupCustomerCount()
 }
