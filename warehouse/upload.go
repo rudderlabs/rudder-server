@@ -245,7 +245,10 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	}
 
 	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
-	if schemaChanged {
+	if schemaChanged || schemaHandle.localSchema == nil && schemaHandle.schemaInWarehouse != nil && len(schemaHandle.schemaInWarehouse) != 0 {
+		// Updates the local-schema repository
+		// - if there is a schema change
+		// - if there is no seen schema locally but there is schema present on remote.
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
