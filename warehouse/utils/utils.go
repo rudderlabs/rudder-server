@@ -826,3 +826,18 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
 	return sslDirPath
 }
+
+func GetWarehouseDestinationSuccessCount(dbHandle *sql.DB, destinationID string) (successfulExportCount int, err error) {
+	query := fmt.Sprintf("select count(*) from %s where destination_id='%s' ", WarehouseUploadsTable, destinationID)
+	rows, err := dbHandle.Query(query)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&successfulExportCount); err != nil {
+			return 0, err
+		}
+	}
+	return
+}

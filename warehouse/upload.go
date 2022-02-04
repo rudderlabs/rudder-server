@@ -1464,7 +1464,17 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
 	}
 	if state == Aborted {
-		job.counterStat("upload_aborted", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+		tags := []tag{
+			{name: "attempt_number", value: strconv.Itoa(attempts)},
+		}
+
+		if destUploadCount, err := warehouseutils.GetWarehouseDestinationSuccessCount(dbHandle, job.upload.DestinationID); err != nil {
+			tags = append(tags, tag{
+				name:  "exported_count",
+				value: strconv.Itoa(destUploadCount),
+			})
+		}
+		job.counterStat("upload_aborted", tags...).Count(1)
 	}
 
 	return state, err
