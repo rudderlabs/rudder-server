@@ -282,11 +282,6 @@ WarehouseSchema: https://jsonformatter.org/ca43d2
 LocalSchema: https://jsonformatter.org/1c2dd2
 */
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
-	if localSchema == nil && schemaInWarehouse != nil && len(schemaInWarehouse) != 0 {
-		// If there is no seen schema locally but
-		// there is schema present on remote, consider it as  schema change
-		return true
-	}
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
@@ -306,6 +301,13 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 				return true
 			}
 		}
+	}
+	for tableName := range schemaInWarehouse {
+		// Check if the remote table is present locally, if not return
+		if _, localTableExists := localSchema[tableName]; !localTableExists {
+			return true
+		}
+
 	}
 	return false
 }
