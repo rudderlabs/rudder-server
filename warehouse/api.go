@@ -145,7 +145,7 @@ var statusMap = map[string]string{
 }
 
 func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selectFields string) string {
-	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
+	subQuery := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
 	var whereClauses []string
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
@@ -162,7 +162,8 @@ func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selec
 		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
 	}
 
-	query = query + strings.Join(whereClauses, " AND ") + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
+	subQuery = subQuery + strings.Join(whereClauses, " AND ")
+	query := fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
 	uploadsReq.API.log.Info(query)
 	return query
 }
