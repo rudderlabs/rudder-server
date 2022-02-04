@@ -1,5 +1,7 @@
 package jobsdb
 
+var _ MultiTenantJobsDB = &MultiTenantLegacy{}
+
 type MultiTenantLegacy struct {
 	*HandleT
 }
@@ -18,15 +20,4 @@ func (mj *MultiTenantLegacy) GetAllJobs(customerCount map[string]int, params Get
 	list = append(list, unprocessedList...)
 
 	return list
-}
-
-func (mj *MultiTenantLegacy) GetPileUpCounts(statMap map[string]map[string]int) {
-}
-
-func (mj *MultiTenantLegacy) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
-	return []*JobT{}
-}
-
-func (mj *MultiTenantLegacy) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
-	return []*JobT{}
 }

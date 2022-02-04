@@ -34,22 +34,12 @@ type JobsDBStatusCache struct {
 
 func (c *JobsDBStatusCache) HaveEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
 	parameterFilters []ParameterFilterT) bool {
-	c.initCache()
-	return c.a.isEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters)
+	return c.a.emptyCache.IsEmpty(ds, customer, stateFilters, customValFilters, parameterFilters)
 }
 
 func (c *JobsDBStatusCache) UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
 	parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
-	c.initCache()
-	c.a.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
-}
-
-func (c *JobsDBStatusCache) initCache() {
-	c.once.Do(func() {
-		if c.a.dsEmptyResultCache == nil {
-			c.a.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-		}
-	})
+	c.a.emptyCache.MarkEmpty(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
 }
 
 type MultiTenantJobsDB interface {
@@ -260,7 +250,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		return jobList
 	}
 	for _, customer := range customersToQuery {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.emptyCache.MarkEmpty(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			willTryToSet, nil)
 	}
 
@@ -340,7 +330,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for customer, cacheUpdate := range cacheUpdateByCustomer {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.emptyCache.MarkEmpty(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 

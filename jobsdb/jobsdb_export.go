@@ -113,7 +113,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 	for ds, updatedStatesByCustomer := range updatedStatesByDS {
 		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			jd.emptyCache.MarkEmpty(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 		}
 	}
 	jd.assertError(err)
@@ -229,7 +229,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 	for ds, updatedStatesByCustomer := range updatedStatesMap {
 		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			jd.emptyCache.MarkEmpty(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 		}
 	}
 }

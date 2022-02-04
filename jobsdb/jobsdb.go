@@ -123,6 +123,15 @@ type JobsDB interface {
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
 }
 
+type emptyMemoriser interface {
+	MarkEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue)
+	InvalidateKey(ds dataSetT, CVPMap map[string]map[string]map[string]struct{})
+	Invalidate(ds dataSetT)
+	String() string
+	Status() interface{}
+	IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool
+}
+
 /*
 AssertInterface contains public assert methods
 */
@@ -220,7 +229,7 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 
 	for ds, stateListByCustomer := range updatedStatesByDS {
 		for customer, stateList := range stateListByCustomer {
-			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+			jd.emptyCache.MarkEmpty(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
 		}
 	}
 
@@ -317,8 +326,7 @@ type HandleT struct {
 	dsListLock                    sync.RWMutex
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> customer -> customVal -> params -> state -> cacheEntry
-	dsCacheLock                   sync.Mutex
+	emptyCache                    emptyMemoriser
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
 	statTableCount                stats.RudderStats
@@ -402,7 +410,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.emptyCache)
 		panic(err)
 	}
 }
@@ -411,7 +419,7 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
 		tx.Rollback()
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal("err %s, cache %s", err, jd.emptyCache)
 		panic(err)
 	}
 }
@@ -420,29 +428,26 @@ func (jd *HandleT) rollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
 		tx.Rollback()
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal("err %s, cache %s", err, jd.emptyCache)
 	}
 }
 
 func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
-		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
+		err := fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString)
+		jd.logger.Fatal("err %s, cache %s", err, jd.emptyCache)
+		panic(err)
 	}
 }
 
 func (jd *HandleT) Status() interface{} {
 	statusObj := map[string]interface{}{
-		"dataset-list":    jd.getDSList(false),
-		"dataset-ranges":  jd.getDSRangeList(false),
-		"backups-enabled": jd.BackupSettings.BackupEnabled,
+		"dataset-list":        jd.getDSList(false),
+		"dataset-ranges":      jd.getDSRangeList(false),
+		"backups-enabled":     jd.BackupSettings.BackupEnabled,
+		"empty-results-cache": jd.emptyCache.Status(),
 	}
-	emptyResults := make(map[string]interface{})
-	for ds, entry := range jd.dsEmptyResultCache {
-		emptyResults[ds.JobTable] = entry
-	}
-	statusObj["empty-results-cache"] = emptyResults
 
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 		statusObj["migration-state"] = jd.migrationState
@@ -664,7 +669,11 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
+
+	if jd.emptyCache != nil {
+		jd.emptyCache = &CacheEmptyDS{}
+	}
+
 	if registerStatusHandler {
 		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
 	}
@@ -1506,7 +1515,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	//Bursting Cache for this dataset
-	jd.invalidateCache(ds)
+	jd.emptyCache.Invalidate(ds)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
@@ -1514,20 +1523,6 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	jd.statDropDSPeriod.Start()
 	jd.isStatDropDSPeriodInitialized = true
-}
-
-func (jd *HandleT) invalidateCache(ds dataSetT) {
-	//Trimming pre_drop from the table name
-	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
-		parentDS := dataSetT{
-			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
-			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
-			Index:          ds.Index,
-		}
-		jd.markClearEmptyResult(parentDS, ``, []string{}, []string{}, nil, dropDSFromCache, nil)
-	} else {
-		jd.markClearEmptyResult(ds, ``, []string{}, []string{}, nil, dropDSFromCache, nil)
-	}
 }
 
 //Rename a dataset
@@ -1726,10 +1721,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		}
 
 		if useNewCacheBurst {
-			jd.clearCache(ds, customValParamMap)
+			jd.emptyCache.InvalidateKey(ds, customValParamMap)
 		} else {
 			for _, customer := range customers {
-				jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
+				jd.emptyCache.MarkEmpty(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
 			}
 		}
 	}()
@@ -1798,33 +1793,6 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 }
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
-func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
-	for customer, customerCVPMap := range CVPMap {
-		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
-			for cv, cVal := range customerCVPMap {
-				for pv := range cVal {
-					parameterFilters := []ParameterFilterT{}
-					tokens := strings.Split(pv, "::")
-					for _, token := range tokens {
-						p := strings.Split(token, "##")
-						param := ParameterFilterT{
-							Name:  p[0],
-							Value: p[1],
-						}
-						parameterFilters = append(parameterFilters, param)
-					}
-					jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
-				}
-			}
-		} else if jd.queryFilterKeys.CustomVal {
-			for cv := range customerCVPMap {
-				jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-			}
-		} else {
-			jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
-		}
-	}
-}
 
 func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	jd.dsMigrationLock.RLock()
@@ -1913,7 +1881,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
-		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
+		jd.emptyCache.MarkEmpty(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
 	}
@@ -1928,150 +1896,6 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	return
 }
 
-type cacheValue string
-
-const (
-	hasJobs         cacheValue = "Has Jobs"
-	noJobs          cacheValue = "No Jobs"
-	dropDSFromCache cacheValue = "Drop DS From Cache"
-	/*
-	* willTryToSet value is used to prevent wrongly setting empty result when
-	* a db update (new jobs or job status updates) happens during get(Un)Processed db query is in progress.
-	*
-	* getUnprocessedJobs() {  # OR getProcessedJobsDS
-	* 0. Sets cache value to willTryToSet
-	* 1. out = queryDB()
-	* 2. check and set cache to (len(out) == 0) only if cache value is willTryToSet
-	* }
-	 */
-	willTryToSet cacheValue = "Query in progress"
-)
-
-type cacheEntry struct {
-	Value cacheValue `json:"value"`
-	T     time.Time  `json:"set_at"`
-}
-
-/*
-* If a query returns empty result for a specific dataset, we cache that so that
-* future queries don't have to hit the DB.
-* markClearEmptyResult() when mark=True marks dataset,customVal,state as empty.
-* markClearEmptyResult() when mark=False clears a previous empty mark
- */
-
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
-
-	jd.dsCacheLock.Lock()
-	defer jd.dsCacheLock.Unlock()
-
-	//This means we want to mark/clear all customVals and stateFilters
-	//When clearing, we remove the entire dataset entry. Not a big issue
-	//We process ALL only during internal migration and caching empty
-	//results is not important
-	if len(stateFilters) == 0 || len(customValFilters) == 0 || customer == `` {
-		if value == hasJobs || value == dropDSFromCache {
-			delete(jd.dsEmptyResultCache, ds)
-		}
-		return
-	}
-
-	_, ok := jd.dsEmptyResultCache[ds]
-	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]map[string]cacheEntry{}
-	}
-
-	if _, ok := jd.dsEmptyResultCache[ds][customer]; !ok {
-		jd.dsEmptyResultCache[ds][customer] = map[string]map[string]map[string]cacheEntry{}
-	}
-	for _, cVal := range customValFilters {
-		_, ok := jd.dsEmptyResultCache[ds][customer][cVal]
-		if !ok {
-			jd.dsEmptyResultCache[ds][customer][cVal] = map[string]map[string]cacheEntry{}
-		}
-
-		pVals := []string{}
-		for _, parameterFilter := range parameterFilters {
-			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
-		}
-		sort.Strings(pVals)
-		pVal := strings.Join(pVals, "_")
-
-		_, ok = jd.dsEmptyResultCache[ds][customer][cVal][pVal]
-		if !ok {
-			jd.dsEmptyResultCache[ds][customer][cVal][pVal] = map[string]cacheEntry{}
-		}
-
-		for _, st := range stateFilters {
-			previous := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous.Value {
-				jd.dsEmptyResultCache[ds][customer][cVal][pVal][st] = cacheEntry{
-					Value: value,
-					T:     time.Now(),
-				}
-			}
-		}
-	}
-}
-
-// isEmptyResult will return true if:
-// 	For all the combinations of stateFilters, customValFilters, parameterFilters.
-//  All of the condition above apply:
-// 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
-//  * The entry is noJobs
-//  * The entry is not expired (entry time + cache expiration > now)
-func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	jd.dsCacheLock.Lock()
-	defer jd.dsCacheLock.Unlock()
-
-	_, ok := jd.dsEmptyResultCache[ds]
-	if !ok {
-		return false
-	}
-
-	_, ok = jd.dsEmptyResultCache[ds][customer]
-	if !ok {
-		return false
-	}
-	//We want to check for all states and customFilters. Cannot
-	//assert that from cache
-	if len(stateFilters) == 0 || len(customValFilters) == 0 {
-		return false
-	}
-
-	for _, cVal := range customValFilters {
-		_, ok := jd.dsEmptyResultCache[ds][customer][cVal]
-		if !ok {
-			return false
-		}
-
-		pVals := []string{}
-		for _, parameterFilter := range parameterFilters {
-			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
-		}
-		sort.Strings(pVals)
-		pVal := strings.Join(pVals, "_")
-
-		_, ok = jd.dsEmptyResultCache[ds][customer][cVal][pVal]
-		if !ok {
-			return false
-		}
-
-		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
-			if !ok || mark.Value != noJobs || time.Now().After(mark.T.Add(cacheExpiration)) {
-				return false
-			}
-		}
-	}
-	//Every state and every customVal in the DS is empty
-	//so can return
-	return true
-}
-
 /*
 limitCount == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
@@ -2084,10 +1908,10 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	checkValidJobState(jd, stateFilters)
 
-	// if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	return []*JobT{}
-	// }
+	if jd.emptyCache.IsEmpty(ds, "TODO_WORKSPACE_ID", stateFilters, customValFilters, parameterFilters) {
+		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		return []*JobT{}
+	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("processed_ds_time", tags)
@@ -2095,7 +1919,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.emptyCache.MarkEmpty(ds, "TODO_WORKSPACE_ID", stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -2194,13 +2018,13 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jobList = append(jobList, &job)
 	}
 
-	// result := hasJobs
-	// if len(jobList) == 0 {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	result = noJobs
-	// }
-	// _willTryToSet := willTryToSet
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+	result := hasJobs
+	if len(jobList) == 0 {
+		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		result = noJobs
+	}
+	_willTryToSet := willTryToSet
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2214,7 +2038,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
-	// if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+	// if jd.emptyCache.IsEmpty(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 	// 	return []*JobT{}
 	// }
@@ -2334,7 +2158,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		return err
 	}
 	for customer, stateFilters := range stateFiltersByCustomer {
-		jd.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
+		jd.emptyCache.MarkEmpty(ds, customer, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
 	}
 	return nil
 }
@@ -3202,7 +3026,7 @@ func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []
 	jd.assertError(err)
 	for ds, stateListByCustomer := range updatedStatesByDS {
 		for customer, stateList := range stateListByCustomer {
-			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+			jd.emptyCache.MarkEmpty(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
 		}
 	}
 

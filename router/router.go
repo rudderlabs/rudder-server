@@ -2048,7 +2048,7 @@ func (rt *HandleT) crashRecover() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"workspace_id"}}
 	Diagnostics = diagnostics.Diagnostics
 }
 
