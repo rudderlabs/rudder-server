@@ -357,14 +357,12 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(customersW
 			latencyScore = (latencyMap[customerKey].Value() - minLatency) / (maxLatency - minLatency)
 		}
 
-		invertedRecencyScore := 0.0
-
 		isDraining := 0.0
 		if time.Since(multitenantStat.getLastDrainedTimestamp(customerKey, destType)) < 100*time.Second {
 			isDraining = 1.0
 		}
 
-		scores[i].score = latencyScore + 10*(invertedRecencyScore) + 100*isDraining
+		scores[i].score = latencyScore + 100*isDraining
 		scores[i].workspaceId = customerKey
 	}
 
