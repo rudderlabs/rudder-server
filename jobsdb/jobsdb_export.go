@@ -113,7 +113,12 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 	for ds, updatedStatesByCustomer := range updatedStatesByDS {
 		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			f := []ParameterFilterT{{
+				Name:  "workspace_id",
+				Value: customer,
+			}}
+
+			jd.markClearEmptyResult(ds, updatedStates, []string{}, f, hasJobs, nil)
 		}
 	}
 	jd.assertError(err)
@@ -229,7 +234,11 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 	for ds, updatedStatesByCustomer := range updatedStatesMap {
 		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			f := []ParameterFilterT{{
+				Name:  "workspace_id",
+				Value: customer,
+			}}
+			jd.markClearEmptyResult(ds, updatedStates, []string{}, f, hasJobs, nil)
 		}
 	}
 }

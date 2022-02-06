@@ -115,19 +115,18 @@ func TestJobsDBStatusCache(t *testing.T) {
 	customVal := "MOCKDS"
 	var cache JobsDBStatusCache
 	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{})
+		return cache.HaveEmptyResult(ds1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{{Name: "workspace_id", Value: wId1}})
 	}())
 
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
+	cache.UpdateCache(ds1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{{Name: "workspace_id", Value: wId1}},
 		cacheValue(noJobs), nil)
 	require.True(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
+		return cache.HaveEmptyResult(ds1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{{Name: "workspace_id", Value: wId1}})
 	}())
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
+	cache.UpdateCache(ds1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{{Name: "workspace_id", Value: wId1}},
 		cacheValue(hasJobs), nil)
 	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
+		return cache.HaveEmptyResult(ds1, []string{Waiting.State}, []string{customVal},
+			[]ParameterFilterT{{Name: "workspace_id", Value: wId1}})
 	}())
 }
