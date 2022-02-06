@@ -214,7 +214,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		execTimeouts := stats.NewStat("warehouse.clickhouse.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
-		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("connection timed out while initiating GRPC call with Databricks container. Please contact RudderStack team for more information")
 		return
 	}
 	if err != nil {
