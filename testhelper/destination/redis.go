@@ -15,16 +15,16 @@ type RedisDesTest struct {
 	redisClient  *redis.Client
 }
 
-func SetRedis(Test *Test) (string, *dockertest.Resource) {
+func SetRedis(pool *dockertest.Pool) (string, *dockertest.Resource) {
 	RedisTest := &RedisDesTest{}
 	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err := Test.pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
 		log.Printf("Could not start resource: %s", err)
 	}
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	RedisTest.redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
-	if err := Test.pool.Retry(func() error {
+	if err := pool.Retry(func() error {
 		RedisTest.redisClient = redis.NewClient(&redis.Options{
 			Addr:     RedisTest.redisAddress,
 			Password: "",

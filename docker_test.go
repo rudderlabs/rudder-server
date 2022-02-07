@@ -62,7 +62,7 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	redisAddress                 string
-	resourceKafka                *dockertest.Resource
+	TestResources                *k.TestResources
 	resourceRedis                *dockertest.Resource
 	resourcePostgres             *dockertest.Resource
 )
@@ -315,29 +315,29 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
 
-	Test, z := k.SetupKafka(pool)
+	TestResources, pool = k.SetKafka(pool)
+
 	defer func() {
-		if err := pool.Purge(z); err != nil {
+		if err := pool.Purge(TestResources.Z); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	defer func() {
+		if err := pool.Purge(TestResources.K); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	resourceKafka = k.SetKafka(Test, z)
-	defer func() {
-		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
 	// pulls an redis image, creates a container based on it and runs it
 
-	redisAddress, resourceRedis = k.SetRedis(Test)
+	redisAddress, resourceRedis = k.SetRedis(pool)
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	JobsDBTest, resourcePostgres := k.SetJobsDB(Test)
+	JobsDBTest, resourcePostgres := k.SetJobsDB(pool)
 	db = JobsDBTest.DB
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -345,7 +345,7 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 
-	transformerRes := k.SetTransformer(Test)
+	transformerRes := k.SetTransformer(pool)
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -360,7 +360,7 @@ func run(m *testing.M) (int, error) {
 		time.Second,
 	)
 
-	minioEndpoint, minioBucketName, resource := k.SetMINIO(Test)
+	minioEndpoint, minioBucketName, resource := k.SetMINIO(pool)
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -419,7 +419,7 @@ func run(m *testing.M) (int, error) {
 			"address":                             redisAddress,
 			"minioEndpoint":                       minioEndpoint,
 			"minioBucketName":                     minioBucketName,
-			"kafkaPort":                           resourceKafka.GetPort("9092/tcp"),
+			"kafkaPort":                           TestResources.K.GetPort("9092/tcp"),
 			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
 			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
@@ -735,7 +735,7 @@ func TestKafka(t *testing.T) {
 	config.ClientID = "go-kafka-consumer"
 	config.Consumer.Return.Errors = true
 
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", resourceKafka.GetPort("9092/tcp"))
+	kafkaEndpoint := fmt.Sprintf("localhost:%s", TestResources.K.GetPort("9092/tcp"))
 	brokers := []string{kafkaEndpoint}
 
 	// Create new consumer

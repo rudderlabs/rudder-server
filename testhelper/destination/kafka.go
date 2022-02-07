@@ -20,8 +20,12 @@ type Test struct {
 	localhostPort    string
 	localhostPortInt int
 }
+type TestResources struct {
+	Z *dockertest.Resource
+	K *dockertest.Resource
+}
 
-func SetupKafka(pool *dockertest.Pool) (*Test, *dockertest.Resource) {
+func setupZookeper(pool *dockertest.Pool, TestResources *TestResources) *Test {
 	Test := &Test{}
 	Test.pool = pool
 	fmt.Println("Set zookeper")
@@ -38,7 +42,7 @@ func SetupKafka(pool *dockertest.Pool) (*Test, *dockertest.Resource) {
 	log.Println("zookeeper Port:", zookeeperPort)
 	log.Println("zookeeper client Port :", zookeeperclientPort)
 
-	z, err := Test.pool.RunWithOptions(&dockertest.RunOptions{
+	TestResources.Z, err = Test.pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
 		NetworkID:  Test.network.ID,
@@ -51,12 +55,15 @@ func SetupKafka(pool *dockertest.Pool) (*Test, *dockertest.Resource) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	return Test, z
+	return Test
 }
 
-func SetKafka(Test *Test, z *dockertest.Resource) *dockertest.Resource {
+func SetKafka(pool *dockertest.Pool) (*TestResources, *dockertest.Pool) {
+	TestResources := &TestResources{}
+	Test := setupZookeper(pool, TestResources)
+
 	// Set Kafka: pulls an image, creates a container based on it and runs it
-	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
+	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", TestResources.Z.GetPort("2181/tcp"))
 	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
 
 	brokerPortInt, err := freeport.GetFreePort()
@@ -78,7 +85,7 @@ func SetKafka(Test *Test, z *dockertest.Resource) *dockertest.Resource {
 
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
-	resourceKafka, err := Test.pool.RunWithOptions(&dockertest.RunOptions{
+	TestResources.K, err = Test.pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
 		Tag:        "7.0.0",
 		NetworkID:  Test.network.ID,
@@ -99,6 +106,6 @@ func SetKafka(Test *Test, z *dockertest.Resource) *dockertest.Resource {
 	if err != nil {
 		fmt.Println(err)
 	}
-	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
-	return resourceKafka
+	log.Println("Kafka PORT:- ", TestResources.K.GetPort("9092/tcp"))
+	return TestResources, Test.pool
 }

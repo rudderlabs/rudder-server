@@ -32,14 +32,14 @@ type MINIO struct {
 	minioBucketName string
 }
 
-func SetJobsDB(Test *Test) (*ServerTest, *dockertest.Resource) {
+func SetJobsDB(pool *dockertest.Pool) (*ServerTest, *dockertest.Resource) {
 	PostgresTest := &ServerTest{}
 	PostgresTest.database = "jobsdb"
 	PostgresTest.password = "password"
 	PostgresTest.user = "rudder"
 
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := Test.pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
 		"POSTGRES_PASSWORD=" + PostgresTest.password,
 		"POSTGRES_DB=" + PostgresTest.database,
 		"POSTGRES_USER=" + PostgresTest.user,
@@ -49,7 +49,7 @@ func SetJobsDB(Test *Test) (*ServerTest, *dockertest.Resource) {
 	}
 	PostgresTest.DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), PostgresTest.database)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := Test.pool.Retry(func() error {
+	if err := pool.Retry(func() error {
 		var err error
 		PostgresTest.DB, err = sql.Open("postgres", PostgresTest.DB_DSN)
 		if err != nil {
@@ -63,10 +63,10 @@ func SetJobsDB(Test *Test) (*ServerTest, *dockertest.Resource) {
 	return PostgresTest, resourcePostgres
 }
 
-func SetTransformer(Test *Test) *dockertest.Resource {
+func SetTransformer(pool *dockertest.Pool) *dockertest.Resource {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
-	transformerRes, err := Test.pool.RunWithOptions(&dockertest.RunOptions{
+	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderlabs/rudder-transformer",
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
@@ -80,7 +80,7 @@ func SetTransformer(Test *Test) *dockertest.Resource {
 	return transformerRes
 }
 
-func SetMINIO(Test *Test) (string, string, *dockertest.Resource) {
+func SetMINIO(pool *dockertest.Pool) (string, string, *dockertest.Resource) {
 	MINIOTest := &MINIO{}
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -101,7 +101,7 @@ func SetMINIO(Test *Test) (string, string, *dockertest.Resource) {
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
 
-	resource, err := Test.pool.RunWithOptions(options)
+	resource, err := pool.RunWithOptions(options)
 	if err != nil {
 		log.Println("Could not start resource:", err)
 	}
@@ -110,7 +110,7 @@ func SetMINIO(Test *Test) (string, string, *dockertest.Resource) {
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
-	if err := Test.pool.Retry(func() error {
+	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", MINIOTest.minioEndpoint)
 		resp, err := http.Get(url)
 		if err != nil {
