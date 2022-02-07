@@ -260,11 +260,11 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		return jobList
 	}
 	for _, customer := range customersToQuery {
-		parmas := append(params.ParameterFilters, ParameterFilterT{
+		f := append(params.ParameterFilters, ParameterFilterT{
 			Name:  "workspace_id",
 			Value: customer,
 		})
-		mj.markClearEmptyResult(ds, params.StateFilters, params.CustomValFilters, parmas, willTryToSet, nil)
+		mj.markClearEmptyResult(ds, params.StateFilters, params.CustomValFilters, f, willTryToSet, nil)
 	}
 
 	cacheUpdateByCustomer := make(map[string]string)

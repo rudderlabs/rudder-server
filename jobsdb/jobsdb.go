@@ -1797,31 +1797,39 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 }
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
-func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
-	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
-		for cv, cVal := range CVPMap {
-			for pv := range cVal {
-				parameterFilters := []ParameterFilterT{}
-				tokens := strings.Split(pv, "::")
-				for _, token := range tokens {
-					p := strings.Split(token, "##")
-					param := ParameterFilterT{
-						Name:  p[0],
-						Value: p[1],
+func (jd *HandleT) clearCache(ds dataSetT, CustomerCVPMap map[string]map[string]map[string]struct{}) {
+	for customer, CVPMap := range CustomerCVPMap {
+		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
+			for cv, cVal := range CVPMap {
+				for pv := range cVal {
+					parameterFilters := []ParameterFilterT{}
+					tokens := strings.Split(pv, "::")
+					for _, token := range tokens {
+						p := strings.Split(token, "##")
+						param := ParameterFilterT{
+							Name:  p[0],
+							Value: p[1],
+						}
+						parameterFilters = append(parameterFilters, param)
 					}
-					parameterFilters = append(parameterFilters, param)
+					parameterFilters = append(parameterFilters, ParameterFilterT{Name: "workspace_id", Value: customer})
+					jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 				}
-				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 			}
+		} else if jd.queryFilterKeys.CustomVal {
+			for cv := range CVPMap {
+				jd.markClearEmptyResult(ds,
+					[]string{NotProcessed.State},
+					[]string{cv},
+					[]ParameterFilterT{{Name: "workspace_id", Value: customer}},
+					hasJobs,
+					nil,
+				)
+			}
+		} else {
+			jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 		}
-	} else if jd.queryFilterKeys.CustomVal {
-		for cv := range CVPMap {
-			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-		}
-	} else {
-		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
-
 }
 
 func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
