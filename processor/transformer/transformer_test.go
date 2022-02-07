@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -123,7 +124,7 @@ func Test_Transformer(t *testing.T) {
 
 		}
 
-		rsp := tr.Transform(events, srv.URL, batchSize)
+		rsp := tr.Transform(context.TODO(), events, srv.URL, batchSize)
 		require.Equal(t, expectedResponse, rsp)
 	}
 }
