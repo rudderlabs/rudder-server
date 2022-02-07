@@ -2085,7 +2085,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -2184,13 +2184,13 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jobList = append(jobList, &job)
 	}
 
-	// result := hasJobs
-	// if len(jobList) == 0 {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	result = noJobs
-	// }
-	// _willTryToSet := willTryToSet
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+	result := hasJobs
+	if len(jobList) == 0 {
+		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		result = noJobs
+	}
+	_willTryToSet := willTryToSet
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2215,7 +2215,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	// jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var rows *sql.Rows
 	var err error
@@ -2289,15 +2289,15 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		jobList = append(jobList, &job)
 	}
 
-	// result := hasJobs
-	// dsList := jd.getDSList(false)
-	// //if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
-	// if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
-	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	result = noJobs
-	// }
-	// _willTryToSet := willTryToSet
-	// jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+	result := hasJobs
+	dsList := jd.getDSList(false)
+	//if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
+	if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
+		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		result = noJobs
+	}
+	_willTryToSet := willTryToSet
+	jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -3194,7 +3194,7 @@ func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []
 	for ds, stateListByCustomer := range updatedStatesByDS {
 		for customer, stateList := range stateListByCustomer {
 			f := append(parameterFilters, ParameterFilterT{
-				Name:  "customer",
+				Name:  "workspace_id",
 				Value: customer,
 			})
 			jd.markClearEmptyResult(ds, stateList, customValFilters, f, hasJobs, nil)
