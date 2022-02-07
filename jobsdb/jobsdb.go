@@ -220,7 +220,8 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 
 	for ds, stateListByCustomer := range updatedStatesByDS {
 		for customer, stateList := range stateListByCustomer {
-			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+			f := append(parameterFilters, ParameterFilterT{Name: "workspace_id", Value: customer})
+			jd.markClearEmptyResult(ds, stateList, customValFilters, f, hasJobs, nil)
 		}
 	}
 
@@ -1797,31 +1798,30 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
-	for customer, customerCVPMap := range CVPMap {
-		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
-			for cv, cVal := range customerCVPMap {
-				for pv := range cVal {
-					parameterFilters := []ParameterFilterT{}
-					tokens := strings.Split(pv, "::")
-					for _, token := range tokens {
-						p := strings.Split(token, "##")
-						param := ParameterFilterT{
-							Name:  p[0],
-							Value: p[1],
-						}
-						parameterFilters = append(parameterFilters, param)
+	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
+		for cv, cVal := range CVPMap {
+			for pv := range cVal {
+				parameterFilters := []ParameterFilterT{}
+				tokens := strings.Split(pv, "::")
+				for _, token := range tokens {
+					p := strings.Split(token, "##")
+					param := ParameterFilterT{
+						Name:  p[0],
+						Value: p[1],
 					}
-					jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
+					parameterFilters = append(parameterFilters, param)
 				}
+				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 			}
-		} else if jd.queryFilterKeys.CustomVal {
-			for cv := range customerCVPMap {
-				jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-			}
-		} else {
-			jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
 		}
+	} else if jd.queryFilterKeys.CustomVal {
+		for cv := range CVPMap {
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
+		}
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
+
 }
 
 func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
@@ -1911,7 +1911,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
-		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
 	}
@@ -2074,10 +2074,10 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	checkValidJobState(jd, stateFilters)
 
-	// if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	return []*JobT{}
-	// }
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
+		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		return []*JobT{}
+	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("processed_ds_time", tags)
@@ -2204,10 +2204,10 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
-	// if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
-	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	return []*JobT{}
-	// }
+	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		return []*JobT{}
+	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("unprocessed_ds_time", tags)
@@ -2324,7 +2324,8 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		return err
 	}
 	for customer, stateFilters := range stateFiltersByCustomer {
-		jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
+		f := append(parameterFilters, ParameterFilterT{Name: "workspace_id", Value: customer})
+		jd.markClearEmptyResult(ds, stateFilters, customValFilters, f, hasJobs, nil)
 	}
 	return nil
 }
