@@ -337,6 +337,7 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("setup Postgres Destination: %w", err)
 	}
+	db = PostgresContainer.DB
 
 	TransformerContainer, err = destination.SetupTransformer(pool, cleanup)
 	if err != nil {
@@ -645,7 +646,6 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-	db = PostgresContainer.DB
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
