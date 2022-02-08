@@ -1,51 +1,45 @@
-package main_test
+package destination
 
 import (
 	_ "encoding/json"
 	"fmt"
+	"log"
+	"strconv"
+
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/phayes/freeport"
-	"log"
-	"strconv"
 )
 
-type Test struct {
-	pool             *dockertest.Pool
-	err              error
-	network          *dc.Network
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
-}
-type TestResources struct {
-	Z *dockertest.Resource
-	K *dockertest.Resource
+type KafkaResource struct {
+	Port string
 }
 
-func setupZookeper(pool *dockertest.Pool, TestResources *TestResources) *Test {
-	Test := &Test{}
-	Test.pool = pool
-	fmt.Println("Set zookeper")
-	Test.network, Test.err = Test.pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-	if Test.err != nil {
-		log.Printf("Could not create docker network: %s", Test.err)
+type deferer interface {
+	Defer(func() error)
+}
+
+func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+	if err != nil {
+		return nil, fmt.Errorf("Could not create docker network: %w", err)
 	}
+	d.Defer(func() error {
+		// TODO delete network
+		return nil
+	})
+
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
-	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
-	log.Println("zookeeper Port:", zookeeperPort)
-	log.Println("zookeeper client Port :", zookeeperclientPort)
-
-	TestResources.Z, err = Test.pool.RunWithOptions(&dockertest.RunOptions{
+	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
-		NetworkID:  Test.network.ID,
+		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
@@ -53,46 +47,43 @@ func setupZookeper(pool *dockertest.Pool, TestResources *TestResources) *Test {
 		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
 	})
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
-	return Test
-}
+	d.Defer(func() error {
+		if err := pool.Purge(zookeeperContainer); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+		return nil
+	})
 
-func SetKafka(pool *dockertest.Pool) (*TestResources, *dockertest.Pool) {
-	TestResources := &TestResources{}
-	Test := setupZookeper(pool, TestResources)
-
-	// Set Kafka: pulls an image, creates a container based on it and runs it
-	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", TestResources.Z.GetPort("2181/tcp"))
-	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
-
+	log.Println("KAFKA_ZOOKEEPER_CONNECT: localhost:", zookeeperContainer.GetPort("2181/tcp"))
 	brokerPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
-	Test.brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
-	log.Println("broker Port:", Test.brokerPort)
+	brokerPort := fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
+	log.Println("broker Port:", brokerPort)
 
-	Test.localhostPortInt, err = freeport.GetFreePort()
+	localhostPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
-	Test.localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(Test.localhostPortInt))
-	log.Println("localhost Port:", Test.localhostPort)
+	localhostPort := fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
+	log.Printf("localhost Port: %s \n", localhostPort)
 
-	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(Test.localhostPortInt))
+	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%d", localhostPortInt)
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
 
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
-	TestResources.K, err = Test.pool.RunWithOptions(&dockertest.RunOptions{
+	kafkaContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
 		Tag:        "7.0.0",
-		NetworkID:  Test.network.ID,
+		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"29092/tcp": {{HostIP: "broker", HostPort: Test.brokerPort}},
-			"9092/tcp":  {{HostIP: "localhost", HostPort: Test.localhostPort}},
+			"29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
+			"9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
 		},
 		Env: []string{
 			"KAFKA_BROKER_ID=1",
@@ -103,9 +94,18 @@ func SetKafka(pool *dockertest.Pool) (*TestResources, *dockertest.Pool) {
 			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
 		},
 	})
+	d.Defer(func() error {
+		if err := pool.Purge(kafkaContainer); err != nil {
+			return fmt.Errorf("Could not purge Kafka resource: %w \n", err)
+		}
+		return nil
+	})
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
-	log.Println("Kafka PORT:- ", TestResources.K.GetPort("9092/tcp"))
-	return TestResources, Test.pool
+	log.Println("Kafka PORT:- ", kafkaContainer.GetPort("9092/tcp"))
+
+	return &KafkaResource{
+		Port: kafkaContainer.GetPort("9092/tcp"),
+	}, nil
 }
