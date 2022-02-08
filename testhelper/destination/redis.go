@@ -1,4 +1,4 @@
-package main_test
+package destination
 
 import (
 	_ "encoding/json"

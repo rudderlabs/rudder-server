@@ -1,18 +1,19 @@
-package main_test
+package destination
 
 import (
 	"database/sql"
 	_ "encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/phayes/freeport"
-	"log"
-	"net/http"
-	"strconv"
 )
 
 // var (

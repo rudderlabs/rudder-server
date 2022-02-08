@@ -14,7 +14,6 @@ import (
 	_ "encoding/json"
 	"flag"
 	"fmt"
-	"github.com/joho/godotenv"
 	"html/template"
 	"io"
 	"log"
@@ -31,9 +30,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	"github.com/tidwall/gjson"
 
@@ -43,7 +46,6 @@ import (
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	k "github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,7 +64,7 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	redisAddress                 string
-	TestResources                *k.TestResources
+	KafkaContainer               *destination.KafkaResource
 	resourceRedis                *dockertest.Resource
 	resourcePostgres             *dockertest.Resource
 )
@@ -235,7 +237,7 @@ func SendPixelEvents(writeKey string) {
 	log.Println("Sending pixel/v1/track Event")
 	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
 	method = "GET"
-	resBody, _ = GetEvent(url, method)
+	resBody, err = GetEvent(url, method)
 	if err != nil {
 		log.Println(err)
 		log.Println(resBody)
@@ -315,29 +317,24 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
 
-	TestResources, pool = k.SetKafka(pool)
+	cleanup := &testhelper.Cleanup{}
+	defer cleanup.Run()
 
-	defer func() {
-		if err := pool.Purge(TestResources.Z); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	defer func() {
-		if err := pool.Purge(TestResources.K); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
+	if err != nil {
+		return 0, fmt.Errorf("setup kafka: %w", err)
+	}
 
 	// pulls an redis image, creates a container based on it and runs it
 
-	redisAddress, resourceRedis = k.SetRedis(pool)
+	redisAddress, resourceRedis = destination.SetRedis(pool)
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	JobsDBTest, resourcePostgres := k.SetJobsDB(pool)
+	JobsDBTest, resourcePostgres := destination.SetJobsDB(pool)
 	db = JobsDBTest.DB
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -345,7 +342,7 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 
-	transformerRes := k.SetTransformer(pool)
+	transformerRes := destination.SetTransformer(pool)
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -360,7 +357,7 @@ func run(m *testing.M) (int, error) {
 		time.Second,
 	)
 
-	minioEndpoint, minioBucketName, resource := k.SetMINIO(pool)
+	minioEndpoint, minioBucketName, resource := destination.SetMINIO(pool)
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -415,11 +412,11 @@ func run(m *testing.M) (int, error) {
 			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
-			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
+			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"), // postgres.Port
 			"address":                             redisAddress,
 			"minioEndpoint":                       minioEndpoint,
 			"minioBucketName":                     minioBucketName,
-			"kafkaPort":                           TestResources.K.GetPort("9092/tcp"),
+			"kafkaPort":                           KafkaContainer.Port, // kafka.Port
 			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
 			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
@@ -735,7 +732,7 @@ func TestKafka(t *testing.T) {
 	config.ClientID = "go-kafka-consumer"
 	config.Consumer.Return.Errors = true
 
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", TestResources.K.GetPort("9092/tcp"))
+	kafkaEndpoint := fmt.Sprintf("localhost:%s", KafkaContainer.Port)
 	brokers := []string{kafkaEndpoint}
 
 	// Create new consumer
@@ -819,13 +816,11 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 	_, err = db.Exec(wht.Test.GatewayJobsSqlFunction)
 	if err != nil {
 		panic(fmt.Errorf("error occurred with executing gw jobs function for events count with err %v", err.Error()))
-		return
 	}
 
 	_, err = db.Exec(wht.Test.BatchRouterJobsSqlFunction)
 	if err != nil {
 		panic(fmt.Errorf("error occurred with executing brt jobs function for events count with err %s", err.Error()))
-		return
 	}
 }
 
