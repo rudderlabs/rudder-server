@@ -247,9 +247,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
-		pkgLogger.Infof(`Received updated workspace config HERE HERE`)
 		for _, source := range allSources.Sources {
-			pkgLogger.Infof(`Iterating over sources %v`, source)
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
 				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
 			}
@@ -287,7 +285,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if connectionsMap[destination.ID] == nil {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
-				pkgLogger.Infof("DESTINATION SSL MODE IS %s", warehouse.Destination.Config["sslMode"])
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					warehouseutils.WriteSSLKeys(warehouse.Destination)
 				}

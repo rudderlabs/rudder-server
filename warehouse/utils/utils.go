@@ -775,9 +775,16 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
 		return
 	}
-	clientKey := formatSSLFile(destination.Config["clientKey"].(string))
-	clientCert := formatSSLFile(destination.Config["clientCert"].(string))
-	serverCert := formatSSLFile(destination.Config["serverCA"].(string))
+	clientKeyConfig := destination.Config["clientKey"]
+	clientCertConfig := destination.Config["clientCert"]
+	serverCAConfig := destination.Config["serverCA"]
+	if clientKeyConfig == nil || clientCertConfig == nil || serverCAConfig == nil {
+		pkgLogger.Errorf("Error extracting ssl information; invalid config passed for destination %s", destination.ID)
+		return
+	}
+	clientKey := formatSSLFile(clientKeyConfig.(string))
+	clientCert := formatSSLFile(clientCertConfig.(string))
+	serverCert := formatSSLFile(serverCAConfig.(string))
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
 	pkgLogger.Infof("SSLDIRPATH IS %s", sslDirPath)
 	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
