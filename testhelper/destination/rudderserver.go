@@ -16,58 +16,75 @@ import (
 	"github.com/phayes/freeport"
 )
 
-// var (
-// 	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
-// )
-
-type ServerTest struct {
+type PostgresResource struct {
 	DB       *sql.DB
 	DB_DSN   string
-	database string
-	password string
-	user     string
+	Database string
+	Password string
+	User     string
+	Port string
+}
+type TransformerResource struct {
+	TransformURL string
+	Port string
 }
 
-type MINIO struct {
-	minioEndpoint   string
-	minioBucketName string
+type MINIOResource struct {
+	MinioEndpoint   string
+	MinioBucketName string
+	Port string
 }
 
-func SetJobsDB(pool *dockertest.Pool) (*ServerTest, *dockertest.Resource) {
-	PostgresTest := &ServerTest{}
-	PostgresTest.database = "jobsdb"
-	PostgresTest.password = "password"
-	PostgresTest.user = "rudder"
+func SetupPostgres(pool *dockertest.Pool, d deferer) (*PostgresResource, error) {
+	database := "jobsdb"
+	password := "password"
+	user := "rudder"
 
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=" + PostgresTest.password,
-		"POSTGRES_DB=" + PostgresTest.database,
-		"POSTGRES_USER=" + PostgresTest.user,
+	postgresContainer, err := pool.Run("postgres", "11-alpine", []string{
+		"POSTGRES_PASSWORD=" + password,
+		"POSTGRES_DB=" + database,
+		"POSTGRES_USER=" + user,
 	})
 	if err != nil {
-		log.Println("Could not start resource Postgres: %w", err)
+		return nil, err
 	}
-	PostgresTest.DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), PostgresTest.database)
+
+	d.Defer(func() error {
+		if err := pool.Purge(postgresContainer); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+		return nil
+	})
+
+
+	db_dns := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", postgresContainer.GetPort("5432/tcp"), database)
+	var db  *sql.DB
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		PostgresTest.DB, err = sql.Open("postgres", PostgresTest.DB_DSN)
+		db, err = sql.Open("postgres", db_dns)
 		if err != nil {
 			return err
 		}
-		return PostgresTest.DB.Ping()
+		return db.Ping()
 	}); err != nil {
-		log.Println("Could not connect to postgres", PostgresTest.DB_DSN, err)
+		return nil, err
 	}
-	fmt.Println("DB_DSN:", PostgresTest.DB_DSN)
-	return PostgresTest, resourcePostgres
+	return &PostgresResource{
+		DB    :   db,
+		DB_DSN :  db_dns,
+		Database: database,
+		Password :password,
+		User     :user,
+		Port :postgresContainer.GetPort("5432/tcp"),
+	}, nil
 }
 
-func SetTransformer(pool *dockertest.Pool) *dockertest.Resource {
+func SetupTransformer(pool *dockertest.Pool, d deferer) (*TransformerResource, error) {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
-	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+	transformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderlabs/rudder-transformer",
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
@@ -76,13 +93,23 @@ func SetTransformer(pool *dockertest.Pool) *dockertest.Resource {
 		},
 	})
 	if err != nil {
-		log.Println("Could not start resource transformer: %w", err)
+		return nil, err
 	}
-	return transformerRes
+
+	d.Defer(func() error {
+		if err := pool.Purge(transformerContainer); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+		return nil
+	})
+
+	return &TransformerResource{
+		TransformURL    :   fmt.Sprintf("http://localhost:%s", transformerContainer.GetPort("9090/tcp")),
+		Port :  transformerContainer.GetPort("9090/tcp"),
+	}, nil
 }
 
-func SetMINIO(pool *dockertest.Pool) (string, string, *dockertest.Resource) {
-	MINIOTest := &MINIO{}
+func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -102,17 +129,23 @@ func SetMINIO(pool *dockertest.Pool) (string, string, *dockertest.Resource) {
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
 
-	resource, err := pool.RunWithOptions(options)
+	minioContainer, err := pool.RunWithOptions(options)
 	if err != nil {
-		log.Println("Could not start resource:", err)
+		return nil, err
 	}
+	d.Defer(func() error {
+		if err := pool.Purge(minioContainer); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+		return nil
+	})
 
-	MINIOTest.minioEndpoint = fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+	minioEndpoint := fmt.Sprintf("localhost:%s", minioContainer.GetPort("9000/tcp"))
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
 	if err := pool.Retry(func() error {
-		url := fmt.Sprintf("http://%s/minio/health/live", MINIOTest.minioEndpoint)
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
@@ -122,23 +155,23 @@ func SetMINIO(pool *dockertest.Pool) (string, string, *dockertest.Resource) {
 		}
 		return nil
 	}); err != nil {
-		log.Printf("Could not connect to docker: %s", err)
+		return nil, err
 	}
 	// now we can instantiate minio client
-	minioClient, err = minio.New(MINIOTest.minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
+	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
 	if err != nil {
-		log.Println("Failed to create minio client:", err)
-		panic(err)
+		return nil, err
 	}
-	log.Printf("%#v\n", minioClient) // minioClient is now set up
-
 	// Create bucket for MINIO
 	// Create a bucket at region 'us-east-1' with object locking enabled.
-	MINIOTest.minioBucketName = "devintegrationtest"
-	err = minioClient.MakeBucket(MINIOTest.minioBucketName, "us-east-1")
+	minioBucketName := "devintegrationtest"
+	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
 	if err != nil {
-		log.Println(err)
-		panic(err)
+		return nil, err
 	}
-	return MINIOTest.minioEndpoint, MINIOTest.minioBucketName, resource
+	return &MINIOResource{
+		MinioEndpoint    :   minioEndpoint,
+		MinioBucketName : minioBucketName,
+		Port :  minioContainer.GetPort("9000/tcp"),
+	}, nil
 }

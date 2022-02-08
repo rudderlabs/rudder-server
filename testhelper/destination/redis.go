@@ -10,30 +10,36 @@ import (
 	"log"
 )
 
-type RedisDesTest struct {
-	redisAddress string
-	redisClient  *redis.Client
+type RedisResource struct {
+	RedisAddress string
 }
 
-func SetRedis(pool *dockertest.Pool) (string, *dockertest.Resource) {
-	RedisTest := &RedisDesTest{}
+func SetupRedis(pool *dockertest.Pool, d deferer) (*RedisResource, error) {
 	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	redisContainer, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
-		log.Printf("Could not start resource: %s", err)
+		return nil, err
 	}
+	d.Defer(func() error {
+		if err := pool.Purge(redisContainer); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+		return nil
+	})
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	RedisTest.redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
+	redisAddress := fmt.Sprintf("localhost:%s", redisContainer.GetPort("6379/tcp"))
 	if err := pool.Retry(func() error {
-		RedisTest.redisClient = redis.NewClient(&redis.Options{
-			Addr:     RedisTest.redisAddress,
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:     redisAddress,
 			Password: "",
 			DB:       0,
 		})
-		_, err := RedisTest.redisClient.Ping().Result()
+		_, err := redisClient.Ping().Result()
 		return err
 	}); err != nil {
-		log.Printf("Could not connect to docker: %s", err)
+		return nil, err
 	}
-	return RedisTest.redisAddress, resourceRedis
+	return &RedisResource{
+		RedisAddress: redisAddress,
+	}, nil
 }
