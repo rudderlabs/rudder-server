@@ -310,11 +310,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
-			if UploadAPI.connectionManager != nil {
-				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
-			}
-		}
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
@@ -1177,6 +1172,11 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 					wh.configSubscriberLock.Unlock()
 				}
 			}
+		}
+	}
+	if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+		if UploadAPI.connectionManager != nil {
+			UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
 		}
 	}
 
