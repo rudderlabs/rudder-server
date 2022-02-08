@@ -324,9 +324,8 @@ func run(m *testing.M) (int, error) {
 
 	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup kafka Destination: %w", err)
+		return 0, fmt.Errorf("setup Kafka Destination: %w", err)
 	}
-
 
 	RedisContainer, err = destination.SetupRedis(pool , cleanup)
 	if err != nil {
@@ -353,7 +352,7 @@ func run(m *testing.M) (int, error) {
 
 	MINIOContainer, err = destination.SetupMINIO(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup Transformer Container : %w", err)
+		return 0, fmt.Errorf("setup MINIO Container : %w", err)
 	}
 	
 	if err := godotenv.Load("testhelper/.env"); err != nil {
@@ -404,11 +403,11 @@ func run(m *testing.M) (int, error) {
 			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
-			"postgresPort":                        PostgresContainer.Port, // postgres.Port
+			"postgresPort":                        PostgresContainer.Port, 
 			"address":                             RedisContainer.RedisAddress,
 			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
 			"minioBucketName":                     MINIOContainer.MinioBucketName,
-			"kafkaPort":                           KafkaContainer.Port, // kafka.Port
+			"kafkaPort":                           KafkaContainer.Port, 
 			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
 			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
