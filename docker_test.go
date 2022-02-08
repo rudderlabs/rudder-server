@@ -65,8 +65,10 @@ var (
 	workspaceID                  string
 	redisAddress                 string
 	KafkaContainer               *destination.KafkaResource
-	resourceRedis                *dockertest.Resource
-	resourcePostgres             *dockertest.Resource
+	RedisContainer				 *destination.RedisResource
+	PostgresContainer			 *destination.PostgresResource
+	TransformerContainer		 *destination.TransformerResource
+	MINIOContainer 				*destination.MINIOResource
 )
 
 type WebhookRecorder struct {
@@ -322,54 +324,43 @@ func run(m *testing.M) (int, error) {
 
 	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup kafka: %w", err)
+		return 0, fmt.Errorf("setup kafka Destination: %w", err)
 	}
 
-	// pulls an redis image, creates a container based on it and runs it
 
-	redisAddress, resourceRedis = destination.SetRedis(pool)
-	defer func() {
-		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	RedisContainer, err = destination.SetupRedis(pool , cleanup)
+	if err != nil {
+		return 0, fmt.Errorf("setup Redis Destination: %w", err)
+	}
 
-	JobsDBTest, resourcePostgres := destination.SetJobsDB(pool)
-	db = JobsDBTest.DB
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	PostgresContainer, err = destination.SetupPostgres(pool, cleanup)
+	if err != nil {
+		return 0, fmt.Errorf("setup Postgres Destination: %w", err)
+	}
 
-	transformerRes := destination.SetTransformer(pool)
-	defer func() {
-		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	transformURL := fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
+	TransformerContainer, err = destination.SetupTransformer(pool, cleanup)
+	if err != nil {
+		return 0, fmt.Errorf("setup Transformer Container : %w", err)
+	}
+	
 	waitUntilReady(
 		context.Background(),
-		fmt.Sprintf("%s/health", transformURL),
+		fmt.Sprintf("%s/health", TransformerContainer.TransformURL),
 		time.Minute,
 		time.Second,
 	)
 
-	minioEndpoint, minioBucketName, resource := destination.SetMINIO(pool)
-	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
+	MINIOContainer, err = destination.SetupMINIO(pool, cleanup)
+	if err != nil {
+		return 0, fmt.Errorf("setup Transformer Container : %w", err)
+	}
+	
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
-	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	os.Setenv("DEST_TRANSFORM_URL", transformURL)
+	os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
+	os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
+	os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
 
 	wht.InitWHConfig()
 
@@ -412,10 +403,10 @@ func run(m *testing.M) (int, error) {
 			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
-			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"), // postgres.Port
-			"address":                             redisAddress,
-			"minioEndpoint":                       minioEndpoint,
-			"minioBucketName":                     minioBucketName,
+			"postgresPort":                        PostgresContainer.Port, // postgres.Port
+			"address":                             RedisContainer.RedisAddress,
+			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
+			"minioBucketName":                     MINIOContainer.MinioBucketName,
 			"kafkaPort":                           KafkaContainer.Port, // kafka.Port
 			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
@@ -654,6 +645,7 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
+	db = PostgresContainer.DB
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
@@ -714,7 +706,7 @@ func TestPostgres(t *testing.T) {
 
 // Verify Event in Redis
 func TestRedis(t *testing.T) {
-	conn, err := redigo.Dial("tcp", redisAddress)
+	conn, err := redigo.Dial("tcp", RedisContainer.RedisAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -760,7 +752,6 @@ out:
 		select {
 		case msg := <-consumer:
 			msgCount++
-			t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "identified_user_id")
 
