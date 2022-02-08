@@ -779,7 +779,10 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 	clientCertConfig := destination.Config["clientCert"]
 	serverCAConfig := destination.Config["serverCA"]
 	if clientKeyConfig == nil || clientCertConfig == nil || serverCAConfig == nil {
+		pkgLogger.Errorf("--------------------------------------------------------------------------------------------")
 		pkgLogger.Errorf("Error extracting ssl information; invalid config passed for destination %s", destination.ID)
+		pkgLogger.Errorf("destination config is %s", destination.Config)
+		pkgLogger.Errorf("--------------------------------------------------------------------------------------------")
 		return
 	}
 	clientKey := formatSSLFile(clientKeyConfig.(string))
