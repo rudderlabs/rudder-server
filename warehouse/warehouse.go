@@ -287,9 +287,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err != nil {
+					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID)
+						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
 					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
