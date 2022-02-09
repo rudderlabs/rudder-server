@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
@@ -50,6 +51,12 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 
 		err = rows.Scan(valuePtrs...)
+		for i := 0; i < colCount; i++ {
+			switch t := values[i].(type) {
+			case []uint8:
+				values[i] = string(t)
+			}
+		}
 		if err != nil {
 			return result, err
 		}
@@ -94,7 +101,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
-		Config: cl.DBHandleT.CredConfig,
+		Config:       cl.DBHandleT.CredConfig,
 		SqlStatement: statement,
 		Identifier:   cl.DBHandleT.CredIdentifier,
 	})
