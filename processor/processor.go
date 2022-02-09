@@ -370,7 +370,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 	//event Count test stats.
 	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_db_read_events_count", stats.GaugeType)
-	proc.statPipelineChTotalEventCount = proc.stats.NewStat("processor.pipeline_total_event_count", stats.GaugeType)
+	proc.statPipelineTotalEventCount = proc.stats.NewStat("processor.pipeline_total_event_count", stats.GaugeType)
 
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
