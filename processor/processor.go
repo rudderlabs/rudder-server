@@ -106,10 +106,8 @@ type HandleT struct {
 	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-
 	statPipelineEventsCount     stats.RudderStats
 	statPipelineTotalEventCount stats.RudderStats
-
 	logger              logger.LoggerI
 	eventSchemaHandler  types.EventSchemasI
 	dedupHandler        dedup.DedupI
@@ -367,8 +365,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
-
-	//event Count test stats.
 	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_db_read_events_count", stats.GaugeType)
 	proc.statPipelineChTotalEventCount = proc.stats.NewStat("processor.pipeline_total_event_count", stats.GaugeType)
 
