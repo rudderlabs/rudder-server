@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -106,11 +107,8 @@ type HandleT struct {
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
 
-	statPipelineEventsCount       stats.RudderStats
-	statPipelineChProcBufferSize  stats.RudderStats
-	statPipelineChTransBufferSize stats.RudderStats
-	statPipelineChStoreBufferSize stats.RudderStats
-	statPipelineChTotalEventCount stats.RudderStats
+	statPipelineEventsCount     stats.RudderStats
+	statPipelineTotalEventCount stats.RudderStats
 
 	logger              logger.LoggerI
 	eventSchemaHandler  types.EventSchemasI
@@ -371,11 +369,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	})
 
 	//event Count test stats.
-	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_events_count", stats.GaugeType)
-	proc.statPipelineChProcBufferSize = proc.stats.NewStat("processor.pipeline_ch_proc_buffer_size", stats.GaugeType)
-	proc.statPipelineChTransBufferSize = proc.stats.NewStat("processor.pipeline_ch_trans_buffer_size", stats.GaugeType)
-	proc.statPipelineChStoreBufferSize = proc.stats.NewStat("processor.pipeline_ch_store_buffer_size", stats.GaugeType)
-	proc.statPipelineChTotalEventCount = proc.stats.NewStat("processor.pipeline_ch_total_event_count", stats.GaugeType)
+	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_db_read_events_count", stats.GaugeType)
+	proc.statPipelineChTotalEventCount = proc.stats.NewStat("processor.pipeline_total_event_count", stats.GaugeType)
 
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
@@ -2167,7 +2162,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	bufferSize := pipelineBufferedItems
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
-	totalEvent := 0
+	var totalEvent int64
+	totalEvent = 0
+
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
@@ -2205,9 +2202,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
-				totalEvent += events
-				proc.statPipelineChTotalEventCount.Gauge(totalEvent)
 				proc.statPipelineEventsCount.Gauge(events)
+
+				atomic.AddInt64(&totalEvent, int64(events))
+				proc.statPipelineTotalEventCount.Gauge(totalEvent)
+
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
@@ -2223,7 +2222,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chTrans)
 
 		for jobs := range chProc {
-			proc.statPipelineChProcBufferSize.Gauge(len(chProc))
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
 	}()
@@ -2235,7 +2233,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chStore)
 
 		for msg := range chTrans {
-			proc.statPipelineChTransBufferSize.Gauge(len(chTrans))
 			chStore <- proc.transformations(msg)
 		}
 	}()
@@ -2245,9 +2242,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 
 		for msg := range chStore {
-			totalEvent -= msg.totalEvents
-			proc.statPipelineChTotalEventCount.Gauge(totalEvent)
-			proc.statPipelineChStoreBufferSize.Gauge(len(chStore))
+			atomic.AddInt64(&totalEvent, -1*int64(msg.totalEvents))
+			proc.statPipelineTotalEventCount.Gauge(totalEvent)
 			proc.Store(msg)
 		}
 	}()
