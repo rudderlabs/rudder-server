@@ -34,7 +34,6 @@ import (
 
 	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
@@ -45,17 +44,13 @@ import (
 	"github.com/ory/dockertest"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	hold                         bool = true
 	db                           *sql.DB
-	DB_DSN                       = "root@tcp(127.0.0.1:3306)/service"
 	httpPort                     string
-	dbHandle                     *sql.DB
-	sourceJSON                   backendconfig.ConfigT
 	webhookurl                   string
 	disableDestinationwebhookurl string
 	webhook                      *WebhookRecorder
@@ -63,12 +58,11 @@ var (
 	runIntegration               bool
 	writeKey                     string
 	workspaceID                  string
-	redisAddress                 string
 	KafkaContainer               *destination.KafkaResource
 	RedisContainer				 *destination.RedisResource
 	PostgresContainer			 *destination.PostgresResource
 	TransformerContainer		 *destination.TransformerResource
-	MINIOContainer 				*destination.MINIOResource
+	MINIOContainer 				 *destination.MINIOResource
 )
 
 type WebhookRecorder struct {
@@ -140,12 +134,6 @@ type Event struct {
 type Author struct {
 	Name string `json:"name"`
 	Age  int    `json:"age"`
-}
-
-func getWorkspaceConfig() backendconfig.ConfigT {
-	backendConfig := new(backendconfig.WorkspaceConfig)
-	sourceJSON, _ := backendConfig.Get()
-	return sourceJSON
 }
 
 func createWorkspaceConfig(templatePath string, values map[string]string) string {
@@ -324,23 +312,23 @@ func run(m *testing.M) (int, error) {
 
 	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup Kafka Destination: %w", err)
+		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
 
 	RedisContainer, err = destination.SetupRedis(pool , cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup Redis Destination: %w", err)
+		return 0, fmt.Errorf("setup Redis Destination container: %w", err)
 	}
 
 	PostgresContainer, err = destination.SetupPostgres(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup Postgres Destination: %w", err)
+		return 0, fmt.Errorf("setup Postgres Destination container: %w", err)
 	}
 	db = PostgresContainer.DB
 
 	TransformerContainer, err = destination.SetupTransformer(pool, cleanup)
 	if err != nil {
-		return 0, fmt.Errorf("setup Transformer Container : %w", err)
+		return 0, fmt.Errorf("setup Transformer container : %w", err)
 	}
 	
 	waitUntilReady(
@@ -358,6 +346,7 @@ func run(m *testing.M) (int, error) {
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
+	
 	os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
 	os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
@@ -381,8 +370,8 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("Could not get free port for http admin: %w", err)
 	}
-	os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 
+	os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	os.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = NewWebhook()
@@ -431,7 +420,6 @@ func run(m *testing.M) (int, error) {
 	}
 	defer os.RemoveAll(rudderTmpDir)
 	os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	fmt.Println("RUDDER_TMPDIR:", rudderTmpDir)
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -463,14 +451,6 @@ func run(m *testing.M) (int, error) {
 
 func TestWebhook(t *testing.T) {
 	var err error
-	psqlInfo := jobsdb.GetConnectionString()
-	dbHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-	// Pulling config form workspaceConfig.json
-	sourceJSON = getWorkspaceConfig()
-
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	payload_1 := strings.NewReader(`{
 		"userId": "identified_user_id",
