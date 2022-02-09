@@ -214,10 +214,11 @@ func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID 
 
 func persisteSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := map[string]string{
-		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
-		"errTag":      errTag,
+		"module":        moduleName,
+		"destType":      destType,
+		"warehouseID":   getWarehouseTagName(destID, sourceName, destName, sourceID),
+		"destinationID": destID,
+		"errTag":        errTag,
 	}
 	stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
 }
