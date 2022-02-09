@@ -108,7 +108,9 @@ var BatchEvent = []byte(`
 	}
 `)
 
-var DELIMITER = string("<<>>")
+const (
+	DELIMITER = string("<<>>")
+)
 
 func Init() {
 	loadConfig()
