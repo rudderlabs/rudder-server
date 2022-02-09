@@ -2089,7 +2089,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(unprocessedList, nil),
-		), time.Now(), false,
+		),
 	)
 	proc.statLoopTime.Since(s)
 
