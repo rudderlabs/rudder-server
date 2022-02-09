@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	RouterTimedOut = 1113
+	RouterTimedOutStatusCode = 1113
 )
 
 //RouterJobT holds the router job and its related metadata

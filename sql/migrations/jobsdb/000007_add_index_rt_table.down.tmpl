@@ -1,0 +1,5 @@
+{{range .Datasets}}
+    {{ if eq $.Prefix "rt" }} 
+        DROP INDEX IF EXISTS customval_customer_{{.}};
+    {{end}}
+{{end}}

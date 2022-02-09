@@ -23,7 +23,7 @@ func (*noop) GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut
 func (*noop) RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 }
 
-func (*noop) ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
+func (*noop) ReportProcLoopAddStats(stats map[string]map[string]int, tableType string) {
 }
 
 func (*noop) AddCustomerToLatencyMap(destType string, workspaceID string) {

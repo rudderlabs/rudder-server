@@ -53,7 +53,7 @@ type tenantStats interface {
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
-	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
+	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
 }
 
@@ -317,7 +317,7 @@ func isJobTerminated(status int) bool {
 		return false
 	}
 
-	if status != types.RouterTimedOut {
+	if status != types.RouterTimedOutStatusCode {
 		return false
 	}
 
@@ -740,7 +740,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//And Infact , the timeout should be more than the maximum latency allowed by these workers.
 				//Assuming 10s maximum latency
 				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
-					respStatusCode, respBody = types.RouterTimedOut, "1113 Jobs took more time than expected. Will be retried"
+					respStatusCode, respBody = types.RouterTimedOutStatusCode, "1113 Jobs took more time than expected. Will be retried"
 					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -803,7 +803,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				}
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
-				if respStatusCode != types.RouterTimedOut {
+				if respStatusCode != types.RouterTimedOutStatusCode {
 					worker.rt.MultitenantI.UpdateCustomerLatencyMap(worker.rt.destName, workspaceID, float64(timeTaken)/float64(time.Second))
 				}
 
@@ -1535,10 +1535,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1113" {
+		if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
 			sd.Count++
 		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
+		if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
 		}
 

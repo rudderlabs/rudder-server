@@ -86,15 +86,15 @@ func (mr *MockMultiTenantIMockRecorder) RemoveFromInMemoryCount(arg0, arg1, arg2
 }
 
 // ReportProcLoopAddStats mocks base method.
-func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int, arg1 time.Duration, arg2 string) {
+func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int, arg1 string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "ReportProcLoopAddStats", arg0, arg1, arg2)
+	m.ctrl.Call(m, "ReportProcLoopAddStats", arg0, arg1)
 }
 
 // ReportProcLoopAddStats indicates an expected call of ReportProcLoopAddStats.
-func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1)
 }
 
 // UpdateCustomerLatencyMap mocks base method.

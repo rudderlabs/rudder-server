@@ -1232,7 +1232,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
-			//Add Customer Here
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1444,7 +1443,7 @@ type storeMessage struct {
 	start       time.Time
 }
 
-func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun bool) {
+func (proc *HandleT) Store(in storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	processorLoopStats["router"] = make(map[string]map[string]int)
@@ -1535,12 +1534,9 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	timeElapsed := 100 * time.Millisecond // TODO : Find a better way to fix this
-	if !firstRun {
-		timeElapsed = time.Since(stageStartTime)
-	}
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], timeElapsed, "router")
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], timeElapsed, "batch_router")
+
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
@@ -2248,12 +2244,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		stagetime := time.Now()
-		firstRun := true
 		for msg := range chStore {
-			proc.Store(msg, stagetime, firstRun)
-			stagetime = time.Now()
-			firstRun = false
+			proc.Store(msg)
 		}
 	}()
 

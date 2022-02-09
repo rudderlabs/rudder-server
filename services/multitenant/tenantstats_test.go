@@ -124,11 +124,9 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 
-			tenantStats.ReportProcLoopAddStats(input, time.Second, "router")
+			tenantStats.ReportProcLoopAddStats(input, "router")
 			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
 			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
-			Expect(tenantStats.routerInputRates["router"][workspaceID1][destType1].Value()).To(Equal(float64(addJobWID1)))
-			Expect(tenantStats.routerInputRates["router"][workspaceID2][destType1].Value()).To(Equal(float64(addJobWID2)))
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -142,7 +140,7 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
+			tenantStats.ReportProcLoopAddStats(input, "router")
 			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1, 0)
 			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2, 0)
 			tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID3, 0)
@@ -166,7 +164,7 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-			tenantStats.ReportProcLoopAddStats(input, procLoopTime, "router")
+			tenantStats.ReportProcLoopAddStats(input, "router")
 			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
 				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID1, 1)
 				tenantStats.UpdateCustomerLatencyMap(destType1, workspaceID2, 2)

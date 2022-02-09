@@ -26,6 +26,7 @@ type MultitenantStatsT struct {
 	routerSuccessRateMutex  sync.RWMutex
 	routerTenantLatencyStat map[string]map[string]misc.MovingAverage
 	routerLatencyMutex      sync.RWMutex
+	processorStageTime      time.Time
 }
 
 type MultiTenantI interface {
@@ -33,7 +34,7 @@ type MultiTenantI interface {
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
-	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
+	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
 }
 
@@ -58,6 +59,7 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
+	multitenantStat.processorStageTime = time.Now()
 	pileUpStatMap := make(map[string]map[string]int)
 	routerDB.GetPileUpCounts(pileUpStatMap)
 	for customer := range pileUpStatMap {
@@ -142,7 +144,8 @@ func (multitenantStat *MultitenantStatsT) RemoveFromInMemoryCount(customerID str
 	multitenantStat.routerJobCountMutex.Unlock()
 }
 
-func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
+func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, tableType string) {
+	timeTaken := time.Since(multitenantStat.processorStageTime)
 	for key := range stats {
 		multitenantStat.routerJobCountMutex.RLock()
 		_, ok := multitenantStat.routerInputRates[tableType][key]
@@ -188,6 +191,7 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 			}
 		}
 	}
+	multitenantStat.processorStageTime = time.Now()
 }
 
 func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
