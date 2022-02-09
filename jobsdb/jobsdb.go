@@ -131,6 +131,10 @@ type AssertInterface interface {
 	assertError(err error)
 }
 
+const (
+	undefinedWorkspace = "_undefined_"
+)
+
 var globalDBHandle *sql.DB
 var masterBackupEnabled, instanceBackupEnabled, instanceBackupFailedAndAborted bool
 var pathPrefix string
@@ -319,6 +323,7 @@ type HandleT struct {
 	dsRetentionPeriod             time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> customer -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
+	Multitenant                   bool
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
 	statTableCount                stats.RudderStats
@@ -1960,6 +1965,11 @@ type cacheEntry struct {
  */
 
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+	if !jd.Multitenant {
+		customer = undefinedWorkspace
+	} else if customer == undefinedWorkspace {
+		panic("undefined workspace is not allowed for multitenant")
+	}
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -2020,6 +2030,13 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 //  * The entry is noJobs
 //  * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+	if !jd.Multitenant && customer != undefinedWorkspace {
+		panic("only undefined workspace should checked for non-multitenant")
+	}
+	if jd.Multitenant && customer == undefinedWorkspace {
+		panic("undefined workspace is not allowed for multitenant")
+	}
+
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -2084,10 +2101,14 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	checkValidJobState(jd, stateFilters)
 
-	// if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	return []*JobT{}
-	// }
+	if jd.Multitenant {
+		panic("getProcessed can not be called with Multitenant jobsdb")
+	}
+
+	if jd.isEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters) {
+		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		return []*JobT{}
+	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("processed_ds_time", tags)
@@ -2095,7 +2116,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.markClearEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -2194,13 +2215,13 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jobList = append(jobList, &job)
 	}
 
-	// result := hasJobs
-	// if len(jobList) == 0 {
-	// 	jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-	// 	result = noJobs
-	// }
-	// _willTryToSet := willTryToSet
-	// jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+	result := hasJobs
+	if len(jobList) == 0 {
+		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		result = noJobs
+	}
+	_willTryToSet := willTryToSet
+	jd.markClearEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2214,10 +2235,14 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
-	// if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
-	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	return []*JobT{}
-	// }
+	if jd.Multitenant {
+		panic("getUnprocessed can not be called with Multitenant jobsdb")
+	}
+
+	if jd.isEmptyResult(ds, undefinedWorkspace, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		return []*JobT{}
+	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("unprocessed_ds_time", tags)
@@ -2299,15 +2324,15 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		jobList = append(jobList, &job)
 	}
 
-	// result := hasJobs
-	// dsList := jd.getDSList(false)
-	// //if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
-	// if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
-	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	result = noJobs
-	// }
-	// _willTryToSet := willTryToSet
-	// jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+	result := hasJobs
+	dsList := jd.getDSList(false)
+	//if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
+	if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
+		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		result = noJobs
+	}
+	_willTryToSet := willTryToSet
+	jd.markClearEmptyResult(ds, undefinedWorkspace, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2323,7 +2348,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 	}
 
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	stateFiltersByCustomer, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
+	stateFiltersByWorkspace, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
 	if err != nil {
 		txn.Rollback()
 		return err
@@ -2333,8 +2358,9 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 	if err != nil {
 		return err
 	}
-	for customer, stateFilters := range stateFiltersByCustomer {
-		jd.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
+
+	for workspaceID, stateFilters := range stateFiltersByWorkspace {
+		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
 	}
 	return nil
 }
