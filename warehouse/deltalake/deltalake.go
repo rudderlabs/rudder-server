@@ -172,8 +172,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
-		err = fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
-		return
+		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
 
 	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
