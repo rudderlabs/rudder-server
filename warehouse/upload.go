@@ -1392,7 +1392,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	inputCount := job.getTotalRowsInStagingFiles()
-	outputCount, _ := getTotalEventsUploaded(job.upload.ID)
+	outputCount, _ := job.getTotalEventsUploaded(false)
 	failCount := inputCount - outputCount
 	reportingStatus := jobsdb.Failed.State
 	if state == Aborted {

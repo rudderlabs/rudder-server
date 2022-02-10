@@ -105,7 +105,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderSt
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
-	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
+	numUploadedEvents, err := job.getTotalEventsUploaded(true)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -125,7 +125,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 
 func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total successfully loaded events in the upload
-	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
+	numUploadedEvents, err := job.getTotalEventsUploaded(true)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
