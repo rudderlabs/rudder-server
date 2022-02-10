@@ -171,7 +171,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
-	if err := dl.checkHealth(); err != nil {
+	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
 
@@ -218,13 +218,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	// Creating grpc connection using timeout context
 	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := stats.NewTaggedStat("warehouse.deltalake.grpcTimeouts", stats.CountType, map[string]string{
-			"destination": dl.Warehouse.Destination.ID,
-			"destType":    dl.Warehouse.Type,
-			"source":      dl.Warehouse.Source.ID,
-			"namespace":   dl.Warehouse.Namespace,
-			"identifier":  dl.Warehouse.Identifier,
-		})
+		execTimeouts := stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
 		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
@@ -937,17 +931,11 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 }
 
 // GetDatabricksVersion Gets the databricks version by making a grpc call to Version stub.
-func (dl *HandleT) checkHealth() (err error) {
+func checkHealth() (err error) {
 	ctx := context.Background()
 	defer func() {
 		if err != nil {
-			healthTimeouts := stats.NewTaggedStat("warehouse.deltalake.healthTimeouts", stats.CountType, map[string]string{
-				"destination": dl.Warehouse.Destination.ID,
-				"destType":    dl.Warehouse.Type,
-				"source":      dl.Warehouse.Source.ID,
-				"namespace":   dl.Warehouse.Namespace,
-				"identifier":  dl.Warehouse.Identifier,
-			})
+			healthTimeouts := stats.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
 			healthTimeouts.Count(1)
 		}
 	}()
