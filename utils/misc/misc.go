@@ -32,7 +32,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/araddon/dateparse"
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	uuid "github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"

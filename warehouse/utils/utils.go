@@ -763,25 +763,46 @@ func formatSSLFile(content string) (formattedContent string) {
 	return formattedContent
 }
 
+type WriteSSLKeyError struct {
+	errorText string
+	errorTag  string
+}
+
+func (err *WriteSSLKeyError) IsError() bool {
+	return err.errorText != ""
+}
+
+func (err *WriteSSLKeyError) Error() string {
+	return err.errorText
+}
+
+func (err *WriteSSLKeyError) GetErrTag() string {
+	return err.errorTag
+}
+
 // WriteSSLKeys writes the ssl key(s) present in the destination config
 // to the file system, this function checks whether a given config is
 // already written to the file system, writes to the file system if the
 // content is not already written
-func WriteSSLKeys(destination backendconfig.DestinationT) {
+func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	var err error
 	var existingChecksum string
 	var directoryName string
 	if directoryName, err = misc.CreateTMPDIR(); err != nil {
-		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root TMP directory for destination %v", err), "tmp_dir_failure"}
 	}
-	clientKey := formatSSLFile(destination.Config["clientKey"].(string))
-	clientCert := formatSSLFile(destination.Config["clientCert"].(string))
-	serverCert := formatSSLFile(destination.Config["serverCA"].(string))
+	clientKeyConfig := destination.Config["clientKey"]
+	clientCertConfig := destination.Config["clientCert"]
+	serverCAConfig := destination.Config["serverCA"]
+	if clientKeyConfig == nil || clientCertConfig == nil || serverCAConfig == nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error extracting ssl information; invalid config passed for destination %s", destination.ID), "certs_nil_value"}
+	}
+	clientKey := formatSSLFile(clientKeyConfig.(string))
+	clientCert := formatSSLFile(clientCertConfig.(string))
+	serverCert := formatSSLFile(serverCAConfig.(string))
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
 	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
-		pkgLogger.Errorf("Error creating SSL root directory for destination %s %v", destination.ID, err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}
 	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
 	h := sha1.New()
@@ -796,24 +817,21 @@ func WriteSSLKeys(destination backendconfig.DestinationT) {
 	}
 	if existingChecksum == sslHash {
 		// Pems files already written to FS
-		return
+		return WriteSSLKeyError{}
 	}
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
-		pkgLogger.Errorf("Error saving file %s error::%v", clientCertPemFile, err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientCertPemFile, err), "client_cert_create_err"}
 	}
 	if err = os.WriteFile(clientKeyPemFile, []byte(clientKey), 0600); err != nil {
-		pkgLogger.Errorf("Error saving file %s error::%v", clientKeyPemFile, err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientKeyPemFile, err), "client_key_create_err"}
 	}
 	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0600); err != nil {
-		pkgLogger.Errorf("Error saving file %s error::%v", serverCertPemFile, err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
 	}
 	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0700); err != nil {
-		pkgLogger.Errorf("Error saving file %s error::%v", checkSumFile, err)
-		return
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
 	}
+	return WriteSSLKeyError{}
 }
 
 func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
