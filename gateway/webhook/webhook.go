@@ -248,10 +248,13 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
+			pkgLogger.Infof("Before ContainsString ", sourceListForParsingParams)
 			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 
+				pkgLogger.Infof("Inside parsing block ", queryParams)
 				if err != nil {
 					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
 					continue
