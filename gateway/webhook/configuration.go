@@ -23,4 +23,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(5, &webhookRetryMax, false, 1, "Gateway.webhook.maxRetry")
 	// Parse all query params from sources mentioned in this list
 	config.RegisterStringSliceConfigVariable(make([]string, 0), &sourceListForParsingParams, false, "Gateway.webhook.sourceListForParsingParams")
+	// lowercasing strings in slice
+	for i, s := range sourceListForParsingParams {
+		sourceListForParsingParams[i] = strings.ToLower(s)
+	}
 }
