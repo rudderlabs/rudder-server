@@ -248,7 +248,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			pkgLogger.Infof("Before ContainsString ", sourceListForParsingParams)
+			pkgLogger.Infof("Before ContainsString ", sourceListForParsingParams, breq.sourceType)
 			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 
 				queryParams := req.request.URL.Query()
