@@ -46,7 +46,7 @@ func init() {
 
 func NewProducer(destinationConfig interface{}) (*bigquery.Client, error) {
 	var config Config
-	var credentialsFile Credentials
+	// var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
@@ -55,17 +55,17 @@ func NewProducer(destinationConfig interface{}) (*bigquery.Client, error) {
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
-	var confCreds []byte
-	if config.Credentials == "" {
-		return nil, createErr(err, "Credentials not being sent")
-	}
-	confCreds = []byte(config.Credentials)
-	err = json.Unmarshal(confCreds, &credentialsFile)
-	if err != nil {
-		return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-	}
+	// var confCreds []byte
+	// if config.Credentials == "" {
+	// 	return nil, createErr(err, "Credentials not being sent")
+	// }
+	// confCreds = []byte(config.Credentials)
+	// err = json.Unmarshal(confCreds, &credentialsFile)
+	// if err != nil {
+	// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
+	// }
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON([]byte(config.Credentials)),
+		// option.WithCredentialsJSON([]byte(config.Credentials)),
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
