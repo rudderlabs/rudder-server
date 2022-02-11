@@ -106,16 +106,16 @@ type HandleT struct {
 	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	statPipelineEventsCount     stats.RudderStats
-	statPipelineTotalEventCount stats.RudderStats
-	logger              logger.LoggerI
-	eventSchemaHandler  types.EventSchemasI
-	dedupHandler        dedup.DedupI
-	reporting           types.ReportingI
-	reportingEnabled    bool
-	transformerFeatures json.RawMessage
-	readLoopSleep       time.Duration
-	maxLoopSleep        time.Duration
+	statPipelineEventsCount        stats.RudderStats
+	statPipelineTotalEventCount    stats.RudderStats
+	logger                         logger.LoggerI
+	eventSchemaHandler             types.EventSchemasI
+	dedupHandler                   dedup.DedupI
+	reporting                      types.ReportingI
+	reportingEnabled               bool
+	transformerFeatures            json.RawMessage
+	readLoopSleep                  time.Duration
+	maxLoopSleep                   time.Duration
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -1450,9 +1450,9 @@ type storeMessage struct {
 
 func (proc *HandleT) Store(in storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
-
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
+
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		err := proc.routerDB.Store(destJobs)
@@ -1511,6 +1511,7 @@ func (proc *HandleT) Store(in storeMessage) {
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
+
 	if proc.isReportingEnabled() {
 		proc.reporting.Report(in.reportMetrics, txn)
 	}
@@ -2158,8 +2159,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	bufferSize := pipelineBufferedItems
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
-	var totalEvent int64
-	totalEvent = 0
+	var totalPipelineEventCount int64
+	totalPipelineEventCount = 0
+	subJobSync := make(chan int, 1)
 
 	go func() {
 		defer wg.Done()
@@ -2171,6 +2173,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
+
+				subJobSync <- 1
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue
@@ -2200,14 +2204,20 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				proc.statPipelineEventsCount.Gauge(events)
 
-				atomic.AddInt64(&totalEvent, int64(events))
-				proc.statPipelineTotalEventCount.Gauge(totalEvent)
+				atomic.AddInt64(&totalPipelineEventCount, int64(events))
+				proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
 
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
+				subJobSize := len(jobs) / 10
+				for i := 0; i < 9; i++ {
+					chProc <- jobs[:subJobSize]
+					jobs = jobs[subJobSize:]
+				}
 				chProc <- jobs
+
 			}
 		}
 	}()
@@ -2221,8 +2231,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
 	}()
-
-	chStore := make(chan storeMessage, bufferSize)
+	triggerStore := make(chan int)
+	chStore := make(chan storeMessage, 10)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -2230,17 +2240,78 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 		for msg := range chTrans {
 			chStore <- proc.transformations(msg)
+			if len(chStore) == 10 {
+				triggerStore <- 1
+			}
 		}
+
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		for {
+			<-triggerStore
 
-		for msg := range chStore {
-			atomic.AddInt64(&totalEvent, -1*int64(msg.totalEvents))
-			proc.statPipelineTotalEventCount.Gauge(totalEvent)
-			proc.Store(msg)
+			var statusList []*jobsdb.JobStatusT
+			var destJobs []*jobsdb.JobT
+			var batchDestJobs []*jobsdb.JobT
+			var procErrorJobs []*jobsdb.JobT
+			var reportMetrics []*types.PUReportedMetric
+			var totalEvents int
+			var start time.Time
+			var uniqueMessageIds map[string]struct{}
+			var procErrorJobsByDestID map[string][]*jobsdb.JobT
+			var sourceDupStats map[string]int
+			i := 0
+
+			for subJob := range chStore {
+
+				statusList = append(statusList, subJob.statusList...)
+				destJobs = append(destJobs, subJob.destJobs...)
+				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+
+				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
+				for id, job := range subJob.procErrorJobsByDestID {
+					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
+				}
+
+				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
+				for tag, count := range subJob.sourceDupStats {
+					sourceDupStats[tag] += count
+				}
+				for id := range subJob.uniqueMessageIds {
+					uniqueMessageIds[id] = struct{}{}
+				}
+
+				totalEvents = subJob.totalEvents
+				if i == 0 {
+					start = subJob.start
+					i++
+				}
+
+			}
+
+			proc.Store(storeMessage{
+				statusList:    statusList,
+				destJobs:      destJobs,
+				batchDestJobs: batchDestJobs,
+
+				procErrorJobs:         procErrorJobs,
+				procErrorJobsByDestID: procErrorJobsByDestID,
+
+				reportMetrics:    reportMetrics,
+				sourceDupStats:   sourceDupStats,
+				uniqueMessageIds: uniqueMessageIds,
+
+				totalEvents: totalEvents,
+				start:       start,
+			})
+
+			<-subJobSync
+			atomic.AddInt64(&totalPipelineEventCount, -1*int64(totalEvents))
+			proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
+
 		}
 	}()
 
