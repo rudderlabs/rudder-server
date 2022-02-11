@@ -26,7 +26,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: go test -v ./docker_test.go -integration -count 1
-    - run: ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
+    - run: ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
   integration-multitenant:
     name: Service Integration Multitenant
     runs-on: 'ubuntu-18.04'
@@ -46,7 +46,7 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: go test -v ./docker_test.go -integration -count 1
+    - run: ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
   unit:
     name: Unit & Component Integration
     runs-on: 'ubuntu-18.04'
