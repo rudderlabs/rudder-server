@@ -18,6 +18,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 
 	maxDSSize := 2
 	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
+	jobDB.Multitenant = true
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
@@ -111,7 +112,7 @@ func TestJobsDBStatusCache(t *testing.T) {
 		JobStatusTable: "rt_job_status_1",
 		Index:          "10",
 	}
-	wId1 := "testWorkspaceID1"
+	wId1 := undefinedWorkspace
 	customVal := "MOCKDS"
 	var cache JobsDBStatusCache
 	require.False(t, func() bool {
