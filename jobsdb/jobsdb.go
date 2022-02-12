@@ -1968,7 +1968,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 	if !jd.Multitenant {
 		customer = undefinedWorkspace
 	} else if customer == undefinedWorkspace {
-		panic("undefined workspace is not allowed for multitenant")
+		panic(fmt.Errorf("%s: undefined workspace is not allowed for multitenant", jd.tablePrefix))
 	}
 
 	jd.dsCacheLock.Lock()
@@ -2031,10 +2031,10 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 //  * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	if !jd.Multitenant && customer != undefinedWorkspace {
-		panic("only undefined workspace should checked for non-multitenant")
+		panic(fmt.Errorf("%s: only undefined workspace should checked for non-multitenant", jd.tablePrefix))
 	}
 	if jd.Multitenant && customer == undefinedWorkspace {
-		panic("undefined workspace is not allowed for multitenant")
+		panic(fmt.Errorf("%s: undefined workspace is not allowed for multitenant", jd.tablePrefix))
 	}
 
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -2102,7 +2102,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	checkValidJobState(jd, stateFilters)
 
 	if jd.Multitenant {
-		panic("getProcessed can not be called with Multitenant jobsdb")
+		panic(fmt.Errorf("%s: getProcessed can not be called with Multitenant jobsdb", jd.tablePrefix))
 	}
 
 	if jd.isEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters) {
@@ -2236,7 +2236,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	parameterFilters := params.ParameterFilters
 
 	if jd.Multitenant {
-		panic("getUnprocessed can not be called with Multitenant jobsdb")
+		panic(fmt.Errorf("%s: getUnprocessed can not be called with Multitenant jobsdb", jd.tablePrefix))
 	}
 
 	if jd.isEmptyResult(ds, undefinedWorkspace, []string{NotProcessed.State}, customValFilters, parameterFilters) {
