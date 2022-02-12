@@ -263,7 +263,11 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 			OutputFormat: aws.String(glueParquetOutputFormat)}
 		pathParts := strings.Split(locationFolder, "/")
 		// Assumes a well-formed partitioning format
-		partition := strings.Split(pathParts[len(pathParts)-1], "=")[1]
+		partitioning := strings.Split(pathParts[len(pathParts)-1], "=")
+		if len(partitioning) < 2 {
+			return
+		}
+		partition := partitioning[1]
 		partitionInput := glue.PartitionInput{StorageDescriptor: &storageDescriptor, Values: []*string{aws.String(partition)}}
 		locationToPartition[locationFolder] = partitionInput
 	}
