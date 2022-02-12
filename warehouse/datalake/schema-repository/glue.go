@@ -289,15 +289,14 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	if len(partitionInputs) == 0 {
 		pkgLogger.Infof("No new partitions to refresh")
 		return
-	} else {
-		pkgLogger.Infof("Refreshing %d partitions", len(partitionInputs))
-		pkgLogger.Debugf("PartitionInputs: %s", partitionInputs)
-		batchCreatePartitionInput := glue.BatchCreatePartitionInput{
-			DatabaseName:       aws.String(gl.Namespace),
-			PartitionInputList: partitionInputs,
-			TableName:          aws.String(tableName),
-		}
-		_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
-		return err
 	}
+	pkgLogger.Infof("Refreshing %d partitions", len(partitionInputs))
+	pkgLogger.Debugf("PartitionInputs: %s", partitionInputs)
+	batchCreatePartitionInput := glue.BatchCreatePartitionInput{
+		DatabaseName:       aws.String(gl.Namespace),
+		PartitionInputList: partitionInputs,
+		TableName:          aws.String(tableName),
+	}
+	_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
+	return err
 }
