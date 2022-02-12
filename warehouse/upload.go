@@ -1665,15 +1665,19 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
+
+			if misc.ContainsString(timeWindowDestinations, job.warehouse.Type) {
+				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+
+			}
+
 			if job.warehouse.Type == "S3_DATALAKE" {
 				timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
 				if timeWindowFormat != "" {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
-				} else if misc.ContainsString(timeWindowDestinations, job.warehouse.Type) {
-					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
-
 				}
 			}
+
 			// set merged schema as upload schema if the load file type is parquet
 			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 				payload.UploadSchema = job.upload.MergedSchema
