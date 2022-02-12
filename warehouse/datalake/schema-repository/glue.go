@@ -253,6 +253,10 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	locationToPartition := make(map[string]glue.PartitionInput)
 	for _, loadFile := range loadFiles {
 		locationFolder, _ := url.QueryUnescape(warehouseutils.GetS3LocationFolder(loadFile.Location))
+		if _, ok := locationToPartition[locationFolder]; ok {
+			// Go to next file if we are already going to process this locationFolder
+			continue
+		}
 		storageDescriptor := glue.StorageDescriptor{
 			Location: aws.String(locationFolder),
 			SerdeInfo: &glue.SerDeInfo{
@@ -262,9 +266,9 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 			InputFormat:  aws.String(glueParquetInputFormat),
 			OutputFormat: aws.String(glueParquetOutputFormat)}
 		pathParts := strings.Split(locationFolder, "/")
-		// Assumes a well-formed partitioning format
 		partitioning := strings.Split(pathParts[len(pathParts)-1], "=")
 		if len(partitioning) < 2 {
+			pkgLogger.Infof("Can not refresh partitions, timeWindowFormat setting has no = sign")
 			return
 		}
 		partition := partitioning[1]
@@ -272,6 +276,10 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		locationToPartition[locationFolder] = partitionInput
 	}
 	partitionInputs := make([]*glue.PartitionInput, 0, len(locationToPartition))
+
+	// Check for existing partitions. We do not want to generate unnecessary (for already existing
+	// partitions) changes in Glue tables (since the number of versions of a Glue table
+	// is limited)
 	for key, partition := range locationToPartition {
 		getPartitionInput := glue.GetPartitionInput{
 			DatabaseName:    aws.String(gl.Namespace),
