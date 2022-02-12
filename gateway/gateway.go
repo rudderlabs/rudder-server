@@ -28,7 +28,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"

@@ -28,6 +28,10 @@ phases:
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull yandex/clickhouse-server:21-alpine
       - docker pull mcr.microsoft.com/mssql/server:2019-CU10-ubuntu-20.04
+      - docker pull zookeeper:3.5
+      - docker pull minio/minio:latest
+      - docker pull mcr.microsoft.com/azure-storage/azurite:latest
+      - docker pull fsouza/fake-gcs-server:latest
       - go mod download
   build:
     commands:

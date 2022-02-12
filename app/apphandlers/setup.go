@@ -154,6 +154,14 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 
 	cleanup := make([]func(), 0)
 
+	//Crash recover routerDB, batchRouterDB
+	//Note: The following cleanups can take time if there are too many
+	//rt / batch_rt tables and there would be a delay readin from channel `ch`
+	//However, this shouldn't be the problem since backend config pushes config
+	//to its subscribers in separate goroutines to prevent blocking.
+	routerDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	batchRouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+
 loop:
 	for {
 		select {
@@ -166,7 +174,7 @@ loop:
 				for _, destination := range source.Destinations {
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					//For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)

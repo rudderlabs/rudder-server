@@ -1,6 +1,0 @@
-- Google Cloud Storage is unified object storage for developers and enterprises, from live applications data to cloud archival.
-- Integrate storage into your apps with a single unified API
-- Optimize price/performance across three storage classes with Object Lifecycle Management
-- Access data instantly from any storage class
-- Designed for secure and durable storage
-- Reduce data storage carbon emissions to zero

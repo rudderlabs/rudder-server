@@ -13,9 +13,9 @@ mocks: install-tools ## Generate all mocks
 
 test: enterprise-prepare-build mocks ## Run all unit tests
 ifdef package
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests $(package)
+	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace $(package)
 else
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace ./...
 endif
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts

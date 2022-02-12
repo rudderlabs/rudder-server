@@ -1411,7 +1411,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	inputCount := job.getTotalRowsInStagingFiles()
-	outputCount, _ := getTotalEventsUploaded(job.upload.ID)
+	outputCount, _ := job.getTotalEventsUploaded(false)
 	failCount := inputCount - outputCount
 	reportingStatus := jobsdb.Failed.State
 	if state == Aborted {
@@ -1666,7 +1666,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
 				if timeWindowFormat != "" {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
-				} else if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
+				} else if misc.ContainsString(timeWindowDestinations, job.warehouse.Type) {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 
 				}

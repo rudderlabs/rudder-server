@@ -1,15 +1,11 @@
 package warehouseutils
 
 import (
+	"crypto/sha1"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"net/url"
 	"os"
 	"regexp"
@@ -17,6 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -596,7 +597,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if misc.Contains(ObjectStorageMap, destType) {
+	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -747,4 +748,99 @@ func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
 		tags[extraTag.Name] = extraTag.Value
 	}
 	return stats.NewTaggedStat(name, stats.CountType, tags)
+}
+
+func formatSSLFile(content string) (formattedContent string) {
+	formattedContent = strings.ReplaceAll(content, "\n", "")
+	// Add new line at the end of -----BEGIN CERTIFICATE-----
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN CERTIFICATE-----", "-----BEGIN CERTIFICATE-----\n", 1)
+	// Add new line at the end of -----BEGIN RSA PRIVATE KEY-----
+	formattedContent = strings.Replace(formattedContent, "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n", 1)
+	// Add new line at the start and end of -----END CERTIFICATE-----
+	formattedContent = strings.Replace(formattedContent, "-----END CERTIFICATE-----", "\n-----END CERTIFICATE-----\n", 1)
+	// Add new line at the start and end of -----END RSA PRIVATE KEY-----
+	formattedContent = strings.Replace(formattedContent, "-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----\n", 1)
+	return formattedContent
+}
+
+type WriteSSLKeyError struct {
+	errorText string
+	errorTag  string
+}
+
+func (err *WriteSSLKeyError) IsError() bool {
+	return err.errorText != ""
+}
+
+func (err *WriteSSLKeyError) Error() string {
+	return err.errorText
+}
+
+func (err *WriteSSLKeyError) GetErrTag() string {
+	return err.errorTag
+}
+
+// WriteSSLKeys writes the ssl key(s) present in the destination config
+// to the file system, this function checks whether a given config is
+// already written to the file system, writes to the file system if the
+// content is not already written
+func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
+	var err error
+	var existingChecksum string
+	var directoryName string
+	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root TMP directory for destination %v", err), "tmp_dir_failure"}
+	}
+	clientKeyConfig := destination.Config["clientKey"]
+	clientCertConfig := destination.Config["clientCert"]
+	serverCAConfig := destination.Config["serverCA"]
+	if clientKeyConfig == nil || clientCertConfig == nil || serverCAConfig == nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error extracting ssl information; invalid config passed for destination %s", destination.ID), "certs_nil_value"}
+	}
+	clientKey := formatSSLFile(clientKeyConfig.(string))
+	clientCert := formatSSLFile(clientCertConfig.(string))
+	serverCert := formatSSLFile(serverCAConfig.(string))
+	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
+	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
+	}
+	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
+	h := sha1.New()
+	h.Write([]byte(combinedString))
+	sslHash := fmt.Sprintf("%x", h.Sum(nil))
+	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
+	clientKeyPemFile := fmt.Sprintf("%s/client-key.pem", sslDirPath)
+	serverCertPemFile := fmt.Sprintf("%s/server-ca.pem", sslDirPath)
+	checkSumFile := fmt.Sprintf("%s/checksum", sslDirPath)
+	if fileContent, fileReadErr := os.ReadFile(checkSumFile); fileReadErr == nil {
+		existingChecksum = string(fileContent)
+	}
+	if existingChecksum == sslHash {
+		// Pems files already written to FS
+		return WriteSSLKeyError{}
+	}
+	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientCertPemFile, err), "client_cert_create_err"}
+	}
+	if err = os.WriteFile(clientKeyPemFile, []byte(clientKey), 0600); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientKeyPemFile, err), "client_key_create_err"}
+	}
+	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0600); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
+	}
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0700); err != nil {
+		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
+	}
+	return WriteSSLKeyError{}
+}
+
+func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
+	var err error
+	var directoryName string
+	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
+		return
+	}
+	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
+	return sslDirPath
 }

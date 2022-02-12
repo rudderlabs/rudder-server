@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"net/http"
 	"runtime"
@@ -16,7 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -285,6 +286,12 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if connectionsMap[destination.ID] == nil {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
+				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+						pkgLogger.Error(err.Error())
+						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+					}
+				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
 
@@ -304,11 +311,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 						wh.populateHistoricIdentities(warehouse)
 					}
 				}
-			}
-		}
-		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
-			if UploadAPI.connectionManager != nil {
-				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 		}
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
@@ -961,7 +963,7 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
+			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name, warehouse.Source.ID).Count(uploaded)
 		}
 		select {
 		case <-ctx.Done():
@@ -986,7 +988,7 @@ func (wh *HandleT) Disable() {
 }
 
 func (wh *HandleT) setInterruptedDestinations() {
-	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
+	if !misc.ContainsString(crashRecoverWarehouses, wh.destType) {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
@@ -1092,7 +1094,7 @@ func minimalConfigSubscriber() {
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
 			for _, destination := range source.Destinations {
-				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
 						dbHandle: dbHandle,
 						destType: destination.DestinationDefinition.Name,
@@ -1157,7 +1159,7 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+			if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
 				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if !ok {
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1173,6 +1175,11 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 					wh.configSubscriberLock.Unlock()
 				}
 			}
+		}
+	}
+	if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+		if UploadAPI.connectionManager != nil {
+			UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
 		}
 	}
 
@@ -1268,7 +1275,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name)
+	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name, stagingFile.BatchDestination.Source.ID)
 }
 
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1580,19 +1587,21 @@ func startWebHandler(ctx context.Context) error {
 	if isStandAlone() {
 		mux.HandleFunc("/health", healthHandler)
 	}
-	if isMaster() {
-		if err := backendconfig.WaitForConfig(ctx); err != nil {
-			return err
+	if runningMode != DegradedMode {
+		if isMaster() {
+			if err := backendconfig.WaitForConfig(ctx); err != nil {
+				return err
+			}
+			mux.HandleFunc("/v1/process", processHandler)
+			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
+			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			// triggers uploads for a source
+			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
+			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
+		} else {
+			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 		}
-		mux.HandleFunc("/v1/process", processHandler)
-		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
-		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
-		// triggers uploads for a source
-		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
-		mux.HandleFunc("/databricksVersion", databricksVersionHandler)
-		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
-	} else {
-		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 
 	srv := http.Server{
@@ -1693,7 +1702,7 @@ func Start(ctx context.Context, app app.Interface) error {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
-		return nil
+		return startWebHandler(ctx)
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))

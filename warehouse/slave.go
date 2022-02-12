@@ -68,9 +68,9 @@ func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bo
 /*
  * Get download path for the job. Also creates missing directories for this path
  */
-func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
+func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	job := jobRun.job
-	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseJsonUploadsTmp)
+	dirName := fmt.Sprintf(`/%s/_%s/`, misc.RudderWarehouseJsonUploadsTmp, strconv.Itoa(index))
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
@@ -254,7 +254,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if misc.Contains(timeWindowDestinations, job.DestinationType) {
+	if misc.ContainsString(timeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 
 	} else {
@@ -352,7 +352,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
-	jobRun.setStagingFileDownloadPath()
+	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
 	err = jobRun.downloadStagingFile()
