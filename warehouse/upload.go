@@ -404,23 +404,26 @@ func (job *UploadJobT) run() (err error) {
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 			if job.warehouse.Type == "S3_DATALAKE" {
-				for tableName := range job.upload.UploadSchema {
-					loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
-						Table:   tableName,
-						StartID: startLoadFileID,
-						EndID:   endLoadFileID,
-					})
-					// This is best done every 100 files, since it's a batch request for updates in Glue
-					partitionBatchSize := 99
-					timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
-					for i := 0; i < len(loadFiles) && timeWindowFormat != ""; i += partitionBatchSize {
-						end := i + partitionBatchSize
+				timeWindowFormatI, timeWindowFormatAvailable := job.warehouse.Destination.Config["timeWindowFormat"]
+				if timeWindowFormatAvailable {
+					timeWindowFormat, _ := timeWindowFormatI.(string)
+					for tableName := range job.upload.UploadSchema {
+						loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+							Table:   tableName,
+							StartID: startLoadFileID,
+							EndID:   endLoadFileID,
+						})
+						// This is best done every 100 files, since it's a batch request for updates in Glue
+						partitionBatchSize := 99
+						for i := 0; i < len(loadFiles) && timeWindowFormat != ""; i += partitionBatchSize {
+							end := i + partitionBatchSize
 
-						if end > len(loadFiles) {
-							end = len(loadFiles)
+							if end > len(loadFiles) {
+								end = len(loadFiles)
+							}
+
+							whManager.RefreshPartitions(tableName, loadFiles[i:end])
 						}
-
-						whManager.RefreshPartitions(tableName, loadFiles[i:end])
 					}
 				}
 			}
