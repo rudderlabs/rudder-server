@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
