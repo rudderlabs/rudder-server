@@ -273,7 +273,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	var err error
 
 	stmt, err := mj.dbHandle.Prepare(queryString)
-	mj.logger.Debug(queryString)
+	mj.logger.Info(queryString)
 	mj.assertError(err)
 	defer func(stmt *sql.Stmt) {
 		err := stmt.Close()
@@ -282,7 +282,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		}
 	}(stmt)
 
-	rows, err = stmt.Query()
+	rows, err = stmt.Query(getTimeNowFunc())
 	mj.assertError(err)
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
@@ -368,7 +368,6 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(customerCount map[string]int, 
 }
 
 func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, params GetQueryParamsT, order bool, customerCount map[string]int) string {
-	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
@@ -382,13 +381,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
-	stateQuery = "((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
-
-	if len(stateFilters) > 0 {
-		stateQuery = " OR " + constructQuery(mj, "job_latest_state.job_state", stateFilters, "OR")
-	} else {
-		stateQuery = ""
-	}
+	stateQuery = "AND ((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
