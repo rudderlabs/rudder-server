@@ -61,12 +61,15 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.processorStageTime = time.Now()
 	pileUpStatMap := make(map[string]map[string]int)
-	routerDB.GetPileUpCounts(pileUpStatMap)
-	for customer := range pileUpStatMap {
-		for destType := range pileUpStatMap[customer] {
-			multitenantStat.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
+	if routerDB != nil {
+		routerDB.GetPileUpCounts(pileUpStatMap)
+		for customer := range pileUpStatMap {
+			for destType := range pileUpStatMap[customer] {
+				multitenantStat.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
+			}
 		}
 	}
+
 	return &multitenantStat
 }
 
