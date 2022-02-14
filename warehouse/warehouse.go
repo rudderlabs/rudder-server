@@ -17,7 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -287,7 +287,10 @@ func (wh *HandleT) backendConfigSubscriber() {
 					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
 				}
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-					warehouseutils.WriteSSLKeys(warehouse.Destination)
+					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+						pkgLogger.Error(err.Error())
+						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()

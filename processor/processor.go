@@ -1696,10 +1696,6 @@ func (proc *HandleT) transformSrcDest(
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
 	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
 	proc.saveFailedJobs(failedJobs)
-	if _, ok := procErrorJobsByDestID[destID]; !ok {
-		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-	}
-	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	//REPORTING - START
