@@ -24,6 +24,8 @@ type DedupI interface {
 type DedupHandleT struct {
 	badgerDB *badger.DB
 	stats    stats.Stats
+	logger   loggerForBudger
+	path     string
 }
 
 var (
@@ -33,7 +35,6 @@ var (
 
 func Init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("dedup")
 }
 
 func loadConfig() {
@@ -41,42 +42,37 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3600), &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
 }
 
-func (d *DedupHandleT) setup(clearDB *bool) {
-	d.stats = stats.DefaultStats
-	badgerLogger = &loggerT{}
-	d.openBadger(clearDB)
+type loggerForBudger struct {
+	logger.LoggerI
 }
 
-var badgerLogger badger.Logger
-
-type loggerT struct{}
-
-func (l *loggerT) Errorf(s string, args ...interface{}) {
-	pkgLogger.Errorf(s, args)
+func (l loggerForBudger) Warningf(fmt string, args ...interface{}) {
+	l.Warnf(fmt, args...)
 }
 
-func (l *loggerT) Warningf(s string, args ...interface{}) {
-	pkgLogger.Warnf(s, args)
-}
+func New(path string, clearDB bool) *DedupHandleT {
+	d := &DedupHandleT{
+		path:   path,
+		logger: loggerForBudger{logger.NewLogger().Child("dedup")},
+		stats:  stats.DefaultStats,
+	}
+	d.openBadger(&clearDB)
 
-func (l *loggerT) Infof(s string, args ...interface{}) {
-	pkgLogger.Infof(s, args)
-}
-
-func (l *loggerT) Debugf(s string, args ...interface{}) {
-	pkgLogger.Debugf(s, args)
+	return d
 }
 
 func (d *DedupHandleT) openBadger(clearDB *bool) {
-	var err error
-	badgerPathName := "/badgerdbv2"
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
+	if d.path == "" {
+		badgerPathName := "/badgerdbv2"
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
+		d.path = fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	}
-	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true).WithLogger(badgerLogger))
+	var err error
+	d.badgerDB, err = badger.Open(badger.DefaultOptions(d.path).WithTruncate(true).WithLogger(d.logger))
 	if err != nil {
 		panic(err)
 	}
@@ -110,7 +106,7 @@ func (d *DedupHandleT) gcBadgerDB() {
 func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	err := d.badgerDB.Update(func(txn *badger.Txn) error {
 		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
+			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow)
 			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 				_ = txn.Commit()
 				txn = d.badgerDB.NewTransaction(true)
