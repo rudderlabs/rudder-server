@@ -80,16 +80,16 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 		)
 	}
 
-	var pm processor.ProcessorManagerI
+	var pm *processor.HandleT
 	for {
 		pm, err = processor.GetProcessorManager()
-		if err == nil {
+		if err == nil && pm != nil {
 			break
 		}
 		pkgLogger.Infof("ProcessorManager is nil. Retrying after a second")
 		time.Sleep(time.Second)
 	}
-	pm.Pause()
+	pm.Shutdown()
 
 	var rm router.RoutersManagerI
 	for {
@@ -120,6 +120,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	//Clear From BatchRouterDB
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
+	// Need to find a way to restart the processor
 	pm.Resume()
 	rm.ResumeAll()
 	brm.ResumeAll()
