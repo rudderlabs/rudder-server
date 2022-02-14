@@ -13,10 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-const (
-	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,jobs.running_event_counts `
-)
-
 type MultiTenantHandleT struct {
 	*HandleT
 	Cache CacheOperator
