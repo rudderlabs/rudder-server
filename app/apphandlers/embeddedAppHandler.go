@@ -63,6 +63,9 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
+	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
@@ -84,15 +87,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
-	}
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
-
-	if config.GetBool("EnableMultitenancy", false) {
-		routerDB.Multitenant = true
-		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
-		multitenantStats = multitenant.NewStats(tenantRouterDB)
+		if config.GetBool("EnableMultitenancy", false) {
+			routerDB.Multitenant = true
+			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
+			multitenantStats = multitenant.NewStats(tenantRouterDB)
+		}
 	}
 
 	enableGateway := true
