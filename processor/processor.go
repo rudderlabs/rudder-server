@@ -2212,12 +2212,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 				subJobSize := len(jobs) / 10
 				for i := 0; i < 9; i++ {
-					proc.logger.Info("subjob i= ", i, " sent")
+					proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
 					chProc <- jobs[:subJobSize]
 					jobs = jobs[subJobSize:]
 				}
 				chProc <- jobs
-				proc.logger.Info("subjob i= ", 9, " sent")
+				proc.logger.Info("subjob i= ", 9, " sent with jobs count= ", len(jobs))
 			}
 		}
 	}()
@@ -2228,6 +2228,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chTrans)
 
 		for jobs := range chProc {
+			proc.logger.Info("processJobsForDest triggered")
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
 	}()
@@ -2239,7 +2240,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chStore)
 
 		for msg := range chTrans {
+			proc.logger.Info("transformations triggered")
 			chStore <- proc.transformations(msg)
+			proc.logger.Info("len of chStore= ", len(chStore))
 			if len(chStore) == 10 {
 				triggerStore <- 1
 			}
@@ -2252,7 +2255,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		for {
 			<-triggerStore
-
+			proc.logger.Info("db store triggered")
 			var statusList []*jobsdb.JobStatusT
 			var destJobs []*jobsdb.JobT
 			var batchDestJobs []*jobsdb.JobT
@@ -2260,38 +2263,53 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			var reportMetrics []*types.PUReportedMetric
 			var totalEvents int
 			var start time.Time
-			var uniqueMessageIds map[string]struct{}
-			var procErrorJobsByDestID map[string][]*jobsdb.JobT
-			var sourceDupStats map[string]int
+			uniqueMessageIds := make(map[string]struct{})
+			procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
+			sourceDupStats := make(map[string]int)
 			i := 0
 
 			for subJob := range chStore {
-
+				proc.logger.Info("merging subjob= ", 10-len(chStore))
 				statusList = append(statusList, subJob.statusList...)
+				proc.logger.Info("statusList merged")
 				destJobs = append(destJobs, subJob.destJobs...)
+				proc.logger.Info("destJobs merged")
+
 				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+				proc.logger.Info("batchDestJobs merged")
 
 				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
+				proc.logger.Info("ProcErrorsJobs merged")
 				for id, job := range subJob.procErrorJobsByDestID {
+					// _, found := procErrorJobsByDestID[id]
+					// if !found {
+					// 	procErrorJobsByDestID[id] = []*jobsdb.JobT{}
+					// }
 					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
 				}
+				proc.logger.Info("procErrorJobsByDestID merged")
 
 				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
 				for tag, count := range subJob.sourceDupStats {
 					sourceDupStats[tag] += count
 				}
+				proc.logger.Info("sourceDupStats merged")
+
 				for id := range subJob.uniqueMessageIds {
 					uniqueMessageIds[id] = struct{}{}
 				}
+				proc.logger.Info("uniqueMessageIds merged")
 
 				totalEvents = subJob.totalEvents
 				if i == 0 {
 					start = subJob.start
 					i++
 				}
-
+				if len(chStore) == 0 {
+					break
+				}
 			}
-
+			proc.logger.Info("processed job merge complete... storing")
 			proc.Store(storeMessage{
 				statusList:    statusList,
 				destJobs:      destJobs,
@@ -2307,7 +2325,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				totalEvents: totalEvents,
 				start:       start,
 			})
-
+			proc.logger.Info("DB store done... ")
 			<-subJobSync
 			atomic.AddInt64(&totalPipelineEventCount, -1*int64(totalEvents))
 			proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
