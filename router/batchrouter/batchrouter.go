@@ -60,6 +60,7 @@ var (
 	readPerDestination                 bool
 	disableEgress                      bool
 	toAbortDestinationIDs              string
+	netClientTimeout                   time.Duration
 	transformerURL                     string
 	datePrefixOverride                 string
 	dateFormatLayouts                  map[string]string // string -> string
@@ -2015,6 +2016,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
+	config.RegisterDurationConfigVariable(10, &netClientTimeout, false, time.Second, "BatchRouter.httpTimeout")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
 	dateFormatLayouts = map[string]string{
@@ -2081,7 +2083,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: tr, Timeout: netClientTimeout}
 	brt.netHandle = client
 	brt.pollTimeStat = stats.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
