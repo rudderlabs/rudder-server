@@ -1511,7 +1511,6 @@ func (proc *HandleT) Store(in storeMessage) {
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
-
 	if proc.isReportingEnabled() {
 		proc.reporting.Report(in.reportMetrics, txn)
 	}
@@ -2148,6 +2147,8 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
+	proc.logger.Info("Processor mainPipeline started")
+
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
@@ -2176,7 +2177,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
+				proc.logger.Info("reading job")
 				jobs := proc.getJobs()
+				proc.logger.Info("number of jobs read:=", len(jobs))
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
@@ -2187,7 +2190,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					}
 					continue
 				}
-
+				proc.logger.Info("marking jobs as executing")
 				err := proc.markExecuting(jobs)
 				if err != nil {
 					pkgLogger.Error(err)
@@ -2209,11 +2212,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 				subJobSize := len(jobs) / 10
 				for i := 0; i < 9; i++ {
+					proc.logger.Info("subjob i= ", i, " sent")
 					chProc <- jobs[:subJobSize]
 					jobs = jobs[subJobSize:]
 				}
 				chProc <- jobs
-
+				proc.logger.Info("subjob i= ", 9, " sent")
 			}
 		}
 	}()
