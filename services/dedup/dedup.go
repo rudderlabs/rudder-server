@@ -39,6 +39,7 @@ var (
 
 func Init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("dedup")
 }
 
 func loadConfig() {
