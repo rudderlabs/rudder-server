@@ -22,10 +22,14 @@ type DedupI interface {
 }
 
 type DedupHandleT struct {
-	badgerDB *badger.DB
 	stats    stats.Stats
 	logger   loggerForBudger
+	badgerDB *badger.DB
+	window   *time.Duration
+	close    chan struct{}
+	gcDone   chan struct{}
 	path     string
+	clearDB  bool
 }
 
 var (
@@ -50,33 +54,57 @@ func (l loggerForBudger) Warningf(fmt string, args ...interface{}) {
 	l.Warnf(fmt, args...)
 }
 
-func New(path string, clearDB bool) *DedupHandleT {
+func DefaultRudderPath() string {
+	badgerPathName := "/badgerdbv2"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
+}
+
+type OptFn func(*DedupHandleT)
+
+func FromConfig() OptFn {
+	return func(dht *DedupHandleT) {
+		dht.window = &dedupWindow
+	}
+}
+func WithWindow(d time.Duration) OptFn {
+	return func(dht *DedupHandleT) {
+		dht.window = &d
+	}
+
+}
+func WithClearDB() OptFn {
+	return func(dht *DedupHandleT) {
+		dht.clearDB = true
+	}
+}
+
+func New(path string, fns ...OptFn) *DedupHandleT {
 	d := &DedupHandleT{
 		path:   path,
 		logger: loggerForBudger{logger.NewLogger().Child("dedup")},
 		stats:  stats.DefaultStats,
+		gcDone: make(chan struct{}),
+		close:  make(chan struct{}),
 	}
-	d.openBadger(&clearDB)
+	for _, fn := range fns {
+		fn(d)
+	}
+	d.openBadger()
 
 	return d
 }
 
-func (d *DedupHandleT) openBadger(clearDB *bool) {
-	if d.path == "" {
-		badgerPathName := "/badgerdbv2"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			panic(err)
-		}
-		d.path = fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-	}
-
+func (d *DedupHandleT) openBadger() {
 	var err error
 	d.badgerDB, err = badger.Open(badger.DefaultOptions(d.path).WithTruncate(true).WithLogger(d.logger))
 	if err != nil {
 		panic(err)
 	}
-	if *clearDB {
+	if d.clearDB {
 		err = d.badgerDB.DropAll()
 		if err != nil {
 			panic(err)
@@ -84,6 +112,7 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 	}
 	rruntime.Go(func() {
 		d.gcBadgerDB()
+		close(d.gcDone)
 	})
 }
 
@@ -92,21 +121,20 @@ func (d *DedupHandleT) PrintHistogram() {
 }
 
 func (d *DedupHandleT) gcBadgerDB() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-	again:
-		err := d.badgerDB.RunValueLogGC(0.5)
-		if err == nil {
-			goto again
+	for {
+		select {
+		case <-d.close:
+			return
+		case <-time.After(5 * time.Minute):
 		}
+		d.badgerDB.RunValueLogGC(0.5)
 	}
 }
 
 func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	err := d.badgerDB.Update(func(txn *badger.Txn) error {
 		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow)
+			e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
 			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 				_ = txn.Commit()
 				txn = d.badgerDB.NewTransaction(true)
@@ -170,4 +198,10 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 
 	sort.Ints(toRemoveMessageIndexes)
 	return toRemoveMessageIndexes
+}
+
+func (d *DedupHandleT) Close() {
+	close(d.close)
+	<-d.gcDone
+	d.badgerDB.Close()
 }
