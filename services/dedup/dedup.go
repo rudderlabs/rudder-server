@@ -8,6 +8,7 @@ import (
 	"time"
 
 	badger "github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -19,6 +20,7 @@ type DedupI interface {
 	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
 	MarkProcessed(messageIDs []string)
 	PrintHistogram()
+	Close()
 }
 
 type DedupHandleT struct {
@@ -90,6 +92,7 @@ func New(path string, fns ...OptFn) *DedupHandleT {
 		stats:  stats.DefaultStats,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
+		//TODO default time
 	}
 	for _, fn := range fns {
 		fn(d)
@@ -101,7 +104,26 @@ func New(path string, fns ...OptFn) *DedupHandleT {
 
 func (d *DedupHandleT) openBadger() {
 	var err error
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(d.path).WithTruncate(true).WithLogger(d.logger))
+
+	opts := badger.
+		DefaultOptions(d.path).
+		WithTruncate(true).
+		WithLogger(d.logger).
+		// Disable compression - Set options.Compression = options.None.
+		// This means we won’t allocate memory for decompression
+		// (this can be a lot in case of ZSTD decompression).
+		// In our case, compression is not useful since we are storing messageIDs with high entropy.
+		WithCompression(options.None)
+
+	// Memory usage optimizations:
+	opts.ValueLogLoadingMode = options.FileIO
+	opts.NumMemtables = 3
+	opts.MaxTableSize = 16 << 20
+	opts.NumLevelZeroTables = 1
+	opts.NumLevelZeroTablesStall = 2
+	opts.KeepL0InMemory = false
+
+	d.badgerDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
 	}
@@ -125,10 +147,18 @@ func (d *DedupHandleT) gcBadgerDB() {
 	for {
 		select {
 		case <-d.close:
+			d.badgerDB.RunValueLogGC(0.5)
 			return
 		case <-time.After(5 * time.Minute):
 		}
-		d.badgerDB.RunValueLogGC(0.5)
+	again:
+		// One call would only result in removal of at max one log file.
+		// As an optimization, you could also immediately re-run it whenever it returns nil error
+		// (this is why `goto again` is used).
+		err := d.badgerDB.RunValueLogGC(0.5)
+		if err == nil {
+			goto again
+		}
 	}
 }
 
@@ -149,6 +179,8 @@ func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	}
 }
 
+// MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
+// Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
 func (d *DedupHandleT) MarkProcessed(messageIDs []string) {
 	d.writeToBadger(messageIDs)
 }

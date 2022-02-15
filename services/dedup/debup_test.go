@@ -102,40 +102,37 @@ func Test_Debup_ClearDB(t *testing.T) {
 	dupsAgain := dNew.FindDuplicates([]string{"a"}, nil)
 	require.Equal(t, []int{0}, dupsAgain)
 	dNew.Close()
+
+	// FIXME add test with clearDB
 }
 
 var duplicateIndexes []int
 
-func Benchmark_Dedup_Write(b *testing.B) {
-	b.StopTimer()
-
+func Benchmark_Dedup(b *testing.B) {
 	config.Load()
 	logger.Init()
-
 	rand.Seed(time.Now().UnixNano())
-	dbPath := path.Join("./testdata", randSeq(10), "/DB_Benchmark_Dedup")
+	dbPath := path.Join("./testdata", "tmp", randSeq(10), "/DB_Benchmark_Dedup")
+	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer os.RemoveAll(dbPath)
-	os.MkdirAll(dbPath, 0777)
-	os.RemoveAll(dbPath)
-	b.Log("dbPath:", dbPath)
+	os.MkdirAll(dbPath, 0750)
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Minute))
 
-	b.StartTimer()
+	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
+		batchSize := 1000
 
-	batchSize := 1000
-
-	b.Run("MarkProcessed 1000 unique", func(b *testing.B) {
 		msgIDs := make([]string, batchSize)
 
 		for i := 0; i < b.N; i++ {
-			for j := 0; j < batchSize; j++ {
-				msgIDs[j] = uuid.New().String()
+			msgIDs[i%batchSize] = uuid.New().String()
+
+			if i%batchSize == batchSize-1 || i == b.N-1 {
+				duplicateIndexes = d.FindDuplicates(msgIDs[:i%batchSize], nil)
+				d.MarkProcessed(msgIDs[:i%batchSize])
 			}
-
-			d.MarkProcessed(msgIDs)
 		}
-		b.ReportMetric(float64(b.N*batchSize), "events")
-
+		b.ReportMetric(float64(b.N), "events")
+		b.ReportMetric(float64(b.N*len(uuid.New().String())), "bytes")
 	})
 	d.Close()
 
