@@ -303,6 +303,8 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	processingTimer.Start()
 	defer processingTimer.End()
 
+	defer stats.NewTaggedStat("archive_event_model_count", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier}).Increment()
+
 	//TODO: Create locks on every event_model to improve scaling this
 	manager.eventModelLock.Lock()
 	manager.schemaVersionLock.Lock()
@@ -369,8 +371,11 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	}
 	eventModel.LastSeen = timeutil.Now()
 
+	flattenTimer := stats.NewTaggedStat("flatten_event", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
+	flattenTimer.Start()
 	eventMap := map[string]interface{}(event)
 	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
+	flattenTimer.End()
 	if err != nil {
 		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
 		return
@@ -587,6 +592,9 @@ func (manager *EventSchemaManagerT) recordEvents() {
 		for _, event := range eventPayload.Batch {
 			manager.handleEvent(eventPayload.WriteKey, event)
 		}
+
+		stats.NewTaggedStat("archived_event_models_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(archivedEventModels))
+		stats.NewTaggedStat("archived_schem_versions_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(archivedSchemaVersions))
 	}
 }
 
@@ -755,6 +763,11 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 		}
 
 		time.Sleep(offloadLoopInterval)
+
+		offloadEventSchemas := stats.NewTaggedStat("offload_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
+		offloadEventSchemas.Start()
+		defer offloadEventSchemas.End()
+
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
 		for _, modelsByWriteKey := range manager.eventModelMap {
@@ -844,7 +857,6 @@ func assertTxnError(err error, txn *sql.Tx) {
 }
 
 func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) error {
-
 	var uuidFilter string
 	if len(uuidFilters) > 0 {
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
@@ -1010,6 +1022,10 @@ func setEventSchemasPopulated(status bool) {
 }
 
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
+	getSchemaTimer := stats.NewTaggedStat("get_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
+	getSchemaTimer.Start()
+	defer getSchemaTimer.End()
+
 	schema := make(map[string]string)
 	for k, v := range flattenedEvent {
 		reflectType := reflect.TypeOf(v)
