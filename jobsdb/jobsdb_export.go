@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //SetupForExport is used to setup jobsdb for export or for import or for both
@@ -112,9 +113,13 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	jd.assertError(err)
 
 	for ds, updatedStatesByCustomer := range updatedStatesByDS {
+		allUpdatedStates := make([]string, 0)
 		for customer, updatedStates := range updatedStatesByCustomer {
 			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
+		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 	jd.assertError(err)
 
@@ -228,9 +233,13 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, updatedStatesByCustomer := range updatedStatesMap {
+		allUpdatedStates := make([]string, 0)
 		for customer, updatedStates := range updatedStatesByCustomer {
 			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
+		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 }
 

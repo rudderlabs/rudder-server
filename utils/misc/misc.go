@@ -1362,3 +1362,15 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
+
+func Unique(stringSlice []string) []string {
+	keys := make(map[string]struct{})
+	list := []string{}
+	for _, entry := range stringSlice {
+		if _, ok := keys[entry]; !ok {
+			keys[entry] = struct{}{}
+			list = append(list, entry)
+		}
+	}
+	return list
+}

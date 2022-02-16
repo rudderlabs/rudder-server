@@ -132,7 +132,7 @@ type AssertInterface interface {
 }
 
 const (
-	undefinedWorkspace = "_undefined_"
+	allWorkspaces = "_all_"
 )
 
 var globalDBHandle *sql.DB
@@ -223,9 +223,13 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 	}
 
 	for ds, stateListByCustomer := range updatedStatesByDS {
+		allUpdatedStates := make([]string, 0)
 		for customer, stateList := range stateListByCustomer {
 			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+			allUpdatedStates = append(allUpdatedStates, stateList...)
 		}
+		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	}
 
 	return nil
@@ -323,7 +327,6 @@ type HandleT struct {
 	dsRetentionPeriod             time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> customer -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
-	Multitenant                   bool
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
 	statTableCount                stats.RudderStats
@@ -1730,6 +1733,8 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
 		}
 
+		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 		if useNewCacheBurst {
 			jd.clearCache(ds, customValParamMap)
 		} else {
@@ -1843,7 +1848,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspace_id as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
 		),
 		x as (
-			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
+			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID
 										 ORDER BY joined.statusID DESC) AS rank
 			  FROM joined
 		),
@@ -1918,6 +1923,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
+		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
@@ -1965,12 +1971,6 @@ type cacheEntry struct {
  */
 
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
-	if !jd.Multitenant {
-		customer = undefinedWorkspace
-	} else if customer == undefinedWorkspace {
-		panic(fmt.Errorf("%s: undefined workspace is not allowed for multitenant", jd.tablePrefix))
-	}
-
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
 
@@ -2030,13 +2030,6 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 //  * The entry is noJobs
 //  * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	if !jd.Multitenant && customer != undefinedWorkspace {
-		panic(fmt.Errorf("%s: only undefined workspace should checked for non-multitenant", jd.tablePrefix))
-	}
-	if jd.Multitenant && customer == undefinedWorkspace {
-		panic(fmt.Errorf("%s: undefined workspace is not allowed for multitenant", jd.tablePrefix))
-	}
-
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -2101,11 +2094,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	checkValidJobState(jd, stateFilters)
 
-	if jd.Multitenant {
-		panic(fmt.Errorf("%s: getProcessed can not be called with Multitenant jobsdb", jd.tablePrefix))
-	}
-
-	if jd.isEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return []*JobT{}
 	}
@@ -2116,7 +2105,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	jd.markClearEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -2221,7 +2210,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		result = noJobs
 	}
 	_willTryToSet := willTryToSet
-	jd.markClearEmptyResult(ds, undefinedWorkspace, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+	jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2235,11 +2224,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
-	if jd.Multitenant {
-		panic(fmt.Errorf("%s: getUnprocessed can not be called with Multitenant jobsdb", jd.tablePrefix))
-	}
-
-	if jd.isEmptyResult(ds, undefinedWorkspace, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}
 	}
@@ -2332,7 +2317,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		result = noJobs
 	}
 	_willTryToSet := willTryToSet
-	jd.markClearEmptyResult(ds, undefinedWorkspace, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
 }
@@ -2359,9 +2344,13 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		return err
 	}
 
+	allUpdatedStates := make([]string, 0)
 	for workspaceID, stateFilters := range stateFiltersByWorkspace {
 		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
+		allUpdatedStates = append(allUpdatedStates, stateFilters...)
 	}
+	//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+	jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	return nil
 }
 
@@ -3227,9 +3216,13 @@ func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, stateListByCustomer := range updatedStatesByDS {
+		allUpdatedStates := make([]string, 0)
 		for customer, stateList := range stateListByCustomer {
 			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+			allUpdatedStates = append(allUpdatedStates, stateList...)
 		}
+		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	}
 
 	return nil
