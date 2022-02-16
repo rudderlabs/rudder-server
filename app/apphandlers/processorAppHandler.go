@@ -37,6 +37,7 @@ type ProcessorApp struct {
 var (
 	gatewayDB         jobsdb.HandleT
 	batchRouterDB     jobsdb.HandleT
+	routerDB          jobsdb.HandleT
 	procErrorDB       jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
@@ -44,10 +45,42 @@ var (
 	IdleTimeout       time.Duration
 	webPort           int
 	MaxHeaderBytes    int
+	reportingI        types.ReportingI
+	multitenantStats  multitenant.MultiTenantI
+	rudderCoreCtx     *context.Context
+	rudderCoreErrGrp  *errgroup.Group
 )
+
+type ProcessorParams struct {
+	GatewayDB        *jobsdb.HandleT
+	RouterDB         *jobsdb.HandleT
+	BatchRouterDB    *jobsdb.HandleT
+	ProcErrorDB      *jobsdb.HandleT
+	AppOptions       *app.Options
+	ReportingI       types.ReportingI
+	MultitenantStats *multitenant.MultiTenantI
+	EnableProcessor  *bool
+	RudderCoreCtx    *context.Context
+	RudderCoreErrGrp *errgroup.Group
+}
 
 func (processor *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
+}
+
+func GetProcessorParams() (*ProcessorParams, error) {
+	return &ProcessorParams{
+		GatewayDB:        &gatewayDB,
+		RouterDB:         &routerDB,
+		BatchRouterDB:    &batchRouterDB,
+		ProcErrorDB:      &procErrorDB,
+		AppOptions:       appOptions,
+		ReportingI:       reportingI,
+		MultitenantStats: &multitenantStats,
+		EnableProcessor:  &enableProcessor,
+		RudderCoreCtx:    rudderCoreCtx,
+		RudderCoreErrGrp: rudderCoreErrGrp,
+	}, nil
 }
 
 func Init() {
@@ -63,49 +96,48 @@ func loadConfigHandler() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (processor *ProcessorApp) StartRudderCore(ctx1 context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreDBValidator()
 	rudderCoreWorkSpaceTableSetup()
 	rudderCoreNodeSetup()
 	rudderCoreBaseSetup()
-	g, ctx := errgroup.WithContext(ctx)
+	rudderCoreErrGrp, ctx := errgroup.WithContext(*mainCtx)
+	rudderCoreCtx = &ctx
 
 	//Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-		g.Go(misc.WithBugsnag(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		rudderCoreErrGrp.Go(misc.WithBugsnag(func() error {
+			reporting.AddClient(*rudderCoreCtx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
 			return nil
 		}))
 	}
 
-	pkgLogger.Info("Clearing DB ", options.ClearDB)
+	pkgLogger.Info("Clearing DB ", appOptions.ClearDB)
 
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := processor.App.Options().MigrationMode
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	gatewayDB.Setup(jobsdb.Read, appOptions.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
 
-	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
-
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+	multitenantStats = multitenant.NOOP
 
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		routerDB.Setup(jobsdb.ReadWrite, appOptions.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
 		defer routerDB.TearDown()
 
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		batchRouterDB.Setup(jobsdb.ReadWrite, appOptions.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
 		defer batchRouterDB.TearDown()
 
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		procErrorDB.Setup(jobsdb.ReadWrite, appOptions.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 
 		if config.GetBool("EnableMultitenancy", false) {
@@ -115,21 +147,23 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	reportingI := processor.App.Features().Reporting.GetReportingInstance()
+	reportingI = processor.App.Features().Reporting.GetReportingInstance()
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				g.Go(func() error {
+				rudderCoreErrGrp.Go(func() error {
 					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					StartProcessor(*rudderCoreCtx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB,
+						&procErrorDB, reportingI, multitenantStats)
 
 					return nil
 				})
 			}
 			startRouterFunc := func() {
-				g.Go(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+				rudderCoreErrGrp.Go(func() error {
+					StartRouter(*rudderCoreCtx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB,
+						reportingI, multitenantStats)
 					return nil
 				})
 			}
@@ -137,8 +171,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			enableProcessor = false
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
-			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+			rudderCoreErrGrp.Go(func() error {
+				processor.App.Features().Migrator.Run(*rudderCoreCtx, &gatewayDB, &routerDB, &batchRouterDB,
+					startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -146,30 +181,30 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 
-	g.Go(misc.WithBugsnag(func() error {
-		return operationmanager.OperationManager.StartProcessLoop(ctx)
+	rudderCoreErrGrp.Go(misc.WithBugsnag(func() error {
+		return operationmanager.OperationManager.StartProcessLoop(*rudderCoreCtx)
 	}))
 
-	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+	rudderCoreErrGrp.Go(func() error {
+		StartProcessor(*rudderCoreCtx, &appOptions.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
-	g.Go(func() error {
-		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+	rudderCoreErrGrp.Go(func() error {
+		StartRouter(*rudderCoreCtx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 
 	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		replayDB.Setup(jobsdb.ReadWrite, appOptions.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
 		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
-	g.Go(func() error {
-		return startHealthWebHandler(ctx)
+	rudderCoreErrGrp.Go(func() error {
+		return startHealthWebHandler(*rudderCoreCtx)
 	})
-	err := g.Wait()
+	err := rudderCoreErrGrp.Wait()
 
 	return err
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

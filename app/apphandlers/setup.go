@@ -38,6 +38,9 @@ var (
 	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
+	mainCtx                                                    *context.Context
+	mainErrGrp                                                 *errgroup.Group
+	appOptions                                                 *app.Options
 )
 
 //AppHandler to be implemented by different app type objects.
@@ -45,6 +48,18 @@ type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
 	StartRudderCore(context.Context, *app.Options) error
+}
+
+func StoreMainContext(ctx *context.Context) {
+	mainCtx = ctx
+}
+
+func StoreMainErrGrp(grp *errgroup.Group) {
+	mainErrGrp = grp
+}
+
+func StoreAppOptions(options *app.Options) {
+	appOptions = options
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {

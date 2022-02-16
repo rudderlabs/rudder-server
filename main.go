@@ -231,6 +231,7 @@ func Run(ctx context.Context) {
 	runAllInit()
 
 	options := app.LoadOptions()
+	apphandlers.StoreAppOptions(options)
 	if options.VersionFlag {
 		printVersion()
 		return
@@ -284,6 +285,8 @@ func Run(ctx context.Context) {
 	backendconfig.Setup(configEnvHandler)
 
 	g, ctx := errgroup.WithContext(ctx)
+	apphandlers.StoreMainContext(&ctx)
+	apphandlers.StoreMainErrGrp(g)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
 	})

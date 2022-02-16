@@ -2,6 +2,7 @@ package operationmanager
 
 import (
 	"encoding/json"
+	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -121,6 +122,12 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
 	// Need to find a way to restart the processor
+	p, _ := apphandlers.GetProcessorParams()
+	p.RudderCoreErrGrp.Go(func() error {
+		apphandlers.StartProcessor(*p.RudderCoreCtx, &p.AppOptions.ClearDB, *p.EnableProcessor, p.GatewayDB,
+			p.RouterDB, p.BatchRouterDB, p.ProcErrorDB, p.ReportingI, *p.MultitenantStats)
+		return nil
+	})
 	pm.Resume()
 	rm.ResumeAll()
 	brm.ResumeAll()
