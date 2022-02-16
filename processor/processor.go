@@ -1232,6 +1232,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -2060,6 +2061,7 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   job.WorkspaceId,
 		}
 	}
 	//Mark the jobs as executing

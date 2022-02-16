@@ -887,11 +887,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			attemptNum++
 		}
 		status := jobsdb.JobStatusT{
-			JobID:      destinationJobMetadata.JobID,
-			AttemptNum: attemptNum,
-			ExecTime:   time.Now(),
-			RetryTime:  time.Now(),
-			Parameters: []byte(`{}`),
+			JobID:       destinationJobMetadata.JobID,
+			AttemptNum:  attemptNum,
+			ExecTime:    time.Now(),
+			RetryTime:   time.Now(),
+			Parameters:  []byte(`{}`),
+			WorkspaceId: destinationJobMetadata.WorkspaceId,
 		}
 
 		routerJobResponse.status = &status

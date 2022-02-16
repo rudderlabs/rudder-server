@@ -1733,11 +1733,11 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
 		}
 
-		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
-		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 		if useNewCacheBurst {
 			jd.clearCache(ds, customValParamMap)
 		} else {
+			//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 			for _, customer := range customers {
 				jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
 			}
@@ -1807,8 +1807,9 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 	}
 }
 
-//mark cache empty after going over ds->customvals->params and for all stateFilters
+//mark cache empty after going over ds->customer->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
+	//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
 	for customer, customerCVPMap := range CVPMap {
 		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
 			for cv, cVal := range customerCVPMap {
@@ -1823,14 +1824,17 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[stri
 						}
 						parameterFilters = append(parameterFilters, param)
 					}
+					jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 					jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 				}
 			}
 		} else if jd.queryFilterKeys.CustomVal {
 			for cv := range customerCVPMap {
+				jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 				jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 			}
 		} else {
+			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 			jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
 		}
 	}
@@ -1978,7 +1982,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 	//When clearing, we remove the entire dataset entry. Not a big issue
 	//We process ALL only during internal migration and caching empty
 	//results is not important
-	if len(stateFilters) == 0 || len(customValFilters) == 0 || customer == `` {
+	if len(stateFilters) == 0 || len(customValFilters) == 0 {
 		if value == hasJobs || value == dropDSFromCache {
 			delete(jd.dsEmptyResultCache, ds)
 		}
@@ -2235,7 +2239,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	defer queryStat.End()
 
 	// We don't reset this in case of error for now, as any error in this function causes panic
-	// jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
 
 	var rows *sql.Rows
 	var err error
@@ -2371,6 +2375,9 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 
 	updatedStatesMap := map[string]map[string]bool{}
 	for _, status := range statusList {
+		// Safe check. Every status must have a valid workspace id.
+		jd.assert(status.WorkspaceId != "", fmt.Sprintf("Invalid workspace id: %v", status.WorkspaceId))
+
 		//  Handle the case when google analytics returns gif in response
 		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
 			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
