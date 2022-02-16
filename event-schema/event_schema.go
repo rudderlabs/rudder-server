@@ -299,7 +299,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		return
 	}
 
-	processingTimer := stats.NewTaggedStat("archive_event_model", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
+	processingTimer := stats.NewTaggedStat("archive_event_model_processing", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
 	processingTimer.Start()
 	defer processingTimer.End()
 
