@@ -110,7 +110,7 @@ func (d *DedupHandleT) gcBadgerDB() {
 func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	err := d.badgerDB.Update(func(txn *badger.Txn) error {
 		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
+			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow)
 			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 				_ = txn.Commit()
 				txn = d.badgerDB.NewTransaction(true)
