@@ -766,7 +766,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 
 		offloadEventSchemas := stats.NewTaggedStat("offload_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
 		offloadEventSchemas.Start()
-		defer offloadEventSchemas.End()
+		offloadEventSchemas.End()
 
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
