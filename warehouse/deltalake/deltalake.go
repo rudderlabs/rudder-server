@@ -19,13 +19,15 @@ import (
 
 // Database configuration
 const (
-	DLHost          = "host"
-	DLPort          = "port"
-	DLPath          = "path"
-	DLToken         = "token"
-	AWSTokens       = "useSTSTokens"
-	AWSAccessKey    = "accessKey"
-	AWSAccessSecret = "accessKeyID"
+	DLHost                 = "host"
+	DLPort                 = "port"
+	DLPath                 = "path"
+	DLToken                = "token"
+	AWSTokens              = "useSTSTokens"
+	AWSAccessKey           = "accessKey"
+	AWSAccessSecret        = "accessKeyID"
+	EnableExternalLocation = "enableExternalLocation"
+	ExternalLocation       = "externalLocation"
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -560,6 +562,10 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+	tableLocation := dl.getTableLocationSql(fmt.Sprintf("%[1]s.%[2]s",
+		dl.Namespace,
+		stagingTableName,
+	))
 	// Creating create table sql statement for staging users table
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA AS (SELECT DISTINCT * FROM
 										(
@@ -574,13 +580,14 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 												)
 											)
 										)
-									);`,
+									) %[7]s;`,
 		dl.Namespace,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		quotedUserColNames,
+		tableLocation,
 	)
 
 	// Executing create sql statement
@@ -668,10 +675,30 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 	return dl.connect(credT)
 }
 
+// getExternalLocation returns external location where we need to create the tables
+func (dl *HandleT) getExternalLocation() (externalLocation string) {
+	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.Warehouse)
+	if enableExternalLocation == "true" {
+		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.Warehouse)
+		return externalLocation
+	}
+	return
+}
+
+// getTableLocationSql returns external external table location
+func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) {
+	externalLocation := dl.getExternalLocation()
+	if externalLocation == "" {
+		return
+	}
+	return fmt.Sprintf("LOCATION '%s/%s'", externalLocation, tableName)
+}
+
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, columnsWithDataTypes(columns, ""))
+	tableLocation := dl.getTableLocationSql(name)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA %s;`, name, columnsWithDataTypes(columns, ""), tableLocation)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
