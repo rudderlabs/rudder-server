@@ -23,20 +23,10 @@ type DedupI interface {
 	Close()
 }
 
-type DedupHandleT struct {
-	stats    stats.Stats
-	logger   loggerForBudger
-	badgerDB *badger.DB
-	window   *time.Duration
-	close    chan struct{}
-	gcDone   chan struct{}
-	path     string
-	clearDB  bool
-}
-
 var (
-	dedupWindow time.Duration
-	pkgLogger   logger.LoggerI
+	dedupWindow  time.Duration
+	memOptimized bool
+	pkgLogger    logger.LoggerI
 )
 
 func Init() {
@@ -47,6 +37,7 @@ func Init() {
 func loadConfig() {
 	// Dedup time window in hours
 	config.RegisterDurationConfigVariable(time.Duration(3600), &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
+	config.RegisterBoolConfigVariable(true, &memOptimized, false, "Dedup.memOptimized")
 }
 
 type loggerForBudger struct {
@@ -85,6 +76,17 @@ func WithClearDB() OptFn {
 	}
 }
 
+type DedupHandleT struct {
+	stats    stats.Stats
+	logger   loggerForBudger
+	badgerDB *badger.DB
+	window   *time.Duration
+	close    chan struct{}
+	gcDone   chan struct{}
+	path     string
+	clearDB  bool
+}
+
 func New(path string, fns ...OptFn) *DedupHandleT {
 	d := &DedupHandleT{
 		path:   path,
@@ -115,14 +117,18 @@ func (d *DedupHandleT) openBadger() {
 		// In our case, compression is not useful since we are storing messageIDs with high entropy.
 		WithCompression(options.None)
 
-	// Memory usage optimizations:
-	opts.ValueLogLoadingMode = options.FileIO
-	opts.NumMemtables = 3
-	opts.MaxTableSize = 16 << 20
-	opts.NumLevelZeroTables = 1
-	opts.NumLevelZeroTablesStall = 2
-	opts.KeepL0InMemory = false
-
+	if memOptimized {
+		// Memory usage optimizations:
+		// Inspired by https://github.com/dgraph-io/badger/issues/1304#issuecomment-630078745
+		// With modifications to ensure no performance degradation for dedup.
+		opts.TableLoadingMode = options.FileIO
+		opts.ValueLogLoadingMode = options.FileIO
+		opts.NumMemtables = 3
+		opts.MaxTableSize = 16 << 20
+		opts.NumLevelZeroTables = 1
+		opts.NumLevelZeroTablesStall = 2
+		opts.KeepL0InMemory = false
+	}
 	d.badgerDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
