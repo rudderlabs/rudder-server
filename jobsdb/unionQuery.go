@@ -269,7 +269,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	var err error
 
 	stmt, err := mj.dbHandle.Prepare(queryString)
-	mj.logger.Info(queryString)
+	mj.logger.Debug(queryString)
 	mj.assertError(err)
 	defer func(stmt *sql.Stmt) {
 		err := stmt.Close()
