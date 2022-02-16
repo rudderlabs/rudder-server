@@ -80,6 +80,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   "testWorkspace",
 	}
 	status2 := JobStatusT{
 		JobID:         unprocessedList[1].JobID,
@@ -90,6 +91,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   "testWorkspace",
 	}
 
 	err = jobDB.UpdateJobStatus([]*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
