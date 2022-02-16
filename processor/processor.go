@@ -114,6 +114,22 @@ type HandleT struct {
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
 
+	statJobReadSleepTime stats.RudderStats
+
+	statJobReadExecTime        stats.RudderStats
+	statJobReadPostWaitingTime stats.RudderStats
+
+	statProcessJobPreWaitingTime  stats.RudderStats
+	statProcessJobExecTime        stats.RudderStats
+	statProcessJobPostWaitingTime stats.RudderStats
+
+	statTransformationsPreWaitingTime  stats.RudderStats
+	statTransformationsExecTime        stats.RudderStats
+	statTransformationsPostWaitingTime stats.RudderStats
+
+	statJobStorePreWaitingTime stats.RudderStats
+	statJobStoreExecTime       stats.RudderStats
+
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
 }
@@ -362,6 +378,25 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
+
+	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
+
+	proc.statJobReadSleepTime = proc.stats.NewStat("processor.job_read_sleep_time", stats.TimerType)
+
+	proc.statJobReadExecTime = proc.stats.NewStat("processor.job_read_exec_time", stats.TimerType)
+	proc.statJobReadPostWaitingTime = proc.stats.NewStat("processor.job_read_post_waiting_time", stats.TimerType)
+
+	proc.statProcessJobPreWaitingTime = proc.stats.NewStat("processor.process_job_pre_waiting_time", stats.TimerType)
+	proc.statProcessJobExecTime = proc.stats.NewStat("processor.process_job_exec_time", stats.TimerType)
+	proc.statProcessJobPostWaitingTime = proc.stats.NewStat("processor.process_job_post_waiting_time", stats.TimerType)
+
+	proc.statTransformationsPreWaitingTime = proc.stats.NewStat("processor.transformation_pre_waiting_time", stats.TimerType)
+	proc.statTransformationsExecTime = proc.stats.NewStat("processor.transformation_exec_time", stats.TimerType)
+	proc.statTransformationsPostWaitingTime = proc.stats.NewStat("processor.transformation_post_waiting_time", stats.TimerType)
+
+	proc.statJobStorePreWaitingTime = proc.stats.NewStat("processor.job_store_pre_waiting_time", stats.TimerType)
+	proc.statJobStoreExecTime = proc.stats.NewStat("processor.job_store_working_exec_time", stats.TimerType)
+
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -2160,6 +2195,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
+				jobReadExecStart := time.Now()
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue
@@ -2190,8 +2226,16 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
+				proc.statJobReadSleepTime.SendTiming(nextSleepTime)
 
+				jobReadExecTime := time.Since(jobReadExecStart)
+				proc.statJobReadExecTime.SendTiming(jobReadExecTime)
+
+				jobReadPostWaitingStart := time.Now()
 				chProc <- jobs
+				jobReadPostWaitingTime := time.Since(jobReadPostWaitingStart)
+				proc.statJobReadPostWaitingTime.SendTiming(jobReadPostWaitingTime)
+
 			}
 		}
 	}()
@@ -2201,8 +2245,25 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
+		var processJobPreWaitingTime time.Duration
+		var processJobPreWaitingStart time.Time
+
+		processJobPreWaitingStart = time.Now()
 		for jobs := range chProc {
-			chTrans <- proc.processJobsForDest(jobs, nil)
+			processJobPreWaitingTime = time.Since(processJobPreWaitingStart)
+			proc.statProcessJobPreWaitingTime.SendTiming(processJobPreWaitingTime)
+
+			processJobExecStart := time.Now()
+			tmp := proc.processJobsForDest(jobs, nil)
+			processJobExecTime := time.Since(processJobExecStart)
+			proc.statProcessJobExecTime.SendTiming(processJobExecTime)
+
+			processJobPostWaitingStart := time.Now()
+			chTrans <- tmp
+			processJobPostWaitingTime := time.Since(processJobPostWaitingStart)
+			proc.statProcessJobPostWaitingTime.SendTiming(processJobPostWaitingTime)
+
+			processJobPreWaitingStart = time.Now()
 		}
 	}()
 
@@ -2211,18 +2272,45 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
+		var transformationsPreWaitingTime time.Duration
+		var transformationsPreWaitingStart time.Time
 
+		transformationsPreWaitingStart = time.Now()
 		for msg := range chTrans {
-			chStore <- proc.transformations(msg)
+			transformationsPreWaitingTime = time.Since(transformationsPreWaitingStart)
+			proc.statTransformationsPreWaitingTime.SendTiming(transformationsPreWaitingTime)
+
+			transformationsExecStart := time.Now()
+			tmp := proc.transformations(msg)
+			transformationsExecTime := time.Since(transformationsExecStart)
+			proc.statTransformationsExecTime.SendTiming(transformationsExecTime)
+
+			transformationsPostWaitingStart := time.Now()
+			chStore <- tmp
+			transformationsPostWaitingTime := time.Since(transformationsPostWaitingStart)
+			proc.statTransformationsPostWaitingTime.SendTiming(transformationsPostWaitingTime)
+
+			transformationsPreWaitingStart = time.Now()
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var jobStorePreWaitingTime time.Duration
+		var jobStorePreWaitingStart time.Time
 
+		jobStorePreWaitingStart = time.Now()
 		for msg := range chStore {
+			jobStorePreWaitingTime = time.Since(jobStorePreWaitingStart)
+			proc.statJobStorePreWaitingTime.SendTiming(jobStorePreWaitingTime)
+
+			jobStoreExecStart := time.Now()
 			proc.Store(msg)
+			jobStoreExecTime := time.Since(jobStoreExecStart)
+			proc.statJobStoreExecTime.SendTiming(jobStoreExecTime)
+
+			jobStorePreWaitingStart = time.Now()
 		}
 	}()
 
