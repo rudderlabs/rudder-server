@@ -117,10 +117,8 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	err = txn.Commit()
 	jd.assertError(err)
 
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(jd.migrationState.dsForImport, ``, []string{}, []string{}, nil, hasJobs, nil)
-	// fmt.Println("Bursting CACHE")
-
+	//Clear ds from cache
+	jd.dropDSFromCache(jd.migrationState.dsForImport)
 }
 
 func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {

@@ -207,6 +207,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
 	}
@@ -262,6 +263,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{}`),
 					Parameters:    []byte(`{}`),
+					WorkspaceId:   job.WorkspaceId,
 				}
 				statusList = append(statusList, &status)
 			}

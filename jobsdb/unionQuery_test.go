@@ -104,32 +104,3 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	}, 10)
 	require.Equal(t, 3, len(jobs))
 }
-
-func TestJobsDBStatusCache(t *testing.T) {
-	initJobsDB()
-	stats.Setup()
-	ds1 := dataSetT{
-		JobTable:       "rt_jobs_1",
-		JobStatusTable: "rt_job_status_1",
-		Index:          "10",
-	}
-	wId1 := allWorkspaces
-	customVal := "MOCKDS"
-	var cache JobsDBStatusCache
-	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{})
-	}())
-
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
-		cacheValue(noJobs), nil)
-	require.True(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
-	}())
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
-		cacheValue(hasJobs), nil)
-	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
-	}())
-}

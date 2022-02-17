@@ -332,6 +332,7 @@ type HandleT struct {
 	statTableCount                stats.RudderStats
 	statDSCount                   stats.RudderStats
 	statNewDSPeriod               stats.RudderStats
+	invalidCacheKeyStat           stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.RudderStats
 	isStatDropDSPeriodInitialized bool
@@ -685,6 +686,7 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.invalidCacheKeyStat = stats.NewTaggedStat("jobsdb.invalid_cache_key", stats.CountType, stats.Tags{"customVal": jd.tablePrefix})
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
@@ -1532,9 +1534,9 @@ func (jd *HandleT) invalidateCache(ds dataSetT) {
 			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
 			Index:          ds.Index,
 		}
-		jd.markClearEmptyResult(parentDS, ``, []string{}, []string{}, nil, dropDSFromCache, nil)
+		jd.dropDSFromCache(parentDS)
 	} else {
-		jd.markClearEmptyResult(ds, ``, []string{}, []string{}, nil, dropDSFromCache, nil)
+		jd.dropDSFromCache(ds)
 	}
 }
 
@@ -1967,6 +1969,13 @@ type cacheEntry struct {
 	T     time.Time  `json:"set_at"`
 }
 
+func (jd *HandleT) dropDSFromCache(ds dataSetT) {
+	jd.dsCacheLock.Lock()
+	defer jd.dsCacheLock.Unlock()
+
+	delete(jd.dsEmptyResultCache, ds)
+}
+
 /*
 * If a query returns empty result for a specific dataset, we cache that so that
 * future queries don't have to hit the DB.
@@ -1975,6 +1984,12 @@ type cacheEntry struct {
  */
 
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
+	if customer == "" {
+		jd.logger.Errorf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
+		jd.invalidCacheKeyStat.Increment()
+	}
+
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
 
@@ -2375,9 +2390,6 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 
 	updatedStatesMap := map[string]map[string]bool{}
 	for _, status := range statusList {
-		// Safe check. Every status must have a valid workspace id.
-		jd.assert(status.WorkspaceId != "", fmt.Sprintf("Invalid workspace id: %v", status.WorkspaceId))
-
 		//  Handle the case when google analytics returns gif in response
 		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
 			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
