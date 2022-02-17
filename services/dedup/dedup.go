@@ -94,7 +94,7 @@ func New(path string, fns ...OptFn) *DedupHandleT {
 		stats:  stats.DefaultStats,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
-		//TODO default time
+		window: &dedupWindow,
 	}
 	for _, fn := range fns {
 		fn(d)
