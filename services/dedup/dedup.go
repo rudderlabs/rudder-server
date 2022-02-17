@@ -40,11 +40,11 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &memOptimized, false, "Dedup.memOptimized")
 }
 
-type loggerForBudger struct {
+type loggerForBadger struct {
 	logger.LoggerI
 }
 
-func (l loggerForBudger) Warningf(fmt string, args ...interface{}) {
+func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
 	l.Warnf(fmt, args...)
 }
 
@@ -78,7 +78,7 @@ func WithClearDB() OptFn {
 
 type DedupHandleT struct {
 	stats    stats.Stats
-	logger   loggerForBudger
+	logger   loggerForBadger
 	badgerDB *badger.DB
 	window   *time.Duration
 	close    chan struct{}
@@ -90,7 +90,7 @@ type DedupHandleT struct {
 func New(path string, fns ...OptFn) *DedupHandleT {
 	d := &DedupHandleT{
 		path:   path,
-		logger: loggerForBudger{logger.NewLogger().Child("dedup")},
+		logger: loggerForBadger{logger.NewLogger().Child("dedup")},
 		stats:  stats.DefaultStats,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
