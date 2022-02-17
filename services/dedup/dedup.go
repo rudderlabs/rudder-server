@@ -8,6 +8,7 @@ import (
 	"time"
 
 	badger "github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -19,16 +20,13 @@ type DedupI interface {
 	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
 	MarkProcessed(messageIDs []string)
 	PrintHistogram()
-}
-
-type DedupHandleT struct {
-	badgerDB *badger.DB
-	stats    stats.Stats
+	Close()
 }
 
 var (
-	dedupWindow time.Duration
-	pkgLogger   logger.LoggerI
+	dedupWindow  time.Duration
+	memOptimized bool
+	pkgLogger    logger.LoggerI
 )
 
 func Init() {
@@ -39,48 +37,103 @@ func Init() {
 func loadConfig() {
 	// Dedup time window in hours
 	config.RegisterDurationConfigVariable(time.Duration(3600), &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
+	config.RegisterBoolConfigVariable(true, &memOptimized, false, "Dedup.memOptimized")
 }
 
-func (d *DedupHandleT) setup(clearDB *bool) {
-	d.stats = stats.DefaultStats
-	badgerLogger = &loggerT{}
-	d.openBadger(clearDB)
+type loggerForBudger struct {
+	logger.LoggerI
 }
 
-var badgerLogger badger.Logger
-
-type loggerT struct{}
-
-func (l *loggerT) Errorf(s string, args ...interface{}) {
-	pkgLogger.Errorf(s, args)
+func (l loggerForBudger) Warningf(fmt string, args ...interface{}) {
+	l.Warnf(fmt, args...)
 }
 
-func (l *loggerT) Warningf(s string, args ...interface{}) {
-	pkgLogger.Warnf(s, args)
-}
-
-func (l *loggerT) Infof(s string, args ...interface{}) {
-	pkgLogger.Infof(s, args)
-}
-
-func (l *loggerT) Debugf(s string, args ...interface{}) {
-	pkgLogger.Debugf(s, args)
-}
-
-func (d *DedupHandleT) openBadger(clearDB *bool) {
-	var err error
+func DefaultRudderPath() string {
 	badgerPathName := "/badgerdbv2"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
+	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
+}
 
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true).WithLogger(badgerLogger))
+type OptFn func(*DedupHandleT)
+
+func FromConfig() OptFn {
+	return func(dht *DedupHandleT) {
+		dht.window = &dedupWindow
+	}
+}
+func WithWindow(d time.Duration) OptFn {
+	return func(dht *DedupHandleT) {
+		dht.window = &d
+	}
+
+}
+func WithClearDB() OptFn {
+	return func(dht *DedupHandleT) {
+		dht.clearDB = true
+	}
+}
+
+type DedupHandleT struct {
+	stats    stats.Stats
+	logger   loggerForBudger
+	badgerDB *badger.DB
+	window   *time.Duration
+	close    chan struct{}
+	gcDone   chan struct{}
+	path     string
+	clearDB  bool
+}
+
+func New(path string, fns ...OptFn) *DedupHandleT {
+	d := &DedupHandleT{
+		path:   path,
+		logger: loggerForBudger{logger.NewLogger().Child("dedup")},
+		stats:  stats.DefaultStats,
+		gcDone: make(chan struct{}),
+		close:  make(chan struct{}),
+		window: &dedupWindow,
+	}
+	for _, fn := range fns {
+		fn(d)
+	}
+	d.openBadger()
+
+	return d
+}
+
+func (d *DedupHandleT) openBadger() {
+	var err error
+
+	opts := badger.
+		DefaultOptions(d.path).
+		WithTruncate(true).
+		WithLogger(d.logger).
+		// Disable compression - Set options.Compression = options.None.
+		// This means we won’t allocate memory for decompression
+		// (this can be a lot in case of ZSTD decompression).
+		// In our case, compression is not useful since we are storing messageIDs with high entropy.
+		WithCompression(options.None)
+
+	if memOptimized {
+		// Memory usage optimizations:
+		// Inspired by https://github.com/dgraph-io/badger/issues/1304#issuecomment-630078745
+		// With modifications to ensure no performance degradation for dedup.
+		opts.TableLoadingMode = options.FileIO
+		opts.ValueLogLoadingMode = options.FileIO
+		opts.NumMemtables = 3
+		opts.MaxTableSize = 16 << 20
+		opts.NumLevelZeroTables = 1
+		opts.NumLevelZeroTablesStall = 2
+		opts.KeepL0InMemory = false
+	}
+	d.badgerDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
 	}
-	if *clearDB {
+	if d.clearDB {
 		err = d.badgerDB.DropAll()
 		if err != nil {
 			panic(err)
@@ -88,6 +141,7 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 	}
 	rruntime.Go(func() {
 		d.gcBadgerDB()
+		close(d.gcDone)
 	})
 }
 
@@ -96,10 +150,17 @@ func (d *DedupHandleT) PrintHistogram() {
 }
 
 func (d *DedupHandleT) gcBadgerDB() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-d.close:
+			d.badgerDB.RunValueLogGC(0.5)
+			return
+		case <-time.After(5 * time.Minute):
+		}
 	again:
+		// One call would only result in removal of at max one log file.
+		// As an optimization, you could also immediately re-run it whenever it returns nil error
+		// (this is why `goto again` is used).
 		err := d.badgerDB.RunValueLogGC(0.5)
 		if err == nil {
 			goto again
@@ -110,7 +171,7 @@ func (d *DedupHandleT) gcBadgerDB() {
 func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	err := d.badgerDB.Update(func(txn *badger.Txn) error {
 		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow)
+			e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
 			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 				_ = txn.Commit()
 				txn = d.badgerDB.NewTransaction(true)
@@ -124,6 +185,8 @@ func (d *DedupHandleT) writeToBadger(messageIDs []string) {
 	}
 }
 
+// MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
+// Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
 func (d *DedupHandleT) MarkProcessed(messageIDs []string) {
 	d.writeToBadger(messageIDs)
 }
@@ -174,4 +237,10 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 
 	sort.Ints(toRemoveMessageIndexes)
 	return toRemoveMessageIndexes
+}
+
+func (d *DedupHandleT) Close() {
+	close(d.close)
+	<-d.gcDone
+	d.badgerDB.Close()
 }
