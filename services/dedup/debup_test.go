@@ -94,16 +94,23 @@ func Test_Debup_ClearDB(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
 
-	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
-	d.MarkProcessed([]string{"a"})
-	d.Close()
-
-	dNew := dedup.New(dbPath)
-	dupsAgain := dNew.FindDuplicates([]string{"a"}, nil)
-	require.Equal(t, []int{0}, dupsAgain)
-	dNew.Close()
-
-	// FIXME add test with clearDB
+	{
+		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
+		d.MarkProcessed([]string{"a"})
+		d.Close()
+	}
+	{
+		dNew := dedup.New(dbPath)
+		dupsAgain := dNew.FindDuplicates([]string{"a"}, nil)
+		require.Equal(t, []int{0}, dupsAgain)
+		dNew.Close()
+	}
+	{
+		dWithClear := dedup.New(dbPath, dedup.WithClearDB())
+		dupsAgain := dWithClear.FindDuplicates([]string{"a"}, nil)
+		require.Equal(t, []int{}, dupsAgain)
+		dWithClear.Close()
+	}
 }
 
 var duplicateIndexes []int
