@@ -130,6 +130,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	hosts := make([]string, 0)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
 	}
@@ -137,10 +138,11 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config :: %w", err)
 	}
-	hostName := destConfig.HostName + ":" + destConfig.Port
+	hostNames := strings.Split(destConfig.HostName, ",")
+	for _, hostName := range hostNames {
+		hosts = append(hosts, hostName+":"+destConfig.Port)
+	}
 	isSslEnabled := destConfig.SslEnabled
-
-	hosts := []string{hostName}
 
 	config := getDefaultConfiguration()
 	config.Producer.Timeout = o.Timeout
@@ -307,7 +309,7 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	tlsConfig.RootCAs = caCertPool
 
 	//tlsConfig.BuildNameToCertificate()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = false
 	return &tlsConfig
 }
 
