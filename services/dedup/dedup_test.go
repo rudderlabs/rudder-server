@@ -26,7 +26,7 @@ func randSeq(n int) string {
 	return string(b)
 }
 
-func Test_Debup(t *testing.T) {
+func Test_Dedup(t *testing.T) {
 	config.Load()
 	logger.Init()
 
@@ -62,7 +62,7 @@ func Test_Debup(t *testing.T) {
 		require.Equal(t, []int{}, dupsAgain)
 	})
 }
-func Test_Debup_Window(t *testing.T) {
+func Test_Dedup_Window(t *testing.T) {
 	config.Load()
 	logger.Init()
 
@@ -86,7 +86,7 @@ func Test_Debup_Window(t *testing.T) {
 	require.Equal(t, []int{}, dupsAfter)
 }
 
-func Test_Debup_ClearDB(t *testing.T) {
+func Test_Dedup_ClearDB(t *testing.T) {
 	config.Load()
 	logger.Init()
 
