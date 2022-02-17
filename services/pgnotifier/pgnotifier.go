@@ -121,6 +121,8 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 	if err != nil {
 		return
 	}
+
+	// Reference: http://go-database-sql.org/connection-pool.html
 	if enableConnTuning {
 		dbHandle.SetConnMaxLifetime(maxConnLifeTimeInS)
 		dbHandle.SetConnMaxIdleTime(maxIdleConnTimeInS)
