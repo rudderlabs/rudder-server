@@ -30,6 +30,11 @@ var (
 	maxPollSleep       time.Duration
 	jobOrphanTimeout   time.Duration
 	pkgLogger          logger.LoggerI
+	enableConnTuning   bool
+	maxConnLifeTimeInS time.Duration
+	maxIdleConnTimeInS time.Duration
+	maxOpenConns       int
+	maxIdleConns       int
 )
 
 var (
@@ -94,6 +99,11 @@ func loadPGNotifierConfig() {
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	config.RegisterDurationConfigVariable(time.Duration(120), &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(1800), &maxConnLifeTimeInS, false, time.Second, "PgNotifier.maxConnLifeTimeInS")
+	config.RegisterDurationConfigVariable(time.Duration(1), &maxIdleConnTimeInS, false, time.Second, "PgNotifier.maxIdleConnTimeInS")
+	config.RegisterIntConfigVariable(2, &maxOpenConns, false, 1, "PgNotifier.maxOpenConns")
+	config.RegisterIntConfigVariable(2, &maxIdleConns, false, 1, "PgNotifier.maxIdleConns")
+	config.RegisterBoolConfigVariable(false, &enableConnTuning, false, "PgNotifier.enableConnTuning")
 }
 
 //New Given default connection info return pg notifiew object from it
@@ -110,6 +120,12 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
+	}
+	if enableConnTuning {
+		dbHandle.SetConnMaxLifetime(maxConnLifeTimeInS)
+		dbHandle.SetConnMaxIdleTime(maxIdleConnTimeInS)
+		dbHandle.SetMaxOpenConns(maxOpenConns)
+		dbHandle.SetMaxIdleConns(maxIdleConns)
 	}
 
 	// setup metrics
