@@ -55,7 +55,7 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 			  j.custom_val as customVal,
 			  s.id as statusID,
 			  s.job_state as jobState,
-			  j.workspace_id as customer
+			  j.workspace_id as workspace
 			from
 			  %[1]s j
 			  left join (
@@ -84,25 +84,25 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 		  select
 			count(*),
 			customVal,
-			customer
+			workspace
 		  from
 			joined
 		  group by
 			customVal,
-			customer;`, ds.JobTable, ds.JobStatusTable)
+			workspace;`, ds.JobTable, ds.JobStatusTable)
 		rows, err := mj.dbHandle.Query(queryString)
 		mj.assertError(err)
 
 		for rows.Next() {
 			var count sql.NullInt64
 			var customVal string
-			var customer string
-			err := rows.Scan(&count, &customVal, &customer)
+			var workspace string
+			err := rows.Scan(&count, &customVal, &workspace)
 			mj.assertError(err)
-			if _, ok := statMap[customer]; !ok {
-				statMap[customer] = make(map[string]int)
+			if _, ok := statMap[workspace]; !ok {
+				statMap[workspace] = make(map[string]int)
 			}
-			statMap[customer][customVal] += int(count.Int64)
+			statMap[workspace][customVal] += int(count.Int64)
 		}
 		if err = rows.Err(); err != nil {
 			mj.assertError(err)
@@ -110,12 +110,12 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 	}
 }
 
-func (mj *MultiTenantHandleT) getSingleCustomerQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	stateFilters := params.StateFilters
 	var sqlStatement string
 
 	if count < 0 {
-		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, stateFilters[0])
+		mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 %s jobs for this workspace.", count, workspace, stateFilters[0])
 		count = 0
 	}
 
@@ -134,31 +134,31 @@ func (mj *MultiTenantHandleT) getSingleCustomerQueryString(customer string, coun
                                               %[1]s
                                               AS jobs
                                            WHERE jobs.workspace_id='%[3]s' %[4]s %[2]s`,
-		"rt_jobs_view", limitQuery, customer, orderQuery)
+		"rt_jobs_view", limitQuery, workspace, orderQuery)
 
 	return sqlStatement
 }
 
 //
-func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
+func (mj *MultiTenantHandleT) printNumJobsByWorkspace(jobs []*JobT) {
 	if len(jobs) == 0 {
 		mj.logger.Debug("No Jobs found for this query")
 	}
-	customerJobCountMap := make(map[string]int)
+	workspaceJobCountMap := make(map[string]int)
 	for _, job := range jobs {
-		if _, ok := customerJobCountMap[job.WorkspaceId]; !ok {
-			customerJobCountMap[job.WorkspaceId] = 0
+		if _, ok := workspaceJobCountMap[job.WorkspaceId]; !ok {
+			workspaceJobCountMap[job.WorkspaceId] = 0
 		}
-		customerJobCountMap[job.WorkspaceId] += 1
+		workspaceJobCountMap[job.WorkspaceId] += 1
 	}
-	for customer, count := range customerJobCountMap {
-		mj.logger.Debug(customer, `: `, count)
+	for workspace, count := range workspaceJobCountMap {
+		mj.logger.Debug(workspace, `: `, count)
 	}
 }
 
 //All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
+func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -180,10 +180,10 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 
 	start := time.Now()
 	for _, ds := range dsList {
-		jobs := mj.getUnionDS(ds, customerCount, params)
+		jobs := mj.getUnionDS(ds, workspaceCount, params)
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
-		if len(customerCount) == 0 {
+		if len(workspaceCount) == 0 {
 			break
 		}
 		if tablesQueried > maxDSQuerySize {
@@ -201,20 +201,20 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 
 	//PickUp stats
 	var pickUpCountStat stats.RudderStats
-	customerCountStat := make(map[string]int)
+	workspaceCountStat := make(map[string]int)
 
 	for _, job := range outJobs {
-		if _, ok := customerCountStat[job.WorkspaceId]; !ok {
-			customerCountStat[job.WorkspaceId] = 0
+		if _, ok := workspaceCountStat[job.WorkspaceId]; !ok {
+			workspaceCountStat[job.WorkspaceId] = 0
 		}
-		customerCountStat[job.WorkspaceId] += 1
+		workspaceCountStat[job.WorkspaceId] += 1
 	}
 
-	for customer, jobCount := range customerCountStat {
+	for workspace, jobCount := range workspaceCountStat {
 		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
-			"customer": customer,
-			"module":   mj.tablePrefix,
-			"destType": params.CustomValFilters[0],
+			"workspace": workspace,
+			"module":    mj.tablePrefix,
+			"destType":  params.CustomValFilters[0],
 		})
 		pickUpCountStat.Count(jobCount)
 	}
@@ -222,21 +222,21 @@ func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params Ge
 	return outJobs
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]int, params GetQueryParamsT) []*JobT {
 	var jobList []*JobT
-	queryString, customersToQuery := mj.getUnionQuerystring(customerCount, ds, params)
+	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, ds, params)
 
-	if len(customersToQuery) == 0 {
+	if len(workspacesToQuery) == 0 {
 		return jobList
 	}
-	for _, customer := range customersToQuery {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+	for _, workspace := range workspacesToQuery {
+		mj.markClearEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			willTryToSet, nil)
 	}
 
-	cacheUpdateByCustomer := make(map[string]string)
-	for _, customer := range customersToQuery {
-		cacheUpdateByCustomer[customer] = string(noJobs)
+	cacheUpdateByWorkspace := make(map[string]string)
+	for _, workspace := range workspacesToQuery {
+		cacheUpdateByWorkspace[workspace] = string(noJobs)
 	}
 
 	var rows *sql.Rows
@@ -297,11 +297,11 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
-		customerCount[job.WorkspaceId] -= 1
-		if customerCount[job.WorkspaceId] == 0 {
-			delete(customerCount, job.WorkspaceId)
+		workspaceCount[job.WorkspaceId] -= 1
+		if workspaceCount[job.WorkspaceId] == 0 {
+			delete(workspaceCount, job.WorkspaceId)
 		}
-		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
+		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
@@ -309,45 +309,45 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 
 	//do cache stuff here
 	_willTryToSet := willTryToSet
-	for customer, cacheUpdate := range cacheUpdateByCustomer {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
+		mj.markClearEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
-	mj.printNumJobsByCustomer(jobList)
+	mj.printNumJobsByWorkspace(jobList)
 	return jobList
 }
 
-func (mj *MultiTenantHandleT) getUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
-	var queries, customersToQuery []string
-	queryInitial := mj.getInitialSingleCustomerQueryString(ds, params, true, customerCount)
+func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
+	var queries, workspacesToQuery []string
+	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, params, true, workspaceCount)
 
-	for customer, count := range customerCount {
-		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
+	for workspace, count := range workspaceCount {
+		if mj.isEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
 		if count < 0 {
-			mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, params.StateFilters[0])
+			mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 %s jobs for this workspace.", count, workspace, params.StateFilters[0])
 			continue
 		}
-		queries = append(queries, mj.getSingleCustomerQueryString(customer, count, ds, params, true))
-		customersToQuery = append(customersToQuery, customer)
+		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, count, ds, params, true))
+		workspacesToQuery = append(workspacesToQuery, workspace)
 	}
 
-	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
+	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, params GetQueryParamsT, order bool, customerCount map[string]int) string {
+func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params GetQueryParamsT, order bool, workspaceCount map[string]int) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
 	//some stats
-	customerArray := make([]string, 0)
-	for customer := range customerCount {
-		customerArray = append(customerArray, "'"+customer+"'")
+	workspaceArray := make([]string, 0)
+	for workspace := range workspaceCount {
+		workspaceArray = append(workspaceArray, "'"+workspace+"'")
 	}
-	customerString := "(" + strings.Join(customerArray, ", ") + ")"
+	workspaceString := "(" + strings.Join(workspaceArray, ", ") + ")"
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -396,6 +396,6 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
                                                 ) AS job_latest_state ON jobs.job_id = job_latest_state.job_id
                                             WHERE
                                                 jobs.workspace_id IN %[7]s %[3]s %[4]s %[5]s %[6]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
+		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, workspaceString)
 	return sqlStatement + ")"
 }

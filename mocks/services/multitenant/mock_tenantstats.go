@@ -97,14 +97,14 @@ func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1 interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1)
 }
 
-// UpdateCustomerLatencyMap mocks base method.
-func (m *MockMultiTenantI) UpdateCustomerLatencyMap(arg0, arg1 string, arg2 float64) {
+// UpdateWorkspaceLatencyMap mocks base method.
+func (m *MockMultiTenantI) UpdateWorkspaceLatencyMap(arg0, arg1 string, arg2 float64) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateCustomerLatencyMap", arg0, arg1, arg2)
+	m.ctrl.Call(m, "UpdateWorkspaceLatencyMap", arg0, arg1, arg2)
 }
 
-// UpdateCustomerLatencyMap indicates an expected call of UpdateCustomerLatencyMap.
-func (mr *MockMultiTenantIMockRecorder) UpdateCustomerLatencyMap(arg0, arg1, arg2 interface{}) *gomock.Call {
+// UpdateWorkspaceLatencyMap indicates an expected call of UpdateWorkspaceLatencyMap.
+func (mr *MockMultiTenantIMockRecorder) UpdateWorkspaceLatencyMap(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateCustomerLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).UpdateCustomerLatencyMap), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkspaceLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).UpdateWorkspaceLatencyMap), arg0, arg1, arg2)
 }

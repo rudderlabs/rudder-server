@@ -222,13 +222,13 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 		return err
 	}
 
-	for ds, stateListByCustomer := range updatedStatesByDS {
+	for ds, stateListByWorkspace := range updatedStatesByDS {
 		allUpdatedStates := make([]string, 0)
-		for customer, stateList := range stateListByCustomer {
-			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+		for workspace, stateList := range stateListByWorkspace {
+			jd.markClearEmptyResult(ds, workspace, stateList, customValFilters, parameterFilters, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, stateList...)
 		}
-		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	}
 
@@ -325,7 +325,7 @@ type HandleT struct {
 	dsListLock                    sync.RWMutex
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> customer -> customVal -> params -> state -> cacheEntry
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> workspace -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
@@ -1382,9 +1382,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	jd.assertError(err)
 
 	//TODO : Evaluate a way to handle indexes only for particular tables
-
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,workspace_id)`, newDSIdx, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDSIdx, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1727,10 +1726,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 	// since we are not sure about the state of the db
 	defer func() {
 		customValParamMap := make(map[string]map[string]map[string]struct{})
-		var customers []string //for bursting old cache
+		var workspaces []string //for bursting old cache
 		for _, job := range jobList {
-			if !misc.ContainsString(customers, job.WorkspaceId) {
-				customers = append(customers, job.WorkspaceId)
+			if !misc.ContainsString(workspaces, job.WorkspaceId) {
+				workspaces = append(workspaces, job.WorkspaceId)
 			}
 			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
 		}
@@ -1738,10 +1737,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		if useNewCacheBurst {
 			jd.clearCache(ds, customValParamMap)
 		} else {
-			//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+			//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
-			for _, customer := range customers {
-				jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
+			for _, workspace := range workspaces {
+				jd.markClearEmptyResult(ds, workspace, []string{}, []string{}, nil, hasJobs, nil)
 			}
 		}
 	}()
@@ -1784,15 +1783,15 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	return
 }
 
-// Creates a map of customer:customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
+// Creates a map of workspace:customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
-func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[string]struct{}, customVal string, params []byte, customer string) {
-	if _, ok := CVPMap[customer]; !ok {
-		CVPMap[customer] = make(map[string]map[string]struct{})
+func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[string]struct{}, customVal string, params []byte, workspace string) {
+	if _, ok := CVPMap[workspace]; !ok {
+		CVPMap[workspace] = make(map[string]map[string]struct{})
 	}
 	if jd.queryFilterKeys.CustomVal {
-		if _, ok := CVPMap[customer][customVal]; !ok {
-			CVPMap[customer][customVal] = make(map[string]struct{})
+		if _, ok := CVPMap[workspace][customVal]; !ok {
+			CVPMap[workspace][customVal] = make(map[string]struct{})
 		}
 
 		if len(jd.queryFilterKeys.ParameterFilters) > 0 {
@@ -1802,19 +1801,19 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 				vals = append(vals, fmt.Sprintf("%s##%s", key, val))
 			}
 			key := strings.Join(vals, "::")
-			if _, ok := CVPMap[customer][customVal][key]; !ok {
-				CVPMap[customer][customVal][key] = struct{}{}
+			if _, ok := CVPMap[workspace][customVal][key]; !ok {
+				CVPMap[workspace][customVal][key] = struct{}{}
 			}
 		}
 	}
 }
 
-//mark cache empty after going over ds->customer->customvals->params and for all stateFilters
+//mark cache empty after going over ds->workspace->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
-	//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
-	for customer, customerCVPMap := range CVPMap {
+	//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+	for workspace, workspaceCVPMap := range CVPMap {
 		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
-			for cv, cVal := range customerCVPMap {
+			for cv, cVal := range workspaceCVPMap {
 				for pv := range cVal {
 					parameterFilters := []ParameterFilterT{}
 					tokens := strings.Split(pv, "::")
@@ -1827,17 +1826,17 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[stri
 						parameterFilters = append(parameterFilters, param)
 					}
 					jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
-					jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
+					jd.markClearEmptyResult(ds, workspace, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 				}
 			}
 		} else if jd.queryFilterKeys.CustomVal {
-			for cv := range customerCVPMap {
+			for cv := range workspaceCVPMap {
 				jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-				jd.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
+				jd.markClearEmptyResult(ds, workspace, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 			}
 		} else {
 			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
-			jd.markClearEmptyResult(ds, customer, []string{}, []string{}, nil, hasJobs, nil)
+			jd.markClearEmptyResult(ds, workspace, []string{}, []string{}, nil, hasJobs, nil)
 		}
 	}
 }
@@ -1851,7 +1850,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	dsList := jd.getDSList(false)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
-			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspace_id as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspace_id as workspace from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
 		),
 		x as (
 			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID
@@ -1861,20 +1860,20 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 		y as (
 			SELECT * FROM x WHERE rank = 1
 		)
-		select count(*), customVal, customer from y group by customVal, customer;`, ds.JobTable, ds.JobStatusTable)
+		select count(*), customVal, workspace from y group by customVal, workspace;`, ds.JobTable, ds.JobStatusTable)
 		rows, err := jd.dbHandle.Query(queryString)
 		jd.assertError(err)
 
 		for rows.Next() {
 			var count sql.NullInt64
 			var customVal string
-			var customer string
-			err := rows.Scan(&count, &customVal, &customer)
+			var workspace string
+			err := rows.Scan(&count, &customVal, &workspace)
 			jd.assertError(err)
-			if _, ok := statMap[customer]; !ok {
-				statMap[customer] = make(map[string]int)
+			if _, ok := statMap[workspace]; !ok {
+				statMap[workspace] = make(map[string]int)
 			}
-			statMap[customer][customVal] += int(count.Int64)
+			statMap[workspace][customVal] += int(count.Int64)
 		}
 		if err = rows.Err(); err != nil {
 			jd.assertError(err)
@@ -1983,9 +1982,9 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
-	if customer == "" {
+	if workspace == "" {
 		jd.logger.Errorf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
 		jd.invalidCacheKeyStat.Increment()
 	}
@@ -2009,13 +2008,13 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]map[string]cacheEntry{}
 	}
 
-	if _, ok := jd.dsEmptyResultCache[ds][customer]; !ok {
-		jd.dsEmptyResultCache[ds][customer] = map[string]map[string]map[string]cacheEntry{}
+	if _, ok := jd.dsEmptyResultCache[ds][workspace]; !ok {
+		jd.dsEmptyResultCache[ds][workspace] = map[string]map[string]map[string]cacheEntry{}
 	}
 	for _, cVal := range customValFilters {
-		_, ok := jd.dsEmptyResultCache[ds][customer][cVal]
+		_, ok := jd.dsEmptyResultCache[ds][workspace][cVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][customer][cVal] = map[string]map[string]cacheEntry{}
+			jd.dsEmptyResultCache[ds][workspace][cVal] = map[string]map[string]cacheEntry{}
 		}
 
 		pVals := []string{}
@@ -2025,15 +2024,15 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 		sort.Strings(pVals)
 		pVal := strings.Join(pVals, "_")
 
-		_, ok = jd.dsEmptyResultCache[ds][customer][cVal][pVal]
+		_, ok = jd.dsEmptyResultCache[ds][workspace][cVal][pVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][customer][cVal][pVal] = map[string]cacheEntry{}
+			jd.dsEmptyResultCache[ds][workspace][cVal][pVal] = map[string]cacheEntry{}
 		}
 
 		for _, st := range stateFilters {
-			previous := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
+			previous := jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st]
 			if checkAndSet == nil || *checkAndSet == previous.Value {
-				jd.dsEmptyResultCache[ds][customer][cVal][pVal][st] = cacheEntry{
+				jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st] = cacheEntry{
 					Value: value,
 					T:     time.Now(),
 				}
@@ -2048,7 +2047,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, customer string, stateFilte
 // 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
 //  * The entry is noJobs
 //  * The entry is not expired (entry time + cache expiration > now)
-func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -2061,7 +2060,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []st
 		return false
 	}
 
-	_, ok = jd.dsEmptyResultCache[ds][customer]
+	_, ok = jd.dsEmptyResultCache[ds][workspace]
 	if !ok {
 		return false
 	}
@@ -2072,7 +2071,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []st
 	}
 
 	for _, cVal := range customValFilters {
-		_, ok := jd.dsEmptyResultCache[ds][customer][cVal]
+		_, ok := jd.dsEmptyResultCache[ds][workspace][cVal]
 		if !ok {
 			return false
 		}
@@ -2084,13 +2083,13 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, customer string, stateFilters []st
 		sort.Strings(pVals)
 		pVal := strings.Join(pVals, "_")
 
-		_, ok = jd.dsEmptyResultCache[ds][customer][cVal][pVal]
+		_, ok = jd.dsEmptyResultCache[ds][workspace][cVal][pVal]
 		if !ok {
 			return false
 		}
 
 		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][customer][cVal][pVal][st]
+			mark, ok := jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st]
 			if !ok || mark.Value != noJobs || time.Now().After(mark.T.Add(cacheExpiration)) {
 				return false
 			}
@@ -2368,7 +2367,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
 		allUpdatedStates = append(allUpdatedStates, stateFilters...)
 	}
-	//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+	//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 	jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	return nil
 }
@@ -3234,13 +3233,13 @@ func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []
 
 	err = txn.Commit()
 	jd.assertError(err)
-	for ds, stateListByCustomer := range updatedStatesByDS {
+	for ds, stateListByWorkspace := range updatedStatesByDS {
 		allUpdatedStates := make([]string, 0)
-		for customer, stateList := range stateListByCustomer {
-			jd.markClearEmptyResult(ds, customer, stateList, customValFilters, parameterFilters, hasJobs, nil)
+		for workspace, stateList := range stateListByWorkspace {
+			jd.markClearEmptyResult(ds, workspace, stateList, customValFilters, parameterFilters, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, stateList...)
 		}
-		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	}
 

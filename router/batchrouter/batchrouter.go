@@ -1002,7 +1002,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		batchJobState string
 		errorResp     []byte
 	)
-	batchRouterCustomerJobStatusCount := make(map[string]map[string]int)
+	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
@@ -1130,9 +1130,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
-			_, ok := batchRouterCustomerJobStatusCount[workspaceID]
+			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
 			if !ok {
-				batchRouterCustomerJobStatusCount[workspaceID] = make(map[string]int)
+				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
 			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			cd, ok := connectionDetailsMap[key]
@@ -1151,7 +1151,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			}
 			if status.JobState != jobsdb.Failed.State {
 				if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Aborted.State {
-					batchRouterCustomerJobStatusCount[workspaceID][parameters.DestinationID] += 1
+					batchRouterWorkspaceJobStatusCount[workspaceID][parameters.DestinationID] += 1
 				}
 				sd.Count++
 			}
@@ -1159,9 +1159,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		//REPORTING - END
 	}
 
-	for customer := range batchRouterCustomerJobStatusCount {
-		for destID := range batchRouterCustomerJobStatusCount[customer] {
-			brt.multitenantI.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
+	for workspace := range batchRouterWorkspaceJobStatusCount {
+		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
+			brt.multitenantI.RemoveFromInMemoryCount(workspace, destID, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
 		}
 	}
 	//tracking batch router errors
@@ -1254,7 +1254,7 @@ func (brt *HandleT) GetWorkspaceIDForDestID(destID string) string {
 }
 
 func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput) {
-	customer := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
+	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
 		for _, jobId := range asyncOutput.ImportingJobIDs {
@@ -1266,7 +1266,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: []byte(`{}`),
 				Parameters:    asyncOutput.ImportingParameters,
-				WorkspaceId:   customer,
+				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1281,7 +1281,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: json.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
-				WorkspaceId:   customer,
+				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1296,7 +1296,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "500",
 				ErrorResponse: json.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
-				WorkspaceId:   customer,
+				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1311,7 +1311,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "400",
 				ErrorResponse: json.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
-				WorkspaceId:   customer,
+				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
 		}

@@ -112,13 +112,13 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	err = txn.Commit()
 	jd.assertError(err)
 
-	for ds, updatedStatesByCustomer := range updatedStatesByDS {
+	for ds, updatedStatesByWorkspace := range updatedStatesByDS {
 		allUpdatedStates := make([]string, 0)
-		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+		for workspace, updatedStates := range updatedStatesByWorkspace {
+			jd.markClearEmptyResult(ds, workspace, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
-		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 	jd.assertError(err)
@@ -232,13 +232,13 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 	err = txn.Commit()
 	jd.assertError(err)
-	for ds, updatedStatesByCustomer := range updatedStatesMap {
+	for ds, updatedStatesByWorkspace := range updatedStatesMap {
 		allUpdatedStates := make([]string, 0)
-		for customer, updatedStates := range updatedStatesByCustomer {
-			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+		for workspace, updatedStates := range updatedStatesByWorkspace {
+			jd.markClearEmptyResult(ds, workspace, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
-		//NOTE: Along with clearing cache for a particular customer key, we also have to clear for allWorkspaces key
+		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 }

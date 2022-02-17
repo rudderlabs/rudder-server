@@ -52,9 +52,9 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
-	customerCountMap := make(map[string]int)
-	customerCountMap[testWID] = 10
-	unprocessedListEmpty := jobDB.GetAllJobs(customerCountMap, GetQueryParamsT{
+	workspaceCountMap := make(map[string]int)
+	workspaceCountMap[testWID] = 10
+	unprocessedListEmpty := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []ParameterFilterT{},
@@ -64,7 +64,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	err := jobDB.Store([]*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
 	require.NoError(t, err)
 
-	unprocessedList := jobDB.GetAllJobs(customerCountMap, GetQueryParamsT{
+	unprocessedList := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []ParameterFilterT{},
@@ -97,7 +97,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	err = jobDB.UpdateJobStatus([]*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
 	require.NoError(t, err)
 
-	jobs := jobDB.GetAllJobs(customerCountMap, GetQueryParamsT{
+	jobs := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []ParameterFilterT{},

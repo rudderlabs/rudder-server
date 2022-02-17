@@ -49,12 +49,12 @@ type reporter interface {
 }
 
 type tenantStats interface {
-	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
+	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
-	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
+	AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
+	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
-	UpdateCustomerLatencyMap(destType string, workspaceID string, val float64)
+	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
 }
 
 type PauseT struct {
@@ -146,7 +146,7 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	customerCount map[string]int
+	workspaceCount map[string]int
 
 	resultSetMeta    map[int64]*resultSetT
 	resultSetLock    sync.RWMutex
@@ -712,12 +712,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
-				customer := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
+				workspace := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"customer":    customer,
+					"workspace":   workspace,
 				})
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat.Start()
@@ -804,7 +804,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
 				if respStatusCode != types.RouterTimedOutStatusCode {
-					worker.rt.MultitenantI.UpdateCustomerLatencyMap(worker.rt.destName, workspaceID, float64(timeTaken)/float64(time.Second))
+					worker.rt.MultitenantI.UpdateWorkspaceLatencyMap(worker.rt.destName, workspaceID, float64(timeTaken)/float64(time.Second))
 				}
 
 				//Using response status code and body to get response code rudder router logic is based on.
@@ -1199,7 +1199,7 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
-		"customer":       status.WorkspaceId,
+		"workspace":      status.WorkspaceId,
 	})
 	routerResponseStat.Count(1)
 }
@@ -1212,7 +1212,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
-			"customer":       status.WorkspaceId,
+			"workspace":      status.WorkspaceId,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -1224,7 +1224,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
-						"customer":       status.WorkspaceId,
+						"workspace":      status.WorkspaceId,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
@@ -1501,7 +1501,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerCustomerJobStatusCount := make(map[string]map[string]int)
+	routerWorkspaceJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1514,9 +1514,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
-		_, ok := routerCustomerJobStatusCount[workspaceID]
+		_, ok := routerWorkspaceJobStatusCount[workspaceID]
 		if !ok {
-			routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+			routerWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
 		}
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
@@ -1545,7 +1545,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState != jobsdb.Failed.State {
 			if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
-				routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
+				routerWorkspaceJobStatusCount[workspaceID][rt.destName] += 1
 				sd.Count++
 			}
 			if resp.status.JobState == jobsdb.Succeeded.State {
@@ -1599,9 +1599,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	for customer := range routerCustomerJobStatusCount {
-		for destType := range routerCustomerJobStatusCount[customer] {
-			rt.MultitenantI.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
+	for workspace := range routerWorkspaceJobStatusCount {
+		for destType := range routerWorkspaceJobStatusCount[workspace] {
+			rt.MultitenantI.RemoveFromInMemoryCount(workspace, destType, routerWorkspaceJobStatusCount[workspace][destType], "router")
 		}
 	}
 
@@ -1896,10 +1896,10 @@ func (rt *HandleT) readAndProcess() int {
 	rt.lastQueryRunTime = time.Now()
 
 	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize, rt.timeGained)
-	rt.customerCount = pickupMap
+	rt.workspaceCount = pickupMap
 	rt.timeGained = 0
 
-	combinedList := rt.jobsDB.GetAllJobs(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
+	combinedList := rt.jobsDB.GetAllJobs(rt.workspaceCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -2190,7 +2190,7 @@ func (rt *HandleT) Start() {
 	ctx := rt.backgroundCtx
 	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
-		rt.customerCount = make(map[string]int)
+		rt.workspaceCount = make(map[string]int)
 		rt.generatorLoop(ctx)
 		return nil
 	})
@@ -2223,7 +2223,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.workspaceSet[workspaceID]; !ok {
 				rt.workspaceSet[workspaceID] = struct{}{}
-				rt.MultitenantI.UpdateCustomerLatencyMap(rt.destName, workspaceID, 0)
+				rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
 			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
@@ -2421,7 +2421,7 @@ func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, 
 		stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 		return http.StatusBadRequest, errCatResponse
 	}
-	// High-Priority notification to customer(&rudderstack) needs to be sent
+	// High-Priority notification to workspace(&rudderstack) needs to be sent
 	stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 	// Abort the jobs as the destination is disable
 	return http.StatusBadRequest, destResBody

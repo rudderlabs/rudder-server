@@ -144,7 +144,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
@@ -162,7 +162,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -204,13 +204,13 @@ var _ = Describe("Router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			customerCountOut := customerCount
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -221,7 +221,7 @@ var _ = Describe("Router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -255,7 +255,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -282,13 +282,13 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList)
-			customerCountOut := customerCount
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList)
+			workspaceCountOut := workspaceCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -297,7 +297,7 @@ var _ = Describe("Router", func() {
 				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -347,7 +347,7 @@ var _ = Describe("Router", func() {
 				Reporting:    &reportingNOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
@@ -374,13 +374,13 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList)
-			customerCountOut := customerCount
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList)
+			workspaceCountOut := workspaceCount
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
 
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(),
@@ -432,7 +432,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			router.transformer = mockTransformer
@@ -491,15 +491,15 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			customerCountOut := customerCount
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(jobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -543,7 +543,7 @@ var _ = Describe("Router", func() {
 					})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -578,7 +578,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
@@ -636,12 +636,12 @@ var _ = Describe("Router", func() {
 				},
 			}
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(customerCountOut, map[string]float64{})
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(workspaceCountOut, map[string]float64{})
 
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Return(toRetryJobsList).Times(
 				1).Return(allJobs).After(callGetRouterPickupJobs)
 
@@ -697,7 +697,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -753,7 +753,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			router.transformer = mockTransformer
 			noOfJobsToBatchInAWorker = 5
@@ -835,12 +835,12 @@ var _ = Describe("Router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(
 				callGetRouterPickupJobs)
 
@@ -933,7 +933,7 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -972,7 +972,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -1030,12 +1030,12 @@ var _ = Describe("Router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			var customerCount = map[string]int{}
-			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			customerCountOut := customerCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut, map[string]float64{}).Times(1)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -1096,7 +1096,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateCustomerLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 

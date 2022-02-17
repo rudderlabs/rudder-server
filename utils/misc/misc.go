@@ -1345,13 +1345,13 @@ func SortMap(inputMap map[string]MovingAverage) []string {
 	}
 
 	sort.Sort(pairArr)
-	var sortedCustomerList []string
+	var sortedWorkspaceList []string
 	//p is sorted
 	for _, k := range pairArr {
 		//Workspace ID - RS Check
-		sortedCustomerList = append(sortedCustomerList, k.key)
+		sortedWorkspaceList = append(sortedWorkspaceList, k.key)
 	}
-	return sortedCustomerList
+	return sortedWorkspaceList
 }
 
 func SleepCtx(ctx context.Context, delay time.Duration) bool {
