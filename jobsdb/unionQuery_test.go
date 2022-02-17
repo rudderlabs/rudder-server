@@ -18,7 +18,6 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 
 	maxDSSize := 2
 	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
-	jobDB.Multitenant = true
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
@@ -81,6 +80,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   "testWorkspace",
 	}
 	status2 := JobStatusT{
 		JobID:         unprocessedList[1].JobID,
@@ -91,6 +91,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   "testWorkspace",
 	}
 
 	err = jobDB.UpdateJobStatus([]*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
@@ -102,33 +103,4 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ParameterFilters: []ParameterFilterT{},
 	}, 10)
 	require.Equal(t, 3, len(jobs))
-}
-
-func TestJobsDBStatusCache(t *testing.T) {
-	initJobsDB()
-	stats.Setup()
-	ds1 := dataSetT{
-		JobTable:       "rt_jobs_1",
-		JobStatusTable: "rt_job_status_1",
-		Index:          "10",
-	}
-	wId1 := undefinedWorkspace
-	customVal := "MOCKDS"
-	var cache JobsDBStatusCache
-	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{})
-	}())
-
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
-		cacheValue(noJobs), nil)
-	require.True(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
-	}())
-	cache.UpdateCache(ds1, wId1, []string{Waiting.State}, []string{customVal}, []ParameterFilterT{},
-		cacheValue(hasJobs), nil)
-	require.False(t, func() bool {
-		return cache.HaveEmptyResult(ds1, wId1, []string{Waiting.State}, []string{customVal},
-			[]ParameterFilterT{})
-	}())
 }
