@@ -35,6 +35,8 @@ Gateway:
     maxTransformerProcess: 64
     maxRetry: 5
     maxRetryTime: 10s
+    sourceListForParsingParams:
+      - shopify
 EventSchemas:
   enableEventSchemasFeature: false
   syncInterval: 240s
@@ -190,6 +192,7 @@ Processor:
 Dedup:
   enableDedup: false
   dedupWindow: 3600s
+  memOptimized: true
 BackendConfig:
   configFromFile: false
   configJSONPath: /etc/rudderstack/workspaceConfig.json

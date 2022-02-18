@@ -1,8 +1,11 @@
 package router
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
@@ -18,12 +21,14 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
+	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -43,10 +48,13 @@ var testTimeout = 10 * time.Second
 
 var gaDestinationDefinition = backendconfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA", DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 
+var workspaceID = uuid.Must(uuid.NewV4()).String()
+
 // This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
+			WorkspaceID:  workspaceID,
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
@@ -60,16 +68,24 @@ type testContext struct {
 	dbReadBatchSize int
 
 	mockCtrl          *gomock.Controller
-	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
+	mockRouterJobsDB  *mocksJobsDB.MockMultiTenantJobsDB
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockMultitenantI  *mocksMultitenant.MockMultiTenantI
+}
+
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+}
+func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
 }
 
 // Initiaze mocks and common expectations
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 
@@ -81,7 +97,6 @@ func (c *testContext) Setup() {
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
 		Return().Times(1)
-
 	c.dbReadBatchSize = 10000
 }
 
@@ -112,7 +127,6 @@ var _ = Describe("Router", func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
 		RoutersManagerSetup()
@@ -125,33 +139,36 @@ var _ = Describe("Router", func() {
 	Context("Initialization", func() {
 
 		It("should initialize and recover after crash", func() {
-			router := &HandleT{}
-
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
 
 	Context("normal operation - ga", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
-			router := &HandleT{}
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -164,11 +181,12 @@ var _ = Describe("Router", func() {
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -180,21 +198,34 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callGetAllJobs)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
+				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+			done := make(chan struct{})
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -204,26 +235,37 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(2))
-
-			time.Sleep(3 * time.Second)
+			<-done
+			router.Shutdown()
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
-			router := &HandleT{}
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 
 			gaPayload := `{}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -235,20 +277,27 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
-			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList)
+			workspaceCountOut := workspaceCount
+
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
-				})
+				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -264,35 +313,51 @@ var _ = Describe("Router", func() {
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
+
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
+
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+
+			done := make(chan struct{})
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(1))
-
-			time.Sleep(3 * time.Second)
+			<-done
+			router.Shutdown()
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
 			router_utils.JobRetention = time.Duration(24) * time.Hour
-			router := &HandleT{}
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
+			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -304,13 +369,25 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
-			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList)
+			workspaceCountOut := workspaceCount
+
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
+
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1).After(callGetAllJobs)
+
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1)
 
@@ -336,37 +413,39 @@ var _ = Describe("Router", func() {
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(0))
-
-			time.Sleep(3 * time.Second)
 		})
 	})
 
 	Context("Router Batching", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
-
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 
 		It("can batch jobs together", func() {
-			router := &HandleT{}
+			// Skip("FIXME skip this test for now")
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
-
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+
 			router.transformer = mockTransformer
 
-			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
 			router.enableBatching = true
 			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
+			router.routerTimeout = time.Duration(math.MaxInt64)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -383,7 +462,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
@@ -412,9 +491,16 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			jobsList := append(toRetryJobsList, unprocessedJobsList...)
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(jobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -423,7 +509,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).
+			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
 				DoAndReturn(
 					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 						assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
@@ -457,8 +543,11 @@ var _ = Describe("Router", func() {
 					})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-
-			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			done := make(chan struct{})
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -467,37 +556,42 @@ var _ = Describe("Router", func() {
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(3))
-
-			time.Sleep(3 * time.Second)
+			<-done
 
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
-			router := &HandleT{}
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
 			//Because we only allow one failure per job with this
-			router.maxFailedCountForJob = 5
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
-
-			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
+			router.maxFailedCountForJob = 5
 			router.enableBatching = true
 			noOfJobsToBatchInAWorker = 3
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -513,7 +607,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -541,19 +635,24 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(workspaceCountOut, map[string]float64{})
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Return(toRetryJobsList).Times(
+				1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
-			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
+			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
 					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
@@ -598,23 +697,29 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			done := make(chan struct{})
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Failed.State, "500", 0)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Failed.State, "500", 0)
+					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Waiting.State, "", 0)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).Times(1).After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(3))
-
-			time.Sleep(3 * time.Second)
+			<-done
 		})
 
 	})
@@ -623,8 +728,6 @@ var _ = Describe("Router", func() {
 		BeforeEach(func() {
 			maxStatusUpdateWait = 2 * time.Second
 			jobsBatchTimeout = 10 * time.Second
-			// crash recovery check
-			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 		})
 		/*
 			Router transform
@@ -642,22 +745,24 @@ var _ = Describe("Router", func() {
 			[5] should be sent
 		*/
 		It("can transform jobs at router", func() {
-			router := &HandleT{}
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router.transformer = mockTransformer
-
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
+			router.transformer = mockTransformer
 			noOfJobsToBatchInAWorker = 5
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -674,7 +779,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -729,9 +834,15 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(
+				callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -740,9 +851,9 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[2], statuses[3], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[3], statuses[4], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
-			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
+			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
 					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
@@ -822,18 +933,25 @@ var _ = Describe("Router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			done := make(chan struct{})
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).AnyTimes().After(callAcquireLocks)
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).AnyTimes().After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().AnyTimes().After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).AnyTimes().After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(5))
-
-			time.Sleep(9 * time.Second)
+			router.Shutdown()
+			<-done
 		})
 
 		/*
@@ -847,22 +965,25 @@ var _ = Describe("Router", func() {
 				[3] should be dropped
 		*/
 		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
-			router := &HandleT{}
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
-
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			router := &HandleT{
+				Reporting:    &reportingNOOP{},
+				MultitenantI: mockMultitenantHandle,
+				netHandle:    mockNetHandle,
+			}
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
-			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
 			noOfJobsToBatchInAWorker = 3
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -879,7 +1000,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -908,18 +1029,23 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			var workspaceCount = map[string]int{}
+			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
+
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount,
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
-			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
+			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
 					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
@@ -970,18 +1096,25 @@ var _ = Describe("Router", func() {
 					}
 				})
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			done := make(chan struct{})
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).AnyTimes().After(callAcquireLocks)
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).AnyTimes().After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().AnyTimes().After(callCommitTransaction)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().DoAndReturn(
+				func() {
+					close(done)
+				},
+			).AnyTimes().After(callCommitTransaction)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(3))
-
-			time.Sleep(9 * time.Second)
+			router.Shutdown()
+			<-done
 		})
 	})
 })

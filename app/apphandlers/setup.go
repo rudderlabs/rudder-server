@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -112,7 +113,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableProcessor {
 		return
 	}
@@ -124,13 +125,13 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 
 	var processorInstance = processor.NewProcessor()
 	processor.ProcessorManagerSetup(processorInstance)
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableRouter {
 		return
 	}
@@ -142,17 +143,41 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB
 
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
-	monitorDestRouters(ctx, routerDB, batchRouterDB, procErrorDB, reporting)
+
+	routerFactory := router.Factory{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		Reporting:     reporting,
+		Multitenant:   multitenantStat,
+		RouterDB:      routerDB,
+		ProcErrorDB:   procErrorDB,
+	}
+
+	batchrouterFactory := batchrouter.Factory{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		Reporting:     reporting,
+		Multitenant:   multitenantStat,
+		ProcErrorDB:   procErrorDB,
+		RouterDB:      batchRouterDB,
+	}
+
+	monitorDestRouters(ctx, routerFactory, batchrouterFactory)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-
 	cleanup := make([]func(), 0)
+
+	//Crash recover routerDB, batchRouterDB
+	//Note: The following cleanups can take time if there are too many
+	//rt / batch_rt tables and there would be a delay readin from channel `ch`
+	//However, this shouldn't be the problem since backend config pushes config
+	//to its subscribers in separate goroutines to prevent blocking.
+	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	batchrouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
 
 loop:
 	for {
@@ -166,25 +191,23 @@ loop:
 				for _, destination := range source.Destinations {
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					//For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							var brt batchrouter.HandleT
-							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
 							brt.Start()
 							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+							router := routerFactory.New(destination.DestinationDefinition)
 							router.Start()
 							cleanup = append(cleanup, router.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
+							dstToRouter[destination.DestinationDefinition.Name] = router
 						}
 					}
 				}

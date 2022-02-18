@@ -1,11 +1,11 @@
 package integrations
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -17,6 +17,8 @@ import (
 )
 
 var (
+	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 	destTransformURL      string
 	postParametersTFields []string
 )
@@ -69,7 +71,7 @@ type TransResponseT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := json.Unmarshal(input, &integrationStat)
+	err := jsonfast.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -79,7 +81,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := json.Unmarshal(input, &integrationStats)
+	err := jsonfast.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -92,7 +94,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := json.Marshal(transformRawParams)
+	transformRaw, err := jsonfast.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}
@@ -166,7 +168,7 @@ func GetTransformerURL() string {
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	if misc.Contains(warehouse.WarehouseDestinations, destType) {
+	if misc.ContainsString(warehouse.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
