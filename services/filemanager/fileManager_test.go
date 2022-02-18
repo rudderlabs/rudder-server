@@ -176,9 +176,9 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("files list: ", fileList)
 
-	m.Run()
+	code := m.Run()
 	blockOnHold()
-	return 0
+	return code
 }
 
 func TestFileManager(t *testing.T) {
