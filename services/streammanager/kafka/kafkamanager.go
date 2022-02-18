@@ -149,10 +149,12 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
-		tlsConfig := NewTLSConfig(caCertificate)
-		if tlsConfig != nil {
-			config.Net.TLS.Config = tlsConfig
-			config.Net.TLS.Enable = true
+		config.Net.TLS.Enable = true
+		if caCertificate != "" {
+			tlsConfig := NewTLSConfig(caCertificate)
+			if tlsConfig != nil {
+				config.Net.TLS.Config = tlsConfig
+			}
 		}
 		if destConfig.UseSASL {
 			// SASL is enabled only with SSL
