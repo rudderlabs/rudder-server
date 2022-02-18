@@ -39,7 +39,7 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	}
 
 	endpoint := "blob.core.windows.net"
-	if manager.Config.EndPoint != nil {
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		endpoint = *manager.Config.EndPoint
 	}
 
