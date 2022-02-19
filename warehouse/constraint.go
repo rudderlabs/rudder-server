@@ -48,13 +48,13 @@ func Init6() {
 		},
 		"SNOWFLAKE": []ConstraintsI{
 			&IndexConstraintT{
-				TableName:    "rudder_identity_merge_rules",
+				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "merge_property_1_value",
 				IndexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
 				Limit:        512,
 			},
 			&IndexConstraintT{
-				TableName:    "rudder_identity_merge_rules",
+				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "merge_property_2_value",
 				IndexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
 				Limit:        512,
@@ -101,6 +101,6 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 	}
 	return &ConstraintsViolationT{
 		isViolated:         concatenatedLength > ic.Limit,
-		violatedIdentifier: fmt.Sprintf(`%s-%s-`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
+		violatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
 	}
 }
