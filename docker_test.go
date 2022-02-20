@@ -59,10 +59,10 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	KafkaContainer               *destination.KafkaResource
-	RedisContainer				 *destination.RedisResource
-	PostgresContainer			 *destination.PostgresResource
-	TransformerContainer		 *destination.TransformerResource
-	MINIOContainer 				 *destination.MINIOResource
+	RedisContainer               *destination.RedisResource
+	PostgresContainer            *destination.PostgresResource
+	TransformerContainer         *destination.TransformerResource
+	MINIOContainer               *destination.MINIOResource
 )
 
 type WebhookRecorder struct {
@@ -315,7 +315,7 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
 
-	RedisContainer, err = destination.SetupRedis(pool , cleanup)
+	RedisContainer, err = destination.SetupRedis(pool, cleanup)
 	if err != nil {
 		return 0, fmt.Errorf("setup Redis Destination container: %w", err)
 	}
