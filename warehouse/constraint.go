@@ -49,14 +49,14 @@ func Init6() {
 		"SNOWFLAKE": []ConstraintsI{
 			&IndexConstraintT{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
-				ColumnName:   "merge_property_1_value",
-				IndexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
+				ColumnName:   "MERGE_PROPERTY_1_VALUE",
+				IndexColumns: []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE"},
 				Limit:        512,
 			},
 			&IndexConstraintT{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
-				ColumnName:   "merge_property_2_value",
-				IndexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
+				ColumnName:   "MERGE_PROPERTY_2_VALUE",
+				IndexColumns: []string{"MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"},
 				Limit:        512,
 			},
 		},
