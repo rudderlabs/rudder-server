@@ -745,7 +745,7 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 			hasID = true
 		}
 		if !hasReceivedAt {
-			receivedAt = time.Now()
+			receivedAt = time.Now().Format(misc.RFC3339Milli)
 			hasReceivedAt = true
 		}
 	}
