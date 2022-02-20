@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
+	"github.com/phayes/freeport"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"log"
 	"os"
+	"strconv"
 )
 
 type ClickHouseClusterResource struct {
@@ -118,6 +120,14 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		panic(fmt.Errorf("could not get working directory: %s", err.Error()))
+	}
+
+	for i, resource := range chClusterTest.Resources {
+		freePort, err := freeport.GetFreePort()
+		if err != nil {
+			panic(fmt.Errorf("could not get free port for clickhouse resource:%d with error: %s", i, err.Error()))
+		}
+		resource.Port = strconv.Itoa(freePort)
 	}
 
 	var chSetupError error
