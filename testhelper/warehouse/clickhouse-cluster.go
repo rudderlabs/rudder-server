@@ -249,7 +249,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	if chSetupError != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("could not connect to WareHouse ClickHouse Cluster: %s", chSetupError.Error()))
+		panic(fmt.Errorf("could not connect to warehouse clickhouse cluster: %s", chSetupError.Error()))
 	}
 
 	cleanup = purgeResources
