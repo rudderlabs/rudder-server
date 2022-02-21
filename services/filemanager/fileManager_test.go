@@ -185,6 +185,7 @@ func TestFileManager(t *testing.T) {
 
 	tests := []struct {
 		name     string
+		skip     string
 		destName string
 		config   map[string]interface{}
 	}{
@@ -247,6 +248,7 @@ func TestFileManager(t *testing.T) {
 			},
 		},
 		{
+			skip:     "storage emulator is not stable",
 			name:     "testing GCS filemanager functionality",
 			destName: "GCS",
 			config: map[string]interface{}{
@@ -262,6 +264,9 @@ func TestFileManager(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip != "" {
+				t.Skip(tt.skip)
+			}
 			fmFactory := filemanager.FileManagerFactoryT{}
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: tt.destName,
