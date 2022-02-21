@@ -130,7 +130,6 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
-	hosts := make([]string, 0)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
 	}
