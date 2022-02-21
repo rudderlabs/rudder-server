@@ -109,7 +109,7 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("bucket created successfully")
 
-	//Running Azure emulator, Azurite.
+	// Running Azure emulator, Azurite.
 	AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "mcr.microsoft.com/azure-storage/azurite",
 		Tag:        "latest",
@@ -322,6 +322,7 @@ func TestFileManager(t *testing.T) {
 			}
 			defer os.Remove(DownloadedFileName)
 			err = fm.Download(filePtr, key)
+
 			require.NoError(t, err, "expected no error")
 			filePtr.Close()
 

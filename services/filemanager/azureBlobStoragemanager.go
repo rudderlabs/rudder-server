@@ -46,17 +46,17 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	baseURL := url.URL{
 		Scheme: protocol,
 		Host:   fmt.Sprintf("%s.%s", manager.Config.AccountName, endpoint),
-		Path:   manager.Config.Container,
 	}
+
 	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
 		baseURL.Host = endpoint
-		baseURL.Path = fmt.Sprintf("/%s/%s/", manager.Config.AccountName, manager.Config.Container)
+		baseURL.Path = fmt.Sprintf("/%s/", manager.Config.AccountName)
 	}
 
 	return &baseURL
 }
 
-func (manager *AzureBlobStorageManager) getContainerURLOld() (azblob.ContainerURL, error) {
+func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
 		return azblob.ContainerURL{}, errors.New("no container configured")
 	}
@@ -76,45 +76,8 @@ func (manager *AzureBlobStorageManager) getContainerURLOld() (azblob.ContainerUR
 
 	// From the Azure portal, get your storage account blob service URL endpoint.
 	baseURL := manager.getBaseURL()
-
-	containerURL := azblob.NewContainerURL(*baseURL, p)
-
-	return containerURL, nil
-}
-
-func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
-	if manager.Config.Container == "" {
-		return azblob.ContainerURL{}, errors.New("no container configured")
-	}
-
-	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if len(accountName) == 0 || len(accountKey) == 0 {
-		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
-	}
-
-	// Create a default request pipeline using your storage account name and account key.
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
-	if err != nil {
-		return azblob.ContainerURL{}, err
-	}
-
-	// Create a request pipeline that is used to process HTTP(S) requests and responses. It requires
-	// your account credentials. In more advanced scenarios, you can configure telemetry, retry policies,
-	// logging, and other options. Also, you can configure multiple request pipelines for different scenarios.
-	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
-
-	// From the Azure portal, get your Storage account blob service URL endpoint.
-	// The URL typically looks like this:
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net", accountName))
-
-	// Create an ServiceURL object that wraps the service URL and a request pipeline.
-	serviceURL := azblob.NewServiceURL(*u, p)
-
-	// This example shows several common operations just to get you started.
-
-	// Create a URL that references a to-be-created container in your Azure Storage account.
-	// This returns a ContainerURL object that wraps the container's URL and a request pipeline (inherited from serviceURL)
-	containerURL := serviceURL.NewContainerURL(manager.Config.Container) // Container names require lowercase
+	serviceURL := azblob.NewServiceURL(*baseURL, p)
+	containerURL := serviceURL.NewContainerURL(manager.Config.Container)
 
 	return containerURL, nil
 }
@@ -226,14 +189,12 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://account-name.blob.core.windows.net/container-name/key - >> key
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {
-	baseURL := manager.getBaseURL()
-	strToken := strings.Split(location, baseURL.Path)
+	strToken := strings.Split(location, fmt.Sprintf("%s/", manager.Config.Container))
 	return strToken[len(strToken)-1], nil
 }
 
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
-	baseURL := manager.getBaseURL()
-	str := strings.Split(location, baseURL.Path)
+	str := strings.Split(location, fmt.Sprintf("%s/", manager.Config.Container))
 	return str[len(str)-1]
 }
 
