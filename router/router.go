@@ -69,7 +69,7 @@ type HandleDestOAuthRespParamsT struct {
 	workerId       int
 	trRespStCd     int
 	trRespBody     string
-	accessToken    string
+	secret         json.RawMessage
 }
 
 //HandleT is the handle to this module.
@@ -535,7 +535,7 @@ func (worker *workerT) workerProcess() {
 					})
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
 					if tokenStatusCode == http.StatusOK {
-						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
+						jobMetadata.Secret = accountSecretInfo.Account.Secret
 					} else {
 						worker.rt.logger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
 					}
@@ -773,14 +773,13 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 									pkgLogger.Debugf(`Sending for OAuth destination`)
 									// Token from header of the request
-									token := getTokenFromHeader(val.Headers)
 									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
 										ctx:            ctx,
 										destinationJob: destinationJob,
 										workerId:       worker.workerID,
 										trRespStCd:     respStatusCode,
 										trRespBody:     respBodyTemp,
-										accessToken:    token,
+										secret:         destinationJob.JobMetadataArray[0].Secret,
 									})
 								}
 							} else {
@@ -2371,7 +2370,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
-				AccessToken:     params.accessToken,
+				Secret:          params.secret,
 				WorkspaceId:     workspaceId,
 				AccountId:       rudderAccountId,
 				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
@@ -2438,13 +2437,4 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
 	}
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
-}
-
-func getTokenFromHeader(headers map[string]interface{}) string {
-	authHeader, ok := headers["Authorization"]
-	if !ok {
-		return ""
-	}
-	authArr := strings.Split(authHeader.(string), " ")
-	return strings.TrimSpace(authArr[1])
 }
