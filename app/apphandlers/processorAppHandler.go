@@ -30,6 +30,8 @@ import (
 
 //ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
+	ctx            context.Context
+	options        *app.Options
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
@@ -207,4 +209,20 @@ func startHealthWebHandler(ctx context.Context) error {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, &gatewayDB)
+}
+
+func (processor *ProcessorApp) Run(ctx context.Context) error {
+	return nil
+}
+
+func (processor *ProcessorApp) Start()  {
+	processor.StartRudderCore(processor.ctx, processor.options)
+}
+
+func (processor *ProcessorApp) Stop()  {
+	// Implement the stop logic here
+}
+
+func (processor *ProcessorApp) Status()  {
+	// Logic to get the current status of the app
 }

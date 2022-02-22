@@ -47,6 +47,11 @@ type AppHandler interface {
 	StartRudderCore(context.Context, *app.Options) error
 }
 
+type Apps struct {
+	Processor *ProcessorApp
+	Gateway   *GatewayApp
+}
+
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
 	var handler AppHandler
 	switch appType {
@@ -61,6 +66,13 @@ func GetAppHandler(application app.Interface, appType string, versionHandler fun
 	}
 
 	return handler
+}
+
+func CreateApps(versionHandler func(w http.ResponseWriter, r *http.Request)) *Apps {
+	return &Apps{
+		Processor: &ProcessorApp{VersionHandler: versionHandler},
+		Gateway: &GatewayApp{VersionHandler: versionHandler},
+	}
 }
 
 func Init2() {
