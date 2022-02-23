@@ -3,10 +3,10 @@ module github.com/rudderlabs/rudder-server
 go 1.16
 
 require (
-	cloud.google.com/go/bigquery v1.8.0
+	cloud.google.com/go/bigquery v1.28.0
 	cloud.google.com/go/kms v1.3.0 // indirect
 	cloud.google.com/go/pubsub v1.3.1
-	cloud.google.com/go/storage v1.10.0
+	cloud.google.com/go/storage v1.18.2
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
