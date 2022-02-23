@@ -286,10 +286,10 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 		if err != nil {
 			return nil, err
 		}
-
+		userId, _ := data["userId"].(string)
 		msg := &sarama.ProducerMessage{
 			Topic:     topic,
-			Key:       sarama.StringEncoder(data["userId"].(string)),
+			Key:       sarama.StringEncoder(userId),
 			Value:     sarama.StringEncoder(message),
 			Timestamp: timestamp,
 		}
