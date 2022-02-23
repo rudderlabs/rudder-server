@@ -244,6 +244,7 @@ func Run(ctx context.Context) {
 	application.Setup()
 
 	apps := apphandlers.CreateApps(versionHandler)
+	// dont creat all the apps
 	cm, _ = clustermanager.NewClusterManager(ctx, apps)
 	_ = cm.Run(ctx)
 

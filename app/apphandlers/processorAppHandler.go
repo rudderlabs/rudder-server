@@ -3,6 +3,7 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/processor"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,6 +33,7 @@ import (
 type ProcessorApp struct {
 	ctx            context.Context
 	options        *app.Options
+	processor      *processor.HandleT
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
@@ -40,15 +42,18 @@ var (
 	gatewayDB         jobsdb.HandleT
 	batchRouterDB     jobsdb.HandleT
 	procErrorDB       jobsdb.HandleT
+	routerDB          jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	webPort           int
 	MaxHeaderBytes    int
+	reportingI        types.ReportingI
+	multitenantStats  multitenant.MultiTenantI
 )
 
-func (processor *ProcessorApp) GetAppType() string {
+func (p *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
@@ -65,7 +70,7 @@ func loadConfigHandler() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (p *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreDBValidator()
@@ -75,8 +80,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	g, ctx := errgroup.WithContext(ctx)
 
 	//Setting up reporting client
-	if processor.App.Features().Reporting != nil {
-		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	if p.App.Features().Reporting != nil {
+		reporting := p.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnag(func() error {
 			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
@@ -89,15 +94,15 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := processor.App.Options().MigrationMode
+	migrationMode := p.App.Options().MigrationMode
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
 
-	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
+	//var routerDB jobsdb.HandleT = jobsdb.HandleT{}
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+	//var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
@@ -116,17 +121,18 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	reportingI := processor.App.Features().Reporting.GetReportingInstance()
+	reportingI = p.App.Features().Reporting.GetReportingInstance()
 
-	if processor.App.Features().Migrator != nil {
+	if p.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				g.Go(func() error {
-					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-
-					return nil
-				})
+				//g.Go(func() error {
+				//	clearDB := false
+				//	StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+				//
+				//	return nil
+				//})
+				p.Start()
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
@@ -137,9 +143,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			enableRouter = false
 			enableProcessor = false
 
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
+			p.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				p.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -151,20 +157,17 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
-	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
+	p.Start()
 	g.Go(func() error {
 		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 
-	if enableReplay && processor.App.Features().Replay != nil {
+	if enableReplay && p.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
+		p.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
 	g.Go(func() error {
@@ -176,7 +179,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
+func (p *ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
@@ -211,18 +214,26 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, &gatewayDB)
 }
 
-func (processor *ProcessorApp) Run(ctx context.Context) error {
+func (p *ProcessorApp) Run(ctx context.Context) error {
+	_ = p.StartRudderCore(ctx, p.options)
 	return nil
 }
 
-func (processor *ProcessorApp) Start()  {
-	processor.StartRudderCore(processor.ctx, processor.options)
+func (p *ProcessorApp) Start() {
+	g, ctx := errgroup.WithContext(p.ctx)
+	g.Go(func() error {
+		p.StartProcessor(ctx, &p.options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB,
+			&procErrorDB, reportingI, multitenantStats)
+		return nil
+	})
+	g.Wait()
 }
 
-func (processor *ProcessorApp) Stop()  {
-	// Implement the stop logic here
+func (p *ProcessorApp) Stop() {
+	p.processor.Shutdown()
+	// maybe use context here, don't use the existing stop method.
 }
 
-func (processor *ProcessorApp) Status()  {
+func (p *ProcessorApp) Status() {
 	// Logic to get the current status of the app
 }

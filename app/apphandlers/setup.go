@@ -125,7 +125,30 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func (p *ProcessorApp)StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB,
+	batchRouterDB,
+	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+	if !enableProcessor {
+		return
+	}
+
+	if !processorLoaded.First() {
+		pkgLogger.Debug("processor started by an other go routine")
+		return
+	}
+
+	var processorInstance = processor.NewProcessor()
+	processor.ProcessorManagerSetup(processorInstance)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
+	p.processor = processorInstance
+	defer processorInstance.Shutdown()
+	processorInstance.Start(ctx)
+}
+
+//StartProcessor atomically starts processor process if not already started
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB,
+	batchRouterDB,
+	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableProcessor {
 		return
 	}

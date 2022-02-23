@@ -1,4 +1,5 @@
 package clustermanager
+// seperate out legacy and dynamic one
 
 import (
 	"context"
@@ -31,12 +32,10 @@ func (dcm *DynamicClusterManager) Init() {
 
 func NewClusterManager(ctx context.Context, apps *apphandlers.Apps) (ClusterManager, error) {
 	// create new cluster manager based on environment variable
-	var cm ClusterManager
-	cm = &LegacyClusterManager{Apps: *apps, Ctx: ctx}
+	return &LegacyClusterManager{Apps: *apps, Ctx: ctx}, nil
 	// Decide which cluster manager needs to be used
 	// Initiate that cluster manager
 	// do dependency stuff for that cluster manager
-	return cm, nil
 }
 
 func (lcm *LegacyClusterManager) GetExpectedState() (string, error) {
