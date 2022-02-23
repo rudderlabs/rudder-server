@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/pubsub v1.3.1
 	cloud.google.com/go/storage v1.10.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
-	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/ClickHouse/clickhouse-go v1.5.1
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -29,7 +28,7 @@ require (
 	github.com/go-ini/ini v1.63.2 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v4.2.0+incompatible
-	github.com/golang-migrate/migrate/v4 v4.11.0
+	github.com/golang-migrate/migrate/v4 v4.15.1
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
 	github.com/gomodule/redigo v1.8.5
@@ -47,7 +46,7 @@ require (
 	github.com/minio/minio-go/v6 v6.0.57
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.10.1
+	github.com/onsi/gomega v1.10.3
 	github.com/opencontainers/runc v1.1.0 // indirect
 	github.com/ory/dockertest v3.3.5+incompatible
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
@@ -66,6 +65,7 @@ require (
 	github.com/tidwall/gjson v1.10.2
 	github.com/tidwall/sjson v1.0.4
 	github.com/xdg/scram v1.0.3
+	github.com/xdg/stringprep v1.0.0 // indirect
 	github.com/xitongsys/parquet-go v1.6.1-0.20210531003158-8ed615220b7d
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/automaxprocs v1.4.0
@@ -79,5 +79,4 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gotest.tools v2.2.0+incompatible // indirect
 )
