@@ -435,7 +435,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	pkgLogger.Infof(fmt.Sprintf("RS: Starting create table for users with sqlStatement: %s", sqlStatement))
+	pkgLogger.Infof("RS: Starting create table for users with sqlStatement: %s", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
@@ -450,7 +450,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 
-	pkgLogger.Infof(fmt.Sprintf("RS: Starting dupup table for users using delete sqlStatement: %s", sqlStatement))
+	pkgLogger.Infof("RS: Starting dedup for users table using delete sqlStatement: %s", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
@@ -480,7 +480,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	pkgLogger.Infof("RS: Completed records for table:%s\n", warehouseutils.UsersTable, sqlStatement)
+	pkgLogger.Infof("RS: Completed records for table:%s", warehouseutils.UsersTable)
 	return
 }
 
