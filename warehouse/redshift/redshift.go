@@ -435,7 +435,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	pkgLogger.Infof("RS: Starting create table for users with sqlStatement: %s", sqlStatement)
+	pkgLogger.Debugf("RS: Starting create table for users with sqlStatement: %s", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
@@ -444,13 +444,13 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	pkgLogger.Infof("RS: Competed create table for users")
+	pkgLogger.Debugf("RS: Competed create table for users")
 	defer rs.dropStagingTables([]string{stagingTableName})
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 
-	pkgLogger.Infof("RS: Starting dedup for users table using delete sqlStatement: %s", sqlStatement)
+	pkgLogger.Debugf("RS: Starting dedup for users table using delete sqlStatement: %s", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
@@ -459,7 +459,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	pkgLogger.Infof("RS: Competed dedup table for users")
+	pkgLogger.Debugf("RS: Competed dedup table for users")
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
@@ -471,7 +471,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	pkgLogger.Infof("RS: Inserted records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	pkgLogger.Debugf("RS: Inserted records for table:%s using staging table: %s", warehouseutils.UsersTable, sqlStatement)
 
 	err = tx.Commit()
 	if err != nil {
