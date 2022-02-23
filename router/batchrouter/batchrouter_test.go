@@ -94,12 +94,13 @@ func (c *testContext) Setup() {
 	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
+		})
+	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
+	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
