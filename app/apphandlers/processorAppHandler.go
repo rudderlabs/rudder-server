@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"golang.org/x/sync/errgroup"
@@ -35,7 +36,6 @@ type ProcessorApp struct {
 
 var (
 	gatewayDB         jobsdb.HandleT
-	routerDB          jobsdb.HandleT
 	batchRouterDB     jobsdb.HandleT
 	procErrorDB       jobsdb.HandleT
 	ReadTimeout       time.Duration
@@ -88,10 +88,14 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := processor.App.Options().MigrationMode
-
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
+
+	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
+
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
+	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
@@ -103,26 +107,28 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
+
+		if config.GetBool("EnableMultitenancy", false) {
+			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
+			multitenantStats = multitenant.NewStats(tenantRouterDB)
+		}
 	}
 
-	var reportingI types.ReportingI
-	if processor.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-		reportingI = processor.App.Features().Reporting.GetReportingInstance()
-	}
+	reportingI := processor.App.Features().Reporting.GetReportingInstance()
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				g.Go(func() error {
 					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 
 					return nil
 				})
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
-					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				})
 			}
@@ -131,7 +137,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -144,11 +150,11 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}))
 
 	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 	g.Go(func() error {
-		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 

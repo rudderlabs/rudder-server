@@ -184,6 +184,7 @@ func TestJobsDB(t *testing.T) {
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   "testWorkspace",
 	}
 
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
@@ -254,6 +255,7 @@ func TestJobsDB(t *testing.T) {
 				RetryTime:     n,
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				WorkspaceId:   "testWorkspace",
 			}
 		}
 		t.Log("Mark some jobs as failed")
@@ -342,6 +344,7 @@ func TestJobsDB(t *testing.T) {
 					RetryTime:     n,
 					ErrorResponse: []byte(`{"success":"OK"}`),
 					Parameters:    []byte(`{}`),
+					WorkspaceId:   "testWorkspace",
 				}
 			}
 			t.Log("Mark all jobs as failed")
@@ -431,6 +434,7 @@ func BenchmarkJobsdb(b *testing.B) {
 						ErrorCode:     "202",
 						ErrorResponse: []byte(`{"success":"OK"}`),
 						Parameters:    []byte(`{}`),
+						WorkspaceId:   "testWorkspace",
 					}
 				}
 
