@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/app/cluster-manager"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
 
@@ -100,7 +99,6 @@ var (
 	IdleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
-	cm                        clustermanager.ClusterManager
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -242,10 +240,6 @@ func Run(ctx context.Context) {
 
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
-	//appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	//apps := apphandlers.CreateApps("PROCESSOR", versionHandler)
-	//cm, _ = clustermanager.NewClusterManager(ctx, apps)
-
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)

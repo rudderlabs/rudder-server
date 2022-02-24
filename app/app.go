@@ -152,4 +152,3 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
 	w.Write([]byte(healthVal))
 }
-
