@@ -317,10 +317,6 @@ func isJobTerminated(status int) bool {
 		return false
 	}
 
-	if status != types.RouterTimedOutStatusCode {
-		return false
-	}
-
 	return status >= 200 && status < 500
 }
 
