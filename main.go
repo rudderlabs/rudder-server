@@ -242,11 +242,9 @@ func Run(ctx context.Context) {
 
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
-
-	apps := apphandlers.CreateApps(versionHandler)
-	// dont creat all the apps
-	cm, _ = clustermanager.NewClusterManager(ctx, apps)
-	_ = cm.Run(ctx)
+	//appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	//apps := apphandlers.CreateApps("PROCESSOR", versionHandler)
+	//cm, _ = clustermanager.NewClusterManager(ctx, apps)
 
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
@@ -311,6 +309,9 @@ func Run(ctx context.Context) {
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
+			//g.Go(misc.WithBugsnag(func() error {
+			//	return cm.Run(ctx)
+			//}))
 			g.Go(misc.WithBugsnag(func() error {
 				return appHandler.StartRudderCore(ctx, options)
 			}))

@@ -126,13 +126,12 @@ func (p *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if p.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				//g.Go(func() error {
-				//	clearDB := false
-				//	StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-				//
-				//	return nil
-				//})
-				p.Start()
+				g.Go(func() error {
+					clearDB := false
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+
+					return nil
+				})
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
@@ -157,7 +156,10 @@ func (p *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
-	p.Start()
+	g.Go(func() error {
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+		return nil
+	})
 	g.Go(func() error {
 		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
@@ -212,28 +214,4 @@ func startHealthWebHandler(ctx context.Context) error {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, &gatewayDB)
-}
-
-func (p *ProcessorApp) Run(ctx context.Context) error {
-	_ = p.StartRudderCore(ctx, p.options)
-	return nil
-}
-
-func (p *ProcessorApp) Start() {
-	g, ctx := errgroup.WithContext(p.ctx)
-	g.Go(func() error {
-		p.StartProcessor(ctx, &p.options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB,
-			&procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
-	g.Wait()
-}
-
-func (p *ProcessorApp) Stop() {
-	p.processor.Shutdown()
-	// maybe use context here, don't use the existing stop method.
-}
-
-func (p *ProcessorApp) Status() {
-	// Logic to get the current status of the app
 }

@@ -3,7 +3,6 @@ package app
 //go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app Interface
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -154,9 +153,3 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 	w.Write([]byte(healthVal))
 }
 
-type LifeCycleManager interface {
-	Run(ctx context.Context) error
-	Start()
-	Stop()
-	Status()
-}
