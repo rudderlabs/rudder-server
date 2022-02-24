@@ -2159,6 +2159,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
 	proc.logger.Info("Processor mainPipeline started")
 	proc.logger.Info("Processor subJobCount= ", subJobCount)
+	proc.logger.Info("Processor pipelineBufferedItems= ", pipelineBufferedItems)
+
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
