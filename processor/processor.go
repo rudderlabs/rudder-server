@@ -117,6 +117,8 @@ type HandleT struct {
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
+	mainCtx                        context.Context
+	currentCancel                  context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -263,8 +265,9 @@ func Init() {
 }
 
 // NewProcessor creates a new Processor intanstace
-func NewProcessor() *HandleT {
+func NewProcessor(ctx context.Context) *HandleT {
 	return &HandleT{
+		mainCtx:     ctx,
 		transformer: transformer.NewTransformer(),
 	}
 }

@@ -303,9 +303,6 @@ func Run(ctx context.Context) {
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
-			//g.Go(misc.WithBugsnag(func() error {
-			//	return cm.Run(ctx)
-			//}))
 			g.Go(misc.WithBugsnag(func() error {
 				return appHandler.StartRudderCore(ctx, options)
 			}))
