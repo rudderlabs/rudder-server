@@ -327,7 +327,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 			continue
 		}
 		if count <= 0 {
-			mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
+			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
 			continue
 		}
 		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, count, ds, params, true))
