@@ -3,7 +3,6 @@ package clustermanager
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/app/apphandlers"
 )
 
 type ClusterManager interface {
@@ -11,7 +10,7 @@ type ClusterManager interface {
 	Run(ctx context.Context) error
 }
 
-func NewClusterManager(ctx context.Context, application *apphandlers.CommonAppInterface) (ClusterManager, error) {
+func NewClusterManager(ctx context.Context) (ClusterManager, error) {
 	// create new cluster manager based on environment variable
 	// Decide which cluster manager needs to be used
 	// Initiate that cluster manager
