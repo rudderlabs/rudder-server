@@ -435,6 +435,7 @@ func (proc *HandleT) Shutdown() {
 var (
 	enablePipelining          bool
 	pipelineBufferedItems     int
+	subJobCount               int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
@@ -464,6 +465,8 @@ var (
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(0, &subJobCount, false, 1, "Processor.subJobCount")
+
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -2146,9 +2149,16 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 //
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
+	// file, err := os.OpenFile("cpuProfile.out", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0777)
+	// if err != nil {
+	// 	panic(fmt.Errorf("error while opening cpuProfile.out for writing profile: %w", err))
+	// }
+
+	// pprof.StartCPUProfile(file)
+
 	//waiting for reporting client setup
 	proc.logger.Info("Processor mainPipeline started")
-
+	proc.logger.Info("Processor subJobCount= ", subJobCount)
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
@@ -2210,14 +2220,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobSize := len(jobs) / 10
-				for i := 0; i < 9; i++ {
+				subJobSize := len(jobs) / subJobCount
+				for i := 0; i < subJobCount-1; i++ {
 					proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
 					chProc <- jobs[:subJobSize]
 					jobs = jobs[subJobSize:]
 				}
 				chProc <- jobs
-				proc.logger.Info("subjob i= ", 9, " sent with jobs count= ", len(jobs))
+				proc.logger.Info("subjob i= ", subJobCount-1, " sent with jobs count= ", len(jobs))
 			}
 		}
 	}()
@@ -2233,7 +2243,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 	triggerStore := make(chan int)
-	chStore := make(chan storeMessage, 10)
+	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -2243,7 +2253,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			proc.logger.Info("transformations triggered")
 			chStore <- proc.transformations(msg)
 			proc.logger.Info("len of chStore= ", len(chStore))
-			if len(chStore) == 10 {
+			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
 		}
@@ -2269,7 +2279,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			i := 0
 
 			for subJob := range chStore {
-				proc.logger.Info("merging subjob= ", 10-len(chStore))
+				proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
 				statusList = append(statusList, subJob.statusList...)
 				proc.logger.Info("statusList merged")
 				destJobs = append(destJobs, subJob.destJobs...)
