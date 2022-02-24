@@ -1,4 +1,4 @@
-package life_cycle_manager
+package lifecyclemanager
 
 import "context"
 

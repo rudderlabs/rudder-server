@@ -12,10 +12,10 @@ type ProcessorManagerI interface {
 }
 
 type ProcessorManagerT struct {
-	Processor *HandleT
+	Processor *Processor
 }
 
-func ProcessorManagerSetup(processor *HandleT) {
+func ProcessorManagerSetup(processor *Processor) {
 	pkgLogger.Info("setting up ProcessorManager.")
 	pm := new(ProcessorManagerT)
 

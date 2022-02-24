@@ -122,6 +122,7 @@ type JobsDB interface {
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalDeleteEntry(opID int64)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
+	TearDown()
 }
 
 /*
