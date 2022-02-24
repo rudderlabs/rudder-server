@@ -50,13 +50,13 @@ phases:
   post_build:
     commands:
       - docker push rudderstack/develop-rudder-server-enterprise:$VERSION
-reports:
-  GinkgoUnitTestReports:
-    files:
-      - "**/junit_*.xml"
-artifacts:
-  files:
-    - "**/*"
+# reports:
+#   GinkgoUnitTestReports:
+#     files:
+#       - "**/junit_*.xml"
+# artifacts:
+#   files:
+#     - "**/*"
 
 cache:
   paths: |
