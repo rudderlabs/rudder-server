@@ -848,7 +848,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		//elements in routerJobResponses have pointer to the right job.
 		_destinationJob := destinationJob
 
-		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 			//assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			//elements in routerJobResponses have pointer to the right destinationJobMetadata.
