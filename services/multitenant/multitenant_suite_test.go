@@ -1,4 +1,4 @@
-package filemanager_test
+package multitenant_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestFilemanager(t *testing.T) {
+func TestMultitenant(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Filemanager Suite")
+	RunSpecs(t, "Multitenant Suite")
 }

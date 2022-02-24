@@ -27,6 +27,13 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	return workspaceConfig.workspaceID
 }
 
+func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForSourceID(sourceID string) string {
+	workspaceConfig.workspaceIDLock.RLock()
+	defer workspaceConfig.workspaceIDLock.RUnlock()
+
+	return workspaceConfig.workspaceID
+}
+
 //GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
 func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceIDLock.RLock()

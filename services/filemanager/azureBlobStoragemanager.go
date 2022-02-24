@@ -31,6 +31,7 @@ func supressMinorErrors(err error) error {
 	}
 	return err
 }
+
 func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	protocol := "https"
 	if manager.Config.DisableSSL != nil && *manager.Config.DisableSSL {
@@ -38,18 +39,18 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	}
 
 	endpoint := "blob.core.windows.net"
-	if manager.Config.EndPoint != nil {
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		endpoint = *manager.Config.EndPoint
 	}
 
 	baseURL := url.URL{
 		Scheme: protocol,
 		Host:   fmt.Sprintf("%s.%s", manager.Config.AccountName, endpoint),
-		Path:   manager.Config.Container,
 	}
+
 	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
 		baseURL.Host = endpoint
-		baseURL.Path = fmt.Sprintf("/%s/%s/", manager.Config.AccountName, manager.Config.Container)
+		baseURL.Path = fmt.Sprintf("/%s/", manager.Config.AccountName)
 	}
 
 	return &baseURL
@@ -75,8 +76,8 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 
 	// From the Azure portal, get your storage account blob service URL endpoint.
 	baseURL := manager.getBaseURL()
-
-	containerURL := azblob.NewContainerURL(*baseURL, p)
+	serviceURL := azblob.NewServiceURL(*baseURL, p)
+	containerURL := serviceURL.NewContainerURL(manager.Config.Container)
 
 	return containerURL, nil
 }
@@ -188,14 +189,12 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://account-name.blob.core.windows.net/container-name/key - >> key
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {
-	baseURL := manager.getBaseURL()
-	strToken := strings.Split(location, baseURL.Path)
+	strToken := strings.Split(location, fmt.Sprintf("%s/", manager.Config.Container))
 	return strToken[len(strToken)-1], nil
 }
 
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
-	baseURL := manager.getBaseURL()
-	str := strings.Split(location, baseURL.Path)
+	str := strings.Split(location, fmt.Sprintf("%s/", manager.Config.Container))
 	return str[len(str)-1]
 }
 

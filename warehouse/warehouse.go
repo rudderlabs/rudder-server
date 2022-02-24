@@ -17,7 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
