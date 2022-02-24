@@ -708,14 +708,13 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
-				workspace := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
+				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspace":   workspace,
+					"workspace":   workspaceID,
 				})
-				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
 
