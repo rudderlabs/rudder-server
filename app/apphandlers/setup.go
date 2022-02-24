@@ -113,9 +113,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB,
-	routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI,
-	multitenantStat multitenant.MultiTenantI) {
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	if !enableProcessor {
 		return
 	}
