@@ -4,6 +4,7 @@ import (
 	"context"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -15,18 +16,27 @@ var (
 	procErrorDB      *jobsdb.HandleT
 	multitenantStats multitenant.MultiTenantI
 	reportingI       types.ReportingI
-	clearDb          *bool
+	clearDB          *bool
 )
 
 func (proc *HandleT) Run(ctx context.Context) error {
+	proc.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB,
+		reportingI, multitenantStats)
 	return nil
 }
 
 func (proc *HandleT) StartNew() {
 	multitenantStats = multitenant.NOOP
 	// Need to setup all the above variables, problem is those are dependent on Applications
-	proc.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDb,
-		reportingI, multitenantStats)
+	proc.gatewayDB = gatewayDB
+	proc.routerDB = routerDB
+	proc.batchRouterDB = batchRouterDB
+	proc.errorDB = procErrorDB
+	proc.reporting = reportingI
+	proc.multitenantI = multitenantStats
+	if enableDedup {
+		proc.dedupHandler = dedup.GetInstance(clearDB)
+	}
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
 	proc.Start(currentCtx)
