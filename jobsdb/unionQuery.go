@@ -22,6 +22,14 @@ type JobsDBStatusCache struct {
 	a    HandleT
 }
 
+var queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+	"state": "nonterminal",
+})
+
+var tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	"state": "nonterminal",
+})
+
 type MultiTenantJobsDB interface {
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 
@@ -139,23 +147,6 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, co
 	return sqlStatement
 }
 
-//
-func (mj *MultiTenantHandleT) printNumJobsByWorkspace(jobs []*JobT) {
-	if len(jobs) == 0 {
-		mj.logger.Debug("No Jobs found for this query")
-	}
-	workspaceJobCountMap := make(map[string]int)
-	for _, job := range jobs {
-		if _, ok := workspaceJobCountMap[job.WorkspaceId]; !ok {
-			workspaceJobCountMap[job.WorkspaceId] = 0
-		}
-		workspaceJobCountMap[job.WorkspaceId] += 1
-	}
-	for workspace, count := range workspaceJobCountMap {
-		mj.logger.Debug(workspace, `: `, count)
-	}
-}
-
 //All Jobs
 
 func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
@@ -172,11 +163,6 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	outJobs := make([]*JobT, 0)
 
 	var tablesQueried int
-	queryTime := stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
-		"state":    "nonterminal",
-		"module":   mj.tablePrefix,
-		"destType": params.CustomValFilters[0],
-	})
 
 	start := time.Now()
 	for _, ds := range dsList {
@@ -192,32 +178,8 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":    "nonterminal",
-		"module":   mj.tablePrefix,
-		"destType": params.CustomValFilters[0],
-	})
+
 	tablesQueriedStat.Gauge(tablesQueried)
-
-	//PickUp stats
-	var pickUpCountStat stats.RudderStats
-	workspaceCountStat := make(map[string]int)
-
-	for _, job := range outJobs {
-		if _, ok := workspaceCountStat[job.WorkspaceId]; !ok {
-			workspaceCountStat[job.WorkspaceId] = 0
-		}
-		workspaceCountStat[job.WorkspaceId] += 1
-	}
-
-	for workspace, jobCount := range workspaceCountStat {
-		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
-			"workspace": workspace,
-			"module":    mj.tablePrefix,
-			"destType":  params.CustomValFilters[0],
-		})
-		pickUpCountStat.Count(jobCount)
-	}
 
 	return outJobs
 }
@@ -314,7 +276,6 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
-	mj.printNumJobsByWorkspace(jobList)
 	return jobList
 }
 
