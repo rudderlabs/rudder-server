@@ -2279,46 +2279,48 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 			sourceDupStats := make(map[string]int)
 			i := 0
+			if len(chStore) > 1 {
+				proc.logger.Info("merging subjobs")
+				for subJob := range chStore {
+					proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
+					statusList = append(statusList, subJob.statusList...)
+					proc.logger.Info("statusList merged")
+					destJobs = append(destJobs, subJob.destJobs...)
+					proc.logger.Info("destJobs merged")
 
-			for subJob := range chStore {
-				proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
-				statusList = append(statusList, subJob.statusList...)
-				proc.logger.Info("statusList merged")
-				destJobs = append(destJobs, subJob.destJobs...)
-				proc.logger.Info("destJobs merged")
+					batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+					proc.logger.Info("batchDestJobs merged")
 
-				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
-				proc.logger.Info("batchDestJobs merged")
+					procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
+					proc.logger.Info("ProcErrorsJobs merged")
+					for id, job := range subJob.procErrorJobsByDestID {
+						// _, found := procErrorJobsByDestID[id]
+						// if !found {
+						// 	procErrorJobsByDestID[id] = []*jobsdb.JobT{}
+						// }
+						procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
+					}
+					proc.logger.Info("procErrorJobsByDestID merged")
 
-				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
-				proc.logger.Info("ProcErrorsJobs merged")
-				for id, job := range subJob.procErrorJobsByDestID {
-					// _, found := procErrorJobsByDestID[id]
-					// if !found {
-					// 	procErrorJobsByDestID[id] = []*jobsdb.JobT{}
-					// }
-					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
-				}
-				proc.logger.Info("procErrorJobsByDestID merged")
+					reportMetrics = append(reportMetrics, subJob.reportMetrics...)
+					for tag, count := range subJob.sourceDupStats {
+						sourceDupStats[tag] += count
+					}
+					proc.logger.Info("sourceDupStats merged")
 
-				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
-				for tag, count := range subJob.sourceDupStats {
-					sourceDupStats[tag] += count
-				}
-				proc.logger.Info("sourceDupStats merged")
+					for id := range subJob.uniqueMessageIds {
+						uniqueMessageIds[id] = struct{}{}
+					}
+					proc.logger.Info("uniqueMessageIds merged")
 
-				for id := range subJob.uniqueMessageIds {
-					uniqueMessageIds[id] = struct{}{}
-				}
-				proc.logger.Info("uniqueMessageIds merged")
-
-				totalEvents = subJob.totalEvents
-				if i == 0 {
-					start = subJob.start
-					i++
-				}
-				if len(chStore) == 0 {
-					break
+					totalEvents = subJob.totalEvents
+					if i == 0 {
+						start = subJob.start
+						i++
+					}
+					if len(chStore) == 0 {
+						break
+					}
 				}
 			}
 			proc.logger.Info("processed job merge complete... storing")
