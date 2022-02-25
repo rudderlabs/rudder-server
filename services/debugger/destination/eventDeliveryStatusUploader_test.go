@@ -212,7 +212,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is false", func() {
-			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
 					go func() {
@@ -220,8 +220,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 						c.configInitialised = true
 						close(channel)
 					}()
-				}).
-				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+				})
+			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+			mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
 
 			time.Sleep(1 * time.Second)
 			disableEventDeliveryStatusUploads = true
@@ -230,7 +231,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
 					go func() {
@@ -238,15 +239,16 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 						c.configInitialised = true
 						close(channel)
 					}()
-				}).
-				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+				})
+			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+			mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
 
 			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
 		})
 
 		It("records events", func() {
-			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
 					go func() {
@@ -254,15 +256,16 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 						c.configInitialised = true
 						close(channel)
 					}()
-				}).
-				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+				})
+			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+			mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
 
 			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeTrue())
 		})
 
 		It("transforms payload properly", func() {
-			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
 					go func() {
@@ -270,8 +273,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 						c.configInitialised = true
 						close(channel)
 					}()
-				}).
-				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+				})
+			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+			mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
 
 			time.Sleep(1 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
@@ -282,7 +286,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("sends empty json if transformation fails", func() {
-			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
 					go func() {
@@ -290,8 +294,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 						c.configInitialised = true
 						close(channel)
 					}()
-				}).
-				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+				})
+			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+			mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
 
 			time.Sleep(1 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}

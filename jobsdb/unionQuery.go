@@ -326,7 +326,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 		if mj.isEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
-		if count < 0 {
+		if count <= 0 {
 			mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 %s jobs for this workspace.", count, workspace, params.StateFilters[0])
 			continue
 		}
