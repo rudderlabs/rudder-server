@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type MultiTenantHandleT struct {
@@ -21,14 +19,6 @@ type JobsDBStatusCache struct {
 	once sync.Once
 	a    HandleT
 }
-
-var queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
-	"state": "nonterminal",
-})
-
-var tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-	"state": "nonterminal",
-})
 
 type MultiTenantJobsDB interface {
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
@@ -177,9 +167,9 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 		}
 	}
 
-	queryTime.SendTiming(time.Since(start))
+	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	tablesQueriedStat.Gauge(tablesQueried)
+	mj.tablesQueriedStat.Gauge(tablesQueried)
 
 	return outJobs
 }
