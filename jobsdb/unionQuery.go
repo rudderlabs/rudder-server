@@ -351,6 +351,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
+	//Probably should find a programatic way to generate this
 	stateQuery = "AND ((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
