@@ -694,6 +694,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
 	routerJobResponses := make([]*RouterJobResponse, 0)
+
+	sort.Slice(worker.destinationJobs, func(i, j int) bool {
+		return worker.destinationJobs[i].JobMetadataArray[0].JobID < worker.destinationJobs[j].JobMetadataArray[0].JobID
+	})
+
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
 		respBodyArr := make([]string, 0)
@@ -849,7 +854,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		//elements in routerJobResponses have pointer to the right job.
 		_destinationJob := destinationJob
 
-		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 			//assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			//elements in routerJobResponses have pointer to the right destinationJobMetadata.
@@ -892,7 +897,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 		routerJobResponse.status = &status
 
-		if !isSuccessStatus(respStatusCode) {
+		if !isJobTerminated(respStatusCode) {
 			if prevFailedJobID, ok := userToJobIDMap[destinationJobMetadata.UserID]; ok {
 				//This means more than two jobs of the same user are in the batch & the batch job is failed
 				//Only one job is marked failed and the rest are marked waiting
