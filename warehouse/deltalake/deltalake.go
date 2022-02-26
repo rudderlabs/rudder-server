@@ -698,7 +698,11 @@ func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) 
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 	tableLocation := dl.getTableLocationSql(name)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA %s;`, name, columnsWithDataTypes(columns, ""), tableLocation)
+	var partitionedSql string
+	if _, ok := columns["id"]; ok {
+		partitionedSql = `PARTITIONED BY(id)`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA %s %s;`, name, columnsWithDataTypes(columns, ""), tableLocation, partitionedSql)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
