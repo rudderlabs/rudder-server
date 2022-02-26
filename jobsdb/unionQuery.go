@@ -158,11 +158,14 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	for _, ds := range dsList {
 		jobs := mj.getUnionDS(ds, workspaceCount, params)
 		outJobs = append(outJobs, jobs...)
-		tablesQueried++
+		if len(jobs) > 0 {
+			tablesQueried++
+		}
+
 		if len(workspaceCount) == 0 {
 			break
 		}
-		if tablesQueried > maxDSQuerySize {
+		if tablesQueried >= maxDSQuerySize {
 			break
 		}
 	}

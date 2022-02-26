@@ -1892,7 +1892,7 @@ func (rt *HandleT) readAndProcess() int {
 	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize, rt.timeGained)
 	rt.workspaceCount = pickupMap
 	rt.timeGained = 0
-
+	rt.logger.Debugf("pickupMap: %+v", pickupMap)
 	combinedList := rt.jobsDB.GetAllJobs(rt.workspaceCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State, jobsdb.Waiting.State, jobsdb.NotProcessed.State}}, rt.maxDSQuerySize)
 
 	if len(combinedList) == 0 {
