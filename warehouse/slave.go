@@ -739,7 +739,17 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if (hasID && hasReceivedAt) || violatedConstraints.isViolated {
+	if violatedConstraints.isViolated {
+		if !hasID {
+			rowID = violatedConstraints.violatedIdentifier
+			hasID = true
+		}
+		if !hasReceivedAt {
+			receivedAt = time.Now().Format(misc.RFC3339Milli)
+			hasReceivedAt = true
+		}
+	}
+	if hasID && hasReceivedAt {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
