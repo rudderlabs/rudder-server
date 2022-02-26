@@ -16,6 +16,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
+	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -78,6 +79,7 @@ type testContext struct {
 	mockFileManager        *mocksFileManager.MockFileManager
 	mockConfigPrefix       string
 	mockFileObjects        []*filemanager.FileObject
+	mockMultitenantI       *mocksMultitenant.MockMultiTenantI
 }
 
 // Initiaze mocks and common expectations
@@ -89,14 +91,16 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockFileManagerFactory = mocksFileManager.NewMockFileManagerFactory(c.mockCtrl)
 	c.mockFileManager = mocksFileManager.NewMockFileManager(c.mockCtrl)
+	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
+		})
+	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
+	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
@@ -149,7 +153,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI)
 		})
 	})
 
@@ -162,7 +166,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI)
 			readPerDestination = false
 			setQueryFilters()
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
