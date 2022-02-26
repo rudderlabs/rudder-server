@@ -153,7 +153,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	outJobs := make([]*JobT, 0)
 
 	var tablesQueried int
-
+	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
 	start := time.Now()
 	for _, ds := range dsList {
 		jobs := mj.getUnionDS(ds, workspaceCount, params)
@@ -294,6 +294,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params GetQueryParamsT, order bool, workspaceCount map[string]int) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	stateFilters := params.StateFilters
 	var sqlStatement string
 
 	//some stats
@@ -307,6 +308,12 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 
 	//Probably should find a programatic way to generate this
 	stateQuery = "AND ((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
+
+	if len(stateFilters) > 0 {
+		stateQuery = "AND (" + constructStateQuery("job_latest_state", "job_state", stateFilters, "OR") + ")"
+	} else {
+		stateQuery = ""
+	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
