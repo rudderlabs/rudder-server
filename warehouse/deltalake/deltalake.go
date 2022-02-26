@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"strings"
 	"time"
@@ -216,7 +217,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	defer cancel()
 
 	// Creating grpc connection using timeout context
-	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
 		execTimeouts := stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
@@ -912,7 +913,7 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 
 	ctx := context.Background()
 
-	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
+	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
 		databricksBuildVersion = "Unable to create grpc connection to databricks."
@@ -945,7 +946,7 @@ func checkHealth() (err error) {
 	defer cancel()
 
 	// Creating grpc connection using timeout context
-	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return
 	}
