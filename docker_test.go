@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
+	"encoding/json"
 	_ "encoding/json"
 	"flag"
 	"fmt"
@@ -63,6 +64,8 @@ var (
 	PostgresContainer            *destination.PostgresResource
 	TransformerContainer         *destination.TransformerResource
 	MINIOContainer               *destination.MINIOResource
+	EventID                      string
+	VersionID                    string
 )
 
 type WebhookRecorder struct {
@@ -73,6 +76,12 @@ type WebhookRecorder struct {
 
 type User struct {
 	trait1 string `redis:"name"`
+}
+
+type eventSchemasObject struct {
+	EventID   string
+	EventType string
+	VersionID string
 }
 
 func NewWebhook() *WebhookRecorder {
@@ -199,6 +208,7 @@ func GetEvent(url string, method string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -266,6 +276,9 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
+		return
+	}
+	if res.Status != "200 OK" {
 		return
 	}
 	log.Println(string(body))
@@ -625,6 +638,7 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
+
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
@@ -778,6 +792,119 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	}
 
 	return consumers, errors
+}
+
+// Verify Event Models EndPoint
+func TestEventModels(t *testing.T) {
+	// GET /schemas/event-models
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Eventually(t, func() bool {
+		// Similarly, pole until the Event Schema Tables are updated
+		resBody, _ = GetEvent(url, method)
+		return resBody != "[]"
+	}, time.Minute, 10*time.Millisecond)
+	require.NotEqual(t, resBody, "[]")
+	b := []byte(resBody)
+	var eventSchemas []eventSchemasObject
+
+	err := json.Unmarshal(b, &eventSchemas)
+	if err != nil {
+		log.Println(err)
+	}
+	for k := range eventSchemas {
+		if eventSchemas[k].EventType == "page" {
+			EventID = eventSchemas[k].EventID
+		}
+	}
+	require.NotEqual(t, EventID, "")
+}
+
+// Verify Event Versions EndPoint
+func TestEventVersions(t *testing.T) {
+	// GET /schemas/event-versions
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, EventID)
+
+	b := []byte(resBody)
+	var eventSchemas []eventSchemasObject
+
+	err := json.Unmarshal(b, &eventSchemas)
+	if err != nil {
+		log.Println(err)
+	}
+	VersionID = eventSchemas[0].VersionID
+	log.Println("Test Schemas Event ID's VersionID: ", VersionID)
+}
+
+// Verify schemas/event-model/{EventID}/key-counts EndPoint
+func TestEventModelKeyCounts(t *testing.T) {
+	// GET schemas/event-model/{EventID}/key-counts
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-model/{EventID}/metadata EndPoint
+func TestEventModelMetadata(t *testing.T) {
+	// GET /schemas/event-model/{EventID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-version/{VersionID}/metadata EndPoint
+func TestEventVersionMetadata(t *testing.T) {
+	// GET /schemas/event-version/{VersionID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-version/{VersionID}/missing-keys EndPoint
+func TestEventVersionMissingKeys(t *testing.T) {
+	// GET /schemas/event-version/{VersionID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "originalTimestamp")
+	require.Contains(t, resBody, "sentAt")
+	require.Contains(t, resBody, "channel")
+	require.Contains(t, resBody, "integrations.All")
+}
+
+// Verify /schemas/event-models/json-schemas EndPoint
+func TestEventModelsJsonSchemas(t *testing.T) {
+	// GET /schemas/event-models/json-schemas
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Eventually(t, func() bool {
+		// Similarly, pole until the Event Schema Tables are updated
+		resBody, _ = GetEvent(url, method)
+		return resBody != "[]"
+	}, time.Minute, 10*time.Millisecond)
+	require.NotEqual(t, resBody, "[]")
+}
+
+// Verify beacon  EndPoint
+func TestBeaconBatch(t *testing.T) {
+	payload := strings.NewReader(`{
+		"batch":[
+			{
+			   "userId": "identified_user_id",
+			   "anonymousId":"anonymousId_1",
+			   "messageId":"messageId_1"
+			}
+		]
+	}`)
+	SendEvent(payload, "beacon/v1/batch", writeKey)
 }
 
 // Adding necessary sql functions which needs to be used during warehouse testing

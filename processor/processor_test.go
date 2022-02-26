@@ -66,15 +66,16 @@ func (c *testContext) Setup() {
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 
 	c.configInitialised = false
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 				c.configInitialised = true
 			}()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallback()).
+		})
+	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.dbReadBatchSize = 10000

@@ -131,13 +131,17 @@ func (c *testContext) Setup() {
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
-	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config"))
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+	mockCall := c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1)
+	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config")
+	mockCall.Do(func(interface{}) { tFunc() })
+
+	mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")).
+		})
+	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
+	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
@@ -222,7 +226,9 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", NormalUserID)
 
-			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
+			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
+			mockCall.Do(func(interface{}) { tFunc() })
 
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
@@ -364,76 +370,6 @@ var _ = Describe("Gateway", func() {
 				assertSingleMessageHandler(handlerType, handler)
 			}
 		}
-
-		//Commenting the following test
-		//This will be fixed and uncommented in user based request routing tests
-		// It("should process multiple requests to all endpoints (except batch) in a batch", func() {
-		// 	handlers := map[string]http.HandlerFunc{
-		// 		"alias":    gateway.webAliasHandler,
-		// 		"group":    gateway.webGroupHandler,
-		// 		"identify": gateway.webIdentifyHandler,
-		// 		"page":     gateway.webPageHandler,
-		// 	}
-
-		// 	handlerExpectation := func(handlerType string, handler http.HandlerFunc) *RequestExpectation {
-		// 		// we add the handler type in custom property of request's body, to check that the type field is set correctly while batching
-		// 		validBody := createValidBody("custom-property-type", handlerType)
-		// 		validRequest := authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody))
-
-		// 		return &RequestExpectation{
-		// 			request:        validRequest,
-		// 			handler:        handler,
-		// 			responseStatus: 200,
-		// 			responseBody:   "OK",
-		// 		}
-		// 	}
-
-		// 	callStore := c.mockJobsDB.
-		// 		EXPECT().StoreWithRetryEach(gomock.Any()).
-		// 		DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
-		// 			// will collect all message handler types, found in jobs send to Store function
-		// 			typesFound := make(map[string]bool, 4)
-
-		// 			// All jobs should belong to the same batchId
-		// 			expectedBatchID := nextBatchID()
-
-		// 			for _, job := range jobs {
-		// 				assertJobMetadata(job, 1, expectedBatchID)
-
-		// 				responseData := []byte(job.EventPayload)
-		// 				payload := gjson.GetBytes(responseData, "batch.0")
-
-		// 				assertJobBatchItem(payload)
-
-		// 				messageType := payload.Get("type").String()
-		// 				Expect(stripJobPayload(payload)).To(MatchJSON(createValidBody("custom-property-type", messageType)))
-
-		// 				typesFound[messageType] = true
-		// 			}
-
-		// 			// ensure all message handler types appear in jobs
-		// 			for t := range handlers {
-		// 				if t != "batch" {
-		// 					_, found := typesFound[t]
-		// 					Expect(found).To(BeTrue())
-		// 				}
-		// 			}
-
-		// 			c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
-
-		// 			return jobsToEmptyErrors(jobs)
-		// 		}).
-		// 		Times(1)
-
-		// 	expectations := []*RequestExpectation{}
-		// 	for t, h := range handlers {
-		// 		if t != "batch" {
-		// 			expectations = append(expectations, handlerExpectation(t, h))
-		// 		}
-		// 	}
-
-		// 	expectBatch(expectations)
-		// })
 	})
 
 	Context("Rate limits", func() {
@@ -449,9 +385,17 @@ var _ = Describe("Gateway", func() {
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
 			workspaceID := "some-workspace-id"
 
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall.Do(func(interface{}) { tFunc() })
+
+			mockCall = c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1)
+			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall.Do(func(interface{}) { tFunc() })
+
+			mockCall = c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall.Do(func(interface{}) { tFunc() })
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
@@ -459,8 +403,13 @@ var _ = Describe("Gateway", func() {
 		It("should reject messages if rate limit is reached for workspace", func() {
 			workspaceID := "some-workspace-id"
 
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall.Do(func(interface{}) { tFunc() })
+
+			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1)
+			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall.Do(func(interface{}) { tFunc() })
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 429, response.TooManyRequests+"\n")
 		})
