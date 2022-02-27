@@ -399,20 +399,20 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		return err
+	}
+
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, identityMappingsTable)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
 		return
-	}
-
-	sqlStatement = fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
-	_, err = sf.Db.Exec(sqlStatement)
-	if err != nil {
-		return err
 	}
 
 	sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, stagingTableName)
