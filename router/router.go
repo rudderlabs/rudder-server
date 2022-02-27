@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -996,7 +995,7 @@ func (worker *workerT) recordAPICallCount(apiCallsCount map[string]*destJobCount
 		for _, metadata := range jobMetadata {
 			userIDs = append(userIDs, metadata.UserID)
 		}
-		for _, userID := range funk.UniqString(userIDs) {
+		for _, userID := range misc.Unique(userIDs) {
 			if _, ok := apiCallsCount[destinationID].byUser[userID]; !ok {
 				apiCallsCount[destinationID].byUser[userID] = 0
 			}
