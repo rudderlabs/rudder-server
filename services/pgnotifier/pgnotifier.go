@@ -100,7 +100,7 @@ func loadPGNotifierConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	config.RegisterDurationConfigVariable(time.Duration(120), &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 	config.RegisterDurationConfigVariable(time.Duration(1800), &maxConnLifeTimeInS, false, time.Second, "PgNotifier.maxConnLifeTimeInS")
-	config.RegisterDurationConfigVariable(time.Duration(300), &maxIdleConnTimeInS, false, time.Second, "PgNotifier.maxIdleConnTimeInS")
+	config.RegisterDurationConfigVariable(time.Duration(120), &maxIdleConnTimeInS, false, time.Second, "PgNotifier.maxIdleConnTimeInS")
 	config.RegisterIntConfigVariable(25, &maxOpenConns, false, 1, "PgNotifier.maxOpenConns")
 	config.RegisterIntConfigVariable(5, &maxIdleConns, false, 1, "PgNotifier.maxIdleConns")
 	config.RegisterBoolConfigVariable(false, &enableConnTuning, false, "PgNotifier.enableConnTuning")
