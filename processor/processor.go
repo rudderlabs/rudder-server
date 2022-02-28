@@ -2183,7 +2183,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				return
 			case <-time.After(nextSleepTime):
 
-				subJobSync <- 1
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue
@@ -2200,6 +2199,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					} else if nextSleepTime == 0 {
 						nextSleepTime = proc.readLoopSleep
 					}
+					proc.logger.Info("sleeping for: ", nextSleepTime)
 					continue
 				}
 				proc.logger.Info("marking jobs as executing")
@@ -2208,7 +2208,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					pkgLogger.Error(err)
 					panic(err)
 				}
-
+				subJobSync <- 1
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
