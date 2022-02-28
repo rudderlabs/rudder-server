@@ -2182,6 +2182,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		getJobIndex := 0
 		for {
 			loopStart = time.Now()
+			proc.logger.Info("------LOOP START-----")
+
 			select {
 			case <-ctx.Done():
 				return
@@ -2292,6 +2294,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			loopTime = time.Since(loopStart)
 			proc.logger.Info("loopTime: ", loopTime)
 			storeIndex++
+			proc.logger.Info("---------LOOP END--------")
+
 		}
 	}()
 
