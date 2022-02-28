@@ -2301,6 +2301,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
 			proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
 			transformationIndex++
+			transformationsPreWaitStart = time.Now()
 
 		}
 
