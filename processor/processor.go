@@ -2275,7 +2275,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	triggerStore := make(chan int)
+	triggerStore := make(chan int, 1)
 	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
 	go func() {
