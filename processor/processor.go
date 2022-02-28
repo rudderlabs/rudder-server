@@ -2298,9 +2298,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
-			transformationIndex++
 			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
 			proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
+			transformationIndex++
 
 		}
 
