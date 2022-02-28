@@ -10,6 +10,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -488,6 +489,15 @@ var _ = Describe("Misc", func() {
 			onPostFileCreation(sourceFile, targetDir)
 		})
 	})
+
+	var _ = DescribeTable("Unique tests",
+		func(input, expected []string) {
+			actual := Unique(input)
+			Expect(actual).To(Equal(expected))
+		},
+		Entry("Unique Test 1 : ", []string{"a", "b", "a", "c", "d", "d"}, []string{"a", "b", "c", "d"}),
+		Entry("Unique Test 2 : ", []string{"a", "b", "c"}, []string{"a", "b", "c"}),
+	)
 })
 
 // FolderExists Check if folder exists at particular path
