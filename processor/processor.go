@@ -2176,7 +2176,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chProc)
 
 		nextSleepTime := time.Duration(0)
-
+		getJobWaitStart := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
@@ -2187,6 +2187,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
+				getJobWaitTime := time.Since(getJobWaitStart)
+				proc.logger.Info("getJobWaitTime: ", getJobWaitTime)
+
+				getJobExecStart := time.Now()
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
@@ -2212,7 +2216,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
-
+				getJobExecTime := time.Since(getJobExecStart)
+				proc.logger.Info("getJobTime: ", getJobExecTime)
+				getJobWaitStart = time.Now()
 				chProc <- jobs
 			}
 		}
@@ -2224,7 +2230,16 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chTrans)
 		for jobs := range chProc {
-			chTrans <- proc.processJobsForDest(jobs, nil)
+			processJobExecStart := time.Now()
+			tmp := proc.processJobsForDest(jobs, nil)
+			processJobExecTime := time.Since(processJobExecStart)
+			proc.logger.Info("processJobExecTime: ", processJobExecTime)
+
+			processJobWaitStart := time.Now()
+			chTrans <- tmp
+			processJobWaitTime := time.Since(processJobWaitStart)
+			proc.logger.Info("processJobWaitTime: ", processJobWaitTime)
+
 		}
 	}()
 
@@ -2235,15 +2250,34 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer close(chStore)
 
 		for msg := range chTrans {
-			chStore <- proc.transformations(msg)
+			transformationsExecStart := time.Now()
+			tmp := proc.transformations(msg)
+			transformationsExecTime := time.Since(transformationsExecStart)
+			proc.logger.Info("transformationsExecTime: ", transformationsExecTime)
+
+			transformationsWaitStart := time.Now()
+			chStore <- tmp
+			transformationsWaitTime := time.Since(transformationsWaitStart)
+			proc.logger.Info("transformationsWaitTime: ", transformationsWaitTime)
+
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		StoreWaitStart := time.Now()
 		for msg := range chStore {
+			StoreWaitTime := time.Since(StoreWaitStart)
+			proc.logger.Info("StoreWaitTime: ", StoreWaitTime)
+
+			StoreExecStart := time.Now()
 			proc.Store(msg)
+			StoreExecTime := time.Since(StoreExecStart)
+			proc.logger.Info("StoreExecTime: ", StoreExecTime)
+
+			StoreWaitStart = time.Now()
+
 		}
 	}()
 
