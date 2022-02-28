@@ -2168,6 +2168,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
+	var loopStart time.Time
+	var loopTime time.Duration
 
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
@@ -2178,6 +2180,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		nextSleepTime := time.Duration(0)
 		getJobWaitStart := time.Now()
 		for {
+			loopStart = time.Now()
 			select {
 			case <-ctx.Done():
 				return
@@ -2229,16 +2232,18 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
+		processJobWaitStart := time.Now()
 		for jobs := range chProc {
+			processJobWaitTime := time.Since(processJobWaitStart)
+			proc.logger.Info("processJobWaitTime: ", processJobWaitTime)
+
 			processJobExecStart := time.Now()
 			tmp := proc.processJobsForDest(jobs, nil)
 			processJobExecTime := time.Since(processJobExecStart)
 			proc.logger.Info("processJobExecTime: ", processJobExecTime)
 
-			processJobWaitStart := time.Now()
+			processJobWaitStart = time.Now()
 			chTrans <- tmp
-			processJobWaitTime := time.Since(processJobWaitStart)
-			proc.logger.Info("processJobWaitTime: ", processJobWaitTime)
 
 		}
 	}()
@@ -2248,17 +2253,18 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-
+		transformationsWaitStart := time.Now()
 		for msg := range chTrans {
+			transformationsWaitTime := time.Since(transformationsWaitStart)
+			proc.logger.Info("transformationsWaitTime: ", transformationsWaitTime)
+
 			transformationsExecStart := time.Now()
 			tmp := proc.transformations(msg)
 			transformationsExecTime := time.Since(transformationsExecStart)
 			proc.logger.Info("transformationsExecTime: ", transformationsExecTime)
 
-			transformationsWaitStart := time.Now()
+			transformationsWaitStart = time.Now()
 			chStore <- tmp
-			transformationsWaitTime := time.Since(transformationsWaitStart)
-			proc.logger.Info("transformationsWaitTime: ", transformationsWaitTime)
 
 		}
 	}()
@@ -2277,6 +2283,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			proc.logger.Info("StoreExecTime: ", StoreExecTime)
 
 			StoreWaitStart = time.Now()
+			loopTime = time.Since(loopStart)
+			proc.logger.Info("loopTime: ", loopTime)
 
 		}
 	}()
