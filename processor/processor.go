@@ -2258,20 +2258,25 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
-		processJobWaitStart := time.Now()
+		processJobPreWaitStart := time.Now()
 		processJobIndex := 0
 		for jobs := range chProc {
-			processJobWaitTime := time.Since(processJobWaitStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobWaitTime: ", processJobWaitTime)
+			processJobPreWaitTime := time.Since(processJobPreWaitStart)
+			proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTime)
 
 			processJobExecStart := time.Now()
 			tmp := proc.processJobsForDest(jobs, nil)
 			processJobExecTime := time.Since(processJobExecStart)
 			proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTime)
 
-			processJobWaitStart = time.Now()
+			processJobPostWaitStart := time.Now()
 			chTrans <- tmp
+			processJobPostWaitTime := time.Since(processJobPostWaitStart)
+			proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTime)
+
 			processJobIndex++
+			processJobPreWaitStart = time.Now()
+
 		}
 	}()
 
