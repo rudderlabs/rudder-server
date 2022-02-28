@@ -2172,12 +2172,21 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	totalPipelineEventCount = 0
 	subJobSync := make(chan int, 1)
 
+	var loopStart time.Time
+	var loopTime time.Duration
+
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
 
 		nextSleepTime := time.Duration(0)
+		getJobIndex := 0
+		getJobWaitStart := time.Now()
+
 		for {
+			loopStart = time.Now()
+			proc.logger.Info("------LOOP START-----", "i: ", getJobIndex)
+
 			select {
 			case <-ctx.Done():
 				return
@@ -2187,6 +2196,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
+
+				getJobWaitTime := time.Since(getJobWaitStart)
+				proc.logger.Info("i: ", getJobIndex, " getJobWaitTime: ", getJobWaitTime)
+
+				readJobExecStart := time.Now()
 
 				proc.logger.Info("reading job")
 				jobs := proc.getJobs()
@@ -2208,6 +2222,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					pkgLogger.Error(err)
 					panic(err)
 				}
+				readJobExecTime := time.Since(readJobExecStart)
+				proc.logger.Info("i: ", getJobIndex, " readJobExecTime: ", readJobExecTime)
+				getJobWaitStart = time.Now()
 				subJobSync <- 1
 				events := 0
 				for i := range jobs {
@@ -2223,6 +2240,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
 				subJobSize := len(jobs) / subJobCount
+
 				for i := 0; i < subJobCount-1; i++ {
 					proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
 					chProc <- jobs[:subJobSize]
@@ -2231,6 +2249,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				chProc <- jobs
 				proc.logger.Info("subjob i= ", subJobCount-1, " sent with jobs count= ", len(jobs))
 			}
+
+			getJobIndex++
 		}
 	}()
 	chTrans := make(chan transformationMessage, bufferSize)
@@ -2238,26 +2258,47 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
-
+		processJobWaitStart := time.Now()
+		processJobIndex := 0
 		for jobs := range chProc {
-			proc.logger.Info("processJobsForDest triggered")
-			chTrans <- proc.processJobsForDest(jobs, nil)
+			processJobWaitTime := time.Since(processJobWaitStart)
+			proc.logger.Info("i: ", processJobIndex, " processJobWaitTime: ", processJobWaitTime)
+
+			processJobExecStart := time.Now()
+			tmp := proc.processJobsForDest(jobs, nil)
+			processJobExecTime := time.Since(processJobExecStart)
+			proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTime)
+
+			processJobWaitStart = time.Now()
+			chTrans <- tmp
+			processJobIndex++
 		}
 	}()
+
 	triggerStore := make(chan int)
 	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-
+		transformationIndex := 0
+		transformationsWaitStart := time.Now()
 		for msg := range chTrans {
-			proc.logger.Info("transformations triggered")
-			chStore <- proc.transformations(msg)
+			transformationsWaitTime := time.Since(transformationsWaitStart)
+			proc.logger.Info("i: ", transformationIndex, " transformationsWaitTime: ", transformationsWaitTime)
+
+			transformationsExecStart := time.Now()
+			tmp := proc.transformations(msg)
+			transformationsExecTime := time.Since(transformationsExecStart)
+			proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTime)
+
+			transformationsWaitStart = time.Now()
+			chStore <- tmp
 			proc.logger.Info("len of chStore= ", len(chStore))
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
+			transformationIndex++
 		}
 
 	}()
@@ -2265,9 +2306,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		storeIndex := 0
+		StoreWaitStart := time.Now()
 		for {
 			<-triggerStore
-			proc.logger.Info("db store triggered")
+			StoreWaitTime := time.Since(StoreWaitStart)
+			proc.logger.Info("i: ", storeIndex, " StoreWaitTime: ", StoreWaitTime)
+
+			StoreExecStart := time.Now()
 			var statusList []*jobsdb.JobStatusT
 			var destJobs []*jobsdb.JobT
 			var batchDestJobs []*jobsdb.JobT
@@ -2338,7 +2384,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				totalEvents: totalEvents,
 				start:       start,
 			})
-			proc.logger.Info("DB store done... ")
+			StoreExecTime := time.Since(StoreExecStart)
+			proc.logger.Info("i: ", storeIndex, " StoreExecTime: ", StoreExecTime)
+			StoreWaitStart = time.Now()
+
+			loopTime = time.Since(loopStart)
+			proc.logger.Info("i: ", storeIndex, " loopTime: ", loopTime)
+			storeIndex++
+			proc.logger.Info("---------LOOP END--------")
 			<-subJobSync
 			atomic.AddInt64(&totalPipelineEventCount, -1*int64(totalEvents))
 			proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
