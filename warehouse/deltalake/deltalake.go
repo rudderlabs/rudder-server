@@ -567,7 +567,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		dl.Namespace,
 		stagingTableName,
 	))
-	tablePropertiesSQL := fmt.Sprintf("TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )")
+	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 	// Creating create table sql statement for staging users table
 	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %[1]s.%[2]s USING DELTA AS (SELECT DISTINCT * FROM
 										(
@@ -705,7 +705,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["id"]; ok {
 		partitionedSql = `PARTITIONED BY(id)`
 	}
-	tablePropertiesSQL := fmt.Sprintf("TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )")
+	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %s ( %v ) USING DELTA %s %s %s;`, name, columnsWithDataTypes(columns, ""), tableLocation, partitionedSql, tablePropertiesSQL)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
