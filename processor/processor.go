@@ -2170,7 +2170,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	var totalPipelineEventCount int64
 	totalPipelineEventCount = 0
-	subJobSync := make(chan int, 1)
+	subJobSync := make(chan int, 2)
 
 	var loopStart time.Time
 	var loopTime time.Duration
