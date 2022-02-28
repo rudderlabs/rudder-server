@@ -2282,23 +2282,26 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chStore)
 		transformationIndex := 0
-		transformationsWaitStart := time.Now()
+		transformationsPreWaitStart := time.Now()
 		for msg := range chTrans {
-			transformationsWaitTime := time.Since(transformationsWaitStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsWaitTime: ", transformationsWaitTime)
+			transformationsPreWaitTime := time.Since(transformationsPreWaitStart)
+			proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTime)
 
 			transformationsExecStart := time.Now()
 			tmp := proc.transformations(msg)
 			transformationsExecTime := time.Since(transformationsExecStart)
 			proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTime)
 
-			transformationsWaitStart = time.Now()
+			transformationsPostsWaitStart := time.Now()
 			chStore <- tmp
 			proc.logger.Info("len of chStore= ", len(chStore))
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
 			transformationIndex++
+			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
+			proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
+
 		}
 
 	}()
