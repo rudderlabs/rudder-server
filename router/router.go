@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -708,14 +707,13 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
-				workspace := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
+				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspace":   workspace,
+					"workspace":   workspaceID,
 				})
-				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
 
@@ -849,7 +847,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		//elements in routerJobResponses have pointer to the right job.
 		_destinationJob := destinationJob
 
-		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 			//assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			//elements in routerJobResponses have pointer to the right destinationJobMetadata.
@@ -997,7 +995,7 @@ func (worker *workerT) recordAPICallCount(apiCallsCount map[string]*destJobCount
 		for _, metadata := range jobMetadata {
 			userIDs = append(userIDs, metadata.UserID)
 		}
-		for _, userID := range funk.UniqString(userIDs) {
+		for _, userID := range misc.Unique(userIDs) {
 			if _, ok := apiCallsCount[destinationID].byUser[userID]; !ok {
 				apiCallsCount[destinationID].byUser[userID] = 0
 			}
@@ -1893,7 +1891,7 @@ func (rt *HandleT) readAndProcess() int {
 	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize, rt.timeGained)
 	rt.workspaceCount = pickupMap
 	rt.timeGained = 0
-
+	rt.logger.Debugf("pickupMap: %+v", pickupMap)
 	combinedList := rt.jobsDB.GetAllJobs(rt.workspaceCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	if len(combinedList) == 0 {
