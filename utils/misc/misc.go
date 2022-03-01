@@ -696,6 +696,15 @@ func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
 }
 
+func ConvertInterfaceToStringArray(input []interface{}) []string {
+	output := make([]string, len(input))
+	for i, val := range input {
+		valString, _ := val.(string)
+		output[i] = valString
+	}
+	return output
+}
+
 func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
 	var respBody []byte
 	var statusCode int
