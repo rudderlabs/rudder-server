@@ -100,6 +100,9 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = uploader.Client.Do(req)
+
+		defer resp.Body.Close()
+
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount > uploader.maxRetry {
