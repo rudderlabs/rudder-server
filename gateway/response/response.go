@@ -13,7 +13,7 @@ const (
 	//InvalidRequestMethod - Request Method is invalid
 	InvalidRequestMethod = "Invalid HTTP Request Method"
 	//TooManyRequests - too many requests
-	TooManyRequests = "Max Events Limit reached. Dropping Events."
+	TooManyRequests = "Max Requests Limit reached"
 	//NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
 	//NoWriteKeyInQueryParams - Failed to read writeKey from Query Params

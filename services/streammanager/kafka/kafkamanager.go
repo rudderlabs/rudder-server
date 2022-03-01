@@ -137,20 +137,24 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config :: %w", err)
 	}
-	hostName := destConfig.HostName + ":" + destConfig.Port
+    hosts := make([]string, 0)
+	hostNames := strings.Split(destConfig.HostName, ",")
+	for _, hostName := range hostNames {
+		hosts = append(hosts, hostName+":"+destConfig.Port)
+	}
 	isSslEnabled := destConfig.SslEnabled
-
-	hosts := []string{hostName}
 
 	config := getDefaultConfiguration()
 	config.Producer.Timeout = o.Timeout
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
-		tlsConfig := NewTLSConfig(caCertificate)
-		if tlsConfig != nil {
-			config.Net.TLS.Config = tlsConfig
-			config.Net.TLS.Enable = true
+		config.Net.TLS.Enable = true
+		if caCertificate != "" {
+			tlsConfig := NewTLSConfig(caCertificate)
+			if tlsConfig != nil {
+				config.Net.TLS.Config = tlsConfig
+			}
 		}
 		if destConfig.UseSASL {
 			// SASL is enabled only with SSL
@@ -307,7 +311,7 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	tlsConfig.RootCAs = caCertPool
 
 	//tlsConfig.BuildNameToCertificate()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = false
 	return &tlsConfig
 }
 
