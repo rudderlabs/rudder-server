@@ -988,13 +988,14 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
 	}
 	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
-	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
+	resp, err := brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 	} else {
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	}
+	defer resp.Body.Close()
 	return
 }
 
