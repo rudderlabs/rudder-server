@@ -2288,7 +2288,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			processJobPostWaitTimeTotal += processJobPostWaitTime
 			// proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTime)
 
-			if subJobIndex == subJobCount {
+			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
 
 				proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTimeTotal, ": ", processJobPreWaitTimeArr)
@@ -2344,7 +2344,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				triggerStore <- 1
 			}
 
-			if subJobIndex == subJobCount {
+			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
 
 				proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTimeTotal, ": ", transformationsPreWaitTimeArr)
