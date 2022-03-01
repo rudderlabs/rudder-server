@@ -60,9 +60,21 @@ func (proc *Processor) Stop() {
 
 // NewProcessor creates a new Processor intanstace
 func NewProcessor(ctx context.Context) *Processor {
+	dbRetentionTime := 0 * time.Hour
+	clearDb := false
+	migrationMode := "import"
 	proc := &Processor{
 		HandleT: &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx: ctx,
+		gatewayDB: &jobsdb.HandleT{},
+		routerDB: &jobsdb.HandleT{},
+		batchRouterDB: &jobsdb.HandleT{},
+		procErrorDB: &jobsdb.HandleT{},
+		gwDBRetention: &dbRetentionTime,
+		routerDBRetention: &dbRetentionTime,
+		clearDB: &clearDb,
+		migrationMode: &migrationMode,
+		multitenantStats: multitenant.NOOP,
 	}
 	return proc
 }
