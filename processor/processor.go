@@ -2258,25 +2258,49 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
-		processJobPreWaitStart := time.Now()
 		processJobIndex := 0
+		subJobIndex := 0
+
+		processJobPreWaitTimeArr := make([]time.Duration, subJobCount)
+		processJobExecTimeArr := make([]time.Duration, subJobCount)
+		processJobPostWaitTimeArr := make([]time.Duration, subJobCount)
+
+		var processJobPreWaitTimeTotal, processJobExecTimeTotal, processJobPostWaitTimeTotal time.Duration
+
+		processJobPreWaitStart := time.Now()
 		for jobs := range chProc {
 			processJobPreWaitTime := time.Since(processJobPreWaitStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTime)
+			processJobPreWaitTimeArr[subJobIndex] = processJobPreWaitTime
+			processJobPreWaitTimeTotal += processJobPreWaitTime
+			// proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTime)
 
 			processJobExecStart := time.Now()
 			tmp := proc.processJobsForDest(jobs, nil)
 			processJobExecTime := time.Since(processJobExecStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTime)
+			processJobExecTimeArr[subJobIndex] = processJobExecTime
+			processJobExecTimeTotal += processJobExecTime
+			// proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTime)
 
 			processJobPostWaitStart := time.Now()
 			chTrans <- tmp
 			processJobPostWaitTime := time.Since(processJobPostWaitStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTime)
+			processJobPostWaitTimeArr[subJobIndex] = processJobPostWaitTime
+			processJobPostWaitTimeTotal += processJobPostWaitTime
+			// proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTime)
 
-			processJobIndex++
+			if subJobIndex == subJobCount {
+				subJobIndex = 0
+
+				proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTimeTotal, ": ", processJobPreWaitTimeArr)
+				proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTimeTotal, ": ", processJobExecTimeArr)
+				proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTimeTotal, ": ", processJobPostWaitTimeArr)
+
+				processJobIndex++
+			} else {
+				subJobIndex++
+			}
+
 			processJobPreWaitStart = time.Now()
-
 		}
 	}()
 
@@ -2287,27 +2311,53 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chStore)
 		transformationIndex := 0
+		subJobIndex := 0
+
+		transformationsPreWaitTimeArr := make([]time.Duration, subJobCount)
+		transformationsExecTimeArr := make([]time.Duration, subJobCount)
+		transformationsPostWaitTimeArr := make([]time.Duration, subJobCount)
+
+		var transformationsPreWaitTimeTotal, transformationsExecTimeTotal, transformationsPostWaitTimeTotal time.Duration
+
 		transformationsPreWaitStart := time.Now()
 		for msg := range chTrans {
 			transformationsPreWaitTime := time.Since(transformationsPreWaitStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTime)
+			transformationsPreWaitTimeArr[subJobIndex] = transformationsPreWaitTime
+			transformationsPreWaitTimeTotal += transformationsPreWaitTime
+			// proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTime)
 
 			transformationsExecStart := time.Now()
 			tmp := proc.transformations(msg)
 			transformationsExecTime := time.Since(transformationsExecStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTime)
+			transformationsExecTimeArr[subJobIndex] = transformationsExecTime
+			transformationsExecTimeTotal += transformationsExecTime
+			// proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTime)
 
 			transformationsPostsWaitStart := time.Now()
 			chStore <- tmp
 			proc.logger.Info("len of chStore= ", len(chStore))
+			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
+			transformationsPostWaitTimeArr[subJobIndex] = transformationsPostWaitTime
+			transformationsPostWaitTimeTotal += transformationsPostWaitTime
+
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
-			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
-			transformationIndex++
-			transformationsPreWaitStart = time.Now()
 
+			if subJobIndex == subJobCount {
+				subJobIndex = 0
+
+				proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTimeTotal, ": ", transformationsPreWaitTimeArr)
+				proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTimeTotal, ": ", transformationsExecTimeArr)
+				proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTimeTotal, ": ", transformationsPostWaitTimeArr)
+
+				transformationIndex++
+			} else {
+				subJobIndex++
+			}
+			// proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
+
+			transformationsPreWaitStart = time.Now()
 		}
 
 	}()
