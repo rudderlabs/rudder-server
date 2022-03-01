@@ -20,8 +20,8 @@ import (
 )
 
 type AccountSecret struct {
-	AccessToken    string `json:"accessToken"`
-	ExpirationDate string `json:"expirationDate"`
+	ExpirationDate string          `json:"expirationDate"`
+	Secret         json.RawMessage `json:"secret"`
 }
 type AuthResponse struct {
 	Account AccountSecret
@@ -48,10 +48,10 @@ type DisableDestinationResponse struct {
 type RefreshTokenParams struct {
 	AccountId       string
 	WorkspaceId     string
-	AccessToken     string
 	DestDefName     string
 	EventNamePrefix string
 	WorkerId        int
+	Secret          json.RawMessage
 }
 
 // OAuthErrResHandler is the handle for this class
@@ -102,8 +102,8 @@ const (
 )
 
 type RefreshTokenBodyParams struct {
-	HasExpired   bool   `json:"hasExpired"`
-	ExpiredToken string `json:"expiredToken"`
+	HasExpired    bool   `json:"hasExpired"`
+	ExpiredSecret string `json:"expiredSecret"`
 }
 
 func Init() {
@@ -166,20 +166,20 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 
 	accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, refTokenParams.AccountId)
 	refTokenBody := RefreshTokenBodyParams{}
-	if router_utils.IsNotEmptyString(refTokenParams.AccessToken) {
+	if router_utils.IsNotEmptyString(string(refTokenParams.Secret)) {
 		refTokenBody = RefreshTokenBodyParams{
-			HasExpired:   true,
-			ExpiredToken: refTokenParams.AccessToken,
+			HasExpired:    true,
+			ExpiredSecret: string(refTokenParams.Secret),
 		}
 	}
 	accountMutex.RLock()
 	refVal, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 	if ok {
-		isInvalidAccessTokenForRefresh := (router_utils.IsNotEmptyString(refVal.Account.AccessToken) &&
-			refVal.Account.AccessToken != refTokenParams.AccessToken)
-		if isInvalidAccessTokenForRefresh {
+		isInvalidAccountSecretForRefresh := (router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
+			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret))
+		if isInvalidAccountSecretForRefresh {
 			accountMutex.RUnlock()
-			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.Secret)
 			return http.StatusOK, refVal
 		}
 	}
@@ -189,14 +189,14 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
 		accountMutex.Unlock()
 		if refVal != nil {
-			token := refVal.Account.AccessToken
-			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received from cache(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
+			secret := refVal.Account.Secret
+			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received from cache(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, string(secret))
 			return http.StatusOK, refVal
 		}
 		// Empty Response(valid while many GetToken calls are happening)
 		return http.StatusOK, &AuthResponse{
 			Account: AccountSecret{
-				AccessToken: "",
+				Secret: []byte(""),
 			},
 			Err: "",
 		}
@@ -230,7 +230,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 // As well update the account information into the destAuthInfoMap(which acts as an in-memory cache)
 func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
 	authStats *OAuthStats, logTypeName string) (statusCode int) {
-	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
+	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		panic(err)
@@ -261,12 +261,14 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
 		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
-		authStats.errorMessage = "Empty token"
+		authStats.errorMessage = "Empty secret"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
-			Account: AccountSecret{},
-			Err:     "Empty token",
+			Account: AccountSecret{
+				Secret: []byte(""),
+			},
+			Err: "Empty secret",
 		}
 		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 		return http.StatusInternalServerError
@@ -308,9 +310,6 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 	} else if gjson.Get(response, "body.code").String() == INVALID_REFRESH_TOKEN_GRANT {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		message = INVALID_REFRESH_TOKEN_GRANT
-	} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
-		// Status is 200, but no accesstoken is sent
-		message = `Empty Token cannot be processed further`
 	}
 	return message
 }

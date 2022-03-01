@@ -8,9 +8,9 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/thoas/go-funk"
 )
 
 var (
@@ -59,7 +59,7 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 		prependTimes = append(prependTimes, mins)
 		counter++
 	}
-	times = append(funk.ReverseInt(prependTimes), times...)
+	times = append(misc.ReverseInt(prependTimes), times...)
 	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
 	return times
 }
