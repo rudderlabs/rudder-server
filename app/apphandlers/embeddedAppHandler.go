@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -88,7 +87,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 
-		if config.GetBool("EnableMultitenancy", false) {
+		if misc.IsMultiTenant() {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
 			multitenantStats = multitenant.NewStats(tenantRouterDB)
 		}

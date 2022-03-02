@@ -108,7 +108,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 
-		if config.GetBool("EnableMultitenancy", false) {
+		if misc.IsMultiTenant() {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
 			multitenantStats = multitenant.NewStats(tenantRouterDB)
 		}
