@@ -454,10 +454,16 @@ func (jd *HandleT) assert(cond bool, errorString string) {
 }
 
 func (jd *HandleT) Status() interface{} {
+	jd.job_id_cursor_lock.RLock()
+	defer jd.job_id_cursor_lock.RUnlock()
+	jd.job_id_seq_lock.RLock()
+	defer jd.job_id_seq_lock.RUnlock()
 	statusObj := map[string]interface{}{
 		"dataset-list":    jd.getDSList(false),
 		"dataset-ranges":  jd.getDSRangeList(false),
 		"backups-enabled": jd.BackupSettings.BackupEnabled,
+		"job_id_cursor":   jd.job_id_cursor,
+		"job_id_seq_map":  jd.job_id_seq_map,
 	}
 	emptyResults := make(map[string]interface{})
 	for ds, entry := range jd.dsEmptyResultCache {
@@ -2332,18 +2338,19 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	var args []interface{}
 
 	var sqlStatement string
+	var cursor int
 
 	if useJoinForUnprocessed {
 		jd.job_id_cursor_lock.RLock()
-		cursor := jd.job_id_cursor[ds.JobTable]
+		cursor = jd.job_id_cursor[ds.JobTable]
 		jd.job_id_cursor_lock.RUnlock()
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
 			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
-				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
-				`FROM "%[1]s" AS jobs `+
+				`sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
+				`FROM (select * from "%[1]s" where job_id > %[3]d) AS jobs `+
 				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
-				`WHERE job_status.job_id is NULL and jobs.job_id > %d `,
+				`WHERE job_status.job_id is NULL `,
 			ds.JobTable, ds.JobStatusTable, cursor)
 	} else {
 		sqlStatement = fmt.Sprintf(
@@ -2380,7 +2387,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		args = append(args, params.EventCount)
 	}
 
-	// jd.logger.Info(sqlStatement)
+	if jd.tablePrefix == "gw" {
+		jd.logger.Debug(sqlStatement)
+	}
 	if params.UseTimeFilter {
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
@@ -2393,19 +2402,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 	defer rows.Close()
 
-	job_id_map := make(map[int]bool)
-	jd.job_id_seq_lock.RLock()
-	for k, v := range jd.job_id_seq_map[ds.JobTable] {
-		job_id_map[k] = v
-	}
-	jd.job_id_seq_lock.RUnlock()
-	job_id_seqs := make([]int, 0)
-	for k, _ := range job_id_map {
-		job_id_seqs = append(job_id_seqs, k)
-	}
-	sort.Ints(job_id_seqs)
-	read_job_id_seqs := make([]int, 0)
-
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
@@ -2414,21 +2410,52 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
-		if _, ok := job_id_map[int(job.JobID)-1]; ok {
-			read_job_id_seqs = append(read_job_id_seqs, int(job.JobID)-1)
+	}
+
+	job_id_map := make(map[int]bool)
+	jd.job_id_seq_lock.RLock()
+	// add job_id_seqs where jobs haven't been persisted yet -> those are the job_ids of interest -> can be used as cursor for further queries
+	for k, v := range jd.job_id_seq_map[ds.JobTable] {
+		if !v {
+			job_id_map[k] = v
 		}
 	}
-	sort.Ints(read_job_id_seqs)
+	jd.job_id_seq_lock.RUnlock()
 
-	unread_job_id_seqs := Difference(job_id_seqs, read_job_id_seqs)
-	sort.Ints(unread_job_id_seqs)
-	jd.job_id_cursor_lock.Lock()
-	if len(unread_job_id_seqs) > 0 {
-		jd.job_id_cursor[ds.JobTable] = unread_job_id_seqs[0]
-	} else if len(job_id_seqs) > 0 {
-		jd.job_id_cursor[ds.JobTable] = job_id_seqs[len(job_id_seqs)-1]
+	// get their list
+	job_id_seqs := make([]int, 0)
+	for k, _ := range job_id_map {
+		job_id_seqs = append(job_id_seqs, k)
 	}
+	sort.Ints(job_id_seqs)
+
+	// get a map of job_id seqs whose jobs have been read
+	read_job_id_seqs := make(map[int]struct{})
+	for _, j := range jobList {
+		if _, ok := job_id_map[int(j.JobID)-1]; ok {
+			read_job_id_seqs[int(j.JobID)-1] = struct{}{}
+		}
+	}
+
+	jd.job_id_seq_lock.Lock()
+	for seq, _ := range read_job_id_seqs {
+		jd.job_id_seq_map[ds.JobTable][seq] = true
+	}
+	jd.job_id_seq_lock.Unlock()
+
+	// updating the cursor now
+	// the first job_id sequence in job_id_seqs that's not present in the read_job_id_seqs map is our cursor
+	for _, seq := range job_id_seqs {
+		if _, ok := read_job_id_seqs[seq]; !ok {
+			cursor = seq
+			break
+		}
+	}
+
+	jd.job_id_cursor_lock.Lock()
+	jd.job_id_cursor[ds.JobTable] = cursor
 	jd.job_id_cursor_lock.Unlock()
+	///////////////////////////////
 
 	result := hasJobs
 	dsList := jd.getDSList(false)
