@@ -15,48 +15,45 @@ import (
 )
 
 var (
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
+	objectStorageDestinations []string
+	asyncDestinations         []string
+	warehouseDestinations     []string
 	pkgLogger                 = logger.NewLogger().Child("router")
 )
 
-type LifecycleManager struct {
+type Router struct {
 	rt               *router.Factory
 	brt              *batchrouter.Factory
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        *errgroup.Group
-	gatewayDB        *jobsdb.HandleT
-	batchRouterDB    *jobsdb.HandleT
-	errDB            *jobsdb.HandleT
-	tenantRouterDB   *jobsdb.MultiTenantHandleT
-	MultitenantStats multitenant.MultiTenantI
-	ReportingI       types.ReportingI
-	BackendConfig    backendconfig.BackendConfig
+	DBs              *jobsdb.DBs
+	multitenantStats multitenant.MultiTenantI
+	reportingI       types.ReportingI
+	backendConfig    backendconfig.BackendConfig
 }
 
-func (r *LifecycleManager) Run(ctx context.Context) error {
+func (r *Router) Run(ctx context.Context) error {
 	return nil
 }
 
-// Start starts a Router, this is not a blocking call.
+// StartNew starts a Router, this is not a blocking call.
 //If the router is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
-func (r *LifecycleManager) Start() {
+func (r *Router) StartNew() {
 	r.rt = &router.Factory{
-		Reporting:     r.ReportingI,
-		Multitenant:   r.MultitenantStats,
-		BackendConfig: r.BackendConfig,
-		RouterDB:      r.tenantRouterDB,
-		ProcErrorDB:   r.errDB,
+		Reporting:     r.reportingI,
+		Multitenant:   multitenant.NOOP,
+		BackendConfig: r.backendConfig,
+		RouterDB:      &r.DBs.TenantRouterDB,
+		ProcErrorDB:   &r.DBs.ProcErrDB,
 	}
 	r.brt = &batchrouter.Factory{
-		Reporting:     r.ReportingI,
-		Multitenant:   r.MultitenantStats,
-		BackendConfig: r.BackendConfig,
-		RouterDB:      r.batchRouterDB,
-		ProcErrorDB:   r.errDB,
+		Reporting:     r.reportingI,
+		Multitenant:   multitenant.NOOP,
+		BackendConfig: r.backendConfig,
+		RouterDB:      &r.DBs.BatchRouterDB,
+		ProcErrorDB:   &r.DBs.ProcErrDB,
 	}
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -70,33 +67,31 @@ func (r *LifecycleManager) Start() {
 }
 
 // Stop stops the Router, this is a blocking call.
-func (r *LifecycleManager) Stop() {
+func (r *Router) Stop() {
 	r.currentCancel()
 	r.waitGroup.Wait()
 }
 
-// New creates a new Router instance
-func New(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
-	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
+// NewRouterManager creates a new Router instance
+func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
-	return &LifecycleManager{
-		rt:             &router.Factory{},
-		brt:            &batchrouter.Factory{},
-		mainCtx:        ctx,
-		tenantRouterDB: tenantRouterDB,
-		batchRouterDB:  brtDb,
-		errDB:          errDb,
-		BackendConfig:  backendconfig.DefaultBackendConfig,
+	return &Router{
+		rt:               &router.Factory{},
+		brt:              &batchrouter.Factory{},
+		mainCtx:          ctx,
+		DBs:              dbs,
+		multitenantStats: multitenant.NOOP,
+		backendConfig:    backendconfig.DefaultBackendConfig,
 	}
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
+func (r *Router) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
-	r.BackendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	r.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
