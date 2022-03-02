@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type MultiTenantHandleT struct {
@@ -139,23 +137,6 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, co
 	return sqlStatement
 }
 
-//
-func (mj *MultiTenantHandleT) printNumJobsByWorkspace(jobs []*JobT) {
-	if len(jobs) == 0 {
-		mj.logger.Debug("No Jobs found for this query")
-	}
-	workspaceJobCountMap := make(map[string]int)
-	for _, job := range jobs {
-		if _, ok := workspaceJobCountMap[job.WorkspaceId]; !ok {
-			workspaceJobCountMap[job.WorkspaceId] = 0
-		}
-		workspaceJobCountMap[job.WorkspaceId] += 1
-	}
-	for workspace, count := range workspaceJobCountMap {
-		mj.logger.Debug(workspace, `: `, count)
-	}
-}
-
 //All Jobs
 
 func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
@@ -172,52 +153,26 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	outJobs := make([]*JobT, 0)
 
 	var tablesQueried int
-	queryTime := stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
-		"state":    "nonterminal",
-		"module":   mj.tablePrefix,
-		"destType": params.CustomValFilters[0],
-	})
-
+	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
 	start := time.Now()
 	for _, ds := range dsList {
 		jobs := mj.getUnionDS(ds, workspaceCount, params)
 		outJobs = append(outJobs, jobs...)
-		tablesQueried++
+		if len(jobs) > 0 {
+			tablesQueried++
+		}
+
 		if len(workspaceCount) == 0 {
 			break
 		}
-		if tablesQueried > maxDSQuerySize {
+		if tablesQueried >= maxDSQuerySize {
 			break
 		}
 	}
 
-	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":    "nonterminal",
-		"module":   mj.tablePrefix,
-		"destType": params.CustomValFilters[0],
-	})
-	tablesQueriedStat.Gauge(tablesQueried)
+	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	//PickUp stats
-	var pickUpCountStat stats.RudderStats
-	workspaceCountStat := make(map[string]int)
-
-	for _, job := range outJobs {
-		if _, ok := workspaceCountStat[job.WorkspaceId]; !ok {
-			workspaceCountStat[job.WorkspaceId] = 0
-		}
-		workspaceCountStat[job.WorkspaceId] += 1
-	}
-
-	for workspace, jobCount := range workspaceCountStat {
-		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
-			"workspace": workspace,
-			"module":    mj.tablePrefix,
-			"destType":  params.CustomValFilters[0],
-		})
-		pickUpCountStat.Count(jobCount)
-	}
+	mj.tablesQueriedStat.Gauge(tablesQueried)
 
 	return outJobs
 }
@@ -314,7 +269,6 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
-	mj.printNumJobsByWorkspace(jobList)
 	return jobList
 }
 
@@ -327,7 +281,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 			continue
 		}
 		if count <= 0 {
-			mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 %s jobs for this workspace.", count, workspace, params.StateFilters[0])
+			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
 			continue
 		}
 		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, count, ds, params, true))
@@ -340,6 +294,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params GetQueryParamsT, order bool, workspaceCount map[string]int) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	stateFilters := params.StateFilters
 	var sqlStatement string
 
 	//some stats
@@ -351,7 +306,14 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
+	//Probably should find a programatic way to generate this
 	stateQuery = "AND ((job_latest_state.job_state not in ('executing','aborted', 'succeeded', 'migrated') and job_latest_state.retry_time < $1) or job_latest_state.job_id is null)"
+
+	if len(stateFilters) > 0 {
+		stateQuery = "AND (" + constructStateQuery("job_latest_state", "job_state", stateFilters, "OR") + ")"
+	} else {
+		stateQuery = ""
+	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")

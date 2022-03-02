@@ -335,6 +335,8 @@ type HandleT struct {
 	invalidCacheKeyStat           stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.RudderStats
+	unionQueryTime                stats.RudderStats
+	tablesQueriedStat             stats.RudderStats
 	isStatDropDSPeriodInitialized bool
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
@@ -684,6 +686,14 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"customVal": jd.tablePrefix,
+	})
+	jd.unionQueryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+		"state":     "nonterminal",
+		"customVal": jd.tablePrefix,
+	})
 	jd.statNewDSPeriod = stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.invalidCacheKeyStat = stats.NewTaggedStat("jobsdb.invalid_cache_key", stats.CountType, stats.Tags{"customVal": jd.tablePrefix})

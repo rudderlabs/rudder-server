@@ -696,6 +696,15 @@ func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
 }
 
+func ConvertInterfaceToStringArray(input []interface{}) []string {
+	output := make([]string, len(input))
+	for i, val := range input {
+		valString, _ := val.(string)
+		output[i] = valString
+	}
+	return output
+}
+
 func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
 	var respBody []byte
 	var statusCode int
@@ -1373,4 +1382,12 @@ func Unique(stringSlice []string) []string {
 		}
 	}
 	return list
+}
+
+// ReverseInt reverses an array of int
+func ReverseInt(s []int) []int {
+	for i, j := 0, len(s)-1; i < len(s)/2; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
 }

@@ -799,6 +799,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
@@ -1931,7 +1932,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 		destinationDef := event.Destination.DestinationDefinition
 		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
 		if ok {
-			supportedTypesArr, ok := supportedTypes.([]string)
+			supportedTypeInterface, ok := supportedTypes.([]interface{})
 			if ok && filterUnsupportedMessageTypes {
 				messageType, typOk := event.Message["type"].(string)
 				if !typOk {
@@ -1943,6 +1944,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				}
 
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 					responses = append(responses, resp)
