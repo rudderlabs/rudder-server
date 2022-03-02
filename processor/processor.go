@@ -1918,6 +1918,8 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	for _, event := range events {
 		destinationDef := event.Destination.DestinationDefinition
 		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
+		// fmt.Printf("supportedTypes: %d\n", supportedTypes)
+		// fmt.Printf("supportedType data type: %T\n", supportedTypes)
 		if ok {
 			supportedTypesArr, ok := supportedTypes.([]string)
 			if ok && filterUnsupportedMessageTypes {
@@ -2340,7 +2342,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			transformationsPostWaitTimeArr[subJobIndex] = transformationsPostWaitTime
 			transformationsPostWaitTimeTotal += transformationsPostWaitTime
 
-			if len(chStore) == subJobCount {
+			if len(chStore) == subJobCount-1 {
 				triggerStore <- 1
 			}
 
