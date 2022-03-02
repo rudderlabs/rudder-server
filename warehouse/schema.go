@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -276,12 +277,12 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 	return consolidatedSchema
 }
 
-/*
-For Samples:
-WarehouseSchema: https://jsonformatter.org/ca43d2
-LocalSchema: https://jsonformatter.org/1c2dd2
-*/
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+	if useDeepEqualSchemas {
+		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
+		return eq
+	}
+
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
