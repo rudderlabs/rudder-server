@@ -2204,7 +2204,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 				readJobExecStart := time.Now()
 
-				proc.logger.Info("reading job")
+				// proc.logger.Info("reading job")
 				jobs := proc.getJobs()
 				proc.logger.Info("number of jobs read:=", len(jobs))
 				if len(jobs) == 0 {
@@ -2215,17 +2215,17 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					} else if nextSleepTime == 0 {
 						nextSleepTime = proc.readLoopSleep
 					}
-					proc.logger.Info("sleeping for: ", nextSleepTime)
+					// proc.logger.Info("sleeping for: ", nextSleepTime)
 					continue
 				}
-				proc.logger.Info("marking jobs as executing")
+				// proc.logger.Info("marking jobs as executing")
 				err := proc.markExecuting(jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
 				}
 				readJobExecTime := time.Since(readJobExecStart)
-				proc.logger.Info("i: ", getJobIndex, " readJobExecTime: ", readJobExecTime)
+				proc.logger.Info("i: ", getJobIndex, " getJobExecTime: ", readJobExecTime)
 				getJobWaitStart = time.Now()
 				subJobSync <- 1
 				events := 0
@@ -2244,12 +2244,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				subJobSize := len(jobs) / subJobCount
 
 				for i := 0; i < subJobCount-1; i++ {
-					proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
+					// proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
 					chProc <- jobs[:subJobSize]
 					jobs = jobs[subJobSize:]
 				}
 				chProc <- jobs
-				proc.logger.Info("subjob i= ", subJobCount-1, " sent with jobs count= ", len(jobs))
+				// proc.logger.Info("subjob i= ", subJobCount-1, " sent with jobs count= ", len(jobs))
 			}
 
 			getJobIndex++
@@ -2292,7 +2292,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
-
+				processJobPreWaitTimeTotal = 0
+				processJobExecTimeTotal = 0
+				processJobPostWaitTimeTotal = 0
 				proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTimeTotal, ": ", processJobPreWaitTimeArr)
 				proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTimeTotal, ": ", processJobExecTimeArr)
 				proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTimeTotal, ": ", processJobPostWaitTimeArr)
@@ -2348,7 +2350,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
-
+				transformationsPreWaitTimeTotal = 0
+				transformationsExecTimeTotal = 0
+				transformationsPostWaitTimeTotal = 0
 				proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTimeTotal, ": ", transformationsPreWaitTimeArr)
 				proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTimeTotal, ": ", transformationsExecTimeArr)
 				proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTimeTotal, ": ", transformationsPostWaitTimeArr)
@@ -2388,17 +2392,17 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			i := 0
 			// if len(chStore) > 1 {
 			for subJob := range chStore {
-				proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
+				// proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
 				statusList = append(statusList, subJob.statusList...)
-				proc.logger.Info("statusList merged")
+				// proc.logger.Info("statusList merged")
 				destJobs = append(destJobs, subJob.destJobs...)
-				proc.logger.Info("destJobs merged")
+				// proc.logger.Info("destJobs merged")
 
 				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
-				proc.logger.Info("batchDestJobs merged")
+				// proc.logger.Info("batchDestJobs merged")
 
 				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
-				proc.logger.Info("ProcErrorsJobs merged")
+				// proc.logger.Info("ProcErrorsJobs merged")
 				for id, job := range subJob.procErrorJobsByDestID {
 					// _, found := procErrorJobsByDestID[id]
 					// if !found {
@@ -2406,18 +2410,18 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					// }
 					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
 				}
-				proc.logger.Info("procErrorJobsByDestID merged")
+				// proc.logger.Info("procErrorJobsByDestID merged")
 
 				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
 				for tag, count := range subJob.sourceDupStats {
 					sourceDupStats[tag] += count
 				}
-				proc.logger.Info("sourceDupStats merged")
+				// proc.logger.Info("sourceDupStats merged")
 
 				for id := range subJob.uniqueMessageIds {
 					uniqueMessageIds[id] = struct{}{}
 				}
-				proc.logger.Info("uniqueMessageIds merged")
+				// proc.logger.Info("uniqueMessageIds merged")
 
 				totalEvents = subJob.totalEvents
 				if i == 0 {
@@ -2429,7 +2433,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 			}
 			// }
-			proc.logger.Info("processed job merge complete... storing")
+			// proc.logger.Info("processed job merge complete... storing")
 			proc.Store(storeMessage{
 				statusList:    statusList,
 				destJobs:      destJobs,
