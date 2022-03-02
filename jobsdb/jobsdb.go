@@ -359,7 +359,11 @@ type HandleT struct {
 
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
-	TriggerAddNewDS func() <-chan time.Time
+	TriggerAddNewDS    func() <-chan time.Time
+	job_id_seq_map     map[string]map[int]bool
+	job_id_seq_lock    sync.RWMutex
+	job_id_cursor      map[string]int
+	job_id_cursor_lock sync.RWMutex
 }
 
 type QueryFiltersT struct {
@@ -683,6 +687,10 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.BackupSettings = jd.getBackUpSettings()
 
 	jd.logger.Infof("Connected to %s DB", tablePrefix)
+	jd.job_id_seq_map = make(map[string]map[int]bool)
+	jd.job_id_seq_lock = sync.RWMutex{}
+	jd.job_id_cursor = make(map[string]int)
+	jd.job_id_cursor_lock = sync.RWMutex{}
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
@@ -1435,15 +1443,25 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 	//We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
 	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
 
+	var job_id_cursor int
 	//Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dRangeList) > 0 {
 		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
+		job_id_cursor = int(newDSMin)
 		// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
 		sqlStatement := fmt.Sprintf(`SELECT setval(pg_get_serial_sequence('"%s_jobs_%s"', 'job_id'), %d)`,
-			jd.tablePrefix, newDSIdx, newDSMin)
+			jd.tablePrefix, newDSIdx, newDSMin-1)
 		_, err := jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
+	jd.job_id_cursor_lock.Lock()
+	jd.job_id_cursor[fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, newDSIdx)] = job_id_cursor
+	jd.job_id_cursor_lock.Unlock()
+
+	jd.job_id_seq_lock.Lock()
+	jd.job_id_seq_map[fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, newDSIdx)] = make(map[int]bool)
+	jd.job_id_seq_lock.Unlock()
+
 	return dList[len(dList)-1]
 }
 
@@ -1551,6 +1569,18 @@ func (jd *HandleT) invalidateCache(ds dataSetT) {
 
 //Rename a dataset
 func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
+	jd.job_id_seq_lock.Lock()
+	_, ok := jd.job_id_seq_map[ds.JobTable]
+	if ok {
+		delete(jd.job_id_seq_map, ds.JobTable)
+	}
+	jd.job_id_seq_lock.Unlock()
+	jd.job_id_cursor_lock.Lock()
+	_, ok = jd.job_id_cursor[ds.JobTable]
+	if ok {
+		delete(jd.job_id_cursor, ds.JobTable)
+	}
+	jd.job_id_cursor_lock.Unlock()
 	var sqlStatement string
 	var renamedJobStatusTable = fmt.Sprintf(`pre_drop_%s`, ds.JobStatusTable)
 	var renamedJobTable = fmt.Sprintf(`pre_drop_%s`, ds.JobTable)
@@ -1893,7 +1923,24 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
+	var job_id_seq_stmt *sql.Stmt
 	var err error
+	var count sql.NullInt64
+
+	job_id_seq_stmt, err = txHandler.Prepare(fmt.Sprintf(`select nextval(pg_get_serial_sequence('"%s"', 'job_id'))`, ds.JobTable))
+	if err != nil {
+		panic(err)
+	}
+	defer job_id_seq_stmt.Close()
+	res := job_id_seq_stmt.QueryRow()
+	err = res.Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+
+	jd.job_id_seq_lock.Lock()
+	jd.job_id_seq_map[ds.JobTable][int(count.Int64)] = false
+	jd.job_id_seq_lock.Unlock()
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
@@ -1903,6 +1950,7 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	}
 
 	if err != nil {
+		jd.logger.Error(err)
 		return err
 	}
 
@@ -1921,6 +1969,7 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId)
 		}
 		if err != nil {
+			jd.logger.Error(err)
 			return err
 		}
 	}
@@ -2272,14 +2321,17 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	var sqlStatement string
 
 	if useJoinForUnprocessed {
+		jd.job_id_cursor_lock.RLock()
+		cursor := jd.job_id_cursor[ds.JobTable]
+		jd.job_id_cursor_lock.RUnlock()
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
 			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
 				`FROM "%[1]s" AS jobs `+
 				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
-				`WHERE job_status.job_id is NULL `,
-			ds.JobTable, ds.JobStatusTable)
+				`WHERE job_status.job_id is NULL and jobs.job_id > %d `,
+			ds.JobTable, ds.JobStatusTable, cursor)
 	} else {
 		sqlStatement = fmt.Sprintf(
 			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
@@ -2315,6 +2367,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		args = append(args, params.EventCount)
 	}
 
+	// jd.logger.Info(sqlStatement)
 	if params.UseTimeFilter {
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
@@ -2327,6 +2380,16 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 	defer rows.Close()
 
+	jd.job_id_seq_lock.RLock()
+	job_id_map := jd.job_id_seq_map[ds.JobTable]
+	job_id_seqs := make([]int, 0)
+	for k, _ := range job_id_map {
+		job_id_seqs = append(job_id_seqs, k)
+	}
+	jd.job_id_seq_lock.RUnlock()
+	sort.Ints(job_id_seqs)
+	read_job_id_seqs := make([]int, 0)
+
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
@@ -2335,7 +2398,21 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
+		if _, ok := job_id_map[int(job.JobID)-1]; ok {
+			read_job_id_seqs = append(read_job_id_seqs, int(job.JobID)-1)
+		}
 	}
+	sort.Ints(read_job_id_seqs)
+
+	unread_job_id_seqs := Difference(job_id_seqs, read_job_id_seqs)
+	sort.Ints(unread_job_id_seqs)
+	jd.job_id_cursor_lock.Lock()
+	if len(unread_job_id_seqs) > 0 {
+		jd.job_id_cursor[ds.JobTable] = unread_job_id_seqs[0]
+	} else if len(job_id_seqs) > 0 {
+		jd.job_id_cursor[ds.JobTable] = job_id_seqs[len(job_id_seqs)-1]
+	}
+	jd.job_id_cursor_lock.Unlock()
 
 	result := hasJobs
 	dsList := jd.getDSList(false)
@@ -2348,6 +2425,21 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return jobList
+}
+
+func Difference(a, b []int) (diff []int) {
+	m := make(map[int]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
 }
 
 func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
