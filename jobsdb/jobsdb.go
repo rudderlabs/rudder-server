@@ -1420,6 +1420,10 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
+	jd.job_id_seq_lock.Lock()
+	jd.job_id_seq_map[fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, newDSIdx)] = make(map[int]bool)
+	jd.job_id_seq_lock.Unlock()
+
 	if appendLast {
 		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
 		jd.JournalMarkDone(opID)
@@ -1457,10 +1461,6 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 	jd.job_id_cursor_lock.Lock()
 	jd.job_id_cursor[fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, newDSIdx)] = job_id_cursor
 	jd.job_id_cursor_lock.Unlock()
-
-	jd.job_id_seq_lock.Lock()
-	jd.job_id_seq_map[fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, newDSIdx)] = make(map[int]bool)
-	jd.job_id_seq_lock.Unlock()
 
 	return dList[len(dList)-1]
 }
