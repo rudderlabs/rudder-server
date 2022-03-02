@@ -2343,7 +2343,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			transformationsPostWaitTimeArr[subJobIndex] = transformationsPostWaitTime
 			transformationsPostWaitTimeTotal += transformationsPostWaitTime
 
-			if len(chStore) == subJobCount-1 {
+			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
 
