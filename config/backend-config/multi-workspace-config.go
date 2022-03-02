@@ -26,13 +26,6 @@ type MultiWorkspaceConfig struct {
 type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
-type WorkspaceT struct {
-	WorkspaceID string `json:"id"`
-}
-
-type HostedWorkspacesT struct {
-	HostedWorkspaces []WorkspaceT `json:"workspaces"`
-}
 
 //SetUp sets up MultiWorkspaceConfig
 func (multiWorkspaceConfig *MultiWorkspaceConfig) SetUp() {
