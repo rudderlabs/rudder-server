@@ -25,6 +25,7 @@ type Processor struct {
 	migrationMode     *string
 	multitenantStats  multitenant.MultiTenantI // need not initialize again
 	reportingI        types.ReportingI         // need not initialize again
+	backendConfig     backendconfig.BackendConfig
 	currentCancel     context.CancelFunc
 }
 
@@ -33,16 +34,16 @@ func (proc *Processor) Run(ctx context.Context) error {
 }
 
 func (proc *Processor) StartNew() {
-	proc.gatewayDB.Setup(jobsdb.Read, *proc.clearDB, "gw", *proc.gwDBRetention, *proc.migrationMode, true,
+	proc.gatewayDB.Setup(jobsdb.ReadWrite, *proc.clearDB, "gw", *proc.gwDBRetention, *proc.migrationMode, true,
 		jobsdb.QueryFiltersT{})
 	proc.routerDB.Setup(jobsdb.Write, *proc.clearDB, "rt", *proc.routerDBRetention, *proc.migrationMode, true,
 		router.QueryFilters)
-	proc.batchRouterDB.Setup(jobsdb.ReadWrite, *proc.clearDB, "batch_rt", *proc.routerDBRetention, *proc.migrationMode, true,
+	proc.batchRouterDB.Setup(jobsdb.Write, *proc.clearDB, "batch_rt", *proc.routerDBRetention, *proc.migrationMode, true,
 		batchrouter.QueryFilters)
-	proc.procErrorDB.Setup(jobsdb.ReadWrite, *proc.clearDB, "proc_error", *proc.routerDBRetention, *proc.migrationMode, false,
-		jobsdb.QueryFiltersT{})
-	proc.HandleT.Setup(backendconfig.DefaultBackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
-		proc.errorDB, proc.clearDB, proc.reporting, proc.multitenantStats)
+	proc.procErrorDB.Setup(jobsdb.Write, *proc.clearDB, "proc_error", *proc.routerDBRetention, *proc.migrationMode,
+		false, jobsdb.QueryFiltersT{})
+	proc.HandleT.Setup(proc.backendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.procErrorDB,
+		proc.clearDB, proc.reporting, proc.multitenantStats)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
@@ -64,17 +65,18 @@ func NewProcessor(ctx context.Context) *Processor {
 	clearDb := false
 	migrationMode := "import"
 	proc := &Processor{
-		HandleT: &HandleT{transformer: transformer.NewTransformer()},
-		mainCtx: ctx,
-		gatewayDB: &jobsdb.HandleT{},
-		routerDB: &jobsdb.HandleT{},
-		batchRouterDB: &jobsdb.HandleT{},
-		procErrorDB: &jobsdb.HandleT{},
-		gwDBRetention: &dbRetentionTime,
+		HandleT:           &HandleT{transformer: transformer.NewTransformer()},
+		mainCtx:           ctx,
+		gatewayDB:         &jobsdb.HandleT{},
+		routerDB:          &jobsdb.HandleT{},
+		batchRouterDB:     &jobsdb.HandleT{},
+		procErrorDB:       &jobsdb.HandleT{},
+		gwDBRetention:     &dbRetentionTime,
 		routerDBRetention: &dbRetentionTime,
-		clearDB: &clearDb,
-		migrationMode: &migrationMode,
-		multitenantStats: multitenant.NOOP,
+		clearDB:           &clearDb,
+		migrationMode:     &migrationMode,
+		multitenantStats:  multitenant.NOOP,
+		backendConfig:     backendconfig.DefaultBackendConfig,
 	}
 	return proc
 }
