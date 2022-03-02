@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/gofrs/uuid"
@@ -72,6 +73,7 @@ func run(m *testing.M) int {
 	os.Setenv("JOBS_DB_USER", "rudder")
 	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
+	os.Setenv("DEST_TRANSFORM_URL", "https://api.dev.rudderlabs.com/")
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
@@ -115,9 +117,6 @@ func initJobsDB() {
 	jobsdb.Init3()
 	archiver.Init()
 	Init()
-	//dedup.Init()
-	//misc.Init()
-	//integrations.Init()
 
 }
 
@@ -139,14 +138,21 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 func TestProcessorManager(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
+	ctx := context.Background()
+	processor := NewProcessor(ctx)
+
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any())
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any())
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
-	mockTransformer.EXPECT().Setup().Times(1)
+	mockTransformer.EXPECT().Setup().Times(1).Do(func() {
+		processor.transformerFeatures = json.RawMessage(
+			defaultTransformerFeatures)
+	})
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
+	RegisterTestingT(t)
 
 	dbRetention := time.Minute * 5
 	migrationMode := ""
@@ -161,15 +167,13 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	gwJobDB.Setup(jobsdb.Write, false, "gw", dbRetention, migrationMode, true, queryFilters)
+	gwJobDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
 	defer gwJobDB.TearDown()
 
-	ctx:= context.Background()
-	processor := NewProcessor(ctx)
-	processor.transformer = mockTransformer
 	processor.backendConfig = mockBackendConfig
+	processor.transformer = mockTransformer
 
-	customVal := "MOCKDS"
+	customVal := "GW"
 	var sampleTestJob = jobsdb.JobT{
 		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
@@ -198,7 +202,6 @@ func TestProcessorManager(t *testing.T) {
 	})
 
 	require.Equal(t, 11, len(unprocessedListEmpty))
-	processor.StartNew()
 	unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         20,
@@ -206,15 +209,35 @@ func TestProcessorManager(t *testing.T) {
 	})
 
 	require.Equal(t, 11, len(unprocessedListEmpty))
-
-	t.Run("adding more jobs after the processor is running", func(t *testing.T) {
-		processor.StartNew()
-		err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
-		require.NoError(t, err)
-		Eventually(t, func() int {return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	go processor.StartNew()
+	time.Sleep(30 * time.Second)
+	processor.Stop()
+	Eventually(func() int {
+		return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
-		}))}).Should(Equal(0))
-	})
+		}))
+	}).Should(Equal(0))
+
+	//t.Run("adding more jobs after the processor is stopped", func(t *testing.T) {
+	//	initJobsDB()
+	//	go processor.StartNew()
+	//	time.Sleep(30*time.Second)
+	//	err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	//	require.NoError(t, err)
+	//	unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	//		CustomValFilters: []string{customVal},
+	//		JobCount:         20,
+	//		ParameterFilters: []jobsdb.ParameterFilterT{},
+	//	})
+	//	require.Equal(t, 10, len(unprocessedListEmpty))
+	//	Eventually(func() int {return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	//		CustomValFilters: []string{customVal},
+	//		JobCount:         20,
+	//		ParameterFilters: []jobsdb.ParameterFilterT{},
+	//	}))}).Should(Equal(0))
+	//	processor.Stop()
+	//	gwJobDB.TearDown()
+	//})
 }
