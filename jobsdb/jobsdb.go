@@ -1938,6 +1938,13 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		panic(err)
 	}
 
+	jd.job_id_seq_lock.RLock()
+	_, ok := jd.job_id_seq_map[ds.JobTable]
+	if !ok {
+		jd.job_id_seq_map[ds.JobTable] = make(map[int]bool)
+	}
+	jd.job_id_seq_lock.RUnlock()
+
 	jd.job_id_seq_lock.Lock()
 	jd.job_id_seq_map[ds.JobTable][int(count.Int64)] = false
 	jd.job_id_seq_lock.Unlock()
