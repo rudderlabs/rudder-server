@@ -569,7 +569,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	))
 	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 	// Creating create table sql statement for staging users table
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s %[8]s AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %[1]s.%[2]s USING DELTA %[7]s %[8]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
