@@ -2184,9 +2184,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		nextSleepTime := time.Duration(0)
 		getJobIndex := 0
 		getJobWaitStart := time.Now()
-
 		for {
-			loopStart = time.Now()
+
 			proc.logger.Info("------LOOP START-----", "i: ", getJobIndex)
 
 			select {
@@ -2292,12 +2291,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
-				processJobPreWaitTimeTotal = 0
-				processJobExecTimeTotal = 0
-				processJobPostWaitTimeTotal = 0
 				proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTimeTotal, ": ", processJobPreWaitTimeArr)
 				proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTimeTotal, ": ", processJobExecTimeArr)
 				proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTimeTotal, ": ", processJobPostWaitTimeArr)
+				processJobPreWaitTimeTotal = 0
+				processJobExecTimeTotal = 0
+				processJobPostWaitTimeTotal = 0
 
 				processJobIndex++
 			} else {
@@ -2339,7 +2338,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			transformationsPostsWaitStart := time.Now()
 			chStore <- tmp
-			proc.logger.Info("len of chStore= ", len(chStore))
+			// proc.logger.Info("len of chStore= ", len(chStore))
 			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
 			transformationsPostWaitTimeArr[subJobIndex] = transformationsPostWaitTime
 			transformationsPostWaitTimeTotal += transformationsPostWaitTime
@@ -2350,12 +2349,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			if subJobIndex == subJobCount-1 {
 				subJobIndex = 0
-				transformationsPreWaitTimeTotal = 0
-				transformationsExecTimeTotal = 0
-				transformationsPostWaitTimeTotal = 0
 				proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTimeTotal, ": ", transformationsPreWaitTimeArr)
 				proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTimeTotal, ": ", transformationsExecTimeArr)
 				proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTimeTotal, ": ", transformationsPostWaitTimeArr)
+				transformationsPreWaitTimeTotal = 0
+				transformationsExecTimeTotal = 0
+				transformationsPostWaitTimeTotal = 0
 
 				transformationIndex++
 			} else {
