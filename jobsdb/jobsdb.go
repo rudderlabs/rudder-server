@@ -366,6 +366,12 @@ type HandleT struct {
 	job_id_cursor_lock sync.RWMutex
 }
 
+type jobIDCursor struct {
+	sync.RWMutex
+	job_id_cursor  map[string]int
+	job_id_seq_map map[string]map[int]bool
+}
+
 type QueryFiltersT struct {
 	CustomVal        bool
 	ParameterFilters []string
@@ -2387,13 +2393,16 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 	defer rows.Close()
 
+	var job_id_map map[int]bool
 	jd.job_id_seq_lock.RLock()
-	job_id_map := jd.job_id_seq_map[ds.JobTable]
+	for k, v := range jd.job_id_seq_map[ds.JobTable] {
+		job_id_map[k] = v
+	}
+	jd.job_id_seq_lock.RUnlock()
 	job_id_seqs := make([]int, 0)
 	for k, _ := range job_id_map {
 		job_id_seqs = append(job_id_seqs, k)
 	}
-	jd.job_id_seq_lock.RUnlock()
 	sort.Ints(job_id_seqs)
 	read_job_id_seqs := make([]int, 0)
 
