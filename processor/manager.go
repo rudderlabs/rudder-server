@@ -34,6 +34,10 @@ func (proc *Processor) Run(ctx context.Context) error {
 }
 
 func (proc *Processor) StartNew() {
+	proc.gatewayDB = &jobsdb.HandleT{}
+	proc.routerDB = &jobsdb.HandleT{}
+	proc.batchRouterDB = &jobsdb.HandleT{}
+	proc.procErrorDB = &jobsdb.HandleT{}
 	proc.gatewayDB.Setup(jobsdb.ReadWrite, *proc.clearDB, "gw", *proc.gwDBRetention, *proc.migrationMode, true,
 		jobsdb.QueryFiltersT{})
 	proc.routerDB.Setup(jobsdb.Write, *proc.clearDB, "rt", *proc.routerDBRetention, *proc.migrationMode, true,
@@ -60,13 +64,13 @@ func (proc *Processor) Stop() {
 }
 
 // NewProcessor creates a new Processor intanstace
-func NewProcessor(ctx context.Context) *Processor {
+func New(ctx context.Context) *Processor {
 	dbRetentionTime := 0 * time.Hour
 	clearDb := false
 	migrationMode := "import"
 	proc := &Processor{
-		HandleT:           &HandleT{transformer: transformer.NewTransformer()},
-		mainCtx:           ctx,
+		HandleT: &HandleT{transformer: transformer.NewTransformer()},
+		mainCtx: ctx,
 		gatewayDB:         &jobsdb.HandleT{},
 		routerDB:          &jobsdb.HandleT{},
 		batchRouterDB:     &jobsdb.HandleT{},

@@ -262,6 +262,13 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor")
 }
 
+// NewProcessor creates a new Processor intanstace
+func NewProcessor() *HandleT {
+	return &HandleT{
+		transformer: transformer.NewTransformer(),
+	}
+}
+
 func (proc *HandleT) Status() interface{} {
 	proc.transformEventsByTimeMutex.RLock()
 	defer proc.transformEventsByTimeMutex.RUnlock()

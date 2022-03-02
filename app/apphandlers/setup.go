@@ -123,11 +123,11 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 		return
 	}
 
-	var processorInstance = processor.NewProcessor(ctx)
+	var processorInstance = processor.NewProcessor()
 	processor.ProcessorManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
-	processorInstance.StartNew()
+	processorInstance.Start(ctx)
 }
 
 //StartRouter atomically starts router process if not already started

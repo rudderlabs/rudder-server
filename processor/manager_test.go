@@ -73,7 +73,6 @@ func run(m *testing.M) int {
 	os.Setenv("JOBS_DB_USER", "rudder")
 	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	os.Setenv("DEST_TRANSFORM_URL", "https://api.dev.rudderlabs.com/")
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
@@ -139,13 +138,14 @@ func TestProcessorManager(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
 	ctx := context.Background()
-	processor := NewProcessor(ctx)
+	processor := New(ctx)
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any())
-	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any())
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 		processor.transformerFeatures = json.RawMessage(
 			defaultTransformerFeatures)
@@ -168,7 +168,6 @@ func TestProcessorManager(t *testing.T) {
 		CustomVal: true,
 	}
 	gwJobDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
-	defer gwJobDB.TearDown()
 
 	processor.backendConfig = mockBackendConfig
 	processor.transformer = mockTransformer
@@ -207,37 +206,52 @@ func TestProcessorManager(t *testing.T) {
 		JobCount:         20,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	c := make(chan bool)
 
 	require.Equal(t, 11, len(unprocessedListEmpty))
 	go processor.StartNew()
-	time.Sleep(30 * time.Second)
+	go func() {
+		Eventually(func() int {
+			return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         20,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			}))
+		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		c <- true
+	}()
+	<- c
 	processor.Stop()
-	Eventually(func() int {
-		return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+
+	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
+			processor.transformerFeatures = json.RawMessage(
+				defaultTransformerFeatures)
+		})
+
+		go processor.StartNew()
+		err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+		require.NoError(t, err)
+		unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
-		}))
-	}).Should(Equal(0))
+		})
+		require.Equal(t, 10, len(unprocessedListEmpty)) //is this flaky??? there is a possibility that this can fail
+		// in super-fast multi-threaded system.
 
-	//t.Run("adding more jobs after the processor is stopped", func(t *testing.T) {
-	//	initJobsDB()
-	//	go processor.StartNew()
-	//	time.Sleep(30*time.Second)
-	//	err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
-	//	require.NoError(t, err)
-	//	unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-	//		CustomValFilters: []string{customVal},
-	//		JobCount:         20,
-	//		ParameterFilters: []jobsdb.ParameterFilterT{},
-	//	})
-	//	require.Equal(t, 10, len(unprocessedListEmpty))
-	//	Eventually(func() int {return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-	//		CustomValFilters: []string{customVal},
-	//		JobCount:         20,
-	//		ParameterFilters: []jobsdb.ParameterFilterT{},
-	//	}))}).Should(Equal(0))
-	//	processor.Stop()
-	//	gwJobDB.TearDown()
-	//})
+		go func() {
+			Eventually(func() int {return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         20,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+			c <- true
+		}()
+		<- c
+		processor.Stop()
+		gwJobDB.TearDown()
+	})
 }
