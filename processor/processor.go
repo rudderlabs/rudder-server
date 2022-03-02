@@ -1932,7 +1932,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 		destinationDef := event.Destination.DestinationDefinition
 		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
 		if ok {
-			supportedTypesArr, ok := supportedTypes.([]string)
+			supportedTypeInterface, ok := supportedTypes.([]interface{})
 			if ok && filterUnsupportedMessageTypes {
 				messageType, typOk := event.Message["type"].(string)
 				if !typOk {
@@ -1944,6 +1944,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				}
 
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 					responses = append(responses, resp)
