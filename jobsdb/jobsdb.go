@@ -2393,7 +2393,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 	defer rows.Close()
 
-	var job_id_map map[int]bool
+	job_id_map := make(map[int]bool)
 	jd.job_id_seq_lock.RLock()
 	for k, v := range jd.job_id_seq_map[ds.JobTable] {
 		job_id_map[k] = v
