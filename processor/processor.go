@@ -1648,7 +1648,10 @@ func (proc *HandleT) transformSrcDest(
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
+			uploadTransStart := time.Now()
 			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
+			uploadTransTime := time.Since(uploadTransStart)
+			proc.logger.Info("uploadTransStatusTime: ", uploadTransTime)
 
 			//REPORTING - START
 			if proc.isReportingEnabled() {
