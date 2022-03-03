@@ -1935,31 +1935,35 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
-	var job_id_seq_stmt *sql.Stmt
 	var err error
 	var count sql.NullInt64
+	var insertStmt *sql.Stmt
+	if len(jobList) <= 0 {
+		return nil
+	}
+	insertsql := fmt.Sprintf(`insert into %s(uuid, user_id, custom_val, parameters, event_payload, event_count, workspace_id) values('%s', '%s', '%s', '%s', '%s', %d, '%s') returning job_id`,
+		ds.JobTable, jobList[0].UUID.String(), jobList[0].UserID, jobList[0].CustomVal, jobList[0].Parameters, jobList[0].EventPayload, jobList[0].EventCount, jobList[0].WorkspaceId)
 
-	job_id_seq_stmt, err = txHandler.Prepare(fmt.Sprintf(`select nextval(pg_get_serial_sequence('"%s"', 'job_id'))`, ds.JobTable))
+	insertStmt, err = txHandler.Prepare(insertsql)
+	defer insertStmt.Close()
 	if err != nil {
 		panic(err)
 	}
-	defer job_id_seq_stmt.Close()
-	res := job_id_seq_stmt.QueryRow()
+	res := insertStmt.QueryRow()
 	err = res.Scan(&count)
 	if err != nil {
 		panic(err)
 	}
 
-	jd.job_id_seq_lock.RLock()
-	_, ok := jd.job_id_seq_map[ds.JobTable]
-	if !ok {
-		jd.job_id_seq_map[ds.JobTable] = make(map[int]bool)
+	if count.Valid {
+		jd.job_id_seq_lock.Lock()
+		_, ok := jd.job_id_seq_map[ds.JobTable]
+		if !ok {
+			jd.job_id_seq_map[ds.JobTable] = make(map[int]bool)
+		}
+		jd.job_id_seq_map[ds.JobTable][int(count.Int64)-1] = false
+		jd.job_id_seq_lock.Unlock()
 	}
-	jd.job_id_seq_lock.RUnlock()
-
-	jd.job_id_seq_lock.Lock()
-	jd.job_id_seq_map[ds.JobTable][int(count.Int64)] = false
-	jd.job_id_seq_lock.Unlock()
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
@@ -1975,7 +1979,7 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	defer stmt.Close()
 
-	for _, job := range jobList {
+	for _, job := range jobList[1:] {
 		eventCount := 1
 		if job.EventCount > 1 {
 			eventCount = job.EventCount
