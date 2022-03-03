@@ -389,9 +389,14 @@ func sendMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, to
 	if err != nil {
 		return makeErrorResponse(err)
 	}
-	userID, _ := parsedJSON.Get("userId").Value().(string)
 
-	message := prepareMessage(topic, userID, value, timestamp)
+	// Try using userId, if not found, use anonymousId
+	key, ok := parsedJSON.Get("userId").Value().(string)
+	if key == "" || !ok {
+		key, _ = parsedJSON.Get("anonymousId").Value().(string)
+	}
+
+	message := prepareMessage(topic, key, value, timestamp)
 
 	partition, offset, err := kafkaProducer.SendMessage(message)
 	if err != nil {
