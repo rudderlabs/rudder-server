@@ -59,6 +59,7 @@ var dataTypesMap = map[string]string{
 	"float":    "DOUBLE",
 	"string":   "STRING",
 	"datetime": "TIMESTAMP",
+	"date":     "DATE",
 }
 
 // Delta Lake mapping with rudder data types mappings.
@@ -73,7 +74,7 @@ var dataTypesMapToRudder = map[string]string{
 	"DOUBLE":    "float",
 	"BOOLEAN":   "boolean",
 	"STRING":    "string",
-	"DATE":      "datetime",
+	"DATE":      "date",
 	"TIMESTAMP": "datetime",
 	"tinyint":   "int",
 	"smallint":  "int",
@@ -84,7 +85,7 @@ var dataTypesMapToRudder = map[string]string{
 	"double":    "float",
 	"boolean":   "boolean",
 	"string":    "string",
-	"date":      "datetime",
+	"date":      "date",
 	"timestamp": "datetime",
 }
 
@@ -133,7 +134,11 @@ func getDeltaLakeDataType(columnType string) string {
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
-		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
+		var generatedColumnSQL string
+		if name == "received_at" {
+			generatedColumnSQL = "GENERATED ALWAYS AS ( CAST(received_at AS DATE) ) )"
+		}
+		return fmt.Sprintf(`%s%s %s %s`, prefix, name, getDeltaLakeDataType(columns[name]), generatedColumnSQL)
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
@@ -709,8 +714,8 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 	tableLocation := dl.getTableLocationSql(name)
 	var partitionedSql string
-	if _, ok := columns["id"]; ok {
-		partitionedSql = `PARTITIONED BY(id)`
+	if _, ok := columns["received_at"]; ok {
+		partitionedSql = `PARTITIONED BY(event_date)`
 	}
 	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %s ( %v ) USING DELTA %s %s %s;`, name, columnsWithDataTypes(columns, ""), tableLocation, partitionedSql, tablePropertiesSQL)
