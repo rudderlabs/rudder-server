@@ -1506,7 +1506,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
+		rt.configSubscriberLock.RLock()
 		workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
+		rt.configSubscriberLock.RUnlock()
 		_, ok := routerWorkspaceJobStatusCount[workspaceID]
 		if !ok {
 			routerWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
