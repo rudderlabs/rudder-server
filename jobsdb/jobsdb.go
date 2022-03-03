@@ -1466,7 +1466,7 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 		job_id_cursor = int(newDSMin)
 		// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
 		sqlStatement := fmt.Sprintf(`SELECT setval(pg_get_serial_sequence('"%s_jobs_%s"', 'job_id'), %d)`,
-			jd.tablePrefix, newDSIdx, newDSMin-1)
+			jd.tablePrefix, newDSIdx, newDSMin)
 		_, err := jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1941,8 +1941,14 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	if len(jobList) <= 0 {
 		return nil
 	}
-	insertsql := fmt.Sprintf(`insert into %s(uuid, user_id, custom_val, parameters, event_payload, event_count, workspace_id) values('%s', '%s', '%s', '%s', '%s', %d, '%s') returning job_id`,
-		ds.JobTable, jobList[0].UUID.String(), jobList[0].UserID, jobList[0].CustomVal, jobList[0].Parameters, jobList[0].EventPayload, jobList[0].EventCount, jobList[0].WorkspaceId)
+	var insertsql string
+	if copyID {
+		insertsql = fmt.Sprintf(`insert into %s(job_id, uuid, user_id, custom_val, parameters, event_payload, event_count, workspace_id) values(%d, '%s', '%s', '%s', '%s', '%s', %d, '%s') returning job_id`,
+			ds.JobTable, jobList[0].JobID, jobList[0].UUID.String(), jobList[0].UserID, jobList[0].CustomVal, jobList[0].Parameters, jobList[0].EventPayload, jobList[0].EventCount, jobList[0].WorkspaceId)
+	} else {
+		insertsql = fmt.Sprintf(`insert into %s(uuid, user_id, custom_val, parameters, event_payload, event_count, workspace_id) values('%s', '%s', '%s', '%s', '%s', %d, '%s') returning job_id`,
+			ds.JobTable, jobList[0].UUID.String(), jobList[0].UserID, jobList[0].CustomVal, jobList[0].Parameters, jobList[0].EventPayload, jobList[0].EventCount, jobList[0].WorkspaceId)
+	}
 
 	insertStmt, err = txHandler.Prepare(insertsql)
 	defer insertStmt.Close()
@@ -2448,10 +2454,14 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	jd.job_id_seq_lock.Unlock()
 
 	// updating the cursor now
-	// the first job_id sequence in job_id_seqs that's not present in the read_job_id_seqs map is our cursor
-	for _, seq := range job_id_seqs {
-		if _, ok := read_job_id_seqs[seq]; !ok {
-			cursor = seq
+	// last job id seq read before the first unread seq is our cursor
+	for i := range job_id_seqs {
+		if _, ok := read_job_id_seqs[job_id_seqs[i]]; !ok {
+			if i > 0 {
+				cursor = job_id_seqs[i-1]
+			} else {
+				cursor = job_id_seqs[0]
+			}
 			break
 		}
 	}
