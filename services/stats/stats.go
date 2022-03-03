@@ -171,12 +171,16 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+		if config.GetBool("useNewClient", false) {
+			taggedClient, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+			if err != nil {
+				pkgLogger.Error(err)
+			}
+		} else {
+			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+		}
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
-		if err != nil {
-			pkgLogger.Error(err)
-		}
 	}
 
 	return &RudderStatsT{

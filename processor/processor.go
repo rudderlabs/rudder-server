@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -113,9 +114,9 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
-
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	multitenantI                   multitenant.MultiTenantI
+	backgroundWait                 func() error
+	backgroundCancel               context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -191,7 +192,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":    destination.ID,
 		"destType":       destination.DestinationDefinition.Name,
 		"source":         sourceID,
-		"workspaceId":    workspaceID,
+		"workspace":      workspaceID,
 		"transformation": transformationType,
 	}
 }
@@ -287,9 +288,10 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
+	//TODO : Remove this
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -299,6 +301,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
 
+	proc.multitenantI = multitenantStat
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -798,6 +801,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
@@ -948,6 +952,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
+			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -1076,9 +1081,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-
-	proc.statNumRequests.Count(len(jobList))
-
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
@@ -1233,6 +1235,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1446,11 +1449,15 @@ type storeMessage struct {
 
 func (proc *HandleT) Store(in storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
+	processorLoopStats := make(map[string]map[string]map[string]int)
+	processorLoopStats["router"] = make(map[string]map[string]int)
+	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+
 		err := proc.routerDB.Store(destJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into router table failed with error: %v", err)
@@ -1459,6 +1466,11 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadRouterBytes := 0
 		for i := range destJobs {
+			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1476,6 +1488,12 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadBatchBytes := 0
 		for i := range batchDestJobs {
+			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1521,6 +1539,10 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
+
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
@@ -1873,6 +1895,7 @@ func (proc *HandleT) transformSrcDest(
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
 				EventPayload: destEventJSON,
+				WorkspaceId:  workspaceId,
 			}
 			if misc.ContainsString(batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
@@ -1912,7 +1935,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 		destinationDef := event.Destination.DestinationDefinition
 		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
 		if ok {
-			supportedTypesArr, ok := supportedTypes.([]string)
+			supportedTypeInterface, ok := supportedTypes.([]interface{})
 			if ok && filterUnsupportedMessageTypes {
 				messageType, typOk := event.Message["type"].(string)
 				if !typOk {
@@ -1924,6 +1947,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				}
 
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 					responses = append(responses, resp)
@@ -2042,6 +2066,7 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   job.WorkspaceId,
 		}
 	}
 	//Mark the jobs as executing
