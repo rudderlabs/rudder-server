@@ -14,7 +14,7 @@ import (
 )
 
 func (manager *GCSManager) objectURL(objAttrs *storage.ObjectAttrs) string {
-	if manager.Config.EndPoint != nil {
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		return fmt.Sprintf("%s/%s/%s", *manager.Config.EndPoint, objAttrs.Bucket, objAttrs.Name)
 	}
 	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", objAttrs.Bucket, objAttrs.Name)
