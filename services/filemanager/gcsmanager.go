@@ -89,7 +89,7 @@ func (manager *GCSManager) getClient() (*storage.Client, error) {
 	var err error
 	if manager.client == nil {
 		ctx := context.Background()
-		if manager.Config.EndPoint != nil {
+		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
 		} else if manager.Config.Credentials == "" {
 			manager.client, err = storage.NewClient(ctx)
