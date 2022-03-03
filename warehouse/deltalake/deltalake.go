@@ -575,11 +575,11 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
-	tableLocation := dl.getTableLocationSql(fmt.Sprintf("%[1]s.%[2]s",
+	tableLocationSql := dl.getTableLocationSql(fmt.Sprintf("%[1]s.%[2]s",
 		dl.Namespace,
 		stagingTableName,
 	))
-	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
+	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 	// Creating create table sql statement for staging users table
 	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %[1]s.%[2]s USING DELTA %[7]s %[8]s AS (SELECT DISTINCT * FROM
 										(
@@ -601,8 +601,8 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		quotedUserColNames,
-		tableLocation,
-		tablePropertiesSQL,
+		tableLocationSql,
+		tablePropertiesSql,
 	)
 
 	// Executing create sql statement
@@ -712,13 +712,13 @@ func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) 
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	tableLocation := dl.getTableLocationSql(name)
+	tableLocationSql := dl.getTableLocationSql(name)
 	var partitionedSql string
 	if _, ok := columns["received_at"]; ok {
 		partitionedSql = `PARTITIONED BY(event_date)`
 	}
-	tablePropertiesSQL := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
-	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %s ( %v ) USING DELTA %s %s %s;`, name, columnsWithDataTypes(columns, ""), tableLocation, partitionedSql, tablePropertiesSQL)
+	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
+	sqlStatement := fmt.Sprintf(`CREATE OR REPLACE TABLE %s ( %v ) USING DELTA %s %s %s;`, name, columnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql, tablePropertiesSql)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
