@@ -134,11 +134,14 @@ func getDeltaLakeDataType(columnType string) string {
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
-		var generatedColumnSQL string
-		if name == "received_at" {
-			generatedColumnSQL = "GENERATED ALWAYS AS ( CAST(received_at AS DATE) ) )"
+		if name == "event_date" {
+			return ""
 		}
-		return fmt.Sprintf(`%s%s %s %s`, prefix, name, getDeltaLakeDataType(columns[name]), generatedColumnSQL)
+		if name == "received_at" {
+			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
+			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
+		}
+		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
@@ -813,6 +816,9 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 		// Populating the schema for the table
 		for _, item := range fetchTableAttributesResponse.GetAttributes() {
+			if item.GetColName() == "event_date" {
+				continue
+			}
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(map[string]string)
 			}
