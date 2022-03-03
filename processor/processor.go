@@ -2179,7 +2179,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	bufferSize := pipelineBufferedItems
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
-	subJobSync := make(chan int, 2)
+	subJobSync := make(chan int, 1)
 
 	go func() {
 		defer wg.Done()
@@ -2262,6 +2262,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		for {
 			<-triggerStore
+			<-subJobSync
 			var statusList []*jobsdb.JobStatusT
 			var destJobs []*jobsdb.JobT
 			var batchDestJobs []*jobsdb.JobT
@@ -2312,7 +2313,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				totalEvents: totalEvents,
 				start:       start,
 			})
-			<-subJobSync
+
 		}
 	}()
 
