@@ -135,6 +135,8 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 }
 
 func TestProcessorManager(t *testing.T) {
+	temp := isUnLocked
+	defer func() {isUnLocked = temp}()
 	initJobsDB()
 	stats.Setup()
 	ctx := context.Background()
@@ -147,8 +149,7 @@ func TestProcessorManager(t *testing.T) {
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-		processor.transformerFeatures = json.RawMessage(
-			defaultTransformerFeatures)
+		processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 	})
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
@@ -224,11 +225,11 @@ func TestProcessorManager(t *testing.T) {
 	processor.Stop()
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
+		//mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.transformerFeatures = json.RawMessage(
-				defaultTransformerFeatures)
+			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 
 		go processor.StartNew()
