@@ -1422,7 +1422,7 @@ var _ = Describe("Static Function Tests", func() {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []string{"identify"},
+						"supportedMessageTypes": []interface{}{"identify"},
 					},
 				},
 			}
