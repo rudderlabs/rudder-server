@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -106,8 +105,6 @@ type HandleT struct {
 	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	statPipelineEventsCount        stats.RudderStats
-	statPipelineTotalEventCount    stats.RudderStats
 	logger                         logger.LoggerI
 	eventSchemaHandler             types.EventSchemasI
 	dedupHandler                   dedup.DedupI
@@ -365,9 +362,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
-	proc.statPipelineEventsCount = proc.stats.NewStat("processor.pipeline_db_read_events_count", stats.GaugeType)
-	proc.statPipelineTotalEventCount = proc.stats.NewStat("processor.pipeline_total_event_count", stats.GaugeType)
-
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -465,8 +459,7 @@ var (
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
-	// config.RegisterIntConfigVariable(0, &subJobCount, false, 1, "Processor.subJobCount")
-	subJobCount = config.GetInt("Processor.subJobCount", 1)
+	config.RegisterIntConfigVariable(5, &subJobCount, false, 1, "Processor.subJobCount")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -2149,13 +2142,6 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 //
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
-	// file, err := os.OpenFile("cpuProfile.out", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0777)
-	// if err != nil {
-	// 	panic(fmt.Errorf("error while opening cpuProfile.out for writing profile: %w", err))
-	// }
-
-	// pprof.StartCPUProfile(file)
-
 	//waiting for reporting client setup
 	proc.logger.Info("Processor mainPipeline started")
 	proc.logger.Info("Processor subJobCount= ", subJobCount)
@@ -2168,25 +2154,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	bufferSize := pipelineBufferedItems
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
-	var totalPipelineEventCount int64
-	totalPipelineEventCount = 0
 	subJobSync := make(chan int, 2)
-
-	var loopStart time.Time
-	var loopTime time.Duration
 
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
-
 		nextSleepTime := time.Duration(0)
-		getJobIndex := 0
-		getJobWaitStart := time.Now()
 
 		for {
-			loopStart = time.Now()
-			proc.logger.Info("------LOOP START-----", "i: ", getJobIndex)
-
 			select {
 			case <-ctx.Done():
 				return
@@ -2196,118 +2171,63 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
-
-				getJobWaitTime := time.Since(getJobWaitStart)
-				proc.logger.Info("i: ", getJobIndex, " getJobWaitTime: ", getJobWaitTime)
-
-				readJobExecStart := time.Now()
-
-				proc.logger.Info("reading job")
 				jobs := proc.getJobs()
-				proc.logger.Info("number of jobs read:=", len(jobs))
 				if len(jobs) == 0 {
-					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
 					if nextSleepTime > proc.maxLoopSleep {
 						nextSleepTime = proc.maxLoopSleep
 					} else if nextSleepTime == 0 {
 						nextSleepTime = proc.readLoopSleep
 					}
-					proc.logger.Info("sleeping for: ", nextSleepTime)
 					continue
 				}
-				proc.logger.Info("marking jobs as executing")
 				err := proc.markExecuting(jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
 				}
-				readJobExecTime := time.Since(readJobExecStart)
-				proc.logger.Info("i: ", getJobIndex, " readJobExecTime: ", readJobExecTime)
-				getJobWaitStart = time.Now()
 				subJobSync <- 1
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
-				proc.statPipelineEventsCount.Gauge(events)
-
-				atomic.AddInt64(&totalPipelineEventCount, int64(events))
-				proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
-
-				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
 				subJobSize := len(jobs) / subJobCount
 
 				for i := 0; i < subJobCount-1; i++ {
-					proc.logger.Info("subjob i= ", i, " sent with jobs count= ", len(jobs[:subJobSize]))
 					chProc <- jobs[:subJobSize]
 					jobs = jobs[subJobSize:]
 				}
 				chProc <- jobs
-				proc.logger.Info("subjob i= ", subJobCount-1, " sent with jobs count= ", len(jobs))
 			}
-
-			getJobIndex++
 		}
 	}()
+
 	chTrans := make(chan transformationMessage, bufferSize)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(chTrans)
-		processJobPreWaitStart := time.Now()
-		processJobIndex := 0
 		for jobs := range chProc {
-			processJobPreWaitTime := time.Since(processJobPreWaitStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobPreWaitTime: ", processJobPreWaitTime)
-
-			processJobExecStart := time.Now()
-			tmp := proc.processJobsForDest(jobs, nil)
-			processJobExecTime := time.Since(processJobExecStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobExecTime: ", processJobExecTime)
-
-			processJobPostWaitStart := time.Now()
-			chTrans <- tmp
-			processJobPostWaitTime := time.Since(processJobPostWaitStart)
-			proc.logger.Info("i: ", processJobIndex, " processJobPostWaitTime: ", processJobPostWaitTime)
-
-			processJobIndex++
-			processJobPreWaitStart = time.Now()
-
+			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
 	}()
 
 	triggerStore := make(chan int, 1)
 	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-		transformationIndex := 0
-		transformationsPreWaitStart := time.Now()
 		for msg := range chTrans {
-			transformationsPreWaitTime := time.Since(transformationsPreWaitStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsPreWaitTime: ", transformationsPreWaitTime)
 
-			transformationsExecStart := time.Now()
-			tmp := proc.transformations(msg)
-			transformationsExecTime := time.Since(transformationsExecStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsExecTime: ", transformationsExecTime)
-
-			transformationsPostsWaitStart := time.Now()
-			chStore <- tmp
-			proc.logger.Info("len of chStore= ", len(chStore))
+			chStore <- proc.transformations(msg)
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
-			transformationsPostWaitTime := time.Since(transformationsPostsWaitStart)
-			proc.logger.Info("i: ", transformationIndex, " transformationsPostWaitTime: ", transformationsPostWaitTime)
-			transformationIndex++
-			transformationsPreWaitStart = time.Now()
-
 		}
 
 	}()
@@ -2315,14 +2235,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		storeIndex := 0
-		StoreWaitStart := time.Now()
 		for {
 			<-triggerStore
-			StoreWaitTime := time.Since(StoreWaitStart)
-			proc.logger.Info("i: ", storeIndex, " StoreWaitTime: ", StoreWaitTime)
-
-			StoreExecStart := time.Now()
 			var statusList []*jobsdb.JobStatusT
 			var destJobs []*jobsdb.JobT
 			var batchDestJobs []*jobsdb.JobT
@@ -2334,39 +2248,21 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 			sourceDupStats := make(map[string]int)
 			i := 0
-			// if len(chStore) > 1 {
 			for subJob := range chStore {
-				proc.logger.Info("merging subjob= ", subJobCount-len(chStore))
 				statusList = append(statusList, subJob.statusList...)
-				proc.logger.Info("statusList merged")
 				destJobs = append(destJobs, subJob.destJobs...)
-				proc.logger.Info("destJobs merged")
-
 				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
-				proc.logger.Info("batchDestJobs merged")
-
 				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
-				proc.logger.Info("ProcErrorsJobs merged")
 				for id, job := range subJob.procErrorJobsByDestID {
-					// _, found := procErrorJobsByDestID[id]
-					// if !found {
-					// 	procErrorJobsByDestID[id] = []*jobsdb.JobT{}
-					// }
 					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
 				}
-				proc.logger.Info("procErrorJobsByDestID merged")
-
 				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
 				for tag, count := range subJob.sourceDupStats {
 					sourceDupStats[tag] += count
 				}
-				proc.logger.Info("sourceDupStats merged")
-
 				for id := range subJob.uniqueMessageIds {
 					uniqueMessageIds[id] = struct{}{}
 				}
-				proc.logger.Info("uniqueMessageIds merged")
-
 				totalEvents = subJob.totalEvents
 				if i == 0 {
 					start = subJob.start
@@ -2376,8 +2272,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					break
 				}
 			}
-			// }
-			proc.logger.Info("processed job merge complete... storing")
 			proc.Store(storeMessage{
 				statusList:    statusList,
 				destJobs:      destJobs,
@@ -2393,18 +2287,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				totalEvents: totalEvents,
 				start:       start,
 			})
-			StoreExecTime := time.Since(StoreExecStart)
-			proc.logger.Info("i: ", storeIndex, " StoreExecTime: ", StoreExecTime)
-			StoreWaitStart = time.Now()
-
-			loopTime = time.Since(loopStart)
-			proc.logger.Info("i: ", storeIndex, " loopTime: ", loopTime)
-			storeIndex++
-			proc.logger.Info("---------LOOP END--------")
 			<-subJobSync
-			atomic.AddInt64(&totalPipelineEventCount, -1*int64(totalEvents))
-			proc.statPipelineTotalEventCount.Gauge(totalPipelineEventCount)
-
 		}
 	}()
 
