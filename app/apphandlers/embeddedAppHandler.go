@@ -144,7 +144,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
+		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB, &batchRouterDB)
 	}
 
 	if enableGateway {
