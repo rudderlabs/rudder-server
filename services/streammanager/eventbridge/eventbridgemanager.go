@@ -3,6 +3,8 @@ package eventbridge
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -19,6 +21,10 @@ type Config struct {
 	AccessKey   string
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -26,7 +32,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (eventbridge.EventBridge, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -37,14 +43,18 @@ func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error)
 	if err != nil {
 		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
 	}
+	httpClient := http.DefaultClient
+	httpClient.Timeout = o.Timeout
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(config.Region),
+			Region:     aws.String(config.Region),
+			HTTPClient: httpClient,
 		}))
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
+			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
@@ -31,6 +33,10 @@ type Credentials struct {
 	TokenUrl   string `json:"token_uri"`
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -38,7 +44,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*sheets.Service, error) {
 	var config Config
 	var credentialsFile Credentials
 	var headerRowStr []string
@@ -72,7 +78,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 		TokenURL: tokenURI,
 	}
 
-	service, err := generateServiceWithRefreshToken(*jwtconfig)
+	service, err := generateServiceWithRefreshToken(*jwtconfig, o)
 
 	// If err is not nil then retrun
 	if err != nil {
@@ -131,7 +137,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 }
 
 // This method produces a google-sheets client from a jwt.Config client by retrieveing access token
-func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, error) {
+func generateServiceWithRefreshToken(jwtconfig jwt.Config, o Opts) (*sheets.Service, error) {
 	ctx := context.Background()
 	var oauthconfig *oauth2.Config
 	token, err := jwtconfig.TokenSource(ctx).Token()
@@ -140,7 +146,8 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 	}
 	// Once the token is received we are generating the oauth-config client which are using for generating the google-sheets service
 	client := oauthconfig.Client(ctx, token)
-	sheetService, err := sheets.New(client)
+	client.Timeout = o.Timeout
+	sheetService, err := sheets.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] error  :: Unable to create sheet service :: %w", err)
 	}

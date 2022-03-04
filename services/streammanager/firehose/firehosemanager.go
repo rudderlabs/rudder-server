@@ -3,6 +3,8 @@ package firehose
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -20,6 +22,10 @@ type Config struct {
 	AccessKey   string
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -27,7 +33,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -38,13 +44,17 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 		return firehose.Firehose{}, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
 	}
 	var s *session.Session
+	httpClient := http.DefaultClient
+	httpClient.Timeout = o.Timeout
 
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(config.Region),
+			Region:     aws.String(config.Region),
+			HTTPClient: httpClient,
 		}))
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
+			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}

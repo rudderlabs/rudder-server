@@ -3,7 +3,9 @@ package kinesis
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -25,6 +27,10 @@ type Config struct {
 	UseMessageID bool
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 func init() {
 	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
 		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
@@ -35,7 +41,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (kinesis.Kinesis, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -46,14 +52,18 @@ func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
 	if err != nil {
 		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while unmarshalling destination config. Error: %w", err)
 	}
+	httpClient := http.DefaultClient
+	httpClient.Timeout = o.Timeout
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(config.Region),
+			HTTPClient: httpClient,
+			Region:     aws.String(config.Region),
 		}))
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
+			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}

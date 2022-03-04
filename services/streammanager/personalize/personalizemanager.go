@@ -3,7 +3,9 @@ package personalize
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -20,12 +22,16 @@ type Config struct {
 	SecretAccessKey string
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
-func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEvents, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (personalizeevents.PersonalizeEvents, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig) // produces json
 	if err != nil {
@@ -35,13 +41,17 @@ func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEv
 	if err != nil {
 		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while unmarshalling destination config :: %w", err)
 	}
+	httpClient := http.DefaultClient
+	httpClient.Timeout = o.Timeout
 	var s *session.Session
 	if config.AccessKeyID == "" || config.SecretAccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(config.Region),
+			Region:     aws.String(config.Region),
+			HTTPClient: httpClient,
 		}))
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
+			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")}))
 	}

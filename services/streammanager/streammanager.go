@@ -34,10 +34,14 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "EVENTBRIDGE":
-		producer, err := eventbridge.NewProducer(destinationConfig)
+		producer, err := eventbridge.NewProducer(destinationConfig, eventbridge.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "FIREHOSE":
-		producer, err := firehose.NewProducer(destinationConfig)
+		producer, err := firehose.NewProducer(destinationConfig, firehose.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "KAFKA":
 		producer, err := kafka.NewProducer(destinationConfig, kafka.Opts{
@@ -45,16 +49,24 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "KINESIS":
-		producer, err := kinesis.NewProducer(destinationConfig)
+		producer, err := kinesis.NewProducer(destinationConfig, kinesis.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "GOOGLEPUBSUB":
-		producer, err := googlepubsub.NewProducer(destinationConfig)
+		producer, err := googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig)
+		producer, err := googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "PERSONALIZE":
-		producer, err := personalize.NewProducer(destinationConfig)
+		producer, err := personalize.NewProducer(destinationConfig, personalize.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "BQSTREAM":
 		producer, err := bqstream.NewProducer(destinationConfig)
@@ -90,7 +102,7 @@ type StreamProducer interface {
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}, o Opts) (int, string, string) {
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
@@ -107,7 +119,9 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	case "PERSONALIZE":
 		return personalize.Produce(jsonData, producer, config)
 	case "BQSTREAM":
-		return bqstream.Produce(jsonData, producer, config)
+		return bqstream.Produce(jsonData, producer, config, bqstream.Opts{
+			Timeout: o.Timeout,
+		})
 	default:
 		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}

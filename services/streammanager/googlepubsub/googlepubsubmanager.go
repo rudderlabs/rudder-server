@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -23,6 +24,10 @@ type PubsubClient struct {
 	TopicMap map[string]*pubsub.Topic
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -30,7 +35,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	var config Config
 	ctx := context.Background()
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -52,6 +57,7 @@ func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = 0
+		topic.PublishSettings.Timeout = o.Timeout
 		topicMap[s["to"]] = topic
 	}
 	pbsClient := &PubsubClient{client, topicMap}
