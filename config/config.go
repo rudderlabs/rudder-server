@@ -460,6 +460,7 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 	}
 }
 
+// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
 	configVarLock.Lock()
 	defer configVarLock.Unlock()

@@ -1,16 +1,13 @@
 package backendconfig
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 type MultiTenantWorkspaceConfig struct {
@@ -23,27 +20,6 @@ type MultiTenantWorkspaceConfig struct {
 
 func (workspaceConfig *MultiTenantWorkspaceConfig) SetUp() {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-	rruntime.Go(func() {
-		workspaceConfig.watchWorkspaces()
-	})
-}
-
-func (workspaceConfig *MultiTenantWorkspaceConfig) watchWorkspaces() {
-	workSpaces, watchChan := etcdconfig.GetWorkspaces(context.Background())
-	for {
-		select {
-		case workSpacesWatch := <-watchChan:
-			switch workSpacesWatch["type"] {
-			case "PUT":
-				workSpaces = workSpacesWatch["workSpaces"]
-				pkgLogger.Infof("Update in workspaces being served: %s", workSpaces)
-			case "DELETE":
-				workSpaces = ``
-				pkgLogger.Info("This pod no longer serves any tenants, proceed appropriately")
-			}
-		case <-time.After(time.Duration(pollInterval)):
-		}
-	}
 }
 
 func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
@@ -88,7 +64,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) Get() (ConfigT, bool) {
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=", configBackendURL)
-	workspacesString := strings.Join(workspaceIDs[:], ",")
+	workspacesString := ""
 	url = url + workspacesString
 	url = url + "&fetchAll=true"
 	var respBody []byte
