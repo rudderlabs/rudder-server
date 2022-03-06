@@ -75,6 +75,14 @@ var dataTypesMapToRudder = map[bigquery.FieldType]string{
 	"TIMESTAMP": "datetime",
 }
 
+var primaryKeyMap = map[string]string{
+	"users":                                "id",
+	"identifies":                           "id",
+	warehouseutils.DiscardsTable:           "row_id, column_name, table_name",
+	warehouseutils.IdentityMappingsTable:   "merge_property_type, merge_property_value",
+	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
+}
+
 var partitionKeyMap = map[string]string{
 	"users":                                "id",
 	"identifies":                           "id",
@@ -242,7 +250,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	loadUserTableByAppend := func() (err error) {
+	loadTableByAppend := func() (err error) {
 		partitionDate = time.Now().Format("2006-01-02")
 		outputTable := partitionedTable(tableName, partitionDate)
 
@@ -251,12 +259,12 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 
 		job, err := loader.Run(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating append load job: %v\n", err)
 			return
 		}
 		status, err := job.Wait(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running append load job: %v\n", err)
 			return
 		}
 
@@ -266,27 +274,32 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		return
 	}
 
-	loadUserTableByMerge := func() (err error) {
+	loadTableByMerge := func() (err error) {
 		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 		// create temporary table in format rudder_staging_${tableName}_uuid
 		loader := bq.Db.Dataset(bq.Namespace).Table(stagingTableName).LoaderFrom(gcsRef)
 
 		job, err := loader.Run(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating staging table load job: %v\n", err)
 			return
 		}
 		status, err := job.Wait(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running staging table load job: %v\n", err)
 			return
 		}
 
 		if status.Err() != nil {
 			return status.Err()
 		}
+		defer bq.dropStagingTable(stagingTableName)
 
 		primaryKey := "id"
+		if column, ok := primaryKeyMap[tableName]; ok {
+			primaryKey = column
+		}
+
 		partitionKey := `"id"`
 		if column, ok := partitionKeyMap[tableName]; ok {
 			partitionKey = column
@@ -298,26 +311,21 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 			tableColNames = append(tableColNames, colName)
 		}
 
-		var columnNames, stagingColumnNames, columnsWithValues string
-		for idx, str := range tableColNames {
-			columnNames += str
-			stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
-			columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
-			if idx != len(tableColNames)-1 {
-				columnNames += `,`
-				stagingColumnNames += `,`
-				columnsWithValues += `,`
-			}
+		var stagingColumnNamesList, columnsWithValuesList []string
+		for _, str := range tableColNames {
+			stagingColumnNamesList = append(stagingColumnNamesList, fmt.Sprintf(`staging.%s`, str))
+			columnsWithValuesList = append(columnsWithValuesList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str))
 		}
+		columnNames := strings.Join(tableColNames, ",")
+		stagingColumnNames := strings.Join(stagingColumnNamesList, ",")
+		columnsWithValues := strings.Join(columnsWithValuesList, ",")
 
-		var joinClause string
-		if tableName == warehouseutils.DiscardsTable {
-			joinClause = fmt.Sprintf(`original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s" AND original."%[3]s" = staging."%[3]s"`, "row_id", "table_name", "column_name")
-		} else if tableName == warehouseutils.IdentityMappingsTable {
-			joinClause = fmt.Sprintf(`original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s"`, "merge_property_type", "merge_property_value")
-		} else {
-			joinClause = fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, primaryKey)
+		var primaryKeyList []string
+		for _, str := range strings.Split(primaryKey, ",") {
+			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " ")))
 		}
+		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
+		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
 		sqlStatement := fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 										USING (
@@ -329,7 +337,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 										WHEN MATCHED THEN
 										UPDATE SET %[6]s
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, joinClause, columnNames, stagingColumnNames, columnsWithValues, partitionKey)
+										INSERT (%[4]s) VALUES (%[5]s)`, bqTable(tableName), bqTable(stagingTableName), primaryJoinClause, columnNames, stagingColumnNames, columnsWithValues, partitionKey)
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 
 		q := bq.Db.Query(sqlStatement)
@@ -347,16 +355,15 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		if status.Err() != nil {
 			return status.Err()
 		}
-
 		return
 	}
 
 	if !isDedupEnabled {
-		err := loadUserTableByAppend()
+		err = loadTableByAppend()
 		return "", err
 	}
 
-	err = loadUserTableByMerge()
+	err = loadTableByMerge()
 	return "", err
 }
 
@@ -534,7 +541,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	if !isUsersTableDedupEnabled {
+	if !isDedupEnabled {
 		loadUserTableByAppend()
 		return
 	}
