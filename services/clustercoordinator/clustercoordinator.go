@@ -53,6 +53,7 @@ func New(provider string) (ClusterManager, error) {
 func (factory *ClusterManagerFactoryT) New(provider string) (ClusterManager, error) {
 	switch provider {
 	case "ETCD":
+		etcdInit()
 		return &ETCDManager{
 			Config: GetETCDConfig(),
 		}, nil
