@@ -1,6 +1,7 @@
 package clustercoordinator
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,32 @@ func (manager *ETCDManager) getClient() (*clientv3.Client, error) {
 	}
 
 	return cli, err
+}
+
+func (manager *ETCDManager) Put(ctx context.Context, key string, value string) error {
+	_, err := manager.Client.Put(ctx, key, value)
+	return err
+}
+
+func (manager *ETCDManager) Watch(ctx context.Context, key string) chan interface{} {
+	resultChan := make(chan interface{}, 1)
+	watchChan := manager.Client.Watch(ctx, key)
+	resultChan <- watchChan
+	return resultChan
+}
+
+func (manager *ETCDManager) Get(ctx context.Context, key string) (string, error) {
+	var result string
+	val, err := manager.Client.Get(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	if len(val.Kvs) > 0 {
+		result = string(val.Kvs[0].Value)
+	} else {
+		result = ``
+	}
+	return result, nil
 }
 
 func GetETCDConfig() *ETCDConfig {
