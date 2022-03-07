@@ -28,6 +28,9 @@ type FileObject struct {
 
 // FileManager implements all upload methods
 type ClusterManager interface {
+	Get()
+	Watch()
+	Put()
 }
 
 // SettingsT sets configuration for FileManager
