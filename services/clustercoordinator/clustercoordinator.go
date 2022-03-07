@@ -4,8 +4,6 @@ package clustercoordinator
 
 import (
 	"time"
-
-	"github.com/rudderlabs/rudder-server/config"
 )
 
 var (
@@ -59,25 +57,4 @@ func (factory *ClusterManagerFactoryT) New(provider string) (ClusterManager, err
 			Config: GetNOOPConfig(),
 		}, nil
 	}
-}
-
-// GetProviderConfigFromEnv returns the provider config
-func GetProviderConfigFromEnv() map[string]interface{} {
-	providerConfig := make(map[string]interface{})
-	provider := config.GetEnv("CLUSTER_COORDINATOR", "")
-	switch provider {
-	case "ETCD":
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
-		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
-		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
-	default:
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["endPoint"] = config.GetEnv("DO_SPACES_ENDPOINT", "")
-		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
-		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
-	}
-	return providerConfig
 }
