@@ -65,9 +65,9 @@ func (proc *Processor) Stop() {
 
 // NewProcessor creates a new Processor intanstace
 func New(ctx context.Context) *Processor {
-	dbRetentionTime := 0 * time.Hour
-	clearDb := false
-	migrationMode := "import"
+	dbRetentionTime := 0 * time.Hour //take these from env
+	clearDb := false // take this from caller function
+	migrationMode := "import" // take this from caller function
 	proc := &Processor{
 		HandleT: &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx: ctx,
