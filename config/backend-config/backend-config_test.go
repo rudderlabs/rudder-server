@@ -135,14 +135,14 @@ var _ = Describe("BackendConfig", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			configUpdate(statConfigBackendError)
+			configUpdate(statConfigBackendError, "")
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			configUpdate(statConfigBackendError)
+			configUpdate(statConfigBackendError, "")
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
@@ -157,7 +157,7 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 			mockPubSub.EXPECT().Publish(string(TopicProcessConfig), gomock.Eq(SampleFilteredSources)).Times(1)
 			mockPubSub.EXPECT().Publish(string(TopicBackendConfig), SampleBackendConfig).Times(1)
-			configUpdate(statConfigBackendError)
+			configUpdate(statConfigBackendError, "")
 			Expect(initialized).To(BeTrue())
 			Eb = originalMockPubSub
 		})

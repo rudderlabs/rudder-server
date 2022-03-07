@@ -207,7 +207,7 @@ type TrackingPlanT struct {
 
 type BackendConfig interface {
 	SetUp()
-	Get() (ConfigT, bool)
+	Get(string) (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
@@ -283,9 +283,9 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func configUpdate(statConfigBackendError stats.RudderStats) {
+func configUpdate(statConfigBackendError stats.RudderStats, workspaces string) {
 
-	sourceJSON, ok := backendConfig.Get()
+	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
 		statConfigBackendError.Increment()
 	}
@@ -312,11 +312,16 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 	}
 }
 
-func pollConfigUpdate() {
+func pollConfigUpdate(ctx context.Context, workspaces string) {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		configUpdate(statConfigBackendError)
-		time.Sleep(time.Duration(pollInterval))
+		configUpdate(statConfigBackendError, workspaces)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
@@ -410,11 +415,17 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 
 	DefaultBackendConfig = backendConfig
 
-	rruntime.Go(func() {
-		pollConfigUpdate()
-	})
-
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+}
+
+func (bc *CommonBackendConfig) StartPolling(ctx context.Context, workspaces string) {
+	rruntime.Go(func() {
+		pollConfigUpdate(ctx, workspaces)
+	})
+}
+
+func (bc *CommonBackendConfig) StopPolling(ctx context.Context) {
+	initialized = false
 }
 
 func GetConfigBackendURL() string {

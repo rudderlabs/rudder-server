@@ -75,7 +75,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 }
 
 //Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
+func (multiWorkspaceConfig *MultiWorkspaceConfig) Get(workspaceArr string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte

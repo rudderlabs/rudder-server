@@ -57,13 +57,13 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceLibrariesForWorks
 }
 
 //Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspaceConfig) Get() (ConfigT, bool) {
-	return workspaceConfig.getFromAPI()
+func (workspaceConfig *MultiTenantWorkspaceConfig) Get(workspaces string) (ConfigT, bool) {
+	return workspaceConfig.getFromAPI(workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) {
-	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=", configBackendURL)
+func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
+	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
 	workspacesString := ""
 	url = url + workspacesString
 	url = url + "&fetchAll=true"

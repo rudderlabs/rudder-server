@@ -45,23 +45,22 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(work
 }
 
 //Get returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
+func (workspaceConfig *WorkspaceConfig) Get(workspaces string) (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
-		return workspaceConfig.getFromAPI()
+		return workspaceConfig.getFromAPI(workspaces)
 	}
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
+func (workspaceConfig *WorkspaceConfig) getFromAPI(workspaceToken string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 	var respBody []byte
 	var statusCode int
-
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url, workspaceToken)
 		return fetchError
 	}
 
@@ -113,7 +112,7 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
 	return configJSON, true
 }
 
-func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string) ([]byte, int, error) {
+func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
