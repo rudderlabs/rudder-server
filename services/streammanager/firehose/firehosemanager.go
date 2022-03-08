@@ -44,8 +44,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, erro
 		return firehose.Firehose{}, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
 	}
 	var s *session.Session
-	httpClient := http.DefaultClient
-	httpClient.Timeout = o.Timeout
+	httpClient := &http.Client{
+		Timeout: o.Timeout,
+	}
 
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
