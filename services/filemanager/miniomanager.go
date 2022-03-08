@@ -1,11 +1,13 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/minio/minio-go/v6"
 )
@@ -18,7 +20,7 @@ func (manager *MinioManager) ObjectUrl(objectName string) string {
 	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
 }
 
-func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
@@ -28,7 +30,10 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		return UploadOutput{}, err
 	}
 
-	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	if err = minioClient.MakeBucketWithContext(ctxWithTimeout, manager.Config.Bucket, "us-east-1"); err != nil {
 		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
@@ -50,7 +55,10 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		}
 	}
 
-	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
+	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	_, err = minioClient.FPutObjectWithContext(ctxWithTimeout, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -58,12 +66,16 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
 }
 
-func (manager *MinioManager) Download(file *os.File, key string) error {
+func (manager *MinioManager) Download(ctx context.Context, file *os.File, key string) error {
 	minioClient, err := manager.getClient()
 	if err != nil {
 		return err
 	}
-	err = minioClient.FGetObject(manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	err = minioClient.FGetObjectWithContext(ctxWithTimeout, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
 }
 
@@ -93,7 +105,7 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 	return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 }
 
-func (manager *MinioManager) DeleteObjects(keys []string) (err error) {
+func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
 
 	objectChannel := make(chan string, len(keys))
 	for _, key := range keys {
@@ -105,11 +117,15 @@ func (manager *MinioManager) DeleteObjects(keys []string) (err error) {
 	if err != nil {
 		return err
 	}
-	tmp := <-minioClient.RemoveObjects(manager.Config.Bucket, objectChannel)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	tmp := <-minioClient.RemoveObjectsWithContext(ctxWithTimeout, manager.Config.Bucket, objectChannel)
 	return tmp.Err
 }
 
-func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core
@@ -195,8 +211,9 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 }
 
 type MinioManager struct {
-	Config *MinioConfig
-	client *minio.Client
+	Config  *MinioConfig
+	client  *minio.Client
+	Timeout *time.Duration
 }
 
 type MinioConfig struct {

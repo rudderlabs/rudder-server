@@ -237,7 +237,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		}),
 	})
 
-	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
+	uploadOutput, err := uploader.Upload(context.Background(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
 
 	if err != nil {
 		return "", err

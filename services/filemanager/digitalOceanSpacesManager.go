@@ -1,11 +1,13 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -34,7 +36,7 @@ func (manager *DOSpacesManager) getSession() *session.Session {
 }
 
 // Upload passed in file to spaces
-func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
@@ -61,7 +63,11 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	}
 	uploadSession := manager.getSession()
 	DOmanager := SpacesManager.NewUploader(uploadSession)
-	output, err := DOmanager.Upload(uploadInput)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	output, err := DOmanager.UploadWithContext(ctxWithTimeout, uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -72,12 +78,15 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
-func (manager *DOSpacesManager) Download(output *os.File, key string) error {
+func (manager *DOSpacesManager) Download(ctx context.Context, output *os.File, key string) error {
 
 	downloadSession := manager.getSession()
 
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	downloader := SpacesManager.NewDownloader(downloadSession)
-	_, err := downloader.Download(output,
+	_, err := downloader.DownloadWithContext(ctxWithTimeout, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -114,7 +123,7 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 	return trimedUrl, nil
 }
 
-func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	sess := manager.getSession()
@@ -122,8 +131,11 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int6
 	// Create S3 service client
 	svc := s3.New(sess)
 
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	// Get the list of items
-	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
+	resp, err := svc.ListObjectsV2WithContext(ctxWithTimeout, &s3.ListObjectsV2Input{
 		Bucket:  aws.String(manager.Config.Bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: &maxItems,
@@ -139,7 +151,7 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int6
 	return
 }
 
-func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
+func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
 	sess := manager.getSession()
 	if err != nil {
 		return fmt.Errorf(`get session: %v`, err)
@@ -164,7 +176,11 @@ func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
 				Objects: objects[i:j],
 			},
 		}
-		_, err := svc.DeleteObjects(input)
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+		defer cancel()
+
+		_, err := svc.DeleteObjectsWithContext(ctxWithTimeout, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
@@ -183,7 +199,8 @@ func (manager *DOSpacesManager) DeleteObjects(keys []string) (err error) {
 }
 
 type DOSpacesManager struct {
-	Config *DOSpacesConfig
+	Config  *DOSpacesConfig
+	Timeout *time.Duration
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {

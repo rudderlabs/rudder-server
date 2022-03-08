@@ -691,7 +691,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
-	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(context.Background(), outputFile, keyPrefixes...)
 
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
@@ -895,7 +895,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 	prefixes := []string{folderName, destination.Source.ID}
 	prefix := strings.Join(prefixes[0:2], "/")
 	fullPrefix := GetFullPrefix(manager, prefix)
-	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
+	fileObjects, err := manager.ListFilesWithPrefix(context.Background(), fullPrefix, 5)
 	if err != nil {
 		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
 		// Returning the earlier default as we might not able to fetch the list.
@@ -1911,7 +1911,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 		objKey += object.Key
 
-		err = downloader.Download(jsonFile, objKey)
+		err = downloader.Download(context.Background(), jsonFile, objKey)
 		if err != nil {
 			brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
 			continue

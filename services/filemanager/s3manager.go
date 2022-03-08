@@ -1,11 +1,13 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -18,7 +20,7 @@ import (
 )
 
 // Upload passed in file to s3
-func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 
@@ -44,12 +46,16 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
 
-	uploadSession, err := manager.getSession()
+	uploadSession, err := manager.getSession(ctx)
 	if err != nil {
 		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
-	output, err := s3manager.Upload(uploadInput)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	output, err := s3manager.UploadWithContext(ctxWithTimeout, uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -60,15 +66,18 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
-func (manager *S3Manager) Download(output *os.File, key string) error {
-	sess, err := manager.getSession()
+func (manager *S3Manager) Download(ctx context.Context, output *os.File, key string) error {
+	sess, err := manager.getSession(ctx)
 	if err != nil {
 		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	downloader := s3manager.NewDownloader(sess)
 
-	_, err = downloader.Download(output,
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	_, err = downloader.DownloadWithContext(ctxWithTimeout, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -111,8 +120,8 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 	return trimedUrl
 }
 
-func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
-	sess, err := manager.getSession()
+func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
+	sess, err := manager.getSession(ctx)
 	if err != nil {
 		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
@@ -136,7 +145,11 @@ func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 				Objects: objects[i:j],
 			},
 		}
-		_, err := svc.DeleteObjects(input)
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+		defer cancel()
+
+		_, err := svc.DeleteObjectsWithContext(ctxWithTimeout, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
@@ -154,7 +167,7 @@ func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 	return nil
 }
 
-func (manager *S3Manager) getSession() (*session.Session, error) {
+func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
 	if manager.session != nil {
 		return manager.session, nil
 	}
@@ -166,7 +179,11 @@ func (manager *S3Manager) getSession() (*session.Session, error) {
 	var err error
 	if manager.Config.Region == nil {
 		getRegionSession := session.Must(session.NewSession())
-		region, err = awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+		defer cancel()
+
+		region, err = awsS3Manager.GetBucketRegion(ctxWithTimeout, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
@@ -200,13 +217,13 @@ func (manager *S3Manager) getSession() (*session.Session, error) {
 
 //IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
 //then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
-func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		return
 	}
 	fileObjects = make([]*FileObject, 0)
 
-	sess, err := manager.getSession()
+	sess, err := manager.getSession(ctx)
 	if err != nil {
 		return []*FileObject{}, fmt.Errorf(`error starting S3 session: %v`, err)
 	}
@@ -223,8 +240,12 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	// Get the list of items
-	resp, err := svc.ListObjectsV2(&listObjectsV2Input)
+	resp, err := svc.ListObjectsV2WithContext(ctxWithTimeout, &listObjectsV2Input)
 	if err != nil {
 		return
 	}
@@ -245,6 +266,7 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 type S3Manager struct {
 	Config  *S3Config
 	session *session.Session
+	Timeout *time.Duration
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

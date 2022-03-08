@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -83,15 +84,16 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 }
 
 // Upload passed in file to Azure Blob Storage
-func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
-	ctx := context.Background()
-
+func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return UploadOutput{}, err
 	}
 
-	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
+	_, err = containerURL.Create(ctxWithTimeout, azblob.Metadata{}, azblob.PublicAccessNone)
 	err = supressMinorErrors(err)
 	if err != nil {
 		return UploadOutput{}, err
@@ -111,9 +113,12 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 		}
 	}
 
+	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
-	_, err = azblob.UploadFileToBlockBlob(ctx, file, blobURL, azblob.UploadToBlockBlobOptions{
+	_, err = azblob.UploadFileToBlockBlob(ctxWithTimeout, file, blobURL, azblob.UploadToBlockBlobOptions{
 		BlockSize:   4 * 1024 * 1024,
 		Parallelism: 16})
 	if err != nil {
@@ -123,9 +128,7 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
-	ctx := context.Background()
-
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
@@ -140,9 +143,12 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 		MaxResults: int32(maxItems),
 	}
 
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	// List the blobs in the container
 	var marker string
-	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
+	response, err := containerURL.ListBlobsFlatSegment(ctxWithTimeout, azblob.Marker{Val: &marker}, segmentOptions)
 	if err != nil {
 		return
 	}
@@ -154,9 +160,7 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 	return
 }
 
-func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
-	ctx := context.Background()
-
+func (manager *AzureBlobStorageManager) Download(ctx context.Context, output *os.File, key string) error {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return err
@@ -164,8 +168,11 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 
 	blobURL := containerURL.NewBlockBlobURL(key)
 
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	// Here's how to download the blob
-	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
+	downloadResponse, err := blobURL.Download(ctxWithTimeout, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
 	}
@@ -199,7 +206,8 @@ func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location 
 }
 
 type AzureBlobStorageManager struct {
-	Config *AzureBlobStorageConfig
+	Config  *AzureBlobStorageConfig
+	Timeout *time.Duration
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
@@ -269,16 +277,18 @@ type AzureBlobStorageConfig struct {
 	DisableSSL     *bool
 }
 
-func (manager *AzureBlobStorageManager) DeleteObjects(keys []string) (err error) {
-	ctx := context.Background()
-
+func (manager *AzureBlobStorageManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return err
 	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	defer cancel()
+
 	for _, key := range keys {
 		blobURL := containerURL.NewBlockBlobURL(key)
-		_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+		_, err := blobURL.Delete(ctxWithTimeout, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 		if err != nil {
 			return err
 		}

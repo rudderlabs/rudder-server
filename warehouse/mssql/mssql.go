@@ -215,7 +215,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(objectFile, objectName)
+		err = downloader.Download(context.Background(), objectFile, objectName)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
