@@ -1,6 +1,8 @@
 package clustercoordinator
 
-import "context"
+import (
+	"context"
+)
 
 type NOOPManager struct {
 	Config *NOOPConfig
@@ -20,6 +22,12 @@ func (manager *NOOPManager) Put(ctx context.Context, key string, value string) e
 
 func (manager *NOOPManager) Watch(ctx context.Context, key string) chan interface{} {
 	resultChan := make(chan interface{}, 1)
+	resultChan <- key
+	return resultChan
+}
+
+func (manager *NOOPManager) WatchForWorkspaces(ctx context.Context, key string) chan string {
+	resultChan := make(chan string, 1)
 	resultChan <- key
 	return resultChan
 }

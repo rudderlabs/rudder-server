@@ -213,9 +213,14 @@ type BackendConfig interface {
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
+	StopPolling()
+	StartPolling(workspaces string)
 }
 type CommonBackendConfig struct {
 	configEnvHandler types.ConfigEnvI
+	ctx              context.Context
+	cancel           context.CancelFunc
+	blockChan        chan struct{}
 }
 
 func loadConfig() {
@@ -418,13 +423,20 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
 
-func (bc *CommonBackendConfig) StartPolling(ctx context.Context, workspaces string) {
+func (bc *CommonBackendConfig) StartPolling(workspaces string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	bc.ctx = ctx
+	bc.cancel = cancel
+	bc.blockChan = make(chan struct{})
 	rruntime.Go(func() {
 		pollConfigUpdate(ctx, workspaces)
+		close(bc.blockChan)
 	})
 }
 
-func (bc *CommonBackendConfig) StopPolling(ctx context.Context) {
+func (bc *CommonBackendConfig) StopPolling() {
+	bc.cancel()
+	<-bc.blockChan
 	initialized = false
 }
 

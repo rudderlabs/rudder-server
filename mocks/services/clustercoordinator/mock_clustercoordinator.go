@@ -115,3 +115,17 @@ func (mr *MockClusterManagerMockRecorder) Watch(arg0, arg1 interface{}) *gomock.
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Watch", reflect.TypeOf((*MockClusterManager)(nil).Watch), arg0, arg1)
 }
+
+// WatchForWorkspaces mocks base method.
+func (m *MockClusterManager) WatchForWorkspaces(arg0 context.Context, arg1 string) chan string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WatchForWorkspaces", arg0, arg1)
+	ret0, _ := ret[0].(chan string)
+	return ret0
+}
+
+// WatchForWorkspaces indicates an expected call of WatchForWorkspaces.
+func (mr *MockClusterManagerMockRecorder) WatchForWorkspaces(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WatchForWorkspaces", reflect.TypeOf((*MockClusterManager)(nil).WatchForWorkspaces), arg0, arg1)
+}

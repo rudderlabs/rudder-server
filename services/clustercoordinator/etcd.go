@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
@@ -32,9 +33,9 @@ type ETCDManager struct {
 	Client *clientv3.Client
 }
 
-func (manager *ETCDManager) getClient() (*clientv3.Client, error) {
+func (manager *ETCDManager) getClient() {
 	if manager.Client != nil {
-		return manager.Client, nil
+		return
 	}
 
 	cli, err := clientv3.New(clientv3.Config{
@@ -50,16 +51,16 @@ func (manager *ETCDManager) getClient() (*clientv3.Client, error) {
 	if err != nil {
 		manager.Client = cli
 	}
-
-	return cli, err
 }
 
 func (manager *ETCDManager) Put(ctx context.Context, key string, value string) error {
+	manager.getClient()
 	_, err := manager.Client.Put(ctx, key, value)
 	return err
 }
 
 func (manager *ETCDManager) Watch(ctx context.Context, key string) chan interface{} {
+	manager.getClient()
 	resultChan := make(chan interface{}, 1)
 	watchChan := manager.Client.Watch(ctx, key)
 	resultChan <- watchChan
@@ -67,6 +68,7 @@ func (manager *ETCDManager) Watch(ctx context.Context, key string) chan interfac
 }
 
 func (manager *ETCDManager) Get(ctx context.Context, key string) (string, error) {
+	manager.getClient()
 	var result string
 	val, err := manager.Client.Get(ctx, key)
 	if err != nil {
@@ -78,6 +80,23 @@ func (manager *ETCDManager) Get(ctx context.Context, key string) (string, error)
 		result = ``
 	}
 	return result, nil
+}
+
+func (manager *ETCDManager) WatchForWorkspaces(ctx context.Context, key string) chan string {
+	resultChan := make(chan string, 1)
+	go func(returnChan chan string, ctx context.Context, key string) {
+		etcdWatchChan := manager.Client.Watch(ctx, key)
+		for watchResp := range etcdWatchChan {
+			for _, event := range watchResp.Events {
+				switch event.Type {
+				case mvccpb.PUT:
+					returnChan <- string(event.Kv.Value)
+				}
+			}
+		}
+		close(resultChan)
+	}(resultChan, ctx, key)
+	return resultChan
 }
 
 func GetETCDConfig() *ETCDConfig {

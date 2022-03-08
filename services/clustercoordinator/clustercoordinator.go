@@ -32,6 +32,7 @@ type ClusterManager interface {
 	Get(ctx context.Context, key string) (string, error)
 	Watch(ctx context.Context, key string) chan interface{}
 	Put(ctx context.Context, key string, value string) error
+	WatchForWorkspaces(ctx context.Context, key string) chan string
 }
 
 // SettingsT sets configuration for FileManager
