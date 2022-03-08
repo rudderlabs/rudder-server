@@ -38,7 +38,7 @@ func (proc *Processor) StartNew() {
 	proc.routerDB = &jobsdb.HandleT{}
 	proc.batchRouterDB = &jobsdb.HandleT{}
 	proc.procErrorDB = &jobsdb.HandleT{}
-	proc.gatewayDB.Setup(jobsdb.ReadWrite, *proc.clearDB, "gw", *proc.gwDBRetention, *proc.migrationMode, true,
+	proc.gatewayDB.Setup(jobsdb.Read, *proc.clearDB, "gw", *proc.gwDBRetention, *proc.migrationMode, true,
 		jobsdb.QueryFiltersT{})
 	proc.routerDB.Setup(jobsdb.Write, *proc.clearDB, "rt", *proc.routerDBRetention, *proc.migrationMode, true,
 		router.QueryFilters)
