@@ -43,8 +43,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (eventbridge.EventBridge
 	if err != nil {
 		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
 	}
-	httpClient := http.DefaultClient
-	httpClient.Timeout = o.Timeout
+	httpClient := http.Client{
+	     Timeout: o.Timeout,
+	}
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
