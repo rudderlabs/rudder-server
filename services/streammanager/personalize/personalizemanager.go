@@ -41,8 +41,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (personalizeevents.Perso
 	if err != nil {
 		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while unmarshalling destination config :: %w", err)
 	}
-	httpClient := http.DefaultClient
-	httpClient.Timeout = o.Timeout
+	httpClient := &http.Client{
+		Timeout: o.Timeout,
+	}
 	var s *session.Session
 	if config.AccessKeyID == "" || config.SecretAccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{

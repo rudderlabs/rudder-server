@@ -52,8 +52,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (kinesis.Kinesis, error)
 	if err != nil {
 		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while unmarshalling destination config. Error: %w", err)
 	}
-	httpClient := http.DefaultClient
-	httpClient.Timeout = o.Timeout
+	httpClient := &http.Client{
+		Timeout: o.Timeout,
+	}
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {

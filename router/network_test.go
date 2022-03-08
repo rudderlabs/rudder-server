@@ -99,7 +99,7 @@ var _ = Describe("Network", func() {
 
 			network := &NetHandleT{}
 			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = http.DefaultClient
+			network.httpClient = &http.Client{}
 
 			structData := integrations.PostParametersT{
 				Type: "REST",
