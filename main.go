@@ -341,7 +341,7 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) == true {
+		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
 	}()
