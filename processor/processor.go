@@ -1163,7 +1163,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					continue
 				}
 
-				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
@@ -2219,13 +2218,23 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobSize := len(jobs) / subJobCount
+				//if number of jobs are even less than number of sub-jobs that we are planning to create, then instead of spliting the original job
+				//into sub-job, we directly send all the jobs at a time.
+				if len(jobs) <= subJobCount {
+					chProc <- jobs
+				} else {
+					//else we split the original job into `subJobCount` number of sub-jobs.
+					subJobSize := len(jobs) / subJobCount
 
-				for i := 0; i < subJobCount-1; i++ {
-					chProc <- jobs[:subJobSize]
-					jobs = jobs[subJobSize:]
+					for i := 0; i < subJobCount; i++ {
+						chProc <- jobs[:subJobSize]
+						jobs = jobs[subJobSize:]
+						if i == subJobCount-1 {
+							//all the remaining jobs are sent in last sub-job batch.
+							chProc <- jobs
+						}
+					}
 				}
-				chProc <- jobs
 			}
 		}
 	}()
@@ -2250,6 +2259,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		for msg := range chTrans {
 
 			chStore <- proc.transformations(msg)
+			//since we don't want to call DB write for each sub-jobs. That's why we are waiting until all the sub-jobs are processed.
+			//Once all the sub-jobs are processed, we trigger the DB write by `triggerStore` channel.
 			if len(chStore) == subJobCount {
 				triggerStore <- 1
 			}
@@ -2289,7 +2300,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for id := range subJob.uniqueMessageIds {
 					uniqueMessageIds[id] = struct{}{}
 				}
-				totalEvents = subJob.totalEvents
+				totalEvents += subJob.totalEvents
 				if i == 0 {
 					start = subJob.start
 					i++
