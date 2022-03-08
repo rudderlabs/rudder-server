@@ -92,8 +92,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 	}
 	bqInserter := bqClient.Dataset(dsId).Table(tblId).Inserter()
-	ctx, CancelFunc := context.WithTimeout(context.Background(), o.Timeout)
-	defer CancelFunc()
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
+	defer cancel()
 	err = bqInserter.Put(ctx, genericRec)
 	if err != nil {
 		return http.StatusBadRequest, "Failure", createErr(err, "error in data insertion").Error()
