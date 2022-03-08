@@ -432,6 +432,7 @@ func (proc *HandleT) Shutdown() {
 var (
 	enablePipelining          bool
 	pipelineBufferedItems     int
+	subJobCount               int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
@@ -460,7 +461,8 @@ var (
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
-	config.RegisterIntConfigVariable(1, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(5, &subJobCount, false, 1, "Processor.subJobCount")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -1076,7 +1078,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
+func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]types.SingularEventT) transformationMessage {
+	jobList := subJobs.subJobs
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
 	var statusList []*jobsdb.JobStatusT
@@ -1161,7 +1164,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					continue
 				}
 
-				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
@@ -1344,6 +1346,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		totalEvents,
 		start,
+
+		subJobs.isSplit,
 	}
 }
 
@@ -1361,6 +1365,8 @@ type transformationMessage struct {
 
 	totalEvents int
 	start       time.Time
+
+	isSplit bool
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1452,6 +1458,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
+
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
@@ -2088,7 +2095,10 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	proc.Store(
 		proc.transformations(
-			proc.processJobsForDest(unprocessedList, nil),
+			proc.processJobsForDest(subJobT{
+				subJobs: unprocessedList,
+				isSplit: false,
+			}, nil),
 		),
 	)
 	proc.statLoopTime.Since(s)
@@ -2160,23 +2170,36 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 	}
 }
 
+//Since mainpipeline func can process jobs in a single batch (when number of jobs are less)
+// and in multiple batches (when number of jobs are more). So, to identify if the received
+//job is a sub-part of a job is a single job. So, `isSplit` variable is needed to be passed
+//accross go routines.
+type subJobT struct {
+	subJobs []*jobsdb.JobT
+	isSplit bool
+}
+
 // mainPipeline: new way of handling jobs
 //
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
+	proc.logger.Info("Processor mainPipeline started")
+	proc.logger.Info("Processor subJobCount= ", subJobCount)
+	proc.logger.Info("Processor pipelineBufferedItems= ", pipelineBufferedItems)
+
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
 
-	chProc := make(chan []*jobsdb.JobT, bufferSize)
+	chProc := make(chan subJobT, bufferSize)
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
-
 		nextSleepTime := time.Duration(0)
 
 		for {
@@ -2184,14 +2207,13 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
+
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
-
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
-					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
 					if nextSleepTime > proc.maxLoopSleep {
 						nextSleepTime = proc.maxLoopSleep
@@ -2200,22 +2222,46 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					}
 					continue
 				}
-
 				err := proc.markExecuting(jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
 				}
-
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
-				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				chProc <- jobs
+				//if number of jobs are even less than number of sub-jobs that we are planning to create, then instead of spliting the original job
+				//into sub-job, we directly send all the jobs at a time.
+				if len(jobs) <= subJobCount {
+
+					chProc <- subJobT{
+						subJobs: jobs,
+						isSplit: false,
+					}
+				} else {
+					//else we split the original job into `subJobCount` number of sub-jobs.
+					subJobSize := len(jobs) / subJobCount
+
+					for i := 0; i < subJobCount; i++ {
+
+						chProc <- subJobT{
+							subJobs: jobs[:subJobSize],
+							isSplit: false,
+						}
+						jobs = jobs[subJobSize:]
+						if i == subJobCount-1 {
+							//all the remaining jobs are sent in last sub-job batch.
+							chProc <- subJobT{
+								subJobs: jobs,
+								isSplit: false,
+							}
+						}
+					}
+				}
 			}
 		}
 	}()
@@ -2230,22 +2276,81 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	chStore := make(chan storeMessage, bufferSize)
+	triggerStore := make(chan int, 1)
+	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-
 		for msg := range chTrans {
+
 			chStore <- proc.transformations(msg)
+			//since we don't want to call DB write for each sub-jobs. That's why we are waiting until all the sub-jobs are processed.
+			//Once all the sub-jobs are processed, we trigger the DB write by `triggerStore` channel.
+			if len(chStore) == subJobCount || !msg.isSplit {
+				triggerStore <- 1
+			}
 		}
+		defer close(triggerStore)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for msg := range chStore {
-			proc.Store(msg)
+		for {
+			<-triggerStore
+			var statusList []*jobsdb.JobStatusT
+			var destJobs []*jobsdb.JobT
+			var batchDestJobs []*jobsdb.JobT
+			var procErrorJobs []*jobsdb.JobT
+			var reportMetrics []*types.PUReportedMetric
+			var totalEvents int
+			var start time.Time
+			uniqueMessageIds := make(map[string]struct{})
+			procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
+			sourceDupStats := make(map[string]int)
+			i := 0
+			for subJob := range chStore {
+				statusList = append(statusList, subJob.statusList...)
+				destJobs = append(destJobs, subJob.destJobs...)
+				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
+				for id, job := range subJob.procErrorJobsByDestID {
+					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
+				}
+				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
+				for tag, count := range subJob.sourceDupStats {
+					sourceDupStats[tag] += count
+				}
+				for id := range subJob.uniqueMessageIds {
+					uniqueMessageIds[id] = struct{}{}
+				}
+				totalEvents += subJob.totalEvents
+				if i == 0 {
+					start = subJob.start
+					i++
+				}
+				if len(chStore) == 0 {
+					break
+				}
+			}
+			proc.Store(storeMessage{
+				statusList:    statusList,
+				destJobs:      destJobs,
+				batchDestJobs: batchDestJobs,
+
+				procErrorJobs:         procErrorJobs,
+				procErrorJobsByDestID: procErrorJobsByDestID,
+
+				reportMetrics:    reportMetrics,
+				sourceDupStats:   sourceDupStats,
+				uniqueMessageIds: uniqueMessageIds,
+
+				totalEvents: totalEvents,
+				start:       start,
+			})
+
 		}
 	}()
 
