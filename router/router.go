@@ -912,9 +912,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
 		attemptNum := destinationJobMetadata.AttemptNum
 		respStatusCode = routerJobResponse.respStatusCode
-		if attemptedToSendTheJob {
-			attemptNum++
-		}
 		status := jobsdb.JobStatusT{
 			JobID:       destinationJobMetadata.JobID,
 			AttemptNum:  attemptNum,
@@ -940,6 +937,10 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			} else {
 				userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 			}
+		}
+
+		if attemptedToSendTheJob {
+			status.AttemptNum++
 		}
 
 		status.ErrorResponse = []byte(`{}`)
