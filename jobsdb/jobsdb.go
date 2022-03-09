@@ -550,6 +550,7 @@ var (
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
 	useNewCacheBurst                             bool
+	pendingJobCountStatTime                      time.Duration
 )
 
 //Different scenarios for addNewDS
@@ -592,6 +593,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(time.Duration(60), &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterDurationConfigVariable(time.Duration(1), &pendingJobCountStatTime, true, time.Minute, []string{"JobsDB.pendingJobCountStatDuration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
@@ -664,6 +666,11 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, ownerType, clearAll)
 	}
+
+	g.Go(func() error {
+		jd.PendingJobCountStat(ctx)
+		return nil
+	})
 }
 
 func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
