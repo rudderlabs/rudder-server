@@ -871,6 +871,34 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		}
 	}
 
+	//if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
+	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
+	for _, routerJob := range worker.routerJobs {
+		if _, ok := handledJobMetadatas[routerJob.JobMetadata.JobID]; !ok {
+			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
+				jobID: routerJob.JobMetadata.JobID,
+				destinationJob: &types.DestinationJobT{
+					Destination: routerJob.Destination,
+					Message:     routerJob.Message,
+					JobMetadataArray: []types.JobMetadataT{
+						{
+							SourceID: routerJob.JobMetadata.SourceID,
+						},
+					},
+				},
+				destinationJobMetadata: &types.JobMetadataT{
+					JobID:       routerJob.JobMetadata.JobID,
+					WorkspaceId: routerJob.JobMetadata.WorkspaceId,
+					JobT:        routerJob.JobMetadata.JobT,
+					UserID:      routerJob.JobMetadata.UserID,
+				},
+				respStatusCode:        500,
+				respBody:              "transformer failed to handle this job",
+				attemptedToSendTheJob: false,
+			})
+		}
+	}
+
 	sort.Slice(routerJobResponses, func(i, j int) bool {
 		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
 	})
@@ -883,6 +911,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		destinationJob := routerJobResponse.destinationJob
 		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
 		attemptNum := destinationJobMetadata.AttemptNum
+		respStatusCode = routerJobResponse.respStatusCode
 		if attemptedToSendTheJob {
 			attemptNum++
 		}
@@ -946,26 +975,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	}
 
 	worker.decrementInThrottleMap(apiCallsCount)
-
-	//if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
-	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
-	for _, routerJob := range worker.routerJobs {
-		if _, ok := handledJobMetadatas[routerJob.JobMetadata.JobID]; !ok {
-			status := jobsdb.JobStatusT{
-				JobID:         routerJob.JobMetadata.JobID,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				AttemptNum:    routerJob.JobMetadata.AttemptNum,
-				ErrorCode:     strconv.Itoa(500),
-				ErrorResponse: []byte(`{}`),
-				Parameters:    []byte(`{}`),
-				WorkspaceId:   routerJob.JobMetadata.JobT.WorkspaceId,
-			}
-
-			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, "", &routerJob.JobMetadata, &status)
-		}
-	}
-
 	worker.batchTimeStat.End()
 }
 
