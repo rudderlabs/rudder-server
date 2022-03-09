@@ -874,27 +874,21 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	//if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
 	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
 	for _, routerJob := range worker.routerJobs {
-		if _, ok := handledJobMetadatas[routerJob.JobMetadata.JobID]; !ok {
+		//assigning the routerJob to a local variable (_routerJob), so that
+		//elements in routerJobResponses have pointer to the right job.
+		_routerJob := routerJob
+		if _, ok := handledJobMetadatas[_routerJob.JobMetadata.JobID]; !ok {
 			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
-				jobID: routerJob.JobMetadata.JobID,
+				jobID: _routerJob.JobMetadata.JobID,
 				destinationJob: &types.DestinationJobT{
-					Destination: routerJob.Destination,
-					Message:     routerJob.Message,
-					JobMetadataArray: []types.JobMetadataT{
-						{
-							SourceID: routerJob.JobMetadata.SourceID,
-						},
-					},
+					Destination:      _routerJob.Destination,
+					Message:          _routerJob.Message,
+					JobMetadataArray: []types.JobMetadataT{_routerJob.JobMetadata},
 				},
-				destinationJobMetadata: &types.JobMetadataT{
-					JobID:       routerJob.JobMetadata.JobID,
-					WorkspaceId: routerJob.JobMetadata.WorkspaceId,
-					JobT:        routerJob.JobMetadata.JobT,
-					UserID:      routerJob.JobMetadata.UserID,
-				},
-				respStatusCode:        500,
-				respBody:              "transformer failed to handle this job",
-				attemptedToSendTheJob: false,
+				destinationJobMetadata: &_routerJob.JobMetadata,
+				respStatusCode:         500,
+				respBody:               "transformer failed to handle this job",
+				attemptedToSendTheJob:  false,
 			})
 		}
 	}
