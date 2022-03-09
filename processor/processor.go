@@ -2250,14 +2250,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 						chProc <- subJobT{
 							subJobs: jobs[:subJobSize],
-							isSplit: false,
+							isSplit: true,
 						}
 						jobs = jobs[subJobSize:]
 						if i == subJobCount-1 {
 							//all the remaining jobs are sent in last sub-job batch.
 							chProc <- subJobT{
 								subJobs: jobs,
-								isSplit: false,
+								isSplit: true,
 							}
 						}
 					}
