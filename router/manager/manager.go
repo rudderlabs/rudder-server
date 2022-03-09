@@ -39,12 +39,14 @@ func (r *Router) Run(ctx context.Context) error {
 func (r *Router) StartNew() {
 	r.DBs.Start()
 	r.rt = &router.Factory{
+		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
 		RouterDB:      &r.DBs.TenantRouterDB,
 		ProcErrorDB:   &r.DBs.ProcErrDB,
 	}
 	r.brt = &batchrouter.Factory{
+		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
 		RouterDB:      &r.DBs.BatchRouterDB,
@@ -53,7 +55,7 @@ func (r *Router) StartNew() {
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
-	monitorDestRouters(currentCtx, *r.rt, *r.brt)
+	r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
 }
 
 func (r *Router) Stop() {
@@ -76,9 +78,10 @@ func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batchrouterFactory batchrouter.Factory) {
+func (r *Router) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
+	batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	r.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)

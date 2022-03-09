@@ -6,18 +6,24 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
+	mock_types "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"log"
 	"os"
 	"os/signal"
@@ -163,28 +169,27 @@ func initRouter() {
 func TestRouterManager(t *testing.T) {
 	RegisterTestingT(t)
 	initRouter()
-	router.RoutersManagerSetup()
-	batchrouter.BatchRoutersManagerSetup()
 	stats.Setup()
 
-	ctx := context.Background()
-	r := NewRouterManager(ctx)
+	asyncHelper := testutils.AsyncTestHelper{}
+	asyncHelper.Setup()
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockMTHandle := mocksMultitenant.NewMockMultiTenantI(mockCtrl)
+	mockReporting := mock_types.NewMockReportingI(mockCtrl)
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).
+		Do(func(channel chan utils.DataEvent, topic backendConfig.Topic) {
+			// emulate a backend configuration event
+			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		}).
+		Do(asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
+		Return().Times(1)
+	mockMTHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockReporting.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 
-	//asyncHelper := testutils.AsyncTestHelper{}
-	//asyncHelper.Setup()
-	//mockCtrl := gomock.NewController(t)
-	//mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(mockCtrl)
-	//mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	//mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).
-	//	Do(func(channel chan utils.DataEvent, topic backendConfig.Topic) {
-	//		// emulate a backend configuration event
-	//		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-	//	}).
-	//	Do(asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
-	//	Return().Times(1)
+	//r.brt.BackendConfig = mockBackendConfig
 	//mockNetHandle := mocksRouter.NewMockNetHandleI(mockCtrl)
-	//mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
 	//gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 	//parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 	//var toRetryJobsList = []*jobsdb.JobT{
@@ -226,7 +231,14 @@ func TestRouterManager(t *testing.T) {
 	//var workspaceCount = map[string]int{}
 	//workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 	//workspaceCountOut := workspaceCount
-	r.StartNew()
+
+	ctx := context.Background()
+	dbs := jobsdb.Factory()
+	dbs.InitiateDBs(0 * time.Hour, 0 * time.Hour, "import", false)
+	r := NewRouterManager(ctx, dbs)
+	r.backendConfig = mockBackendConfig
+	r.reportingI = mockReporting
+	go r.StartNew()
 	time.Sleep(5*time.Second)
 	r.Stop()
 }
