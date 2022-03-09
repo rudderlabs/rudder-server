@@ -177,6 +177,8 @@ func TestRouterManager(t *testing.T) {
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockMTHandle := mocksMultitenant.NewMockMultiTenantI(mockCtrl)
 	mockReporting := mock_types.NewMockReportingI(mockCtrl)
+	mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(mockCtrl)
+
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).
 		Do(func(channel chan utils.DataEvent, topic backendConfig.Topic) {
 			// emulate a backend configuration event
@@ -187,50 +189,11 @@ func TestRouterManager(t *testing.T) {
 	mockMTHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockReporting.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+	mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-	//r.brt.BackendConfig = mockBackendConfig
-	//mockNetHandle := mocksRouter.NewMockNetHandleI(mockCtrl)
-	//gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-	//parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-	//var toRetryJobsList = []*jobsdb.JobT{
-	//	{
-	//		UUID:         uuid.Must(uuid.NewV4()),
-	//		UserID:       "u1",
-	//		JobID:        2009,
-	//		CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-	//		ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-	//		CustomVal:    CustomVal["GA"],
-	//		EventPayload: []byte(gaPayload),
-	//		LastJobStatus: jobsdb.JobStatusT{
-	//			AttemptNum:    1,
-	//			ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
-	//		},
-	//		Parameters:  []byte(parameters),
-	//		WorkspaceId: workspaceID,
-	//	},
-	//}
-	//
-	//var unprocessedJobsList = []*jobsdb.JobT{
-	//	{
-	//		UUID:         uuid.Must(uuid.NewV4()),
-	//		UserID:       "u1",
-	//		JobID:        2010,
-	//		CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-	//		ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-	//		CustomVal:    CustomVal["GA"],
-	//		EventPayload: []byte(gaPayload),
-	//		LastJobStatus: jobsdb.JobStatusT{
-	//			AttemptNum: 0,
-	//		},
-	//		Parameters:  []byte(parameters),
-	//		WorkspaceId: workspaceID,
-	//	},
-	//}
-	//
-	//allJobs := append(toRetryJobsList, unprocessedJobsList...)
-	//var workspaceCount = map[string]int{}
-	//workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-	//workspaceCountOut := workspaceCount
+	mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+	mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 
 	ctx := context.Background()
 	dbs := jobsdb.Factory()
