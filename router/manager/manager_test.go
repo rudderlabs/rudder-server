@@ -190,9 +190,6 @@ func TestRouterManager(t *testing.T) {
 	mockReporting.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 	mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
-	mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
 	mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 
 	ctx := context.Background()
