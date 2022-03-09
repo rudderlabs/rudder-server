@@ -2276,30 +2276,31 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	triggerStore := make(chan int, 1)
+	// triggerStore := make(chan int, 1)
 	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
+		// defer close(triggerStore)
 		for msg := range chTrans {
 
 			chStore <- proc.transformations(msg)
 			//since we don't want to call DB write for each sub-jobs. That's why we are waiting until all the sub-jobs are processed.
 			//Once all the sub-jobs are processed, we trigger the DB write by `triggerStore` channel.
-			if len(chStore) == subJobCount || !msg.isSplit {
-				triggerStore <- 1
-			}
+			// if len(chStore) == subJobCount || !msg.isSplit {
+			// 	triggerStore <- 1
+			// }
 		}
-		defer close(triggerStore)
+
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for {
-			<-triggerStore
+			// <-triggerStore
 			var statusList []*jobsdb.JobStatusT
 			var destJobs []*jobsdb.JobT
 			var batchDestJobs []*jobsdb.JobT
