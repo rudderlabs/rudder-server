@@ -49,22 +49,22 @@ func (r *Router) StartNew() {
 	r.batchRouterDB = &jobsdb.HandleT{}
 	r.procErrorDB = &jobsdb.HandleT{}
 
-	r.routerDB.Setup(jobsdb.Write, r.clearDB, "rt", r.routerDBRetention, r.migrationMode, true,
+	r.routerDB.Setup(jobsdb.ReadWrite, r.clearDB, "rt", r.routerDBRetention, r.migrationMode, true,
 		router.QueryFilters)
 	r.procErrorDB.Setup(jobsdb.Write, r.clearDB, "proc_error", r.routerDBRetention, r.migrationMode,
 		false, jobsdb.QueryFiltersT{})
-	r.batchRouterDB.Setup(jobsdb.Read, r.clearDB, "batch_rt", r.routerDBRetention, r.migrationMode, true,
+	r.batchRouterDB.Setup(jobsdb.ReadWrite, r.clearDB, "batch_rt", r.routerDBRetention, r.migrationMode, true,
 		batchrouter.QueryFilters)
 
 	r.rt = &router.Factory{
 		Multitenant:   multitenant.NOOP,
-		BackendConfig: backendconfig.DefaultBackendConfig,
+		BackendConfig: r.backendConfig,
 		RouterDB:      r.tenantDB,
 		ProcErrorDB:   r.procErrorDB,
 	}
 	r.brt = &batchrouter.Factory{
 		Multitenant:   multitenant.NOOP,
-		BackendConfig: backendconfig.DefaultBackendConfig,
+		BackendConfig: r.backendConfig,
 		RouterDB:      r.batchRouterDB,
 		ProcErrorDB:   r.procErrorDB,
 	}
@@ -140,10 +140,10 @@ loop:
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							router := routerFactory.New(destination.DestinationDefinition)
-							router.Start()
-							cleanup = append(cleanup, router.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = router
+							rt := routerFactory.New(destination.DestinationDefinition)
+							rt.Start()
+							cleanup = append(cleanup, rt.Shutdown)
+							dstToRouter[destination.DestinationDefinition.Name] = rt
 						}
 					}
 				}
