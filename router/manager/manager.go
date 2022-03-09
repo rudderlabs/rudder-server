@@ -12,31 +12,24 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"golang.org/x/sync/errgroup"
-	"time"
 )
 
 var (
 	objectStorageDestinations []string
 	asyncDestinations         []string
 	warehouseDestinations     []string
-	pkgLogger = logger.NewLogger().Child("router")
+	pkgLogger                 = logger.NewLogger().Child("router")
 )
 
 type Router struct {
-	rt                *router.Factory
-	brt               *batchrouter.Factory
-	mainCtx           context.Context
-	routerDB          *jobsdb.HandleT
-	tenantDB          jobsdb.MultiTenantJobsDB
-	batchRouterDB     *jobsdb.HandleT
-	procErrorDB       *jobsdb.HandleT
-	clearDB           bool
-	multitenantStats  multitenant.MultiTenantI
-	reportingI        types.ReportingI
-	backendConfig     backendconfig.BackendConfig
-	currentCancel     context.CancelFunc
-	routerDBRetention time.Duration
-	migrationMode     string
+	rt               *router.Factory
+	brt              *batchrouter.Factory
+	mainCtx          context.Context
+	currentCancel    context.CancelFunc
+	DBs              *jobsdb.DBs
+	multitenantStats multitenant.MultiTenantI
+	reportingI       types.ReportingI
+	backendConfig    backendconfig.BackendConfig
 }
 
 func (r *Router) Run(ctx context.Context) error {
@@ -44,29 +37,18 @@ func (r *Router) Run(ctx context.Context) error {
 }
 
 func (r *Router) StartNew() {
-	r.routerDB = &jobsdb.HandleT{}
-	r.tenantDB = &jobsdb.MultiTenantLegacy{HandleT: r.routerDB}
-	r.batchRouterDB = &jobsdb.HandleT{}
-	r.procErrorDB = &jobsdb.HandleT{}
-
-	r.routerDB.Setup(jobsdb.ReadWrite, r.clearDB, "rt", r.routerDBRetention, r.migrationMode, true,
-		router.QueryFilters)
-	r.procErrorDB.Setup(jobsdb.Write, r.clearDB, "proc_error", r.routerDBRetention, r.migrationMode,
-		false, jobsdb.QueryFiltersT{})
-	r.batchRouterDB.Setup(jobsdb.ReadWrite, r.clearDB, "batch_rt", r.routerDBRetention, r.migrationMode, true,
-		batchrouter.QueryFilters)
-
+	r.DBs.Start()
 	r.rt = &router.Factory{
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
-		RouterDB:      r.tenantDB,
-		ProcErrorDB:   r.procErrorDB,
+		RouterDB:      &r.DBs.TenantRouterDB,
+		ProcErrorDB:   &r.DBs.ProcErrDB,
 	}
 	r.brt = &batchrouter.Factory{
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
-		RouterDB:      r.batchRouterDB,
-		ProcErrorDB:   r.procErrorDB,
+		RouterDB:      &r.DBs.BatchRouterDB,
+		ProcErrorDB:   &r.DBs.ProcErrDB,
 	}
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -75,27 +57,21 @@ func (r *Router) StartNew() {
 }
 
 func (r *Router) Stop() {
-
+	r.currentCancel()
+	r.DBs.Halt()
 }
 
-func NewRouterManager(ctx context.Context) *Router {
+func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
-	dbRetentionTime := 0 * time.Hour //take these from env
-	clearDb := false                 // take this from caller function
-	migrationMode := "import"        // take this from caller function
+
 	return &Router{
-		rt:                &router.Factory{},
-		brt:               &batchrouter.Factory{},
-		mainCtx:           ctx,
-		tenantDB:          &jobsdb.MultiTenantHandleT{},
-		batchRouterDB:     &jobsdb.HandleT{},
-		procErrorDB:       &jobsdb.HandleT{},
-		multitenantStats:  multitenant.NOOP,
-		backendConfig:     backendconfig.DefaultBackendConfig,
-		routerDBRetention: dbRetentionTime,
-		clearDB:           clearDb,
-		migrationMode:     migrationMode,
+		rt:               &router.Factory{},
+		brt:              &batchrouter.Factory{},
+		mainCtx:          ctx,
+		DBs:              dbs,
+		multitenantStats: multitenant.NOOP,
+		backendConfig:    backendconfig.DefaultBackendConfig,
 	}
 }
 
