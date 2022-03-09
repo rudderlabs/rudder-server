@@ -359,6 +359,10 @@ type HandleT struct {
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
+	Ctx             context.Context
+	HaltCancel      context.CancelFunc
+	Ready bool
+	Running bool
 }
 
 type QueryFiltersT struct {
@@ -617,6 +621,8 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.Running = false
+	jd.Ready = false
 	jd.initGlobalDBHandle()
 
 	if jd.MaxDSSize == nil {
@@ -788,7 +794,29 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 
 func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 	jd.recoverFromJournal(Read)
+	jd.Ready = true
+	jd.StartDB()
+}
 
+func (jd *HandleT)StartDB() error {
+	if !jd.Ready {
+		return errors.New("DB not ready to start")
+	}
+	if jd.Running {
+		return nil
+	}
+	ctx := context.Background()
+	jd.Ctx = ctx
+	jd.run(ctx)
+	return nil
+}
+
+func (jd *HandleT)HaltDB() {
+	jd.Ctx.Done()
+	jd.Running = false
+}
+
+func (jd *HandleT)run(ctx context.Context) {
 	jd.writerSetup(ctx)
 
 	jd.startBackupDSLoop(ctx)
@@ -798,7 +826,7 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
-
+	jd.Running = true
 }
 
 type writeJob struct {

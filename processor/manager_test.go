@@ -139,7 +139,9 @@ func TestProcessorManager(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
 	ctx := context.Background()
-	processor := New(ctx)
+	dbs := jobsdb.Factory()
+	dbs.InitiateDBs(0 * time.Hour, 0 * time.Hour, "import", false)
+	processor := New(ctx, dbs)
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
@@ -217,7 +219,7 @@ func TestProcessorManager(t *testing.T) {
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
-		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		}, 10*time.Second, 10*time.Millisecond).Should(Equal(0))
 		c <- true
 	}()
 	<- c
@@ -247,7 +249,7 @@ func TestProcessorManager(t *testing.T) {
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+			}))}, 30*time.Second, 10*time.Millisecond).Should(Equal(0))
 			c <- true
 		}()
 		<- c
