@@ -114,7 +114,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	}
 	defer file.Close()
 
-	output, err := jsonArchiver.FileManager.Upload(context.Background(), file)
+	output, err := jsonArchiver.FileManager.Upload(context.TODO(), file)
 
 	if err != nil {
 		pkgLogger.Errorf(`[TableJSONArchiver]: Error uploading local file dump to object storage: %v`, err)

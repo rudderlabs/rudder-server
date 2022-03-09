@@ -41,11 +41,11 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 		return UploadOutput{}, err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	obj := client.Bucket(manager.Config.Bucket).Object(fileName)
-	w := obj.NewWriter(ctxWithTimeout)
+	w := obj.NewWriter(ctx)
 	defer func() error {
 		return w.Close()
 	}()
@@ -54,10 +54,7 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 	}
 	w.Close()
 
-	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
-	defer cancel()
-
-	attrs, err := obj.Attrs(ctxWithTimeout)
+	attrs, err := obj.Attrs(ctx)
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -74,11 +71,11 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 		return
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	// Create GCS Bucket handle
-	it := client.Bucket(manager.Config.Bucket).Objects(ctxWithTimeout, &storage.Query{
+	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
 		Prefix:    prefix,
 		Delimiter: "",
 	})
@@ -99,24 +96,21 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, error) {
 	var err error
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	if manager.client == nil {
 		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
-			manager.client, err = storage.NewClient(ctxWithTimeout, option.WithEndpoint(*manager.Config.EndPoint))
+			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
 		} else if manager.Config.Credentials == "" {
-			manager.client, err = storage.NewClient(ctxWithTimeout)
+			manager.client, err = storage.NewClient(ctx)
 		} else {
-			manager.client, err = storage.NewClient(ctxWithTimeout, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 		}
 	}
 
-	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
-	defer cancel()
-
 	if manager.client == nil {
-		manager.client, err = storage.NewClient(ctxWithTimeout, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 	}
 	return manager.client, err
 }
@@ -127,10 +121,10 @@ func (manager *GCSManager) Download(ctx context.Context, output *os.File, key st
 		return err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctxWithTimeout)
+	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
 		return err
 	}

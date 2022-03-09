@@ -112,7 +112,7 @@ func deleteFilesInStorage(locations []string) error {
 		return err
 	}
 
-	err = fManager.DeleteObjects(context.Background(), locations)
+	err = fManager.DeleteObjects(context.TODO(), locations)
 	if err != nil {
 		pkgLogger.Errorf("Error in deleting objects in Rudder S3: %v", err)
 	}

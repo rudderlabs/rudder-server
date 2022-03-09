@@ -2881,7 +2881,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// get a file uploader
 	fileUploader, errored := jd.getFileUploader()
 	jd.assertError(errored)
-	output, err = fileUploader.Upload(context.Background(), file, pathPrefixes...)
+	output, err = fileUploader.Upload(context.TODO(), file, pathPrefixes...)
 
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")

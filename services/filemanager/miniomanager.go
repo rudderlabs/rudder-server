@@ -30,10 +30,10 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 		return UploadOutput{}, err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	if err = minioClient.MakeBucketWithContext(ctxWithTimeout, manager.Config.Bucket, "us-east-1"); err != nil {
+	if err = minioClient.MakeBucketWithContext(ctx, manager.Config.Bucket, "us-east-1"); err != nil {
 		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
@@ -55,10 +55,7 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 		}
 	}
 
-	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
-	defer cancel()
-
-	_, err = minioClient.FPutObjectWithContext(ctxWithTimeout, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
+	_, err = minioClient.FPutObjectWithContext(ctx, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -72,10 +69,10 @@ func (manager *MinioManager) Download(ctx context.Context, file *os.File, key st
 		return err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	err = minioClient.FGetObjectWithContext(ctxWithTimeout, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
+	err = minioClient.FGetObjectWithContext(ctx, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
 }
 
@@ -118,10 +115,10 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 		return err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	tmp := <-minioClient.RemoveObjectsWithContext(ctxWithTimeout, manager.Config.Bucket, objectChannel)
+	tmp := <-minioClient.RemoveObjectsWithContext(ctx, manager.Config.Bucket, objectChannel)
 	return tmp.Err
 }
 

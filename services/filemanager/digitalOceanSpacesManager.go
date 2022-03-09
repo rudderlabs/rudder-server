@@ -64,10 +64,10 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 	uploadSession := manager.getSession()
 	DOmanager := SpacesManager.NewUploader(uploadSession)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	output, err := DOmanager.UploadWithContext(ctxWithTimeout, uploadInput)
+	output, err := DOmanager.UploadWithContext(ctx, uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -82,11 +82,11 @@ func (manager *DOSpacesManager) Download(ctx context.Context, output *os.File, k
 
 	downloadSession := manager.getSession()
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
-	_, err := downloader.DownloadWithContext(ctxWithTimeout, output,
+	_, err := downloader.DownloadWithContext(ctx, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -131,11 +131,11 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix 
 	// Create S3 service client
 	svc := s3.New(sess)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	// Get the list of items
-	resp, err := svc.ListObjectsV2WithContext(ctxWithTimeout, &s3.ListObjectsV2Input{
+	resp, err := svc.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
 		Bucket:  aws.String(manager.Config.Bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: &maxItems,
@@ -177,10 +177,8 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 			},
 		}
 
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
-		defer cancel()
-
-		_, err := svc.DeleteObjectsWithContext(ctxWithTimeout, input)
+		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
@@ -192,8 +190,10 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 				// Message from an error.
 				pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v`, aerr.Error())
 			}
+			cancel()
 			return err
 		}
+		cancel()
 	}
 	return nil
 }

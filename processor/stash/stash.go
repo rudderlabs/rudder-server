@@ -173,7 +173,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		panic(err)
 	}
 	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-	uploadOutput, err := st.errFileUploader.Upload(context.Background(), outputFile, prefixes...)
+	uploadOutput, err := st.errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
 
 	return StoreErrorOutputT{
 		Location: uploadOutput.Location,

@@ -401,7 +401,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 		return
 	}
 
-	err = downloader.Download(context.Background(), objectFile, objectName)
+	err = downloader.Download(context.TODO(), objectFile, objectName)
 	if err != nil {
 		pkgLogger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
 		return

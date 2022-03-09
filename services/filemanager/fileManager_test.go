@@ -281,7 +281,7 @@ func TestFileManager(t *testing.T) {
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
 				require.NoError(t, err, "error while opening testData file to upload")
-				uploadOutput, err := fm.Upload(context.Background(), filePtr)
+				uploadOutput, err := fm.Upload(context.TODO(), filePtr)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -289,7 +289,7 @@ func TestFileManager(t *testing.T) {
 				filePtr.Close()
 			}
 			//list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix(context.Background(), "", 1000)
+			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", 1000)
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 			require.NoError(t, err, "expected no error while listing files")
 
@@ -326,7 +326,7 @@ func TestFileManager(t *testing.T) {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
 			defer os.Remove(DownloadedFileName)
-			err = fm.Download(context.Background(), filePtr, key)
+			err = fm.Download(context.TODO(), filePtr, key)
 
 			require.NoError(t, err, "expected no error")
 			filePtr.Close()
@@ -344,7 +344,7 @@ func TestFileManager(t *testing.T) {
 			ans := strings.Compare(string(originalFile), string(downloadedFile))
 			require.Equal(t, 0, ans, "downloaded file different than actual file")
 			//delete that file
-			err = fm.DeleteObjects(context.Background(), []string{key})
+			err = fm.DeleteObjects(context.TODO(), []string{key})
 			require.NoError(t, err, "expected no error while deleting object")
 			// list files again & assert if that file is still present.
 			fmFactoryNew := filemanager.FileManagerFactoryT{}
@@ -355,7 +355,7 @@ func TestFileManager(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			newFileObject, err := fmNew.ListFilesWithPrefix(context.Background(), "", 1000)
+			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", 1000)
 			if err != nil {
 				fmt.Println("error while getting new file object: ", err)
 			}

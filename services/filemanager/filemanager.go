@@ -138,3 +138,10 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	}
 	return providerConfig
 }
+
+func getSafeTimeout(timeout *time.Duration) time.Duration {
+	if timeout == nil || *timeout == 0 {
+		return time.Second * 120
+	}
+	return *timeout
+}

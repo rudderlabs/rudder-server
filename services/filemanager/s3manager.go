@@ -52,10 +52,10 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	output, err := s3manager.UploadWithContext(ctxWithTimeout, uploadInput)
+	output, err := s3manager.UploadWithContext(ctx, uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -74,10 +74,10 @@ func (manager *S3Manager) Download(ctx context.Context, output *os.File, key str
 
 	downloader := s3manager.NewDownloader(sess)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	_, err = downloader.DownloadWithContext(ctxWithTimeout, output,
+	_, err = downloader.DownloadWithContext(ctx, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -146,10 +146,10 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 			},
 		}
 
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 		defer cancel()
 
-		_, err := svc.DeleteObjectsWithContext(ctxWithTimeout, input)
+		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
@@ -180,10 +180,10 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	if manager.Config.Region == nil {
 		getRegionSession := session.Must(session.NewSession())
 
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 		defer cancel()
 
-		region, err = awsS3Manager.GetBucketRegion(ctxWithTimeout, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
@@ -241,11 +241,11 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	}
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	// Get the list of items
-	resp, err := svc.ListObjectsV2WithContext(ctxWithTimeout, &listObjectsV2Input)
+	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
 		return
 	}

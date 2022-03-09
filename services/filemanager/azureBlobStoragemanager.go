@@ -90,10 +90,10 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		return UploadOutput{}, err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	_, err = containerURL.Create(ctxWithTimeout, azblob.Metadata{}, azblob.PublicAccessNone)
+	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 	err = supressMinorErrors(err)
 	if err != nil {
 		return UploadOutput{}, err
@@ -113,12 +113,9 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		}
 	}
 
-	ctxWithTimeout, cancel = context.WithTimeout(ctx, *manager.Timeout)
-	defer cancel()
-
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
-	_, err = azblob.UploadFileToBlockBlob(ctxWithTimeout, file, blobURL, azblob.UploadToBlockBlobOptions{
+	_, err = azblob.UploadFileToBlockBlob(ctx, file, blobURL, azblob.UploadToBlockBlobOptions{
 		BlockSize:   4 * 1024 * 1024,
 		Parallelism: 16})
 	if err != nil {
@@ -143,12 +140,12 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 		MaxResults: int32(maxItems),
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	// List the blobs in the container
 	var marker string
-	response, err := containerURL.ListBlobsFlatSegment(ctxWithTimeout, azblob.Marker{Val: &marker}, segmentOptions)
+	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
 	if err != nil {
 		return
 	}
@@ -168,11 +165,11 @@ func (manager *AzureBlobStorageManager) Download(ctx context.Context, output *os
 
 	blobURL := containerURL.NewBlockBlobURL(key)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	// Here's how to download the blob
-	downloadResponse, err := blobURL.Download(ctxWithTimeout, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
+	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
 	}
@@ -283,15 +280,16 @@ func (manager *AzureBlobStorageManager) DeleteObjects(ctx context.Context, keys 
 		return err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, *manager.Timeout)
-	defer cancel()
-
 	for _, key := range keys {
 		blobURL := containerURL.NewBlockBlobURL(key)
-		_, err := blobURL.Delete(ctxWithTimeout, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+
+		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_, err := blobURL.Delete(_ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 		if err != nil {
+			cancel()
 			return err
 		}
+		cancel()
 	}
 	return
 }
