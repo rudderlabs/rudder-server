@@ -19,13 +19,13 @@ var (
 
 type MultitenantStatsT struct {
 	routerNonTerminalCounts map[string]map[string]map[string]int
-	routerJobCountMutex     *sync.RWMutex
+	routerJobCountMutex     sync.RWMutex
 	routerInputRates        map[string]map[string]map[string]misc.MovingAverage
 	lastDrainedTimestamps   map[string]map[string]time.Time
 	failureRate             map[string]map[string]misc.MovingAverage
-	routerSuccessRateMutex  *sync.RWMutex
+	routerSuccessRateMutex  sync.RWMutex
 	routerTenantLatencyStat map[string]map[string]misc.MovingAverage
-	routerLatencyMutex      *sync.RWMutex
+	routerLatencyMutex      sync.RWMutex
 	processorStageTime      time.Time
 }
 
@@ -50,22 +50,14 @@ func Init() {
 
 func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat := MultitenantStatsT{}
-	multitenantStat.routerJobCountMutex = &sync.RWMutex{}
-	multitenantStat.routerSuccessRateMutex = &sync.RWMutex{}
-	multitenantStat.routerLatencyMutex = &sync.RWMutex{}
-
-	multitenantStat.routerJobCountMutex.Lock()
 	multitenantStat.routerNonTerminalCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.routerNonTerminalCounts["router"] = make(map[string]map[string]int)
 	multitenantStat.routerNonTerminalCounts["batch_router"] = make(map[string]map[string]int)
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
 	multitenantStat.routerInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.routerInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
-
-	multitenantStat.routerSuccessRateMutex.Lock()
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerSuccessRateMutex.Unlock()
 	pileUpStatMap := make(map[string]map[string]int)
 	routerDB.GetPileUpCounts(pileUpStatMap)
 	for workspace := range pileUpStatMap {
@@ -74,11 +66,7 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 		}
 	}
 
-	multitenantStat.routerJobCountMutex.Unlock()
-
-	multitenantStat.routerLatencyMutex.Lock()
 	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerLatencyMutex.Unlock()
 
 	multitenantStat.processorStageTime = time.Now()
 
