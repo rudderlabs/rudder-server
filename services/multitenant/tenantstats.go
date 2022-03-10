@@ -155,15 +155,15 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 	for workspaceKey := range multitenantStat.routerInputRates[tableType] {
 		_, ok := stats[workspaceKey]
 		if !ok {
-			for destType := range stats[workspaceKey] {
+			for destType := range multitenantStat.routerInputRates[workspaceKey] {
 				multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
 			}
-		}
-
-		for destType := range multitenantStat.routerInputRates[tableType][workspaceKey] {
-			_, ok := stats[workspaceKey][destType]
-			if !ok {
-				multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
+		} else {
+			for destType := range multitenantStat.routerInputRates[tableType][workspaceKey] {
+				_, ok := stats[workspaceKey][destType]
+				if !ok {
+					multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
+				}
 			}
 		}
 	}
