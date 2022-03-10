@@ -193,7 +193,9 @@ func Benchmark_Counts(b *testing.B) {
 	errgroup := errgroup.Group{}
 	errgroup.Go(func() error {
 		for i := 0; i < b.N; i++ {
+			tenantStats.routerJobCountMutex.Lock()
 			tenantStats.AddToInMemoryCount(workspaceID1, destType1, writeRatio+1, "router")
+			tenantStats.routerJobCountMutex.Unlock()
 		}
 		return nil
 	})

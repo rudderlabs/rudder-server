@@ -19,13 +19,13 @@ var (
 
 type MultitenantStatsT struct {
 	routerNonTerminalCounts map[string]map[string]map[string]int
-	routerJobCountMutex     sync.RWMutex
+	routerJobCountMutex     *sync.RWMutex
 	routerInputRates        map[string]map[string]map[string]misc.MovingAverage
 	lastDrainedTimestamps   map[string]map[string]time.Time
 	failureRate             map[string]map[string]misc.MovingAverage
-	routerSuccessRateMutex  sync.RWMutex
+	routerSuccessRateMutex  *sync.RWMutex
 	routerTenantLatencyStat map[string]map[string]misc.MovingAverage
-	routerLatencyMutex      sync.RWMutex
+	routerLatencyMutex      *sync.RWMutex
 	processorStageTime      time.Time
 }
 
@@ -50,16 +50,22 @@ func Init() {
 
 func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat := MultitenantStatsT{}
+	multitenantStat.routerJobCountMutex = &sync.RWMutex{}
+	multitenantStat.routerSuccessRateMutex = &sync.RWMutex{}
+	multitenantStat.routerLatencyMutex = &sync.RWMutex{}
+
+	multitenantStat.routerJobCountMutex.Lock()
 	multitenantStat.routerNonTerminalCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.routerNonTerminalCounts["router"] = make(map[string]map[string]int)
 	multitenantStat.routerNonTerminalCounts["batch_router"] = make(map[string]map[string]int)
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
 	multitenantStat.routerInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.routerInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
+
+	multitenantStat.routerSuccessRateMutex.Lock()
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.processorStageTime = time.Now()
+	multitenantStat.routerSuccessRateMutex.Unlock()
 	pileUpStatMap := make(map[string]map[string]int)
 	routerDB.GetPileUpCounts(pileUpStatMap)
 	for workspace := range pileUpStatMap {
@@ -67,6 +73,14 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 			multitenantStat.AddToInMemoryCount(workspace, destType, pileUpStatMap[workspace][destType], "router")
 		}
 	}
+
+	multitenantStat.routerJobCountMutex.Unlock()
+
+	multitenantStat.routerLatencyMutex.Lock()
+	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
+	multitenantStat.routerLatencyMutex.Unlock()
+
+	multitenantStat.processorStageTime = time.Now()
 
 	return &multitenantStat
 }
@@ -114,61 +128,38 @@ func (multitenantStat *MultitenantStatsT) CalculateSuccessFailureCounts(workspac
 }
 
 func (multitenantStat *MultitenantStatsT) AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerJobCountMutex.RLock()
 	_, ok := multitenantStat.routerNonTerminalCounts[tableType][workspaceID]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
 		multitenantStat.routerNonTerminalCounts[tableType][workspaceID] = make(map[string]int)
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
-	multitenantStat.routerJobCountMutex.Lock()
 	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] += count
-	multitenantStat.routerJobCountMutex.Unlock()
 }
 
 func (multitenantStat *MultitenantStatsT) RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerJobCountMutex.RLock()
+	multitenantStat.routerJobCountMutex.Lock()
+	defer multitenantStat.routerJobCountMutex.Unlock()
 	_, ok := multitenantStat.routerNonTerminalCounts[tableType][workspaceID]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
 		multitenantStat.routerNonTerminalCounts[tableType][workspaceID] = make(map[string]int)
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
-	multitenantStat.routerJobCountMutex.Lock()
-	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] += -1 * count
-	multitenantStat.routerJobCountMutex.Unlock()
+	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] -= count
 }
 
 func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, tableType string) {
+	multitenantStat.routerJobCountMutex.Lock()
+	defer multitenantStat.routerJobCountMutex.Unlock()
+
 	timeTaken := time.Since(multitenantStat.processorStageTime)
 	for key := range stats {
-		multitenantStat.routerJobCountMutex.RLock()
 		_, ok := multitenantStat.routerInputRates[tableType][key]
 		if !ok {
-			multitenantStat.routerJobCountMutex.RUnlock()
-			multitenantStat.routerJobCountMutex.Lock()
 			multitenantStat.routerInputRates[tableType][key] = make(map[string]misc.MovingAverage)
-			multitenantStat.routerJobCountMutex.Unlock()
-			multitenantStat.routerJobCountMutex.RLock()
 		}
-		multitenantStat.routerJobCountMutex.RUnlock()
 		for destType := range stats[key] {
-			multitenantStat.routerJobCountMutex.RLock()
 			_, ok := multitenantStat.routerInputRates[tableType][key][destType]
 			if !ok {
-				multitenantStat.routerJobCountMutex.RUnlock()
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.routerInputRates[tableType][key][destType] = misc.NewMovingAverage()
-				multitenantStat.routerJobCountMutex.Unlock()
-				multitenantStat.routerJobCountMutex.RLock()
 			}
-			multitenantStat.routerJobCountMutex.RUnlock()
 			multitenantStat.routerInputRates[tableType][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
 			multitenantStat.AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
@@ -177,18 +168,14 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 		_, ok := stats[workspaceKey]
 		if !ok {
 			for destType := range stats[workspaceKey] {
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
-				multitenantStat.routerJobCountMutex.Unlock()
 			}
 		}
 
 		for destType := range multitenantStat.routerInputRates[tableType][workspaceKey] {
 			_, ok := stats[workspaceKey][destType]
 			if !ok {
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
-				multitenantStat.routerJobCountMutex.Unlock()
 			}
 		}
 	}
@@ -292,6 +279,8 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 }
 
 func (multitenantStat *MultitenantStatsT) getFailureRate(workspaceKey string, destType string) float64 {
+	multitenantStat.routerSuccessRateMutex.RLock()
+	defer multitenantStat.routerSuccessRateMutex.RUnlock()
 	_, ok := multitenantStat.failureRate[workspaceKey]
 	if ok {
 		_, ok = multitenantStat.failureRate[workspaceKey][destType]
