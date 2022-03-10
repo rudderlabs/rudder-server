@@ -1432,6 +1432,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		in.uniqueMessageIds,
 		in.totalEvents,
 		in.start,
+		in.isSplit,
 	}
 }
 
@@ -1449,6 +1450,8 @@ type storeMessage struct {
 
 	totalEvents int
 	start       time.Time
+
+	isSplit bool
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -2205,7 +2208,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				proc.logger.Info("read job context done called")
 				return
 			case <-time.After(nextSleepTime):
 
@@ -2275,8 +2277,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		for jobs := range chProc {
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
-		proc.logger.Info("processJobForDest done for all jobs... outside for loop")
-
 	}()
 
 	triggerStore := make(chan int, 1)
@@ -2296,7 +2296,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				triggerStore <- 1
 			}
 		}
-		proc.logger.Info("transformatioins done... out of for loop")
 	}()
 
 	wg.Add(1)
@@ -2317,15 +2316,18 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				uniqueMessageIds := make(map[string]struct{})
 				procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 				sourceDupStats := make(map[string]int)
-				i := 0
-				for subJob := range chStore {
+				for i := 0; i < subJobCount; i++ {
+					subJob := <-chStore
+
 					statusList = append(statusList, subJob.statusList...)
 					destJobs = append(destJobs, subJob.destJobs...)
 					batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+
 					procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
 					for id, job := range subJob.procErrorJobsByDestID {
 						procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
 					}
+
 					reportMetrics = append(reportMetrics, subJob.reportMetrics...)
 					for tag, count := range subJob.sourceDupStats {
 						sourceDupStats[tag] += count
@@ -2333,14 +2335,17 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					for id := range subJob.uniqueMessageIds {
 						uniqueMessageIds[id] = struct{}{}
 					}
+
 					totalEvents += subJob.totalEvents
 					if i == 0 {
 						start = subJob.start
-						i++
 					}
-					if len(chStore) == 0 {
+
+					//since, if number of job < subJobCount, we get all the jobs at once.
+					if !subJob.isSplit {
 						break
 					}
+
 				}
 				proc.Store(storeMessage{
 					statusList:    statusList,
@@ -2359,15 +2364,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				})
 			case <-time.After(time.Second):
 			}
-			// <-triggerStore
 
-			proc.logger.Info("write job done... outside of for loop")
 		}
 	}()
 
 	wg.Wait()
-	proc.logger.Info("wg.wait retured from mainpipeline")
-
 }
 
 func (proc *HandleT) crashRecover() {
