@@ -4,7 +4,7 @@ type MultiTenantLegacy struct {
 	*HandleT
 }
 
-func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
+func (mj *MultiTenantLegacy) GetAllJobs(_ map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 	toQuery := maxDSQuerySize
 	retryList := mj.GetToRetry(GetQueryParamsT{CustomValFilters: params.CustomValFilters, JobCount: toQuery})
 	toQuery -= len(retryList)
