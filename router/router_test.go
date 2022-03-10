@@ -314,6 +314,7 @@ var _ = Describe("Router", func() {
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), false, true).AnyTimes()
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
