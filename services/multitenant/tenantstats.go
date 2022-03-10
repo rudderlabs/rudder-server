@@ -138,10 +138,6 @@ func (multitenantStat *MultitenantStatsT) AddToInMemoryCount(workspaceID string,
 func (multitenantStat *MultitenantStatsT) RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
 	multitenantStat.routerJobCountMutex.Lock()
 	defer multitenantStat.routerJobCountMutex.Unlock()
-	_, ok := multitenantStat.routerNonTerminalCounts[tableType][workspaceID]
-	if !ok {
-		multitenantStat.routerNonTerminalCounts[tableType][workspaceID] = make(map[string]int)
-	}
 	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] -= count
 }
 

@@ -90,8 +90,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 		if config.GetBool("EnableMultitenancy", false) {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
-			multitenantStats = multitenant.NewStats(tenantRouterDB)
 		}
+		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
 
 	enableGateway := true
