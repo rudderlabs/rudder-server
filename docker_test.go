@@ -416,7 +416,7 @@ func run(m *testing.M) (int, error) {
 			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
 			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
 			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
-			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.Credentials.Port,
+			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 		},
 	)
@@ -964,7 +964,7 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	chClusterTest := wht.Test.CHClusterTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             chClusterTest.DB,
+		DB:             chClusterTest.GetResource().DB,
 		EventsCountMap: chClusterTest.EventsMap,
 		WriteKey:       chClusterTest.WriteKey,
 		UserId:         "userId_clickhouse_cluster",
@@ -976,7 +976,7 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	initWHClickHouseClusterModeSetup(t)
 
 	whDestTest.UserId = "userId_clickhouse_cluster_1"
-	sendWHEvents(whDestTest)
+	sendUpdatedWHEvents(whDestTest)
 
 	// Update events count Map
 	// This is required as because of the cluster mode setup and distributed view, events are getting duplicated.
@@ -997,7 +997,6 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 
 // Verify Event in WareHouse MSSQL
 func TestWHMssqlDestination(t *testing.T) {
-
 	MssqlTest := wht.Test.MSSQLTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
@@ -1028,10 +1027,6 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"context": {
 			  "traits": {
 				 "trait1": "new-val"
-			  },
-			  "ip": "14.5.67.21",
-			  "library": {
-				  "name": "http"
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
@@ -1133,44 +1128,16 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
-		    "channel": "web",
-			"eventOrderNo":"1",
 			"type": "identify",
 			"context": {
 			  "traits": {
-				 "trait1": "new-val",
-				 "trait2": "new-val"
+				 "trait1": "new-val"
 			  },
 			  "ip": "14.5.67.21",
 			  "library": {
 				  "name": "http"
 			  }
 			},
-			"traits": {
-				"data": [
-					{
-						"city": "Disney",
-						"country": "USA",
-						"email": "mickey@disney.com",
-						"firstname": "Mickey",
-						"version": [
-							"1",
-							"2",
-							"3"
-						]
-					},
-					{
-						"city": "Disney",
-						"country": "USA",
-						"email": "mickey@disney.com",
-						"firstname": "Mickey"
-					}
-				]
-			},
-			"originalTimestamp": "2020-01-24T06:29:02.362Z",
-    		"receivedAt": "2020-01-24T11:59:02.403+05:30",
-    		"request_ip": "[::1]:53709",
-    		"sentAt": "2020-01-24T06:29:02.363Z",
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
@@ -1193,7 +1160,10 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "review_body" : "Average product, expected much more."
 			},
 			"context": {
-				"ip": "14.5.67.21"
+				"ip": "14.5.67.21",
+				"library": {
+					"name": "http"
+				}
 			}
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			SendEvent(payloadTrack, "track", wdt.WriteKey)
@@ -1254,9 +1224,6 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"type": "alias",
 			"previousId": "name@surname.com",
 			"context": {
-				"traits": {
-				   "trait1": "new-val"
-				},
 				"ip": "14.5.67.21",
 				"library": {
 					"name": "http"
@@ -1282,9 +1249,6 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "plan": "basic"
 			},
 			"context": {
-				"traits": {
-					"trait1": "new-val"
-				},
 				"ip": "14.5.67.21",
 				"library": {
 					"name": "http"
@@ -1411,20 +1375,122 @@ func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 
 // initWHClickHouseClusterModeSetup Initialize cluster mode setup
 func initWHClickHouseClusterModeSetup(t *testing.T) {
+	type ColumnInfoT struct {
+		ColumnName string
+		ColumnType string
+	}
+
 	chClusterTest := wht.Test.CHClusterTest
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	tableColumnInfoMap := map[string][]ColumnInfoT{
+		"identifies": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"product_track": {
+			{
+				ColumnName: "revenue",
+				ColumnType: "Nullable(Float64)",
+			},
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"tracks": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"users": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "SimpleAggregateFunction(anyLast, Nullable(String))",
+			},
+		},
+		"pages": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"screens": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"aliases": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+		"groups": {
+			{
+				ColumnName: "context_passed_ip",
+				ColumnType: "Nullable(String)",
+			},
+			{
+				ColumnName: "context_library_name",
+				ColumnType: "Nullable(String)",
+			},
+		},
+	}
 
 	// Rename tables to tables_shard
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
-		_, err := chClusterTest.DB.Exec(sqlStatement)
+		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Create distribution views for tables
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(received_at), id)));", table)
-		_, err := chClusterTest.DB.Exec(sqlStatement)
+		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
+	}
+
+	// ALter columns to all the cluster tables
+	for _, chResource := range chClusterTest.Resources {
+		for tableName, columnInfos := range tableColumnInfoMap {
+			for _, columnInfo := range columnInfos {
+				sqlStatement := fmt.Sprintf("ALTER TABLE rudderdb.%[1]s_shard ADD COLUMN IF NOT EXISTS %[2]s %[3]s;", tableName, columnInfo.ColumnName, columnInfo.ColumnType)
+				_, err := chResource.DB.Exec(sqlStatement)
+				require.Equal(t, err, nil)
+			}
+		}
 	}
 }
