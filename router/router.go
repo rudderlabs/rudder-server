@@ -693,6 +693,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
 	routerJobResponses := make([]*RouterJobResponse, 0)
+
+	sort.Slice(worker.destinationJobs, func(i, j int) bool {
+		return worker.destinationJobs[i].JobMetadataArray[0].JobID < worker.destinationJobs[j].JobMetadataArray[0].JobID
+	})
+
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
 		respBodyArr := make([]string, 0)
@@ -864,6 +869,28 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		}
 	}
 
+	//if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
+	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
+	for _, routerJob := range worker.routerJobs {
+		//assigning the routerJob to a local variable (_routerJob), so that
+		//elements in routerJobResponses have pointer to the right job.
+		_routerJob := routerJob
+		if _, ok := handledJobMetadatas[_routerJob.JobMetadata.JobID]; !ok {
+			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
+				jobID: _routerJob.JobMetadata.JobID,
+				destinationJob: &types.DestinationJobT{
+					Destination:      _routerJob.Destination,
+					Message:          _routerJob.Message,
+					JobMetadataArray: []types.JobMetadataT{_routerJob.JobMetadata},
+				},
+				destinationJobMetadata: &_routerJob.JobMetadata,
+				respStatusCode:         500,
+				respBody:               "transformer failed to handle this job",
+				attemptedToSendTheJob:  false,
+			})
+		}
+	}
+
 	sort.Slice(routerJobResponses, func(i, j int) bool {
 		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
 	})
@@ -876,9 +903,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		destinationJob := routerJobResponse.destinationJob
 		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
 		attemptNum := destinationJobMetadata.AttemptNum
-		if attemptedToSendTheJob {
-			attemptNum++
-		}
+		respStatusCode = routerJobResponse.respStatusCode
 		status := jobsdb.JobStatusT{
 			JobID:       destinationJobMetadata.JobID,
 			AttemptNum:  attemptNum,
@@ -890,7 +915,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 		routerJobResponse.status = &status
 
-		if !isSuccessStatus(respStatusCode) {
+		if !isJobTerminated(respStatusCode) {
 			if prevFailedJobID, ok := userToJobIDMap[destinationJobMetadata.UserID]; ok {
 				//This means more than two jobs of the same user are in the batch & the batch job is failed
 				//Only one job is marked failed and the rest are marked waiting
@@ -904,6 +929,10 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			} else {
 				userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 			}
+		}
+
+		if attemptedToSendTheJob {
+			status.AttemptNum++
 		}
 
 		status.ErrorResponse = []byte(`{}`)
@@ -939,26 +968,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	}
 
 	worker.decrementInThrottleMap(apiCallsCount)
-
-	//if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
-	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
-	for _, routerJob := range worker.routerJobs {
-		if _, ok := handledJobMetadatas[routerJob.JobMetadata.JobID]; !ok {
-			status := jobsdb.JobStatusT{
-				JobID:         routerJob.JobMetadata.JobID,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				AttemptNum:    routerJob.JobMetadata.AttemptNum,
-				ErrorCode:     strconv.Itoa(500),
-				ErrorResponse: []byte(`{}`),
-				Parameters:    []byte(`{}`),
-				WorkspaceId:   routerJob.JobMetadata.JobT.WorkspaceId,
-			}
-
-			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, "", &routerJob.JobMetadata, &status)
-		}
-	}
-
 	worker.batchTimeStat.End()
 }
 
