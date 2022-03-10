@@ -1332,7 +1332,6 @@ func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]typ
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
-
 	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -2251,18 +2250,21 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 					for i := 0; i < subJobCount; i++ {
 
-						chProc <- subJobT{
-							subJobs: jobs[:subJobSize],
-							isSplit: true,
-						}
-						jobs = jobs[subJobSize:]
 						if i == subJobCount-1 {
 							//all the remaining jobs are sent in last sub-job batch.
 							chProc <- subJobT{
 								subJobs: jobs,
 								isSplit: true,
 							}
+							continue
 						}
+
+						chProc <- subJobT{
+							subJobs: jobs[:subJobSize],
+							isSplit: true,
+						}
+						jobs = jobs[subJobSize:]
+
 					}
 				}
 			}
@@ -2335,7 +2337,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					for id := range subJob.uniqueMessageIds {
 						uniqueMessageIds[id] = struct{}{}
 					}
-
 					totalEvents += subJob.totalEvents
 					if i == 0 {
 						start = subJob.start
