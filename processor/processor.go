@@ -2241,6 +2241,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
+					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
 					if nextSleepTime > proc.maxLoopSleep {
 						nextSleepTime = proc.maxLoopSleep
