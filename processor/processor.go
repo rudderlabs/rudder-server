@@ -2236,21 +2236,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				//if number of jobs are even less than number of sub-jobs that we are planning to create, then instead of spliting the original job
-				//into sub-job, we directly send all the jobs at a time.
 				subJobCount := 1
 				if len(jobs)/subJobSize > 1 {
 					subJobCount = len(jobs) / subJobSize
 				}
-				// if len(jobs) <= subJobCount {
-
-				// 	chProc <- subJobT{
-				// 		subJobs: jobs,
-				// 		isSplit: false,
-				// 	}
-				// } else {
-				//else we split the original job into `subJobCount` number of sub-jobs.
-				// subJobSize := len(jobs) / subJobCount
 
 				for i := 0; i < subJobCount; i++ {
 
@@ -2270,7 +2259,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					jobs = jobs[subJobSize:]
 
 				}
-				// }
 			}
 		}
 	}()
