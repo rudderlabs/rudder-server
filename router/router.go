@@ -1930,6 +1930,7 @@ func (rt *HandleT) readAndProcess() int {
 	var drainList []*jobsdb.JobStatusT
 	var drainJobList []*jobsdb.JobT
 	drainStatsbyDest := make(map[string]*router_utils.DrainStats)
+	workspaceAbortCount := make(map[string]map[string]int)
 
 	var toProcess []workerJobT
 
@@ -1971,7 +1972,11 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
-			rt.MultitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
+			_, ok := workspaceAbortCount[job.WorkspaceId]
+			if !ok {
+				workspaceAbortCount[job.WorkspaceId] = make(map[string]int)
+			}
+			workspaceAbortCount[job.WorkspaceId][job.CustomVal] += 1
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
@@ -2023,6 +2028,11 @@ func (rt *HandleT) readAndProcess() int {
 		}
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
+	for workspace := range workspaceAbortCount {
+		for destType := range workspaceAbortCount[workspace] {
+			rt.MultitenantI.RemoveFromInMemoryCount(workspace, destType, workspaceAbortCount[workspace][destType], "router")
+		}
+	}
 
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
