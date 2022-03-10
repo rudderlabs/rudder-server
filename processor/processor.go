@@ -1346,7 +1346,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]typ
 		totalEvents,
 		start,
 
-		subJobs.subJobCount,
+		subJobs.haveMore,
 	}
 }
 
@@ -1365,7 +1365,7 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	subJobCount int
+	haveMore bool
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1431,7 +1431,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		in.uniqueMessageIds,
 		in.totalEvents,
 		in.start,
-		in.subJobCount,
+		in.haveMore,
 	}
 }
 
@@ -1450,7 +1450,7 @@ type storeMessage struct {
 	totalEvents int
 	start       time.Time
 
-	subJobCount int
+	haveMore bool
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -2098,8 +2098,8 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(subJobT{
-				subJobs:     unprocessedList,
-				subJobCount: 1,
+				subJobs:  unprocessedList,
+				haveMore: false,
 			}, nil),
 		),
 	)
@@ -2177,8 +2177,33 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 //job is a sub-part of a job is a single job. So, `isSplit` variable is needed to be passed
 //accross go routines.
 type subJobT struct {
-	subJobs     []*jobsdb.JobT
-	subJobCount int
+	subJobs  []*jobsdb.JobT
+	haveMore bool
+}
+
+func splitJob(jobs []*jobsdb.JobT) []subJobT {
+	subJobCount := 1
+	if len(jobs)/subJobSize > 1 {
+		subJobCount = len(jobs) / subJobSize
+	}
+	var subJobs []subJobT
+	for i := 0; i < subJobCount; i++ {
+		if i == subJobCount-1 {
+			//all the remaining jobs are sent in last sub-job batch.
+			subJobs = append(subJobs, subJobT{
+				subJobs:  jobs,
+				haveMore: false,
+			})
+			continue
+		}
+		subJobs = append(subJobs, subJobT{
+			subJobs:  jobs[:subJobSize],
+			haveMore: true,
+		})
+		jobs = jobs[subJobSize:]
+
+	}
+	return subJobs
 }
 
 // mainPipeline: new way of handling jobs
@@ -2236,28 +2261,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobCount := 1
-				if len(jobs)/subJobSize > 1 {
-					subJobCount = len(jobs) / subJobSize
-				}
-
-				for i := 0; i < subJobCount; i++ {
-
-					if i == subJobCount-1 {
-						//all the remaining jobs are sent in last sub-job batch.
-						chProc <- subJobT{
-							subJobs:     jobs,
-							subJobCount: subJobCount,
-						}
-						continue
-					}
-
-					chProc <- subJobT{
-						subJobs:     jobs[:subJobSize],
-						subJobCount: subJobCount,
-					}
-					jobs = jobs[subJobSize:]
-
+				subJobs := splitJob(jobs)
+				for _, subJob := range subJobs {
+					chProc <- subJob
 				}
 			}
 		}
@@ -2273,94 +2279,65 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	triggerStore := make(chan bool, 1)
 	chStore := make(chan storeMessage, maxEventsToProcess/subJobSize)
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-		defer close(triggerStore)
 		for msg := range chTrans {
-
 			chStore <- proc.transformations(msg)
-			//since we don't want to call DB write for each sub-jobs. That's why we are waiting until all the sub-jobs are processed.
-			//Once all the sub-jobs are processed, we trigger the DB write by `triggerStore` channel.
-			if len(chStore) == msg.subJobCount {
-				triggerStore <- true
-			}
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
+		var mergedJob storeMessage
+		firstSubJob := true
 		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-triggerStore:
-				var statusList []*jobsdb.JobStatusT
-				var destJobs []*jobsdb.JobT
-				var batchDestJobs []*jobsdb.JobT
-				var procErrorJobs []*jobsdb.JobT
-				var reportMetrics []*types.PUReportedMetric
-				var totalEvents int
-				var start time.Time
-				uniqueMessageIds := make(map[string]struct{})
-				procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
-				sourceDupStats := make(map[string]int)
-				for i := 0; ; i++ {
-					subJob := <-chStore
+		for subJob := range chStore {
 
-					statusList = append(statusList, subJob.statusList...)
-					destJobs = append(destJobs, subJob.destJobs...)
-					batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+			if firstSubJob {
+				mergedJob.uniqueMessageIds = make(map[string]struct{})
+				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+				mergedJob.sourceDupStats = make(map[string]int)
 
-					procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
-					for id, job := range subJob.procErrorJobsByDestID {
-						procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
-					}
-
-					reportMetrics = append(reportMetrics, subJob.reportMetrics...)
-					for tag, count := range subJob.sourceDupStats {
-						sourceDupStats[tag] += count
-					}
-					for id := range subJob.uniqueMessageIds {
-						uniqueMessageIds[id] = struct{}{}
-					}
-					totalEvents += subJob.totalEvents
-					if i == 0 {
-						start = subJob.start
-					}
-
-					if i == subJob.subJobCount-1 {
-						break
-					}
-
-				}
-				proc.Store(storeMessage{
-					statusList:    statusList,
-					destJobs:      destJobs,
-					batchDestJobs: batchDestJobs,
-
-					procErrorJobs:         procErrorJobs,
-					procErrorJobsByDestID: procErrorJobsByDestID,
-
-					reportMetrics:    reportMetrics,
-					sourceDupStats:   sourceDupStats,
-					uniqueMessageIds: uniqueMessageIds,
-
-					totalEvents: totalEvents,
-					start:       start,
-				})
-			case <-time.After(time.Second):
+				mergedJob.start = subJob.start
+				firstSubJob = false
 			}
+			mergedJob := subJobMerger(mergedJob, subJob)
 
+			if !subJob.haveMore {
+				proc.Store(mergedJob)
+				firstSubJob = true
+			}
 		}
 	}()
 
 	wg.Wait()
+}
+
+func subJobMerger(mergedJob storeMessage, subJob storeMessage) storeMessage {
+
+	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
+	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
+	mergedJob.batchDestJobs = append(mergedJob.batchDestJobs, subJob.batchDestJobs...)
+
+	mergedJob.procErrorJobs = append(mergedJob.procErrorJobs, subJob.procErrorJobs...)
+	for id, job := range subJob.procErrorJobsByDestID {
+		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
+	}
+
+	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
+	for tag, count := range subJob.sourceDupStats {
+		mergedJob.sourceDupStats[tag] += count
+	}
+	for id := range subJob.uniqueMessageIds {
+		mergedJob.uniqueMessageIds[id] = struct{}{}
+	}
+	mergedJob.totalEvents += subJob.totalEvents
+
+	return mergedJob
 }
 
 func (proc *HandleT) crashRecover() {
