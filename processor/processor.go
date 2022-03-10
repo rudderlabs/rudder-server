@@ -2205,6 +2205,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				proc.logger.Info("read job context done called")
 				return
 			case <-time.After(nextSleepTime):
 
@@ -2274,88 +2275,99 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		for jobs := range chProc {
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
+		proc.logger.Info("processJobForDest done for all jobs... outside for loop")
+
 	}()
 
-	// triggerStore := make(chan int, 1)
+	triggerStore := make(chan int, 1)
 	chStore := make(chan storeMessage, subJobCount)
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-		// defer close(triggerStore)
+		defer close(triggerStore)
 		for msg := range chTrans {
 
 			chStore <- proc.transformations(msg)
 			//since we don't want to call DB write for each sub-jobs. That's why we are waiting until all the sub-jobs are processed.
 			//Once all the sub-jobs are processed, we trigger the DB write by `triggerStore` channel.
-			// if len(chStore) == subJobCount || !msg.isSplit {
-			// 	triggerStore <- 1
-			// }
+			if len(chStore) == subJobCount || !msg.isSplit {
+				triggerStore <- 1
+			}
 		}
-
+		proc.logger.Info("transformatioins done... out of for loop")
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for {
-			// <-triggerStore
-			var statusList []*jobsdb.JobStatusT
-			var destJobs []*jobsdb.JobT
-			var batchDestJobs []*jobsdb.JobT
-			var procErrorJobs []*jobsdb.JobT
-			var reportMetrics []*types.PUReportedMetric
-			var totalEvents int
-			var start time.Time
-			uniqueMessageIds := make(map[string]struct{})
-			procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
-			sourceDupStats := make(map[string]int)
-			i := 0
-			for subJob := range chStore {
-				statusList = append(statusList, subJob.statusList...)
-				destJobs = append(destJobs, subJob.destJobs...)
-				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
-				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
-				for id, job := range subJob.procErrorJobsByDestID {
-					procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
+			select {
+			case <-ctx.Done():
+				return
+			case <-triggerStore:
+				var statusList []*jobsdb.JobStatusT
+				var destJobs []*jobsdb.JobT
+				var batchDestJobs []*jobsdb.JobT
+				var procErrorJobs []*jobsdb.JobT
+				var reportMetrics []*types.PUReportedMetric
+				var totalEvents int
+				var start time.Time
+				uniqueMessageIds := make(map[string]struct{})
+				procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
+				sourceDupStats := make(map[string]int)
+				i := 0
+				for subJob := range chStore {
+					statusList = append(statusList, subJob.statusList...)
+					destJobs = append(destJobs, subJob.destJobs...)
+					batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
+					procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
+					for id, job := range subJob.procErrorJobsByDestID {
+						procErrorJobsByDestID[id] = append(procErrorJobsByDestID[id], job...)
+					}
+					reportMetrics = append(reportMetrics, subJob.reportMetrics...)
+					for tag, count := range subJob.sourceDupStats {
+						sourceDupStats[tag] += count
+					}
+					for id := range subJob.uniqueMessageIds {
+						uniqueMessageIds[id] = struct{}{}
+					}
+					totalEvents += subJob.totalEvents
+					if i == 0 {
+						start = subJob.start
+						i++
+					}
+					if len(chStore) == 0 {
+						break
+					}
 				}
-				reportMetrics = append(reportMetrics, subJob.reportMetrics...)
-				for tag, count := range subJob.sourceDupStats {
-					sourceDupStats[tag] += count
-				}
-				for id := range subJob.uniqueMessageIds {
-					uniqueMessageIds[id] = struct{}{}
-				}
-				totalEvents += subJob.totalEvents
-				if i == 0 {
-					start = subJob.start
-					i++
-				}
-				if len(chStore) == 0 {
-					break
-				}
+				proc.Store(storeMessage{
+					statusList:    statusList,
+					destJobs:      destJobs,
+					batchDestJobs: batchDestJobs,
+
+					procErrorJobs:         procErrorJobs,
+					procErrorJobsByDestID: procErrorJobsByDestID,
+
+					reportMetrics:    reportMetrics,
+					sourceDupStats:   sourceDupStats,
+					uniqueMessageIds: uniqueMessageIds,
+
+					totalEvents: totalEvents,
+					start:       start,
+				})
+			case <-time.After(time.Second):
 			}
-			proc.Store(storeMessage{
-				statusList:    statusList,
-				destJobs:      destJobs,
-				batchDestJobs: batchDestJobs,
+			// <-triggerStore
 
-				procErrorJobs:         procErrorJobs,
-				procErrorJobsByDestID: procErrorJobsByDestID,
-
-				reportMetrics:    reportMetrics,
-				sourceDupStats:   sourceDupStats,
-				uniqueMessageIds: uniqueMessageIds,
-
-				totalEvents: totalEvents,
-				start:       start,
-			})
-
+			proc.logger.Info("write job done... outside of for loop")
 		}
 	}()
 
 	wg.Wait()
+	proc.logger.Info("wg.wait retured from mainpipeline")
+
 }
 
 func (proc *HandleT) crashRecover() {
