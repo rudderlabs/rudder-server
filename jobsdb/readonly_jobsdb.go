@@ -161,6 +161,9 @@ func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parame
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
+		if count > 0 {
+			return count
+		}
 		totalCount += count
 	}
 
@@ -290,6 +293,9 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
+		if count > 0 {
+			return count
+		}
 		totalCount += count
 	}
 
