@@ -2279,7 +2279,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	chStore := make(chan storeMessage, maxEventsToProcess/subJobSize)
+	chStore := make(chan storeMessage, bufferSize)
 	wg.Add(1)
 
 	go func() {
