@@ -12,7 +12,7 @@ service Warehouse {
   rpc GetWHUpload (WHUploadRequest) returns (WHUploadResponse);
   rpc TriggerWHUpload (WHUploadRequest) returns (TriggerWhUploadsResponse);
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
-
+  rpc Validate (ValidationRequest) returns (ValidationResponse);
 }
 
 message Pagination {
@@ -59,7 +59,7 @@ message WHUploadResponse {
   string destination_type = 4;
   string namespace = 5;
   string error = 6;
-  int32 attempt =  7;
+  int32 attempt = 7;
   string status = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp first_event_at = 10;
@@ -74,4 +74,16 @@ message WHUploadResponse {
 message TriggerWhUploadsResponse {
   string message = 1;
   int32 status_code = 2;
+}
+
+message ValidationRequest {
+  string role = 1;
+  string path = 2;
+  string step = 3;
+  string body = 4;
+}
+
+message ValidationResponse {
+  string error = 1;
+  string data = 2;
 }
