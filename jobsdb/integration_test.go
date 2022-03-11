@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -123,6 +124,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 			UUID:         uuid.Must(uuid.NewV4()),
 			CustomVal:    customVal,
 			EventCount:   eventsPerJob,
+			WorkspaceId:  "workspaceID",
 		}
 	}
 	return js
@@ -467,4 +469,70 @@ func BenchmarkJobsdb(b *testing.B) {
 			require.JSONEq(b, string(expectedJob.EventPayload), string(actualJob.EventPayload))
 		}
 	})
+}
+
+func BenchmarkLifecycle(b *testing.B) {
+	initJobsDB()
+	stats.Setup()
+
+	jobDB := jobsdb.NewForReadWrite("test")
+	defer jobDB.Close()
+
+	const writeConcurrency = 10
+	const newJobs = 100
+
+	dsSize := writeConcurrency * newJobs
+	triggerAddNewDS := make(chan time.Time, 0)
+
+	jobDB.MaxDSSize = &dsSize
+	jobDB.TriggerAddNewDS = func() <-chan time.Time {
+		return triggerAddNewDS
+	}
+
+	b.Run("Start, Work, Stop, Repeat", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			jobDB.Start()
+			b.StopTimer()
+
+			wg := sync.WaitGroup{}
+			wg.Add(writeConcurrency)
+			for j := 0; j < writeConcurrency; j++ {
+				go func() {
+					jobDB.Store(genJobs("", newJobs, 10))
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			triggerAddNewDS <- time.Now()
+			consume(b, jobDB, newJobs*writeConcurrency)
+			b.StartTimer()
+			jobDB.Stop()
+		}
+	})
+}
+
+func consume(t testing.TB, db *jobsdb.HandleT, count int) {
+	t.Helper()
+
+	unprocessedList := db.GetUnprocessed(jobsdb.GetQueryParamsT{
+		JobCount: count,
+	})
+
+	status := make([]*jobsdb.JobStatusT, len(unprocessedList))
+	for i, j := range unprocessedList {
+		status[i] = &jobsdb.JobStatusT{
+			JobID:         j.JobID,
+			JobState:      "succeeded",
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "202",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   "testWorkspace",
+		}
+	}
+
+	err := db.UpdateJobStatus(status, []string{}, []jobsdb.ParameterFilterT{})
+	require.NoError(t, err)
 }
