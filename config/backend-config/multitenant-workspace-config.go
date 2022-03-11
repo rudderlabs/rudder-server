@@ -66,9 +66,9 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr strin
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 	//To support existing multitenant behaviour
 	// url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
-	workspacesString := ""
-	url = url + workspacesString
-	url = url + "&fetchAll=true"
+	// workspacesString := ""
+	// url = url + workspacesString
+	// url = url + "&fetchAll=true"
 	var respBody []byte
 	var statusCode int
 
