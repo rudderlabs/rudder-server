@@ -620,7 +620,7 @@ func WithClearDB(clearDB bool) OptsFunc {
 	}
 }
 
-func WithRetentionPeriod(period time.Duration) OptsFunc {
+func WithRetention(period time.Duration) OptsFunc {
 	return func(jd *HandleT) {
 		jd.dsRetentionPeriod = period
 	}
@@ -664,6 +664,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 		migrationState: MigrationState{
 			migrationMode: "",
 		},
+		dsRetentionPeriod: 0,
 	}
 
 	for _, fn := range opts {
@@ -717,6 +718,8 @@ func (jd *HandleT) init() {
 		db, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
+		// TODO: db.SetMaxOpenConns(20)
+
 		err = db.Ping()
 		jd.assertError(err)
 
@@ -757,9 +760,6 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
-	jd.writeChannel = make(chan writeJob)
-	jd.readChannel = make(chan readJob)
-
 	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
 	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
@@ -767,6 +767,9 @@ func (jd *HandleT) workersAndAuxSetup() {
 }
 
 func (jd *HandleT) Start() {
+	jd.writeChannel = make(chan writeJob)
+	jd.readChannel = make(chan readJob)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
