@@ -2,8 +2,8 @@ package manager
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
@@ -35,6 +35,9 @@ type ManagerI interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
+	CreateTestSchema(warehouse warehouseutils.WarehouseT) error
+	CreateTestTable(warehouse warehouseutils.WarehouseT) error
+	LoadTestTable(location string, warehouse warehouseutils.WarehouseT) error
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type
