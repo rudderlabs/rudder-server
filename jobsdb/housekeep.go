@@ -15,6 +15,12 @@ type Housekeep struct {
 	jobsdb *HandleT
 }
 
+func NewHousekeeper(jobsdb *HandleT) *Housekeep {
+	return &Housekeep{
+		jobsdb: jobsdb,
+	}
+}
+
 func (h *Housekeep) Start() {
 	h.ctx, h.cancel = context.WithCancel(context.Background())
 	h.backgroundGroup, _ = errgroup.WithContext(h.ctx)
