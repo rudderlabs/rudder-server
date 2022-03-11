@@ -26,6 +26,7 @@ type Router struct {
 	brt              *batchrouter.Factory
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
+	waitGroup        *errgroup.Group
 	DBs              *jobsdb.DBs
 	multitenantStats multitenant.MultiTenantI
 	reportingI       types.ReportingI
@@ -37,7 +38,7 @@ func (r *Router) Run(ctx context.Context) error {
 }
 
 func (r *Router) StartNew() {
-	r.DBs.Start()
+	//r.DBs.Start()
 	r.rt = &router.Factory{
 		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
@@ -55,12 +56,17 @@ func (r *Router) StartNew() {
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
-	r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
+	g, _ := errgroup.WithContext(context.Background())
+	r.waitGroup = g
+	g.Go(func() error {
+		r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
+		return nil
+	})
 }
 
 func (r *Router) Stop() {
 	r.currentCancel()
-	r.DBs.Halt()
+	r.waitGroup.Wait()
 }
 
 func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {

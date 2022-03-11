@@ -7,12 +7,14 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/sync/errgroup"
 )
 
 type Processor struct {
 	*HandleT
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
+	waitGroup        *errgroup.Group
 	DBs              *jobsdb.DBs
 	multitenantStats multitenant.MultiTenantI // need not initialize again
 	reportingI       types.ReportingI         // need not initialize again
@@ -24,19 +26,25 @@ func (proc *Processor) Run(ctx context.Context) error {
 }
 
 func (proc *Processor) StartNew() {
-	proc.DBs.Start()
+	//proc.DBs.Start()
 	proc.HandleT.Setup(proc.backendConfig, &proc.DBs.GatewayDB, &proc.DBs.RouterDB, &proc.DBs.BatchRouterDB,
 		&proc.DBs.ProcErrDB, &proc.DBs.ClearDB, proc.reporting, proc.multitenantStats)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
-	proc.Start(currentCtx)
+	g, _ := errgroup.WithContext(context.Background())
+	proc.waitGroup = g
+	g.Go(func() error {
+		proc.Start(currentCtx)
+		return nil
+	})
 }
 
 func (proc *Processor) Stop() {
 	proc.currentCancel()
-	proc.DBs.Halt()
+	//proc.DBs.Halt()
 	proc.Shutdown()
+	proc.waitGroup.Wait()
 }
 
 // New creates a new Processor instance

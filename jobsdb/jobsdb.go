@@ -359,10 +359,8 @@ type HandleT struct {
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
-	Ctx             context.Context
-	HaltCancel      context.CancelFunc
-	Ready bool
-	Running bool
+	mainCtx         context.Context
+	shallowCancel context.CancelFunc
 }
 
 type QueryFiltersT struct {
@@ -621,8 +619,6 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.Running = false
-	jd.Ready = false
 	jd.initGlobalDBHandle()
 
 	if jd.MaxDSSize == nil {
@@ -652,6 +648,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	jd.mainCtx = ctx
 	g, ctx := errgroup.WithContext(ctx)
 
 	jd.backgroundCancel = cancel
@@ -667,7 +664,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	})
 
 	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, ownerType, clearAll)
+		jd.setUpForOwnerType(ownerType, clearAll)
 	}
 }
 
@@ -708,16 +705,16 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 }
 
-func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
+func (jd *HandleT) setUpForOwnerType(ownerType OwnerType, clearAll bool) {
 	switch ownerType {
 	case Read:
-		jd.readerSetup(ctx)
+		jd.readerSetup()
 	case Write:
 		jd.setupDatabaseTables(clearAll)
-		jd.writerSetup(ctx)
+		jd.writerSetup()
 	case ReadWrite:
 		jd.setupDatabaseTables(clearAll)
-		jd.readerWriterSetup(ctx)
+		jd.readerWriterSetup()
 	}
 }
 
@@ -740,13 +737,40 @@ func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) readerSetup(ctx context.Context) {
+func (jd *HandleT) readerSetup() {
 	jd.recoverFromJournal(Read)
-
 	//This is a thread-safe operation.
 	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
+	//jd.StartReadDB(ctx)
+}
 
+func (jd *HandleT) writerSetup() {
+	jd.recoverFromJournal(Write)
+	//This is a thread-safe operation.
+	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
+	jd.recoverFromJournal(ReadWrite)
+	//jd.StartWriterDB(ctx)
+}
+
+func (jd *HandleT) readerWriterSetup() {
+	jd.recoverFromJournal(Read)
+	//jd.StartReadWriteDB(ctx)
+}
+
+func (jd *HandleT) Start(ctx context.Context, ownerType OwnerType) {
+	ctx, jd.shallowCancel = context.WithCancel(ctx)
+	switch ownerType {
+	case Read:
+		jd.startReadDB(ctx)
+	case Write:
+		jd.startWriterDB(ctx)
+	case ReadWrite:
+		jd.startReadWriteDB(ctx)
+	}
+}
+
+func (jd *HandleT) startReadDB(ctx context.Context) {
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
 	//else
@@ -769,12 +793,7 @@ func (jd *HandleT) readerSetup(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) writerSetup(ctx context.Context) {
-	jd.recoverFromJournal(Write)
-	//This is a thread-safe operation.
-	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
-	jd.recoverFromJournal(ReadWrite)
-
+func (jd *HandleT) startWriterDB(ctx context.Context) {
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
 	//else
@@ -792,32 +811,19 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) readerWriterSetup(ctx context.Context) {
-	jd.recoverFromJournal(Read)
-	jd.Ready = true
-	jd.StartDB()
-}
+func (jd *HandleT) startReadWriteDB(ctx context.Context) {
+	jd.getDSList(true)
+	jd.getDSRangeList(true)
 
-func (jd *HandleT)StartDB() error {
-	if !jd.Ready {
-		return errors.New("DB not ready to start")
+	//If no DS present, add one
+	if len(jd.datasetList) == 0 {
+		jd.addNewDS(appendToDsList, dataSetT{})
 	}
-	if jd.Running {
+
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		jd.addNewDSLoop(ctx)
 		return nil
-	}
-	ctx := context.Background()
-	jd.Ctx = ctx
-	jd.run(ctx)
-	return nil
-}
-
-func (jd *HandleT)HaltDB() {
-	jd.Ctx.Done()
-	jd.Running = false
-}
-
-func (jd *HandleT)run(ctx context.Context) {
-	jd.writerSetup(ctx)
+	}))
 
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
@@ -826,7 +832,10 @@ func (jd *HandleT)run(ctx context.Context) {
 		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
-	jd.Running = true
+}
+
+func (jd *HandleT) HaltDB() {
+	jd.shallowCancel()
 }
 
 type writeJob struct {

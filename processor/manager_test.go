@@ -141,6 +141,8 @@ func TestProcessorManager(t *testing.T) {
 	ctx := context.Background()
 	dbs := jobsdb.Factory()
 	dbs.InitiateDBs(0 * time.Hour, 0 * time.Hour, "import", false)
+	dbs.Start()
+	time.Sleep(30*time.Second)
 	processor := New(ctx, dbs)
 
 	mockCtrl := gomock.NewController(t)
@@ -224,6 +226,7 @@ func TestProcessorManager(t *testing.T) {
 	}()
 	<- c
 	processor.Stop()
+	dbs.Halt()
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
 		//mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
@@ -232,7 +235,7 @@ func TestProcessorManager(t *testing.T) {
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-
+		dbs.Start()
 		go processor.StartNew()
 		err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
@@ -254,6 +257,7 @@ func TestProcessorManager(t *testing.T) {
 		}()
 		<- c
 		processor.Stop()
+		dbs.Halt()
 		gwJobDB.TearDown()
 	})
 }
