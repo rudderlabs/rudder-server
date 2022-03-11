@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -292,15 +291,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
-
-				// test and send connection status to control plane
-				if val, ok := destination.Config["testConnection"].(bool); ok && val {
-					destination := destination
-					rruntime.Go(func() {
-						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-					})
-				}
 
 				if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 					wh.setupIdentityTables(warehouse)
