@@ -724,25 +724,6 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 	}
 }
 
-func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
-	var err error
-	if jd.BackupSettings.BackupEnabled {
-		jd.jobsFileUploader, err = jd.getFileUploader()
-		jd.assertError(err)
-		jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-			jd.backupDSLoop(ctx)
-			return nil
-		}))
-	}
-}
-
-func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.migrateDSLoop(ctx)
-		return nil
-	}))
-}
-
 func (jd *HandleT) readerSetup(ctx context.Context) {
 	jd.recoverFromJournal(Read)
 
@@ -789,10 +770,6 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 		jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.addNewDSLoop(ctx)
-		return nil
-	}))
 }
 
 func (jd *HandleT) readerWriterSetup(ctx context.Context) {
