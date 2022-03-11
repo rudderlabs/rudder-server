@@ -29,6 +29,7 @@ var (
 	backendConfig                         BackendConfig
 	isMultiWorkspace                      bool
 	multiWorkspaceSecret                  string
+	multitenantWorkspaceSecret            string
 	configBackendURL, workspaceToken      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
@@ -206,15 +207,20 @@ type TrackingPlanT struct {
 
 type BackendConfig interface {
 	SetUp()
-	Get() (ConfigT, bool)
+	Get(string) (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
+	StopPolling()
+	StartPolling(workspaces string)
 }
 type CommonBackendConfig struct {
 	configEnvHandler types.ConfigEnvI
+	ctx              context.Context
+	cancel           context.CancelFunc
+	blockChan        chan struct{}
 }
 
 func loadConfig() {
@@ -222,7 +228,7 @@ func loadConfig() {
 	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-
+	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
@@ -280,9 +286,9 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func configUpdate(statConfigBackendError stats.RudderStats) {
+func configUpdate(statConfigBackendError stats.RudderStats, workspaces string) {
 
-	sourceJSON, ok := backendConfig.Get()
+	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
 		statConfigBackendError.Increment()
 	}
@@ -309,11 +315,16 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 	}
 }
 
-func pollConfigUpdate() {
+func pollConfigUpdate(ctx context.Context, workspaces string) {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		configUpdate(statConfigBackendError)
-		time.Sleep(time.Duration(pollInterval))
+		configUpdate(statConfigBackendError, workspaces)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
@@ -395,6 +406,9 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 func Setup(configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
+	} else if misc.IsMultiTenant() {
+		backendConfig = new(MultiTenantWorkspaceConfig)
+		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
 	} else {
 		backendConfig = new(WorkspaceConfig)
 		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
@@ -404,11 +418,24 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 
 	DefaultBackendConfig = backendConfig
 
-	rruntime.Go(func() {
-		pollConfigUpdate()
-	})
-
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+}
+
+func (bc *CommonBackendConfig) StartPolling(workspaces string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	bc.ctx = ctx
+	bc.cancel = cancel
+	bc.blockChan = make(chan struct{})
+	rruntime.Go(func() {
+		pollConfigUpdate(ctx, workspaces)
+		close(bc.blockChan)
+	})
+}
+
+func (bc *CommonBackendConfig) StopPolling() {
+	bc.cancel()
+	<-bc.blockChan
+	initialized = false
 }
 
 func GetConfigBackendURL() string {
@@ -421,6 +448,9 @@ func GetWorkspaceToken() (workspaceToken string) {
 	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
 	if isMultiWorkspace {
 		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
+	if misc.IsMultiTenant() {
+		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	}
 	return workspaceToken
 }

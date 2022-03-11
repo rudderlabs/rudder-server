@@ -37,18 +37,18 @@ func (m *MockBackendConfig) EXPECT() *MockBackendConfigMockRecorder {
 }
 
 // Get mocks base method.
-func (m *MockBackendConfig) Get() (backendconfig.ConfigT, bool) {
+func (m *MockBackendConfig) Get(arg0 string) (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get")
+	ret := m.ctrl.Call(m, "Get", arg0)
 	ret0, _ := ret[0].(backendconfig.ConfigT)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockBackendConfigMockRecorder) Get() *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) Get(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0)
 }
 
 // GetWorkspaceIDForSourceID mocks base method.
@@ -103,6 +103,30 @@ func (m *MockBackendConfig) SetUp() {
 func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUp", reflect.TypeOf((*MockBackendConfig)(nil).SetUp))
+}
+
+// StartPolling mocks base method.
+func (m *MockBackendConfig) StartPolling(arg0 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "StartPolling", arg0)
+}
+
+// StartPolling indicates an expected call of StartPolling.
+func (mr *MockBackendConfigMockRecorder) StartPolling(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartPolling", reflect.TypeOf((*MockBackendConfig)(nil).StartPolling), arg0)
+}
+
+// StopPolling mocks base method.
+func (m *MockBackendConfig) StopPolling() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "StopPolling")
+}
+
+// StopPolling indicates an expected call of StopPolling.
+func (mr *MockBackendConfigMockRecorder) StopPolling() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopPolling", reflect.TypeOf((*MockBackendConfig)(nil).StopPolling))
 }
 
 // Subscribe mocks base method.

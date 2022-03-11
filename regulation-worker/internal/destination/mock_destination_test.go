@@ -35,16 +35,16 @@ func (m *MockdestinationMiddleware) EXPECT() *MockdestinationMiddlewareMockRecor
 }
 
 // Get mocks base method.
-func (m *MockdestinationMiddleware) Get() (backendconfig.ConfigT, bool) {
+func (m *MockdestinationMiddleware) Get(workspace string) (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get")
+	ret := m.ctrl.Call(m, "Get", workspace)
 	ret0, _ := ret[0].(backendconfig.ConfigT)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockdestinationMiddlewareMockRecorder) Get() *gomock.Call {
+func (mr *MockdestinationMiddlewareMockRecorder) Get(workspace interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockdestinationMiddleware)(nil).Get))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockdestinationMiddleware)(nil).Get), workspace)
 }

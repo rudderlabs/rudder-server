@@ -15,7 +15,7 @@ var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destinationMiddleware interface {
-	Get() (backendconfig.ConfigT, bool)
+	Get(workspace string) (backendconfig.ConfigT, bool)
 }
 
 type DestMiddleware struct {
@@ -79,7 +79,7 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	var ok bool
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
-		config, ok = d.Dest.Get()
+		config, ok = d.Dest.Get(backendconfig.GetWorkspaceToken())
 		if !ok {
 			return fmt.Errorf("error while getting destination details")
 		}
