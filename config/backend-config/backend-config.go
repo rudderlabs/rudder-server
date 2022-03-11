@@ -404,11 +404,11 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 
 // Setup backend config
 func Setup(configEnvHandler types.ConfigEnvI) {
-	if isMultiWorkspace {
-		backendConfig = new(MultiWorkspaceConfig)
-	} else if misc.IsMultiTenant() {
+	if isMultiWorkspace && misc.IsMultiTenant() {
 		backendConfig = new(MultiTenantWorkspaceConfig)
 		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
+	} else if isMultiWorkspace {
+		backendConfig = new(MultiWorkspaceConfig)
 	} else {
 		backendConfig = new(WorkspaceConfig)
 		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
@@ -446,11 +446,11 @@ func GetConfigBackendURL() string {
 func GetWorkspaceToken() (workspaceToken string) {
 	workspaceToken = config.GetWorkspaceToken()
 	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if isMultiWorkspace {
+	if misc.IsMultiTenant() && isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
+	} else if isMultiWorkspace {
 		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 	}
-	if misc.IsMultiTenant() {
-		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-	}
+
 	return workspaceToken
 }
