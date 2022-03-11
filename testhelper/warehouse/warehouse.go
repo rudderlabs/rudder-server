@@ -1,9 +1,12 @@
 package warehouse_test
 
 import (
+	"cloud.google.com/go/bigquery"
+	"context"
 	"database/sql"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
@@ -14,14 +17,17 @@ type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
 	DB             *sql.DB
+	BQClient       *bigquery.Client
 	EventsCountMap EventsCountMap
 	WriteKey       string
 	UserId         string
 	Schema         string
+	BQContext      context.Context
 }
 
 type WareHouseTest struct {
 	PGTest                     *PostgresTest
+	BQTest                     *BiqQueryTest
 	CHTest                     *ClickHouseTest
 	CHClusterTest              *ClickHouseClusterTest
 	MSSQLTest                  *MSSQLTest
@@ -98,4 +104,6 @@ func InitWHConfig() {
 	postgres.Init()
 	clickhouse.Init()
 	mssql.Init()
+	bq.Init()
+
 }

@@ -8,6 +8,7 @@ package main_test
 import (
 	"bufio"
 	"bytes"
+	"cloud.google.com/go/bigquery"
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
@@ -15,6 +16,7 @@ import (
 	_ "encoding/json"
 	"flag"
 	"fmt"
+	"google.golang.org/api/iterator"
 	"html/template"
 	"io"
 	"log"
@@ -356,7 +358,7 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("setup MINIO Container : %w", err)
 	}
 
-	if err := godotenv.Load("testhelper/.env"); err != nil {
+	if err := godotenv.Load("/Users/rudderstack/GolandProjects/rudder-server/testhelper/.env"); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
 
@@ -367,9 +369,14 @@ func run(m *testing.M) (int, error) {
 	wht.InitWHConfig()
 
 	defer wht.SetWHPostgresDestination(pool)()
+	fmt.Println("INFO: postgres setup done")
 	defer wht.SetWHClickHouseDestination(pool)()
+	fmt.Println("INFO: clickhouse setup done")
 	defer wht.SetWHClickHouseClusterDestination(pool)()
-	defer wht.SetWHMssqlDestination(pool)()
+	fmt.Println("INFO: clickhouse cluster setup done")
+	//defer wht.SetWHMssqlDestination(pool)()
+	fmt.Println("INFO: mssql setup done")
+	defer wht.SetWHBigQueryDestination()()
 
 	AddWHSpecificSqlFunctionsToJobsDb()
 
@@ -401,23 +408,24 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                          webhookurl,
-			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
-			"writeKey":                            writeKey,
-			"workspaceId":                         workspaceID,
-			"postgresPort":                        PostgresContainer.Port,
-			"address":                             RedisContainer.RedisAddress,
-			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
-			"minioBucketName":                     MINIOContainer.MinioBucketName,
-			"kafkaPort":                           KafkaContainer.Port,
-			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
-			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
-			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
-			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
+			"webhookUrl":                     webhookurl,
+			"disableDestinationwebhookUrl":   disableDestinationwebhookurl,
+			"writeKey":                       writeKey,
+			"workspaceId":                    workspaceID,
+			"postgresPort":                   PostgresContainer.Port,
+			"address":                        RedisContainer.RedisAddress,
+			"minioEndpoint":                  MINIOContainer.MinioEndpoint,
+			"minioBucketName":                MINIOContainer.MinioBucketName,
+			"kafkaPort":                      KafkaContainer.Port,
+			"postgresEventWriteKey":          wht.Test.PGTest.WriteKey,
+			"clickHouseEventWriteKey":        wht.Test.CHTest.WriteKey,
+			"clickHouseClusterEventWriteKey": wht.Test.CHClusterTest.WriteKey,
+			"bqEventWriteKey":                wht.Test.BQTest.WriteKey,
+			//"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
 			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
 			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
 			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
-			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
+			//"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 		},
 	)
 	defer func() {
@@ -995,24 +1003,43 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-// Verify Event in WareHouse MSSQL
-func TestWHMssqlDestination(t *testing.T) {
-	MssqlTest := wht.Test.MSSQLTest
+func TestWHBiqQuery(t *testing.T) {
+	bqTest := wht.Test.BQTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             MssqlTest.DB,
-		EventsCountMap: MssqlTest.EventsMap,
-		WriteKey:       MssqlTest.WriteKey,
-		UserId:         "userId_mssql",
-		Schema:         "mssql_wh_integration",
+		BQClient:       bqTest.DB,
+		EventsCountMap: bqTest.EventsMap,
+		WriteKey:       bqTest.WriteKey,
+		UserId:         "userId_clickhouse",
+		Schema:         "rudderdb",
+		BQContext:      bqTest.Context,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
 
-	whDestTest.UserId = "userId_mssql_1"
+	whDestTest.UserId = "userId_clickhouse_1"
 	sendUpdatedWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
 }
+
+// Verify Event in WareHouse MSSQL
+//func TestWHMssqlDestination(t *testing.T) {
+//	MssqlTest := wht.Test.MSSQLTest
+//
+//	whDestTest := &wht.WareHouseDestinationTest{
+//		DB:             MssqlTest.DB,
+//		EventsCountMap: MssqlTest.EventsMap,
+//		WriteKey:       MssqlTest.WriteKey,
+//		UserId:         "userId_mssql",
+//		Schema:         "mssql_wh_integration",
+//	}
+//	sendWHEvents(whDestTest)
+//	whDestinationTest(t, whDestTest)
+//
+//	whDestTest.UserId = "userId_mssql_1"
+//	sendUpdatedWHEvents(whDestTest)
+//	whDestinationTest(t, whDestTest)
+//}
 
 // sendWHEvents Sending warehouse events
 func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
@@ -1367,9 +1394,26 @@ func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		require.Eventually(t, func() bool {
 			var count int64
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKeys[idx], wdt.UserId)
-			_ = wdt.DB.QueryRow(sqlStatement).Scan(&count)
+			if wdt.DB != nil {
+				_ = wdt.DB.QueryRow(sqlStatement).Scan(&count)
+			} else {
+				it, err := wdt.BQClient.Query(sqlStatement).Read(wdt.BQContext)
+				if err != nil {
+					return false
+				}
+				var values []bigquery.Value
+				err = it.Next(&values)
+				if err == iterator.Done {
+					return false
+				}
+				if err != nil {
+					return false
+				}
+				count, _ = values[0].(int64)
+			}
+
 			return count == int64(tableCount)
-		}, 2*time.Minute, 100*time.Millisecond)
+		}, 2*time.Minute, time.Second)
 	}
 }
 

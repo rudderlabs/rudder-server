@@ -7,29 +7,29 @@ services:
       - build/docker.env
     ports:
       - "6432:5432"
-  backend:
-    depends_on:
-      - db
-      - d-transformer
-    build:
-      context: ./
-      dockerfile: build/Dockerfile
-    entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
-    ports:
-      - "8080:8080"
-    env_file:
-      - build/docker.env
-    environment:
-      - JOBS_DB_HOST=db
-  # Uncomment the following lines to mount workspaceConfig file
-  # volumes:
-  #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
-  d-transformer:
-    build:
-      context: ./rudder-transformer/
-      dockerfile: Dockerfile
-    ports:
-      - "9090:9090"
+#  backend:
+#    depends_on:
+#      - db
+#      - d-transformer
+#    build:
+#      context: ./
+#      dockerfile: build/Dockerfile
+#    entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
+#    ports:
+#      - "8080:8080"
+#    env_file:
+#      - build/docker.env
+#    environment:
+#      - JOBS_DB_HOST=db
+#  # Uncomment the following lines to mount workspaceConfig file
+#  # volumes:
+#  #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
+#  d-transformer:
+#    build:
+#      context: ./rudder-transformer/
+#      dockerfile: Dockerfile
+#    ports:
+#      - "9090:9090"
   # minio:
   #   image: minio/minio
   #   ports:
