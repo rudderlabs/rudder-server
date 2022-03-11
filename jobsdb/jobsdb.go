@@ -611,31 +611,65 @@ func GetConnectionString() string {
 
 }
 
-func NewReader(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
-	return newOwnerType(Read, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-}
+type OptsFunc func(jd *HandleT)
 
-func NewWriter(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
-	return newOwnerType(Write, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-}
-
-func NewReadWriter(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
-	return newOwnerType(ReadWrite, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-}
-
-func newOwnerType(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
-	j := &HandleT{
-		ownerType:             ownerType,
-		clearAll:              clearAll,
-		tablePrefix:           tablePrefix,
-		registerStatusHandler: registerStatusHandler,
-		queryFilterKeys:       queryFilterKeys,
-		migrationState: MigrationState{
-			migrationMode: migrationMode,
-		},
-		dsRetentionPeriod: retentionPeriod,
+// WithClearDB, if set to true it will remove all existing tables
+func WithClearDB(clearDB bool) OptsFunc {
+	return func(jd *HandleT) {
+		jd.clearAll = clearDB
 	}
-	// TODO: use options instead of params
+}
+
+func WithRetentionPeriod(period time.Duration) OptsFunc {
+	return func(jd *HandleT) {
+		jd.dsRetentionPeriod = period
+	}
+}
+
+func WithQueryFilterKeys(filters QueryFiltersT) OptsFunc {
+	return func(jd *HandleT) {
+		jd.queryFilterKeys = filters
+	}
+}
+
+func WithMigrationMode(mode string) OptsFunc {
+	return func(jd *HandleT) {
+		jd.migrationState.migrationMode = mode
+	}
+}
+
+func WithStatusHandler() OptsFunc {
+	return func(jd *HandleT) {
+		jd.registerStatusHandler = true
+	}
+}
+
+func NewForRead(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Read, tablePrefix)
+}
+
+func NewForWrite(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Write, tablePrefix)
+}
+
+func NewForReadWrite(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(ReadWrite, tablePrefix)
+}
+
+func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
+	j := &HandleT{
+		ownerType:   ownerType,
+		tablePrefix: tablePrefix,
+		// default values:
+		migrationState: MigrationState{
+			migrationMode: "",
+		},
+	}
+
+	for _, fn := range opts {
+		fn(j)
+	}
+
 	j.init()
 
 	return j
