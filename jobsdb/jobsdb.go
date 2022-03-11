@@ -319,6 +319,7 @@ jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
 	dbHandle                      *sql.DB
+	ownerType                     OwnerType
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
@@ -341,11 +342,12 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	ownerType                     OwnerType
 	writeChannel                  chan writeJob
 	readChannel                   chan readJob
+	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	clearAll                      bool
 	maxReaders                    int
 	maxWriters                    int
 	MaxDSSize                     *int
@@ -609,6 +611,36 @@ func GetConnectionString() string {
 
 }
 
+func NewReader(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
+	return newOwnerType(Read, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+}
+
+func NewWriter(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
+	return newOwnerType(Write, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+}
+
+func NewReadWriter(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
+	return newOwnerType(ReadWrite, clearAll, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+}
+
+func newOwnerType(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) *HandleT {
+	j := &HandleT{
+		ownerType:             ownerType,
+		clearAll:              clearAll,
+		tablePrefix:           tablePrefix,
+		registerStatusHandler: registerStatusHandler,
+		queryFilterKeys:       queryFilterKeys,
+		migrationState: MigrationState{
+			migrationMode: migrationMode,
+		},
+		dsRetentionPeriod: retentionPeriod,
+	}
+	// TODO: use options instead of params
+	j.init()
+
+	return j
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -618,6 +650,19 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.ownerType = ownerType
+	jd.clearAll = clearAll
+	jd.tablePrefix = tablePrefix
+	jd.dsRetentionPeriod = retentionPeriod
+	jd.migrationState.migrationMode = migrationMode
+	jd.registerStatusHandler = registerStatusHandler
+	jd.queryFilterKeys = queryFilterKeys
+
+	jd.init()
+	jd.Start()
+}
+
+func (jd *HandleT) init() {
 	jd.initGlobalDBHandle()
 
 	if jd.MaxDSSize == nil {
@@ -644,45 +689,21 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		jd.dbHandle = db
 	}
 
-	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
-	jd.backgroundCancel = cancel
-	jd.backgroundGroup = g
-
-	g.Go(func() error {
-		jd.initDBWriters(ctx)
-		return nil
-	})
-	g.Go(func() error {
-		jd.initDBReaders(ctx)
-		return nil
-	})
-
-	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, ownerType, clearAll)
-	}
+	jd.workersAndAuxSetup()
 }
 
-func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
+func (jd *HandleT) workersAndAuxSetup() {
+	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.ownerType = ownerType
-	jd.logger = pkgLogger.Child(tablePrefix)
-	jd.migrationState.migrationMode = migrationMode
-	jd.assert(tablePrefix != "", "tablePrefix received is empty")
-	jd.tablePrefix = tablePrefix
-	jd.dsRetentionPeriod = retentionPeriod
+	jd.logger = pkgLogger.Child(jd.tablePrefix)
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-	if registerStatusHandler {
-		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
+	if jd.registerStatusHandler {
+		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	jd.logger.Infof("Connected to %s DB", tablePrefix)
+	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
@@ -709,6 +730,30 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
+}
+
+func (jd *HandleT) Start() {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	jd.backgroundCancel = cancel
+	jd.backgroundGroup = g
+
+	g.Go(func() error {
+		jd.initDBWriters(ctx)
+		return nil
+	})
+	g.Go(func() error {
+		jd.initDBReaders(ctx)
+		return nil
+	})
+
+	if !jd.skipSetupDBSetup {
+		jd.setUpForOwnerType(ctx, jd.ownerType, jd.clearAll)
+
+		// Avoid clearing the database, if .Start() is called again.
+		jd.clearAll = false
+	}
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
@@ -886,14 +931,22 @@ func (jd *HandleT) dbReader(ctx context.Context) {
 	}
 }
 
-/*
-TearDown releases all the resources
-*/
-func (jd *HandleT) TearDown() {
+func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
 	close(jd.readChannel)
 	close(jd.writeChannel)
 	jd.backgroundGroup.Wait()
+}
+
+/*
+TearDown releases all the resources
+*/
+func (jd *HandleT) TearDown() {
+	jd.Stop()
+	jd.Close()
+}
+
+func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
 
