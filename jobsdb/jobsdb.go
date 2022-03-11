@@ -644,15 +644,15 @@ func WithStatusHandler() OptsFunc {
 	}
 }
 
-func NewForRead(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Read, tablePrefix)
 }
 
-func NewForWrite(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Write, tablePrefix)
 }
 
-func NewForReadWrite(clearAll bool, tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(ReadWrite, tablePrefix)
 }
 
