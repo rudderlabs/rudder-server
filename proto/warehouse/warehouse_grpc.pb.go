@@ -25,7 +25,7 @@ type WarehouseClient interface {
 	GetWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*WHUploadResponse, error)
 	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
-	Validate(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationResponse, error)
+	Validate(ctx context.Context, in *WHValidationRequest, opts ...grpc.CallOption) (*WHValidationResponse, error)
 }
 
 type warehouseClient struct {
@@ -81,8 +81,8 @@ func (c *warehouseClient) TriggerWHUploads(ctx context.Context, in *WHUploadsReq
 	return out, nil
 }
 
-func (c *warehouseClient) Validate(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationResponse, error) {
-	out := new(ValidationResponse)
+func (c *warehouseClient) Validate(ctx context.Context, in *WHValidationRequest, opts ...grpc.CallOption) (*WHValidationResponse, error) {
+	out := new(WHValidationResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/Validate", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ type WarehouseServer interface {
 	GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error)
 	TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error)
 	TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error)
-	Validate(context.Context, *ValidationRequest) (*ValidationResponse, error)
+	Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -122,7 +122,7 @@ func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRe
 func (UnimplementedWarehouseServer) TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUploads not implemented")
 }
-func (UnimplementedWarehouseServer) Validate(context.Context, *ValidationRequest) (*ValidationResponse, error) {
+func (UnimplementedWarehouseServer) Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Validate not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
@@ -229,7 +229,7 @@ func _Warehouse_TriggerWHUploads_Handler(srv interface{}, ctx context.Context, d
 }
 
 func _Warehouse_Validate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ValidationRequest)
+	in := new(WHValidationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func _Warehouse_Validate_Handler(srv interface{}, ctx context.Context, dec func(
 		FullMethod: "/proto.Warehouse/Validate",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).Validate(ctx, req.(*ValidationRequest))
+		return srv.(WarehouseServer).Validate(ctx, req.(*WHValidationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
