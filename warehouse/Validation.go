@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gofrs/uuid"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -64,16 +65,11 @@ type validationStepsResponse struct {
 	Steps []*validationStep `json:"steps"`
 }
 
-//func Init() {
-//	loadConfig()
-//	pkgLogger = logger.NewLogger().Child("destination-connection-tester")
-//}
-//
-//func loadConfig() {
-//	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-//}
+func Init7() {
+	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
+}
 
-func (w *warehousegrpc) Validating(ctx context.Context, req *proto.ValidationRequest, api UploadAPIT) (*proto.ValidationResponse, error) {
+func (w *warehousegrpc) Validating(ctx context.Context, req *proto.WHValidationRequest, _ UploadAPIT) (*proto.WHValidationResponse, error) {
 	funcs := w.GetValidationFuncs()
 	f, ok := funcs[req.Path]
 	if !ok {
@@ -85,7 +81,7 @@ func (w *warehousegrpc) Validating(ctx context.Context, req *proto.ValidationReq
 	if err != nil {
 		errorMessage = err.Error()
 	}
-	return &proto.ValidationResponse{
+	return &proto.WHValidationResponse{
 		Error: errorMessage,
 		Data:  string(result),
 	}, nil
@@ -221,26 +217,6 @@ func (w *warehousegrpc) VerifyingUploadToObjectStorage(ctx context.Context, vr *
 	return
 }
 
-func verifyUploadToObjectStorage(dest *backendconfig.DestinationT) (response string, err error) {
-	tempPath, err := createLoadFile(dest.ID)
-	if err != nil {
-		return
-	}
-
-	uploadLocation, err := uploadLoadFile(tempPath, dest)
-	if err != nil {
-		return
-	}
-
-	responseJson, err := json.Marshal(fmt.Sprintf("Location: %s", uploadLocation))
-	if err != nil {
-		return
-	}
-
-	response = string(responseJson)
-	return
-}
-
 func (w *warehousegrpc) VerifyingDownloadFromObjectStorage(ctx context.Context, vr *validationRequest) (step *validationStep) {
 	step = vr.validationStep
 
@@ -301,6 +277,26 @@ func (w *warehousegrpc) VerifyingLoadTable(ctx context.Context, vr *validationRe
 	}
 
 	step.Success = true
+	return
+}
+
+func verifyUploadToObjectStorage(dest *backendconfig.DestinationT) (response string, err error) {
+	tempPath, err := createLoadFile(dest.ID)
+	if err != nil {
+		return
+	}
+
+	uploadLocation, err := uploadLoadFile(tempPath, dest)
+	if err != nil {
+		return
+	}
+
+	responseJson, err := json.Marshal(fmt.Sprintf("Location: %s", uploadLocation))
+	if err != nil {
+		return
+	}
+
+	response = string(responseJson)
 	return
 }
 

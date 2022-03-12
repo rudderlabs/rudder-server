@@ -62,6 +62,6 @@ func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.
 	return res, err
 }
 
-func (w *warehousegrpc) Validate(ctx context.Context, req *proto.ValidationRequest) (*proto.ValidationResponse, error) {
+func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	return w.Validating(ctx, req, UploadAPI)
 }
