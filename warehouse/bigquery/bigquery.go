@@ -484,7 +484,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 	loadUserTableByMerge := func() {
 		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
-		pkgLogger.Infof(`BQ: Creating staging table for users: %v :: %v`, sqlStatement)
+		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
 		query.WriteDisposition = bigquery.WriteAppend
@@ -533,7 +533,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 										INSERT (%[3]s) VALUES (%[6]s)`, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 
-		pkgLogger.Infof(`BQ: Loading data into users table: %v :: %v`, sqlStatement)
+		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
 		// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
