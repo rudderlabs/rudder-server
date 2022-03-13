@@ -278,8 +278,15 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
 		stagingTableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
-		err = bq.CreateTable(stagingTableName, stagingTableColMap)
+		sampleSchema := getTableSchema(stagingTableColMap)
+		metaData := &bigquery.TableMetadata{
+			Schema:           sampleSchema,
+			TimePartitioning: &bigquery.TimePartitioning{},
+		}
+		tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
+		err = tableRef.Create(bq.BQContext, metaData)
 		if err != nil {
+			pkgLogger.Infof("BQ: Error creating temporary staging table %s", stagingTableName)
 			return
 		}
 
