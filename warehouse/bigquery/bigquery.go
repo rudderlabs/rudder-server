@@ -231,13 +231,13 @@ func partitionedTable(tableName string, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
+func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool, skipTempTableDelete bool) (partitionDate string, stagingTableName string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
 		loadFile, err := bq.Uploader.GetSingleLoadFile(tableName)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		loadFiles = append(loadFiles, loadFile)
 	} else {
@@ -275,10 +275,15 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	}
 
 	loadTableByMerge := func() (err error) {
-		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
-		// create temporary table in format rudder_staging_${tableName}_uuid
-		loader := bq.Db.Dataset(bq.Namespace).Table(stagingTableName).LoaderFrom(gcsRef)
+		stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
+		stagingTableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
+		err = bq.CreateTable(stagingTableName, stagingTableColMap)
+		if err != nil {
+			return
+		}
 
+		loader := bq.Db.Dataset(bq.Namespace).Table(stagingTableName).LoaderFrom(gcsRef)
 		job, err := loader.Run(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating staging table load job: %v\n", err)
@@ -293,7 +298,10 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		if status.Err() != nil {
 			return status.Err()
 		}
-		defer bq.dropStagingTable(stagingTableName)
+
+		if !skipTempTableDelete {
+			defer bq.dropStagingTable(stagingTableName)
+		}
 
 		primaryKey := "id"
 		if column, ok := primaryKeyMap[tableName]; ok {
@@ -327,10 +335,10 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
-		sqlStatement := fmt.Sprintf(`MERGE INTO "%[1]s" AS original
+		sqlStatement := fmt.Sprintf(`MERGE INTO %[1]s AS original
 										USING (
 											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM "%[2]s"
+												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
 											) AS q WHERE _rudder_staging_row_number = 1
 										) AS staging
 										ON (%[3]s)
@@ -344,12 +352,12 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		job, err = q.Run(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
-			return err
+			return
 		}
 		status, err = job.Wait(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
-			return err
+			return
 		}
 
 		if status.Err() != nil {
@@ -360,17 +368,17 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 
 	if !isDedupEnabled {
 		err = loadTableByAppend()
-		return "", err
+		return
 	}
 
 	err = loadTableByMerge()
-	return "", err
+	return
 }
 
 func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("BQ: Starting load for identifies and users tables\n")
-	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false)
+	partitionDate, identifyStagingTable, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false, true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -426,7 +434,12 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
-	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
+	var identifiesFrom string
+	if isDedupEnabled {
+		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyStagingTable), loadedAtFilter())
+	} else {
+		identifiesFrom = fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
+	}
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
@@ -471,7 +484,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 	loadUserTableByMerge := func() {
 		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
-		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
+		pkgLogger.Infof(`BQ: Creating staging table for users: %v :: %v`, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
 		query.WriteDisposition = bigquery.WriteAppend
@@ -493,6 +506,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			errorMap[warehouseutils.UsersTable] = status.Err()
 			return
 		}
+		defer bq.dropStagingTable(identifyStagingTable)
 		defer bq.dropStagingTable(stagingTableName)
 
 		primaryKey := `ID`
@@ -519,7 +533,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 										INSERT (%[3]s) VALUES (%[6]s)`, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 
-		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+		pkgLogger.Infof(`BQ: Loading data into users table: %v :: %v`, sqlStatement)
 		// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
@@ -566,8 +580,8 @@ func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
-	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled")
-	config.RegisterBoolConfigVariable(true, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
+	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", true) || isUsersTableDedupEnabled
 }
 
 func Init() {
@@ -600,7 +614,7 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 }
 
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	if !isUsersTableDedupEnabled {
+	if !isDedupEnabled {
 		return
 	}
 	bq.Warehouse = warehouse
@@ -726,7 +740,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	if misc.ContainsString([]string{warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable}, tableName) {
 		getLoadFileLocFromTableUploads = true
 	}
-	_, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads)
+	_, _, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads, false)
 	return err
 }
 
