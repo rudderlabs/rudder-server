@@ -2292,7 +2292,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	chStore := make(chan storeMessage, bufferSize)
+	chStore := make(chan storeMessage, 5)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
