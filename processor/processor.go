@@ -2310,10 +2310,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		for subJob := range chStore {
 
-			// if firstSubJob && !subJob.hasMore {
-			// 	proc.Store(subJob)
-			// 	continue
-			// }
+			if firstSubJob && !subJob.hasMore {
+				proc.Store(subJob)
+				continue
+			}
 
 			if firstSubJob {
 				mergedJob = storeMessage{}
