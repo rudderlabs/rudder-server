@@ -2195,6 +2195,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
+				getJobExecStart := time.Now()
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					nextSleepTime = 2 * nextSleepTime
@@ -2215,6 +2216,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				getJobExecTime := time.Since(getJobExecStart)
+				fmt.Println("--------------------------------------")
+				fmt.Println("getJobExecTime: ", getJobExecTime)
+
+				getJobWaitStart := time.Now()
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
@@ -2235,6 +2241,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 						}
 					}
 				}
+				getJobWaitTime := time.Since(getJobWaitStart)
+				fmt.Println("getJobWaitTime: ", getJobWaitTime)
+				fmt.Println("--------------------------------------")
 			}
 		}
 	}()
@@ -2288,6 +2297,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			for subJob := range chStore {
 				statusList = append(statusList, subJob.statusList...)
 				destJobs = append(destJobs, subJob.destJobs...)
+				fmt.Println("len of subJob.DestJobs: ", len(subJob.destJobs))
+				fmt.Println("len of merged.destJobs: ", len(destJobs))
 				batchDestJobs = append(batchDestJobs, subJob.batchDestJobs...)
 				procErrorJobs = append(procErrorJobs, subJob.procErrorJobs...)
 				for id, job := range subJob.procErrorJobsByDestID {
