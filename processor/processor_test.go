@@ -1768,7 +1768,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 5,
 						},
 					},
-					haveMore: false,
+					hasMore: false,
 				},
 			}
 			Expect(len(jobSplitter(jobs))).To(Equal(len(expectedSubJobs)))
@@ -1784,7 +1784,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 1,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1792,7 +1792,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 2,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1800,7 +1800,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 3,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1808,7 +1808,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 4,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1816,7 +1816,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 5,
 						},
 					},
-					haveMore: false,
+					hasMore: false,
 				},
 			}
 			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
@@ -1834,7 +1834,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 2,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1845,7 +1845,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 4,
 						},
 					},
-					haveMore: true,
+					hasMore: true,
 				},
 				{
 					subJobs: []*jobsdb.JobT{
@@ -1853,7 +1853,7 @@ var _ = Describe("TestJobSplitter", func() {
 							JobID: 5,
 						},
 					},
-					haveMore: false,
+					hasMore: false,
 				},
 			}
 			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
