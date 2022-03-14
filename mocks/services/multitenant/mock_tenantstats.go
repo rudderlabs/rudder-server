@@ -97,6 +97,20 @@ func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1 interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1)
 }
 
+// Status mocks base method.
+func (m *MockMultiTenantI) Status() map[string]map[string]map[string]int {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status")
+	ret0, _ := ret[0].(map[string]map[string]map[string]int)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockMultiTenantIMockRecorder) Status() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockMultiTenantI)(nil).Status))
+}
+
 // UpdateWorkspaceLatencyMap mocks base method.
 func (m *MockMultiTenantI) UpdateWorkspaceLatencyMap(arg0, arg1 string, arg2 float64) {
 	m.ctrl.T.Helper()
