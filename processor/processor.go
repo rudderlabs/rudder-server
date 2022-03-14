@@ -2298,16 +2298,20 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		var mergedJob storeMessage
+		var DBWriteExecStart, DBWriteWaitingStart time.Time
 		firstSubJob := true
 		defer wg.Done()
 		for subJob := range chStore {
 
-			if firstSubJob && !subJob.hasMore {
-				proc.Store(subJob)
-				continue
-			}
+			// if firstSubJob && !subJob.hasMore {
+			// 	proc.Store(subJob)
+			// 	continue
+			// }
 
 			if firstSubJob {
+				DBWriteWaitingTime := time.Since(DBWriteWaitingStart)
+				fmt.Println("DBWriteWaitingTime: ", DBWriteWaitingTime)
+				DBWriteExecStart = time.Now()
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 				mergedJob.sourceDupStats = make(map[string]int)
@@ -2320,6 +2324,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			if !subJob.hasMore {
 				proc.Store(mergedJob)
 				firstSubJob = true
+				DBWriteExecTime := time.Since(DBWriteExecStart)
+				fmt.Println("DBWriteExecTime: ", DBWriteExecTime)
+				DBWriteWaitingStart = time.Now()
 			}
 		}
 	}()
