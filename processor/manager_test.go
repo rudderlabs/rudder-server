@@ -116,7 +116,6 @@ func initJobsDB() {
 	jobsdb.Init3()
 	archiver.Init()
 	Init()
-
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
