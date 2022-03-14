@@ -27,6 +27,10 @@ type LifecycleManager struct {
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        *errgroup.Group
+	gatewayDB        *jobsdb.HandleT
+	batchRouterDB    *jobsdb.HandleT
+	errDB            *jobsdb.HandleT
+	tenantRouterDB   *jobsdb.MultiTenantHandleT
 	DBs              *jobsdb.DBs
 	multitenantStats multitenant.MultiTenantI
 	reportingI       types.ReportingI
@@ -45,15 +49,15 @@ func (r *LifecycleManager) StartNew() {
 		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
-		RouterDB:      &r.DBs.TenantRouterDB,
-		ProcErrorDB:   &r.DBs.ProcErrDB,
+		RouterDB:      r.tenantRouterDB,
+		ProcErrorDB:   r.errDB,
 	}
 	r.brt = &batchrouter.Factory{
 		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
 		BackendConfig: r.backendConfig,
-		RouterDB:      &r.DBs.BatchRouterDB,
-		ProcErrorDB:   &r.DBs.ProcErrDB,
+		RouterDB:      r.batchRouterDB,
+		ProcErrorDB:   r.errDB,
 	}
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -73,7 +77,8 @@ func (r *LifecycleManager) Stop() {
 }
 
 // NewRouterManager creates a new Router instance
-func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *LifecycleManager {
+func NewRouterManager(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
+	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
@@ -81,7 +86,9 @@ func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *LifecycleManager {
 		rt:               &router.Factory{},
 		brt:              &batchrouter.Factory{},
 		mainCtx:          ctx,
-		DBs:              dbs,
+		tenantRouterDB:   tenantRouterDB,
+		batchRouterDB:    brtDb,
+		errDB:            errDb,
 		multitenantStats: multitenant.NOOP,
 		backendConfig:    backendconfig.DefaultBackendConfig,
 	}
