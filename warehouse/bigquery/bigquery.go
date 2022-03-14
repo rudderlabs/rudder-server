@@ -28,6 +28,7 @@ var (
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
 	isUsersTableDedupEnabled              bool
+	customDataset                         string
 )
 
 type HandleT struct {
@@ -464,7 +465,7 @@ func loadConfig() {
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled")
-
+	customDataset = config.GetString("Warehouse.bigquery.customDataset", "")
 }
 
 func Init() {
@@ -502,6 +503,9 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	}
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	if customDataset != "" {
+		bq.Namespace = customDataset
+	}
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
@@ -557,6 +561,9 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	empty = true
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	if customDataset != "" {
+		bq.Namespace = customDataset
+	}
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.Db, err = bq.connect(BQCredentialsT{
@@ -593,6 +600,9 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	if customDataset != "" {
+		bq.Namespace = customDataset
+	}
 	bq.Uploader = uploader
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 
@@ -646,6 +656,9 @@ func (bq *HandleT) AlterColumn(tableName string, columnName string, columnType s
 func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	if customDataset != "" {
+		bq.Namespace = customDataset
+	}
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
@@ -882,6 +895,9 @@ func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	if customDataset != "" {
+		bq.Namespace = customDataset
+	}
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
