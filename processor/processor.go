@@ -2260,6 +2260,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					panic(err)
 				}
 				DBReadExecTime := time.Since(DBReadExecStart)
+				fmt.Println("----------------------------")
 				fmt.Println("DBReadExecTime: ", DBReadExecTime)
 				events := 0
 				for i := range jobs {
@@ -2276,6 +2277,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				DBReadWaitTime := time.Since(DBReadWaitStart)
 				fmt.Println("DBReadWaitTime: ", DBReadWaitTime)
+				fmt.Println("----------------------------")
 			}
 		}
 	}()
@@ -2343,6 +2345,8 @@ func subJobMerger(mergedJob storeMessage, subJob storeMessage) storeMessage {
 
 	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
 	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
+	fmt.Println("len of mergedJob.destJobs: ", len(mergedJob.destJobs))
+	fmt.Println("len of subJob.destJobs: ", len(subJob.destJobs))
 	mergedJob.batchDestJobs = append(mergedJob.batchDestJobs, subJob.batchDestJobs...)
 
 	mergedJob.procErrorJobs = append(mergedJob.procErrorJobs, subJob.procErrorJobs...)
