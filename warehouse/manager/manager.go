@@ -2,18 +2,15 @@ package manager
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -36,8 +33,8 @@ type ManagerI interface {
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	CreateTestSchema(warehouse warehouseutils.WarehouseT) error
-	CreateTestTable(warehouse warehouseutils.WarehouseT) error
-	LoadTestTable(location string, warehouse warehouseutils.WarehouseT) error
+	CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) error
+	LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) error
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type
@@ -58,15 +55,6 @@ func New(destType string) (ManagerI, error) {
 	case "CLICKHOUSE":
 		var ch clickhouse.HandleT
 		return &ch, nil
-	case "MSSQL":
-		var ms mssql.HandleT
-		return &ms, nil
-	case "AZURE_SYNAPSE":
-		var as azuresynapse.HandleT
-		return &as, nil
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
-		var dl datalake.HandleT
-		return &dl, nil
 	case "DELTALAKE":
 		var dl deltalake.HandleT
 		return &dl, nil

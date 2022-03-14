@@ -665,7 +665,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in processing fetched schema from redshift destination:%v", pg.Warehouse.Destination.ID)
+			pkgLogger.Errorf("PG: Error in processing fetched schema from clickhouse destination:%v", pg.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName.String]; !ok {
@@ -720,10 +720,89 @@ func (pg *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
+	pg.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.POSTGRES,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (pg *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	pgClient, err := pg.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer pgClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
+	pkgLogger.Infof("Creating test schema name in clickhouse for destinationID: %v with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pgClient.SQL.Exec(sqlStatement)
+	return
+}
+
+func (pg *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	pgClient, err := pg.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer pgClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
+		pg.Namespace,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pgClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = pgClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}
+
+func (pg *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	pgClient, err := pg.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer pgClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
+		pg.Namespace,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pgClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		pg.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+	)
+	_, err = pgClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = pgClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
 }

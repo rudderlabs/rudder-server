@@ -38,7 +38,6 @@ type HandleT struct {
 	Namespace     string
 	CloudProvider string
 	ObjectStorage string
-	Stage         string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
 }
@@ -201,7 +200,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *HandleT) authString() string {
 	var auth string
-	if sf.Uploader.UseRudderStorage() {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
@@ -569,7 +568,6 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 		User:        cred.username,
 		Password:    cred.password,
 		Database:    cred.dbName,
-		Schema:      cred.schemaName,
 		Warehouse:   cred.whName,
 		Application: "Rudderstack",
 	}
@@ -893,10 +891,94 @@ func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
+	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.SNOWFLAKE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
+	)
 	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (sf *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	sfClient, err := sf.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer sfClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, sf.Namespace)
+	pkgLogger.Infof("Creating test schema name in snowflake for destinationID: %v with sqlStatement: %v", sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = sfClient.SQL.Exec(sqlStatement)
+	return
+}
+
+func (sf *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	sfClient, err := sf.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer sfClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
+		sf.Namespace,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in snowflake for destinationID: %s with sqlStatement: %v", sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = sfClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = sfClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, sf.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in snowflake for destinationID: %s with sqlStatement: %v", sf.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}
+
+func (sf *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	rsClient, err := sf.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer rsClient.Close()
+
+	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
+		sf.Namespace,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = rsClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
+
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
+		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName),
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		loadFolder,
+		sf.authString(),
+	)
+
+	_, err = rsClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = rsClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, sf.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", sf.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
 }

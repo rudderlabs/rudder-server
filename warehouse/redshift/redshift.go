@@ -193,7 +193,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) createManifestJson(tableName string) ([]byte, error) {
+func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3ManifestT
@@ -207,10 +207,8 @@ func (rs *HandleT) createManifestJson(tableName string) ([]byte, error) {
 		manifest.Entries = append(manifest.Entries, manifestEntry)
 	}
 	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
-	return json.Marshal(&manifest)
-}
+	manifestJSON, _ := json.Marshal(&manifest)
 
-func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string, manifestJSON []byte) (string, error) {
 	manifestFolder := misc.RudderRedshiftManifests
 	dirName := "/" + manifestFolder + "/"
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -259,8 +257,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 }
 
 func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	manifestJSON, _ := rs.createManifestJson(tableName)
-	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload, manifestJSON)
+	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
 	if err != nil {
 		return
 	}
@@ -765,129 +762,102 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 }
 
 func (rs *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
-	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	rsClient, err := rs.Connect(warehouse)
 	if err != nil {
-		return
+		return err
 	}
-	defer rs.Db.Close()
+	defer rsClient.Close()
 
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
-	pkgLogger.Infof("Creating test schema name in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	pkgLogger.Infof("Creating test schema name in redshift for destinationID: %v with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rsClient.SQL.Exec(sqlStatement)
 	return
 }
 
-func (rs *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT) (err error) {
-	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+func (rs *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	rsClient, err := rs.Connect(warehouse)
 	if err != nil {
-		return
+		return err
 	}
-	defer rs.Db.Close()
+	defer rsClient.Close()
 
-	stagingTableName := fmt.Sprintf(`%s%s`, "setup_test_staging_", strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
-	columns := map[string]string{
-		"id":  "int",
-		"val": "string",
-	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
 		rs.Namespace,
 		stagingTableName,
 		columnsWithDataTypes(columns, ""),
 	)
-	pkgLogger.Infof("Creating test table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rsClient.SQL.Exec(sqlStatement)
 	if err != nil {
 		return
 	}
 
-	defer rs.dropStagingTables([]string{stagingTableName})
+	_, err = rsClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
+	}
 	return
 }
 
-func (rs *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT) (err error) {
-	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+func (rs *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	rsClient, err := rs.Connect(warehouse)
 	if err != nil {
-		return
+		return err
 	}
-	defer rs.Db.Close()
+	defer rsClient.Close()
 
-	stagingTableName := fmt.Sprintf(`%s%s`, "setup_test_staging_", strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
-	columns := map[string]string{
-		"id":  "int",
-		"val": "string",
-	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
 		rs.Namespace,
 		stagingTableName,
 		columnsWithDataTypes(columns, ""),
 	)
-	pkgLogger.Infof("Creating test table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rsClient.SQL.Exec(sqlStatement)
 	if err != nil {
 		return
 	}
 
-	var manifest S3ManifestT = S3ManifestT{
-		Entries: []S3ManifestEntryT{
-			{
-				Url: location, Mandatory: true,
-			},
-		},
-	}
-	manifestJSON, _ := json.Marshal(&manifest)
-	manifestLocation, err := rs.generateManifest(stagingTableName, columns, manifestJSON)
-	if err != nil {
-		return
-	}
-	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", stagingTableName, manifestLocation)
-
-	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
-	if region == "" {
-		region = "us-east-1"
-	}
-
-	// create session token and temporary credentials
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
 		return
 	}
 
-	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
-	} else {
-		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), columns, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+	manifestS3Location, region := warehouseutils.GetS3Location(location)
+	if region == "" {
+		region = "us-east-1"
 	}
 
-	_, err = rs.Db.Exec(sqlStatement)
+	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		// copy statement for parquet load files
+		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+		)
+	} else {
+		// copy statement for csv load files
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+			region,
+		)
+	}
+
+	_, err = rsClient.SQL.Exec(sqlStatement)
 	if err != nil {
 		return
 	}
 
-	defer rs.dropStagingTables([]string{stagingTableName})
+	_, err = rsClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
+	}
 	return
 }

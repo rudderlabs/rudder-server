@@ -893,3 +893,94 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
+
+func (bq *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	bqClient, err := bq.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer bqClient.Close()
+
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
+	if location == "" {
+		location = "US"
+	}
+
+	ds := bqClient.BQ.Dataset(bq.Namespace)
+	meta := &bigquery.DatasetMetadata{
+		Location: location,
+	}
+	err = ds.Create(bq.BQContext, meta)
+	if checkAndIgnoreAlreadyExistError(err) {
+		err = nil
+		return
+	}
+	return
+}
+
+func (bq *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	bqClient, err := bq.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer bqClient.Close()
+
+	sampleSchema := getTableSchema(columns)
+	metaData := &bigquery.TableMetadata{
+		Schema:           sampleSchema,
+		TimePartitioning: &bigquery.TimePartitioning{},
+	}
+	tableRef := bqClient.BQ.Dataset(bq.Namespace).Table(stagingTableName)
+	err = tableRef.Create(bq.BQContext, metaData)
+	if !checkAndIgnoreAlreadyExistError(err) {
+		return
+	}
+
+	err = tableRef.Delete(bq.BQContext)
+	return
+}
+
+func (bq *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	bqClient, err := bq.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer bqClient.Close()
+
+	sampleSchema := getTableSchema(columns)
+	metaData := &bigquery.TableMetadata{
+		Schema:           sampleSchema,
+		TimePartitioning: &bigquery.TimePartitioning{},
+	}
+	tableRef := bqClient.BQ.Dataset(bq.Namespace).Table(stagingTableName)
+	err = tableRef.Create(bq.BQContext, metaData)
+	if !checkAndIgnoreAlreadyExistError(err) {
+		return
+	}
+
+	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
+	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
+	gcsRef.SourceFormat = bigquery.JSON
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
+
+	outputTable := partitionedTable(stagingTableName, time.Now().Format("2006-01-02"))
+	loader := bqClient.BQ.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+
+	job, err := loader.Run(bq.BQContext)
+	if err != nil {
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		return
+	}
+
+	if status.Err() != nil {
+		err = status.Err()
+		return
+	}
+
+	err = tableRef.Delete(bq.BQContext)
+	return
+}

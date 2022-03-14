@@ -984,6 +984,11 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
+	ch.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.CLICKHOUSE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
@@ -997,4 +1002,129 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
+}
+
+func (ch *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	chClient, err := ch.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer chClient.Close()
+
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
+	pkgLogger.Infof("Creating test schema name in clickhouse for destinationID: %v with sqlStatement: %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = chClient.SQL.Exec(sqlStatement)
+	return
+}
+
+func (ch *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	chClient, err := ch.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer chClient.Close()
+
+	clusterClause := ""
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v ) ENGINE = %s(%s) ORDER BY id PARTITION BY id`,
+		ch.Namespace,
+		stagingTableName,
+		clusterClause,
+		columnsWithDataTypes(stagingTableName, columns, []string{"id"}),
+		engine,
+		engineOptions,
+	)
+
+	pkgLogger.Infof("Creating test table in clickhouse for destinationID: %s with sqlStatement: %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = chClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = chClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ch.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in clickhouse for destinationID: %s with sqlStatement: %v", ch.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}
+
+func (ch *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	chClient, err := ch.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer chClient.Close()
+
+	clusterClause := ""
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v ) ENGINE = %s(%s) ORDER BY id PARTITION BY id`,
+		ch.Namespace,
+		stagingTableName,
+		clusterClause,
+		columnsWithDataTypes(stagingTableName, columns, []string{"id"}),
+		engine,
+		engineOptions,
+	)
+
+	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = chClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		ch.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		generateArgumentString("?", len(columns)),
+	)
+	txn, err := chClient.SQL.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	var recordInterface []interface{}
+	for _, value := range payloadMap {
+		recordInterface = append(recordInterface, value)
+	}
+	if _, err = stmt.Exec(recordInterface...) ; err != nil {
+		return
+	}
+
+	if err = stmt.Close(); err != nil {
+		return
+	}
+	if err = txn.Commit(); err != nil {
+		return
+	}
+
+	_, err = chClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ch.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", ch.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
 }
