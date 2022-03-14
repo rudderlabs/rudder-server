@@ -2265,6 +2265,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				fmt.Println("DB read Event count: ", events)
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
