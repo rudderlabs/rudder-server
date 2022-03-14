@@ -2231,7 +2231,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chProc)
 		nextSleepTime := time.Duration(0)
-
+		var DBReadWaitStart, DBReadExecStart time.Time
 		for {
 			select {
 			case <-ctx.Done():
@@ -2241,6 +2241,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
+				DBReadExecStart = time.Now()
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
@@ -2258,7 +2259,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					pkgLogger.Error(err)
 					panic(err)
 				}
-
+				DBReadExecTime := time.Since(DBReadExecStart)
+				fmt.Println("DBReadExecTime: ", DBReadExecTime)
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
@@ -2266,11 +2268,13 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
-
+				DBReadWaitStart = time.Now()
 				subJobs := jobSplitter(jobs)
 				for _, subJob := range subJobs {
 					chProc <- subJob
 				}
+				DBReadWaitTime := time.Since(DBReadWaitStart)
+				fmt.Println("DBReadWaitTime: ", DBReadWaitTime)
 			}
 		}
 	}()
@@ -2298,7 +2302,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		var mergedJob storeMessage
-		var DBWriteExecStart, DBWriteWaitingStart time.Time
+		// var DBWriteExecStart, DBWriteWaitingStart time.Time
 		firstSubJob := true
 		defer wg.Done()
 		for subJob := range chStore {
@@ -2309,14 +2313,14 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			// }
 
 			if firstSubJob {
-				DBWriteWaitingTime := time.Since(DBWriteWaitingStart)
-				fmt.Println("DBWriteWaitingTime: ", DBWriteWaitingTime)
-				DBWriteExecStart = time.Now()
+				// DBWriteWaitingTime := time.Since(DBWriteWaitingStart)
+				// fmt.Println("DBWriteWaitingTime: ", DBWriteWaitingTime)
+				// DBWriteExecStart = time.Now()
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 				mergedJob.sourceDupStats = make(map[string]int)
 
-				mergedJob.start = subJob.start
+				// mergedJob.start = subJob.start
 				firstSubJob = false
 			}
 			mergedJob := subJobMerger(mergedJob, subJob)
@@ -2324,9 +2328,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			if !subJob.hasMore {
 				proc.Store(mergedJob)
 				firstSubJob = true
-				DBWriteExecTime := time.Since(DBWriteExecStart)
-				fmt.Println("DBWriteExecTime: ", DBWriteExecTime)
-				DBWriteWaitingStart = time.Now()
+				// DBWriteExecTime := time.Since(DBWriteExecStart)
+				// fmt.Println("DBWriteExecTime: ", DBWriteExecTime)
+				// DBWriteWaitingStart = time.Now()
 			}
 		}
 	}()
