@@ -151,6 +151,60 @@ func closeDBConnection(handle *sql.DB) {
 	}
 }
 
+func killDanglingDBConnections(db *sql.DB) {
+
+	rows, err := db.Query(`SELECT PID, QUERY_START, WAIT_EVENT_TYPE, WAIT_EVENT, STATE, QUERY
+							FROM PG_STAT_ACTIVITY
+							WHERE PID <> PG_BACKEND_PID()
+							AND APPLICATION_NAME = (
+								SELECT APPLICATION_NAME FROM PG_STAT_ACTIVITY WHERE PID = PG_BACKEND_PID()
+							)`)
+
+	if err != nil {
+		panic(fmt.Errorf("error occurred with querying pg_stat_activity table for finding dangling connections: %v", err.Error()))
+	}
+	defer rows.Close()
+
+	type danglingConnRowT struct {
+		pid           int
+		queryStart    string
+		waitEventType string
+		waitEvent     string
+		state         string
+		query         string
+	}
+	type danglingConnsT []*danglingConnRowT
+
+	dangling := danglingConnsT(make([]*danglingConnRowT, 0))
+	for rows.Next() {
+		var row danglingConnRowT = danglingConnRowT{}
+		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query)
+		if err != nil {
+			panic(err)
+		}
+		dangling = append(dangling, &row)
+	}
+
+	if len(dangling) > 0 {
+		pkgLogger.Warn(fmt.Sprintf("Killing %d dangling connection(s)", len(dangling)))
+		for i, rowPtr := range dangling {
+			pkgLogger.Warn(fmt.Sprintf("dangling connection #%d: %+v", i+1, *rowPtr))
+		}
+
+		_, err := db.Exec(`SELECT PG_TERMINATE_BACKEND(PID)
+							FROM PG_STAT_ACTIVITY
+							WHERE APPLICATION_NAME = (
+								SELECT APPLICATION_NAME FROM PG_STAT_ACTIVITY WHERE PID = PG_BACKEND_PID()
+							)
+							AND PID <> PG_BACKEND_PID();`)
+
+		if err != nil {
+			panic(fmt.Errorf("error occurred with executing pg_terminate_backend for dangling connections: %v", err.Error()))
+		}
+
+	}
+}
+
 //IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
 func IsPostgresCompatible(db *sql.DB) (bool, error) {
 	var versionNum int
@@ -174,6 +228,13 @@ func ValidateEnv() {
 		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		panic(errors.New("Failed to start rudder-server"))
 	}
+
+	// SQL statements in rudder-server are not executed with a timeout context, instead we are letting them take as much time as they need :)
+	// Due to the above, when a server shutdown is initiated in a cloud environment while long-running statements are being executed,
+	// the server process will not manage to shutdown gracefully, since it will be blocked by the SQL statements.
+	// The container orchestrator will eventually kill the server process, leaving one or more dangling connections in the database.
+	// This will ensure that before a new rudder-server instance starts working, all previous dangling connections belonging to this server are being killed.
+	killDanglingDBConnections(dbHandle)
 }
 
 //InitializeEnv initializes the environment for the server
