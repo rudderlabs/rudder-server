@@ -105,7 +105,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	})
 	if err != nil {
 		if _, ok := err.(*glue.AlreadyExistsException); ok {
-			pkgLogger.Infof("Skipping database creation : database %s already eists", gl.Namespace)
+			pkgLogger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
 			err = nil
 		}
 	}

@@ -426,12 +426,8 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(tableName string) (loadFolder string, err error) {
-	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
-	if err != nil {
-		return
-	}
-	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, csvObjectLocation)
+func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder string, err error) {
+	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == "S3" {
 		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
 		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
@@ -465,7 +461,13 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(tableName)
+	// Getting objects location
+	objectsLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
+	if err != nil {
+		return
+	}
+
+	loadFolder, err := dl.getLoadFolder(tableName, objectsLocation)
 	if err != nil {
 		return
 	}
@@ -982,7 +984,7 @@ func (dl *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err er
 	}
 	defer dlClient.Close()
 
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, dl.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, dl.Namespace)
 	pkgLogger.Infof("Creating test schema name in deltalake for destinationID: %v with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
 	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
 	return
@@ -995,7 +997,7 @@ func (dl *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingT
 	}
 	defer dlClient.Close()
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) USING DELTA;`,
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s ( %v ) USING DELTA;`,
 		dl.Namespace,
 		stagingTableName,
 		columnsWithDataTypes(columns, ""),
@@ -1006,7 +1008,7 @@ func (dl *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingT
 		return
 	}
 
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, dl.Namespace, stagingTableName))
+	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 	return
 }
 
@@ -1017,7 +1019,7 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 	}
 	defer dlClient.Close()
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) USING DELTA;`,
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s ( %v ) USING DELTA;`,
 		dl.Namespace,
 		stagingTableName,
 		columnsWithDataTypes(columns, ""),
@@ -1034,7 +1036,7 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(stagingTableName)
+	loadFolder, err := dl.getLoadFolder(stagingTableName, location)
 	if err != nil {
 		return
 	}
@@ -1045,7 +1047,11 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), columns, loadFolder, auth)
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s, %s`, "id", "val"),
+			loadFolder,
+			auth,
+		)
 	} else {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
@@ -1053,7 +1059,11 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), columns, loadFolder, auth)
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val`),
+			loadFolder,
+			auth,
+		)
 	}
 
 	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
@@ -1061,7 +1071,7 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		return
 	}
 
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, dl.Namespace, stagingTableName))
+	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("Error dropping staging tables in deltalake for destinationID: %s with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
 	}

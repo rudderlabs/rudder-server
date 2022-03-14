@@ -105,3 +105,15 @@ func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
 func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
+
+func (wh *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) error {
+	return fmt.Errorf("datalake err :not implemented")
+}
+
+func (wh *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) error {
+	return fmt.Errorf("datalake err :not implemented")
+}
+
+func (wh *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) error {
+	return fmt.Errorf("datalake err :not implemented")
+}

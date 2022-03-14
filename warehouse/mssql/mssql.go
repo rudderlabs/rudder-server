@@ -815,10 +815,94 @@ func (ms *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
+	ms.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.MSSQL,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (ms *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	msClient, err := ms.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
+		EXEC('CREATE SCHEMA [%s]');
+	`, ms.Namespace, ms.Namespace)
+	pkgLogger.Infof("Creating test schema name in mssql for destinationID: %v with sqlStatement: %v", ms.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err == io.EOF {
+		return nil
+	}
+	return
+}
+
+func (ms *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	msClient, err := ms.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
+		CREATE TABLE %[1]s ( %v )`,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in mssql for destinationID: %s with sqlStatement: %v", ms.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = msClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in mssql for destinationID: %s with sqlStatement: %v", ms.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}
+
+func (ms *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	msClient, err := ms.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
+		CREATE TABLE %[1]s ( %v )`,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in mssql for destinationID: %s with sqlStatement: %v", ms.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		ms.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+	)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = msClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in mssql for destinationID: %s with sqlStatement: %v", ms.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
 }

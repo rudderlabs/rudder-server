@@ -5,7 +5,9 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
@@ -55,6 +57,12 @@ func New(destType string) (ManagerI, error) {
 	case "CLICKHOUSE":
 		var ch clickhouse.HandleT
 		return &ch, nil
+	case "MSSQL":
+		var ms mssql.HandleT
+		return &ms, nil
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
+		var dl datalake.HandleT
+		return &dl, nil
 	case "DELTALAKE":
 		var dl deltalake.HandleT
 		return &dl, nil
