@@ -1546,8 +1546,9 @@ func (worker *workerT) workerProcess() {
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
 						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
-							Count:   0,
-							Reasons: []string{},
+							Count:     0,
+							Reasons:   []string{},
+							Workspace: job.WorkspaceId,
 						}
 					}
 					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
@@ -1590,12 +1591,14 @@ func (worker *workerT) workerProcess() {
 				}
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-						"destType": brt.destType,
-						"destId":   destID,
-						"module":   "batchrouter",
-						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
+						"destType":  brt.destType,
+						"destId":    destID,
+						"module":    "batchrouter",
+						"reasons":   strings.Join(destDrainStat.Reasons, ", "),
+						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
+					brt.multitenantI.RemoveFromInMemoryCount(destDrainStat.Workspace, destID, drainStatsbyDest[destID].Count, "batch_router")
 				}
 			}
 			//Mark the jobs as executing

@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -49,7 +50,7 @@ var _ = Describe("tenantStats", func() {
 		BeforeEach(func() {
 			// crash recovery check
 			mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
-			tenantStats = NewStats(mockRouterJobsDB)
+			tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"router": mockRouterJobsDB})
 		})
 
 		It("TenantStats init", func() {
@@ -184,7 +185,7 @@ func Benchmark_Counts(b *testing.B) {
 	mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 	// crash recovery check
 	mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
-	tenantStats := NewStats(mockRouterJobsDB)
+	tenantStats := NewStats(map[string]jobsdb.MultiTenantJobsDB{"router": mockRouterJobsDB})
 
 	b.ResetTimer()
 

@@ -272,7 +272,7 @@ func NewProcessor() *HandleT {
 func (proc *HandleT) Status() interface{} {
 	proc.transformEventsByTimeMutex.RLock()
 	defer proc.transformEventsByTimeMutex.RUnlock()
-	statusRes := make(map[string][]TransformRequestT)
+	statusRes := make(map[string][]interface{})
 	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
 		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
 	}
@@ -283,6 +283,8 @@ func (proc *HandleT) Status() interface{} {
 	if enableDedup {
 		proc.dedupHandler.PrintHistogram()
 	}
+
+	statusRes["pending-events-count"] = append(statusRes["pending-events-count"], proc.multitenantI.Status())
 
 	return statusRes
 }

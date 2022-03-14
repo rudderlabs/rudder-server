@@ -23,8 +23,9 @@ type BatchDestinationT struct {
 }
 
 type DrainStats struct {
-	Count   int
-	Reasons []string
+	Count     int
+	Reasons   []string
+	Workspace string
 }
 
 type SendPostResponse struct {

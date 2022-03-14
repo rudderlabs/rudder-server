@@ -8,13 +8,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
-	pkgLogger logger.LoggerI
+	pkgLogger                logger.LoggerI
+	multiTenantStatFrequency time.Duration
 )
 
 type MultitenantStatsT struct {
@@ -36,6 +40,7 @@ type MultiTenantI interface {
 	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
+	Status() map[string]map[string]map[string]int
 }
 
 type workspaceScore struct {
@@ -45,10 +50,15 @@ type workspaceScore struct {
 }
 
 func Init() {
+	loadConfig()
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
 }
 
-func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
+func loadConfig() {
+	config.RegisterDurationConfigVariable(time.Duration(60), &multiTenantStatFrequency, true, time.Second, []string{"pendingEventCountStatFrequency", "pendingEventCountStatFrequencyInS"}...)
+}
+
+func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat := MultitenantStatsT{}
 	multitenantStat.routerNonTerminalCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.routerNonTerminalCounts["router"] = make(map[string]map[string]int)
@@ -59,10 +69,12 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
 	pileUpStatMap := make(map[string]map[string]int)
-	routerDB.GetPileUpCounts(pileUpStatMap)
-	for workspace := range pileUpStatMap {
-		for destType := range pileUpStatMap[workspace] {
-			multitenantStat.AddToInMemoryCount(workspace, destType, pileUpStatMap[workspace][destType], "router")
+	for routerType := range routerDBs {
+		routerDBs[routerType].GetPileUpCounts(pileUpStatMap)
+		for workspace := range pileUpStatMap {
+			for destType := range pileUpStatMap[workspace] {
+				multitenantStat.AddToInMemoryCount(workspace, destType, pileUpStatMap[workspace][destType], routerType)
+			}
 		}
 	}
 
@@ -70,7 +82,43 @@ func NewStats(routerDB jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 
 	multitenantStat.processorStageTime = time.Now()
 
+	rruntime.Go(func() {
+		multitenantStat.sendStats()
+	})
+
 	return &multitenantStat
+}
+
+func (multitenantStat *MultitenantStatsT) sendStats() {
+	multiTenantStatTicker := time.NewTicker(multiTenantStatFrequency)
+	defer multiTenantStatTicker.Stop()
+	for range multiTenantStatTicker.C {
+		func() {
+			multitenantStat.routerJobCountMutex.RLock()
+			defer multitenantStat.routerJobCountMutex.RUnlock()
+
+			for tableType, tableStats := range multitenantStat.routerNonTerminalCounts {
+				for workspace, workspaceStats := range tableStats {
+					for destType, destTypeCount := range workspaceStats {
+						pendingEventCountStat := stats.NewTaggedStat("pending_event_count",
+							stats.GaugeType, stats.Tags{
+								"workspace":   workspace,
+								"destType":    destType,
+								"tablePrefix": tableType,
+							})
+						pendingEventCountStat.Gauge(destTypeCount)
+					}
+				}
+			}
+		}()
+	}
+}
+
+//returns nonTerminalCounts
+func (multitenantStat *MultitenantStatsT) Status() map[string]map[string]map[string]int {
+	multitenantStat.routerJobCountMutex.Lock()
+	defer multitenantStat.routerJobCountMutex.Unlock()
+	return multitenantStat.routerNonTerminalCounts
 }
 
 func (multitenantStat *MultitenantStatsT) UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64) {
