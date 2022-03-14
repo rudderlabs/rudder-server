@@ -173,7 +173,7 @@ type mockFileManager struct {
 }
 
 //Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
-func (fm *mockFileManager) Upload(file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {
+func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
@@ -199,7 +199,7 @@ func (fm *mockFileManager) Upload(file *os.File, prefixes ...string) (filemanage
 }
 
 //Given a file name download & simply save it in the given file pointer.
-func (fm *mockFileManager) Download(outputFilePtr *os.File, location string) error {
+func (fm *mockFileManager) Download(ctx context.Context, outputFilePtr *os.File, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0644)
 	if err != nil {
@@ -217,7 +217,7 @@ func (fm *mockFileManager) Download(outputFilePtr *os.File, location string) err
 }
 
 //Given a file name as key, delete if it is present in the bucket.
-func (fm *mockFileManager) DeleteObjects(keys []string) error {
+func (fm *mockFileManager) DeleteObjects(ctx context.Context, keys []string) error {
 	for _, key := range keys {
 		fileLocation := fmt.Sprint(fm.mockBucketLocation, "/", key)
 		_, err := exec.Command("rm", "-rf", fileLocation).Output()
@@ -229,7 +229,7 @@ func (fm *mockFileManager) DeleteObjects(keys []string) error {
 }
 
 //given prefix & maxItems, return with list of Fileobject in the bucket.
-func (fm *mockFileManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*filemanager.FileObject, err error) {
+func (fm *mockFileManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*filemanager.FileObject, err error) {
 	if fm.listCalled {
 		return []*filemanager.FileObject{}, nil
 	}
