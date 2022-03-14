@@ -2326,7 +2326,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			mergedJob := subJobMerger(&mergedJob, &subJob)
 
 			if !subJob.hasMore {
-				proc.Store(mergedJob)
+				proc.Store(*mergedJob)
 				firstSubJob = true
 			}
 		}
@@ -2335,7 +2335,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Wait()
 }
 
-func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) storeMessage {
+func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) *storeMessage {
 
 	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
 	fmt.Println("mergedJob.destJobs before: ", len(mergedJob.destJobs))
