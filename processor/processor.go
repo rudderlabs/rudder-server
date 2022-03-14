@@ -1332,6 +1332,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]typ
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
+
 	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -1346,7 +1347,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]typ
 		totalEvents,
 		start,
 
-		subJobs.haveMore,
+		subJobs.hasMore,
 	}
 }
 
@@ -1365,7 +1366,7 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	haveMore bool
+	hasMore bool
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1431,7 +1432,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		in.uniqueMessageIds,
 		in.totalEvents,
 		in.start,
-		in.haveMore,
+		in.hasMore,
 	}
 }
 
@@ -1450,7 +1451,7 @@ type storeMessage struct {
 	totalEvents int
 	start       time.Time
 
-	haveMore bool
+	hasMore bool
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -2098,8 +2099,8 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(subJobT{
-				subJobs:  unprocessedList,
-				haveMore: false,
+				subJobs: unprocessedList,
+				hasMore: false,
 			}, nil),
 		),
 	)
@@ -2172,13 +2173,13 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 	}
 }
 
-//Since mainpipeline func can process jobs in a single batch (when number of jobs are less)
-// and in multiple batches (when number of jobs are more). So, to identify if the received
-//job is a sub-part of a job is a single job. So, `isSplit` variable is needed to be passed
-//accross go routines.
+//`jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
+//`subJobMerger` func merges the split jobs into a single batch before writing to DB.
+//So, to keep track of sub-batch we have `hasMore` variable.
+//each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJobT struct {
-	subJobs  []*jobsdb.JobT
-	haveMore bool
+	subJobs []*jobsdb.JobT
+	hasMore bool
 }
 
 func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
@@ -2194,18 +2195,18 @@ func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
 		if i == subJobCount-1 {
 			//all the remaining jobs are sent in last sub-job batch.
 			subJobs = append(subJobs, subJobT{
-				subJobs:  jobs,
-				haveMore: false,
+				subJobs: jobs,
+				hasMore: false,
 			})
 			continue
 		}
 		subJobs = append(subJobs, subJobT{
-			subJobs:  jobs[:subJobSize],
-			haveMore: true,
+			subJobs: jobs[:subJobSize],
+			hasMore: true,
 		})
 		jobs = jobs[subJobSize:]
-
 	}
+
 	return subJobs
 }
 
@@ -2237,7 +2238,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
-
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue
@@ -2253,11 +2253,13 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					}
 					continue
 				}
+
 				err := proc.markExecuting(jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
 				}
+
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
@@ -2286,7 +2288,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chStore := make(chan storeMessage, bufferSize)
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
@@ -2302,7 +2303,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		for subJob := range chStore {
 
-			if firstSubJob && !subJob.haveMore {
+			if firstSubJob && !subJob.hasMore {
 				proc.Store(subJob)
 				continue
 			}
@@ -2317,7 +2318,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			}
 			mergedJob := subJobMerger(mergedJob, subJob)
 
-			if !subJob.haveMore {
+			if !subJob.hasMore {
 				proc.Store(mergedJob)
 				firstSubJob = true
 			}
