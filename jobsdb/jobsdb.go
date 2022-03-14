@@ -645,15 +645,15 @@ func WithStatusHandler() OptsFunc {
 }
 
 func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
-	return newOwnerType(Read, tablePrefix)
+	return newOwnerType(Read, tablePrefix, opts...)
 }
 
 func NewForWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
-	return newOwnerType(Write, tablePrefix)
+	return newOwnerType(Write, tablePrefix, opts...)
 }
 
 func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
-	return newOwnerType(ReadWrite, tablePrefix)
+	return newOwnerType(ReadWrite, tablePrefix, opts...)
 }
 
 func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {

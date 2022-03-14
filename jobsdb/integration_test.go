@@ -288,7 +288,7 @@ func TestJobsDB(t *testing.T) {
 	t.Run("DSoverflow", func(t *testing.T) {
 		customVal := "MOCKDS"
 
-		triggerAddNewDS := make(chan time.Time, 0)
+		triggerAddNewDS := make(chan time.Time)
 
 		maxDSSize := 9
 		jobDB := jobsdb.HandleT{
@@ -407,8 +407,8 @@ func BenchmarkJobsdb(b *testing.B) {
 
 		g, _ := errgroup.WithContext(context.Background())
 		g.Go(func() error {
-			for _, j := range expectedJobs {
-				err := jobDB.Store([]*jobsdb.JobT{&j})
+			for i := range expectedJobs {
+				err := jobDB.Store([]*jobsdb.JobT{&expectedJobs[i]})
 				if err != nil {
 					return err
 				}
@@ -460,13 +460,13 @@ func BenchmarkJobsdb(b *testing.B) {
 		err := g.Wait()
 		require.NoError(b, err)
 		require.Len(b, consumedJobs, len(expectedJobs))
-		for i, actualJob := range consumedJobs {
+		for i := range consumedJobs {
 			expectedJob := expectedJobs[i]
-			require.Equal(b, expectedJob.UUID, actualJob.UUID)
-			require.Equal(b, expectedJob.UserID, actualJob.UserID)
-			require.Equal(b, expectedJob.CustomVal, actualJob.CustomVal)
-			require.JSONEq(b, string(expectedJob.Parameters), string(actualJob.Parameters))
-			require.JSONEq(b, string(expectedJob.EventPayload), string(actualJob.EventPayload))
+			require.Equal(b, expectedJob.UUID, consumedJobs[i].UUID)
+			require.Equal(b, expectedJob.UserID, consumedJobs[i].UserID)
+			require.Equal(b, expectedJob.CustomVal, consumedJobs[i].CustomVal)
+			require.JSONEq(b, string(expectedJob.Parameters), string(consumedJobs[i].Parameters))
+			require.JSONEq(b, string(expectedJob.EventPayload), string(consumedJobs[i].EventPayload))
 		}
 	})
 }
@@ -482,7 +482,7 @@ func BenchmarkLifecycle(b *testing.B) {
 	const newJobs = 100
 
 	dsSize := writeConcurrency * newJobs
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 
 	jobDB.MaxDSSize = &dsSize
 	jobDB.TriggerAddNewDS = func() <-chan time.Time {
