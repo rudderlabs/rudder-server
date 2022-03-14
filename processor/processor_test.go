@@ -1917,7 +1917,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	}
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 1", func() {
-			var mergedJob storeMessage
+			var mergedJob *storeMessage
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
@@ -2003,7 +2003,7 @@ var _ = Describe("TestSubJobMerger", func() {
 				},
 			}
 			for _, subJob := range subJobs {
-				mergedJob = subJobMerger(mergedJob, subJob)
+				mergedJob = subJobMerger(mergedJob, &subJob)
 			}
 			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
 			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
@@ -2018,7 +2018,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	})
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 2", func() {
-			var mergedJob storeMessage
+			var mergedJob *storeMessage
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
@@ -2078,7 +2078,7 @@ var _ = Describe("TestSubJobMerger", func() {
 				},
 			}
 			for _, subJob := range subJobs {
-				mergedJob = subJobMerger(mergedJob, subJob)
+				mergedJob = subJobMerger(mergedJob, &subJob)
 			}
 			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
 			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))

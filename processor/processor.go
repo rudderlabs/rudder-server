@@ -2326,7 +2326,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			mergedJob := subJobMerger(&mergedJob, &subJob)
 
 			if !subJob.hasMore {
+				dbWriteStart := time.Now()
 				proc.Store(*mergedJob)
+				dbWriteTime := time.Since(dbWriteStart)
+				fmt.Println("DBwriteTIme: ", dbWriteTime)
 				firstSubJob = true
 			}
 		}
