@@ -2288,7 +2288,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chTrans)
 		for jobs := range chProc {
-			chTrans <- proc.processJobsForDest(jobs, nil)
+			chTrans <- proc.processJobsForDest(jobs, nil) //500ms
 		}
 	}()
 
@@ -2298,24 +2298,30 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chStore)
 		for msg := range chTrans {
-			chStore <- proc.transformations(msg)
+			chStore <- proc.transformations(msg) //13s
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		var mergedJob storeMessage
+		var jobAggregationStart, jobStoreWaitStart time.Time
+		var jobStoreAggWaitTimeArr []time.Duration
 		// var DBWriteExecStart, DBWriteWaitingStart time.Time
 		firstSubJob := true
 		defer wg.Done()
+		jobStoreWaitStart = time.Now()
 		for subJob := range chStore {
-
+			jobStoreWaitTime := time.Since(jobStoreWaitStart)
+			jobStoreAggWaitTimeArr = append(jobStoreAggWaitTimeArr, jobStoreWaitTime)
 			if firstSubJob && !subJob.hasMore {
 				proc.Store(subJob)
 				continue
 			}
 
 			if firstSubJob {
+				jobStoreAggWaitTimeArr = []time.Duration{}
+				jobAggregationStart = time.Now()
 				mergedJob = storeMessage{}
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
@@ -2326,12 +2332,16 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			mergedJob := subJobMerger(&mergedJob, &subJob)
 
 			if !subJob.hasMore {
+				fmt.Println("JobAggregationWaitTime: ", jobStoreAggWaitTimeArr)
+				jobAggregationTime := time.Since(jobAggregationStart)
+				fmt.Println("jobAggregationTime: ", jobAggregationTime)
 				dbWriteStart := time.Now()
-				proc.Store(*mergedJob)
+				proc.Store(*mergedJob) //10s
 				dbWriteTime := time.Since(dbWriteStart)
 				fmt.Println("DBwriteTIme: ", dbWriteTime)
 				firstSubJob = true
 			}
+			jobStoreWaitStart = time.Now()
 		}
 	}()
 
