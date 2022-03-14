@@ -21,7 +21,7 @@ var (
 	pkgLogger                 = logger.NewLogger().Child("router")
 )
 
-type Router struct {
+type LifecycleManager struct {
 	rt               *router.Factory
 	brt              *batchrouter.Factory
 	mainCtx          context.Context
@@ -33,14 +33,14 @@ type Router struct {
 	backendConfig    backendconfig.BackendConfig
 }
 
-func (r *Router) Run(ctx context.Context) error {
+func (r *LifecycleManager) Run(ctx context.Context) error {
 	return nil
 }
 
 // StartNew starts a Router, this is not a blocking call.
 //If the router is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
-func (r *Router) StartNew() {
+func (r *LifecycleManager) StartNew() {
 	r.rt = &router.Factory{
 		Reporting:     r.reportingI,
 		Multitenant:   multitenant.NOOP,
@@ -67,17 +67,17 @@ func (r *Router) StartNew() {
 }
 
 // Stop stops the Router, this is a blocking call.
-func (r *Router) Stop() {
+func (r *LifecycleManager) Stop() {
 	r.currentCancel()
 	r.waitGroup.Wait()
 }
 
 // NewRouterManager creates a new Router instance
-func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {
+func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
-	return &Router{
+	return &LifecycleManager{
 		rt:               &router.Factory{},
 		brt:              &batchrouter.Factory{},
 		mainCtx:          ctx,
@@ -88,7 +88,7 @@ func NewRouterManager(ctx context.Context, dbs *jobsdb.DBs) *Router {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func (r *Router) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
+func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
 	r.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
