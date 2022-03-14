@@ -2316,6 +2316,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			// }
 
 			if firstSubJob {
+				mergedJob = storeMessage{}
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 				mergedJob.sourceDupStats = make(map[string]int)
