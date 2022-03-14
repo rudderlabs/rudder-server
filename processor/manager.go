@@ -15,7 +15,11 @@ type LifecycleManager struct {
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        *errgroup.Group
-	DBs              *jobsdb.DBs
+	gatewayDB        *jobsdb.HandleT
+	routerDB         *jobsdb.HandleT
+	batchRouterDB    *jobsdb.HandleT
+	errDB            *jobsdb.HandleT
+	clearDB          *bool
 	multitenantStats multitenant.MultiTenantI // need not initialize again
 	reportingI       types.ReportingI         // need not initialize again
 	backendConfig    backendconfig.BackendConfig
@@ -29,8 +33,8 @@ func (proc *LifecycleManager) Run(ctx context.Context) error {
 //If the processor is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
 func (proc *LifecycleManager) StartNew() {
-	proc.HandleT.Setup(proc.backendConfig, &proc.DBs.GatewayDB, &proc.DBs.RouterDB, &proc.DBs.BatchRouterDB,
-		&proc.DBs.ProcErrDB, &proc.DBs.ClearDB, proc.reporting, proc.multitenantStats)
+	proc.HandleT.Setup(proc.backendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
+		proc.errDB, proc.clearDB, proc.reporting, proc.multitenantStats)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
@@ -51,11 +55,15 @@ func (proc *LifecycleManager) Stop() {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, dbs *jobsdb.DBs) *LifecycleManager {
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx:          ctx,
-		DBs:              dbs,
+		gatewayDB:        gwDb,
+		routerDB:         rtDb,
+		batchRouterDB:    brtDb,
+		errDB:            errDb,
+		clearDB:          clearDb,
 		multitenantStats: multitenant.NOOP,
 		backendConfig:    backendconfig.DefaultBackendConfig,
 	}

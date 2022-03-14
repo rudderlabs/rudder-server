@@ -140,16 +140,45 @@ func TestProcessorManager(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
 	ctx := context.Background()
-	dbs := &jobsdb.DBs{
-		ClearDB:        false,
-		GatewayDB:      jobsdb.HandleT{},
-		RouterDB:       jobsdb.HandleT{},
-		BatchRouterDB:  jobsdb.HandleT{},
-		ProcErrDB:      jobsdb.HandleT{},
-		TenantRouterDB: jobsdb.MultiTenantHandleT{},
-	}
-	dbs.InitiateDBs(time.Duration(0 * time.Second), time.Duration(0 * time.Second), "normal", false)
-	processor := New(ctx, dbs)
+	gwDb := jobsdb.NewForReadWrite(
+		"gw",
+		jobsdb.WithClearDB(false),
+		jobsdb.WithMigrationMode("default"),
+		jobsdb.WithRetention(time.Duration(0)),
+		jobsdb.WithStatusHandler(),
+		)
+	rtDb := jobsdb.NewForReadWrite(
+		"rt",
+		jobsdb.WithClearDB(false),
+		jobsdb.WithMigrationMode("default"),
+		jobsdb.WithRetention(time.Duration(0)),
+		jobsdb.WithStatusHandler(),
+		)
+	brtDb := jobsdb.NewForReadWrite(
+		"batch_rt",
+		jobsdb.WithClearDB(false),
+		jobsdb.WithMigrationMode("default"),
+		jobsdb.WithRetention(time.Duration(0)),
+		jobsdb.WithStatusHandler(),
+		)
+	errDb := jobsdb.NewForReadWrite(
+		"proc_error",
+		jobsdb.WithClearDB(false),
+		jobsdb.WithMigrationMode("default"),
+		jobsdb.WithRetention(time.Duration(0)),
+		jobsdb.WithStatusHandler(),
+		)
+	defer gwDb.Close()
+	defer rtDb.Close()
+	defer brtDb.Close()
+	defer errDb.Close()
+	clearDb := false
+	gwDb.Start()
+	rtDb.Start()
+	brtDb.Start()
+	errDb.Start()
+
+	processor := New(ctx, &clearDb, gwDb, rtDb, brtDb, errDb)
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
@@ -168,7 +197,7 @@ func TestProcessorManager(t *testing.T) {
 	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time, 0)
 	maxDSSize := 10
-	gwJobDB := jobsdb.HandleT{
+	tempDb := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
@@ -177,7 +206,7 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	gwJobDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
+	tempDb.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
 
 	processor.backendConfig = mockBackendConfig
 	processor.transformer = mockTransformer
@@ -191,27 +220,27 @@ func TestProcessorManager(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
-	unprocessedListEmpty := gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty := tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 0, len(unprocessedListEmpty))
-	err := gwJobDB.Store([]*jobsdb.JobT{&sampleTestJob})
+	err := tempDb.Store([]*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err = tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
-	unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         20,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 
 	require.Equal(t, 11, len(unprocessedListEmpty))
-	unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         20,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -222,7 +251,7 @@ func TestProcessorManager(t *testing.T) {
 	go processor.StartNew()
 	go func() {
 		Eventually(func() int {
-			return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -232,6 +261,10 @@ func TestProcessorManager(t *testing.T) {
 	}()
 	<- c
 	processor.Stop()
+	gwDb.Stop()
+	rtDb.Stop()
+	brtDb.Stop()
+	errDb.Stop()
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
 		//mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
@@ -240,11 +273,14 @@ func TestProcessorManager(t *testing.T) {
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-
+		gwDb.Start()
+		rtDb.Start()
+		brtDb.Start()
+		errDb.Start()
 		go processor.StartNew()
-		err = gwJobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+		err = tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty = gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -253,7 +289,7 @@ func TestProcessorManager(t *testing.T) {
 		// in super-fast multi-threaded system.
 
 		go func() {
-			Eventually(func() int {return len(gwJobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			Eventually(func() int {return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -262,6 +298,10 @@ func TestProcessorManager(t *testing.T) {
 		}()
 		<- c
 		processor.Stop()
-		gwJobDB.TearDown()
+		tempDb.TearDown()
+		gwDb.Stop()
+		rtDb.Stop()
+		brtDb.Stop()
+		errDb.Stop()
 	})
 }
