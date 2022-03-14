@@ -2181,10 +2181,13 @@ type subJobT struct {
 	haveMore bool
 }
 
-func splitJob(jobs []*jobsdb.JobT) []subJobT {
+func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
 	subJobCount := 1
 	if len(jobs)/subJobSize > 1 {
 		subJobCount = len(jobs) / subJobSize
+		if len(jobs)%subJobSize != 0 {
+			subJobCount++
+		}
 	}
 	var subJobs []subJobT
 	for i := 0; i < subJobCount; i++ {
@@ -2259,10 +2262,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobs := splitJob(jobs)
+				subJobs := jobSplitter(jobs)
 				for _, subJob := range subJobs {
 					chProc <- subJob
 				}
@@ -2297,6 +2301,11 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		firstSubJob := true
 		defer wg.Done()
 		for subJob := range chStore {
+
+			if firstSubJob && !subJob.haveMore {
+				proc.Store(subJob)
+				continue
+			}
 
 			if firstSubJob {
 				mergedJob.uniqueMessageIds = make(map[string]struct{})

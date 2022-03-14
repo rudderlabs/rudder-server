@@ -14,7 +14,6 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -1727,3 +1726,364 @@ func handlePendingGatewayJobs(processor *HandleT) {
 	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
 }
+
+var _ = Describe("TestJobSplitter", func() {
+	jobs := []*jobsdb.JobT{
+		{
+			JobID: 1,
+		},
+		{
+			JobID: 2,
+		},
+		{
+			JobID: 3,
+		},
+		{
+			JobID: 4,
+		},
+		{
+			JobID: 5,
+		},
+	}
+	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
+		It("default subJobSize: 2k", func() {
+			expectedSubJobs := []subJobT{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+						{
+							JobID: 3,
+						},
+						{
+							JobID: 4,
+						},
+						{
+							JobID: 5,
+						},
+					},
+					haveMore: false,
+				},
+			}
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
+			subJobSize = 1
+			expectedSubJobs := []subJobT{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 3,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 4,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 5,
+						},
+					},
+					haveMore: false,
+				},
+			}
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
+			subJobSize = 2
+			expectedSubJobs := []subJobT{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 3,
+						},
+						{
+							JobID: 4,
+						},
+					},
+					haveMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 5,
+						},
+					},
+					haveMore: false,
+				},
+			}
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+	})
+})
+
+var _ = Describe("TestSubJobMerger", func() {
+	subJobSize = 1
+	expectedMergedJob := storeMessage{
+		statusList: []*jobsdb.JobStatusT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+		destJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+		batchDestJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"jobError1": {&jobsdb.JobT{}},
+			"jobError2": {&jobsdb.JobT{}},
+		},
+		procErrorJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+
+		reportMetrics: []*types.PUReportedMetric{{}, {}},
+		sourceDupStats: map[string]int{
+			"stat-1": 1,
+			"stat-2": 2,
+		},
+		uniqueMessageIds: map[string]struct{}{
+			"messageId-1": {},
+			"messageId-2": {},
+		},
+
+		totalEvents: 2,
+		start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+	}
+	Context("testing jobs merger, which merge sub-jobs into final job", func() {
+		It("subJobSize: 1", func() {
+			var mergedJob storeMessage
+			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+			mergedJob.sourceDupStats = make(map[string]int)
+
+			subJobs := []storeMessage{
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 1,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError1": {
+							&jobsdb.JobT{},
+						},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					reportMetrics: []*types.PUReportedMetric{
+						{},
+					},
+					sourceDupStats: map[string]int{
+						"stat-1": 1,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-1": {},
+					},
+
+					totalEvents: 1,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+				},
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 2,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError2": {
+							&jobsdb.JobT{},
+						},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+
+					reportMetrics: []*types.PUReportedMetric{{}},
+					sourceDupStats: map[string]int{
+						"stat-2": 2,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-2": {},
+					},
+					totalEvents: 1,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 12, time.UTC),
+				},
+			}
+			for _, subJob := range subJobs {
+				mergedJob = subJobMerger(mergedJob, subJob)
+			}
+			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
+			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
+			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
+			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
+			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
+			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
+			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
+			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+	Context("testing jobs merger, which merge sub-jobs into final job", func() {
+		It("subJobSize: 2", func() {
+			var mergedJob storeMessage
+			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+			mergedJob.sourceDupStats = make(map[string]int)
+
+			subJobs := []storeMessage{
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError1": {&jobsdb.JobT{}},
+						"jobError2": {&jobsdb.JobT{}},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+
+					reportMetrics: []*types.PUReportedMetric{{}, {}},
+					sourceDupStats: map[string]int{
+						"stat-1": 1,
+						"stat-2": 2,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-1": {},
+						"messageId-2": {},
+					},
+
+					totalEvents: 2,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+				},
+			}
+			for _, subJob := range subJobs {
+				mergedJob = subJobMerger(mergedJob, subJob)
+			}
+			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
+			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
+			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
+			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
+			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
+			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
+			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
+			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+})
