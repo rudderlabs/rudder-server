@@ -830,3 +830,82 @@ func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
+
+func (as *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
+	msClient, err := as.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
+		EXEC('CREATE SCHEMA [%s]');
+	`, as.Namespace, as.Namespace)
+	pkgLogger.Infof("Creating test schema name in azure synapse for destinationID: %v with sqlStatement: %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err == io.EOF {
+		return nil
+	}
+	return
+}
+
+func (as *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
+	msClient, err := as.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
+		CREATE TABLE %[1]s ( %v )`,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in azure synapse for destinationID: %s with sqlStatement: %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = msClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in azure synapse for destinationID: %s with sqlStatement: %v", as.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}
+
+func (as *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	msClient, err := as.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer msClient.Close()
+
+	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
+		CREATE TABLE %[1]s ( %v )`,
+		stagingTableName,
+		columnsWithDataTypes(columns, ""),
+	)
+	pkgLogger.Infof("Creating test table in azure synapse for destinationID: %s with sqlStatement: %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		as.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+	)
+	_, err = msClient.SQL.Exec(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	_, err = msClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
+	if err != nil {
+		pkgLogger.Errorf("Error dropping staging tables in azure synapse for destinationID: %s with sqlStatement: %v", as.Warehouse.Destination.ID, sqlStatement)
+	}
+	return
+}

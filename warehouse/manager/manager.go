@@ -2,6 +2,7 @@ package manager
 
 import (
 	"fmt"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -60,6 +61,9 @@ func New(destType string) (ManagerI, error) {
 	case "MSSQL":
 		var ms mssql.HandleT
 		return &ms, nil
+	case "AZURE_SYNAPSE":
+		var as azuresynapse.HandleT
+		return &as, nil
 	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		var dl datalake.HandleT
 		return &dl, nil
