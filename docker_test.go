@@ -1307,7 +1307,6 @@ func whGatewayTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 		err := db.QueryRow(jobsSqlStatement).Scan(&count)
 		require.Equal(t, nil, err)
-
 		return count == int64(gwEvents)
 	}, time.Minute, 10*time.Millisecond)
 }
