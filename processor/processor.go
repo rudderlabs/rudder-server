@@ -2316,24 +2316,17 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			// }
 
 			if firstSubJob {
-				// DBWriteWaitingTime := time.Since(DBWriteWaitingStart)
-				// fmt.Println("DBWriteWaitingTime: ", DBWriteWaitingTime)
-				// DBWriteExecStart = time.Now()
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 				mergedJob.sourceDupStats = make(map[string]int)
 
-				// mergedJob.start = subJob.start
 				firstSubJob = false
 			}
-			mergedJob := subJobMerger(mergedJob, subJob)
+			mergedJob := subJobMerger(&mergedJob, &subJob)
 
 			if !subJob.hasMore {
 				proc.Store(mergedJob)
 				firstSubJob = true
-				// DBWriteExecTime := time.Since(DBWriteExecStart)
-				// fmt.Println("DBWriteExecTime: ", DBWriteExecTime)
-				// DBWriteWaitingStart = time.Now()
 			}
 		}
 	}()
@@ -2341,9 +2334,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Wait()
 }
 
-func subJobMerger(mergedJob storeMessage, subJob storeMessage) storeMessage {
+func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) storeMessage {
 
 	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
+	fmt.Println("mergedJob.destJobs before: ", len(mergedJob.destJobs))
 	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
 	fmt.Println("len of mergedJob.destJobs: ", len(mergedJob.destJobs))
 	fmt.Println("len of subJob.destJobs: ", len(subJob.destJobs))
