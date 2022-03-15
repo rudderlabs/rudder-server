@@ -766,6 +766,8 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 }
 
+// Start starts the jobsdb worker and housekeeping (migration, archive) threads.
+// Start should be called before any other jobsdb methods are called.
 func (jd *HandleT) Start() {
 	jd.writeChannel = make(chan writeJob)
 	jd.readChannel = make(chan readJob)
@@ -968,6 +970,9 @@ func (jd *HandleT) dbReader(ctx context.Context) {
 	}
 }
 
+// Stop stops the background goroutines and waits until they finish.
+// Stop should be called once only after Start.
+// Only Start and Close can be called after Stop.
 func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
 	close(jd.readChannel)
@@ -975,14 +980,15 @@ func (jd *HandleT) Stop() {
 	jd.backgroundGroup.Wait()
 }
 
-/*
-TearDown releases all the resources
-*/
+// TearDown stops the background goroutines,
+//	waits until they finish and closes the database.
 func (jd *HandleT) TearDown() {
 	jd.Stop()
 	jd.Close()
 }
 
+// Close closes the database connection.
+// 	Stop should be called before Close.
 func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
