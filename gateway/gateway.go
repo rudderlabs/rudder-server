@@ -916,33 +916,35 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
+	var pending bool
 	if !excludeGateway {
-		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
-		totalPendingTillNow = gwPendingCount
+		pending = gateway.readonlyGatewayDB.HavePendingJobs([]string{CustomVal}, -1, gwParameterFilters)
+		if pending {
+			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+			return
+		}
 	}
 
-	if totalPendingTillNow <= 0 {
-		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += rtPendingCount
+	pending = gateway.readonlyRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	if pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		return
 	}
 
-	if totalPendingTillNow <= 0 {
-		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += brtPendingCount
+	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	if pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		return
 	}
 
-	whPending := false
-	if totalPendingTillNow <= 0 {
-		whPending = gateway.getWarehousePending(payload)
-	}
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
+}
 
-	pendingEventsResponse := totalPendingTillNow
-	if whPending {
-		pendingEventsResponse = 1
+func getIntResponseFromBool(resp bool) int {
+	if resp {
+		return 1
 	}
-
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+	return 0
 }
 
 func (gateway *HandleT) getWarehousePending(payload []byte) bool {
