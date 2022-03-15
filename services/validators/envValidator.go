@@ -151,6 +151,47 @@ func closeDBConnection(handle *sql.DB) {
 	}
 }
 
+func killDanglingDBConnections(db *sql.DB) {
+
+	rows, err := db.Query(`SELECT PID, QUERY_START, WAIT_EVENT_TYPE, WAIT_EVENT, STATE, QUERY, PG_TERMINATE_BACKEND(PID)
+							FROM PG_STAT_ACTIVITY
+							WHERE PID <> PG_BACKEND_PID()
+							AND APPLICATION_NAME = CURRENT_SETTING('APPLICATION_NAME')
+							AND APPLICATION_NAME <> ''`)
+
+	if err != nil {
+		panic(fmt.Errorf("error occurred when querying pg_stat_activity table for terminating dangling connections: %v", err.Error()))
+	}
+	defer rows.Close()
+
+	type danglingConnRow struct {
+		pid           int
+		queryStart    string
+		waitEventType string
+		waitEvent     string
+		state         string
+		query         string
+		terminated    bool
+	}
+
+	dangling := make([]*danglingConnRow, 0)
+	for rows.Next() {
+		var row danglingConnRow = danglingConnRow{}
+		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query, &row.terminated)
+		if err != nil {
+			panic(err)
+		}
+		dangling = append(dangling, &row)
+	}
+
+	if len(dangling) > 0 {
+		pkgLogger.Warnf("Terminated %d dangling connection(s)", len(dangling))
+		for i, rowPtr := range dangling {
+			pkgLogger.Warnf("dangling connection #%d: %+v", i+1, *rowPtr)
+		}
+	}
+}
+
 //IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
 func IsPostgresCompatible(db *sql.DB) (bool, error) {
 	var versionNum int
@@ -174,6 +215,13 @@ func ValidateEnv() {
 		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		panic(errors.New("Failed to start rudder-server"))
 	}
+
+	// SQL statements in rudder-server are not executed with a timeout context, instead we are letting them take as much time as they need :)
+	// Due to the above, when a server shutdown is initiated in a cloud environment while long-running statements are being executed,
+	// the server process will not manage to shutdown gracefully, since it will be blocked by the SQL statements.
+	// The container orchestrator will eventually kill the server process, leaving one or more dangling connections in the database.
+	// This will ensure that before a new rudder-server instance starts working, all previous dangling connections belonging to this server are being killed.
+	killDanglingDBConnections(dbHandle)
 }
 
 //InitializeEnv initializes the environment for the server
