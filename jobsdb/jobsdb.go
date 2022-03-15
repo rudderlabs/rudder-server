@@ -569,7 +569,7 @@ func loadConfig() {
 	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
-	appName = config.GetEnv("JOBS_DB_APP_NAME", misc.DefaultString("rudder-server").OnError(os.Hostname()))
+	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed

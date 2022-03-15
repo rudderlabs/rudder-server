@@ -153,32 +153,31 @@ func closeDBConnection(handle *sql.DB) {
 
 func killDanglingDBConnections(db *sql.DB) {
 
-	rows, err := db.Query(`SELECT PID, QUERY_START, WAIT_EVENT_TYPE, WAIT_EVENT, STATE, QUERY
+	rows, err := db.Query(`SELECT PID, QUERY_START, WAIT_EVENT_TYPE, WAIT_EVENT, STATE, QUERY, PG_TERMINATE_BACKEND(PID)
 							FROM PG_STAT_ACTIVITY
 							WHERE PID <> PG_BACKEND_PID()
-							AND APPLICATION_NAME = (
-								SELECT APPLICATION_NAME FROM PG_STAT_ACTIVITY WHERE PID = PG_BACKEND_PID()
-							)`)
+							AND APPLICATION_NAME = CURRENT_SETTING('APPLICATION_NAME')
+							AND APPLICATION_NAME <> ''`)
 
 	if err != nil {
-		panic(fmt.Errorf("error occurred with querying pg_stat_activity table for finding dangling connections: %v", err.Error()))
+		panic(fmt.Errorf("error occurred when querying pg_stat_activity table for terminating dangling connections: %v", err.Error()))
 	}
 	defer rows.Close()
 
-	type danglingConnRowT struct {
+	type danglingConnRow struct {
 		pid           int
 		queryStart    string
 		waitEventType string
 		waitEvent     string
 		state         string
 		query         string
+		terminated    bool
 	}
-	type danglingConnsT []*danglingConnRowT
 
-	dangling := danglingConnsT(make([]*danglingConnRowT, 0))
+	dangling := make([]*danglingConnRow, 0)
 	for rows.Next() {
-		var row danglingConnRowT = danglingConnRowT{}
-		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query)
+		var row danglingConnRow = danglingConnRow{}
+		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query, &row.terminated)
 		if err != nil {
 			panic(err)
 		}
@@ -186,22 +185,10 @@ func killDanglingDBConnections(db *sql.DB) {
 	}
 
 	if len(dangling) > 0 {
-		pkgLogger.Warn(fmt.Sprintf("Killing %d dangling connection(s)", len(dangling)))
+		pkgLogger.Warnf("Terminated %d dangling connection(s)", len(dangling))
 		for i, rowPtr := range dangling {
-			pkgLogger.Warn(fmt.Sprintf("dangling connection #%d: %+v", i+1, *rowPtr))
+			pkgLogger.Warnf("dangling connection #%d: %+v", i+1, *rowPtr)
 		}
-
-		_, err := db.Exec(`SELECT PG_TERMINATE_BACKEND(PID)
-							FROM PG_STAT_ACTIVITY
-							WHERE APPLICATION_NAME = (
-								SELECT APPLICATION_NAME FROM PG_STAT_ACTIVITY WHERE PID = PG_BACKEND_PID()
-							)
-							AND PID <> PG_BACKEND_PID();`)
-
-		if err != nil {
-			panic(fmt.Errorf("error occurred with executing pg_terminate_backend for dangling connections: %v", err.Error()))
-		}
-
 	}
 }
 
