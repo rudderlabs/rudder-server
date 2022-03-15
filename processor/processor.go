@@ -1087,7 +1087,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]types.SingularEventT) transformationMessage {
+func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]types.SingularEventT) transformationMessage {
 	jobList := subJobs.subJobs
 	start := time.Now()
 	var statusList []*jobsdb.JobStatusT
@@ -2115,7 +2115,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	proc.Store(
 		proc.transformations(
-			proc.processJobsForDest(subJobT{
+			proc.processJobsForDest(subJob{
 				subJobs: unprocessedList,
 				hasMore: false,
 			}, nil),
@@ -2194,12 +2194,12 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 //`subJobMerger` func merges the split jobs into a single batch before writing to DB.
 //So, to keep track of sub-batch we have `hasMore` variable.
 //each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
-type subJobT struct {
+type subJob struct {
 	subJobs []*jobsdb.JobT
 	hasMore bool
 }
 
-func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
+func jobSplitter(jobs []*jobsdb.JobT) []subJob {
 	subJobCount := 1
 	if len(jobs)/subJobSize > 1 {
 		subJobCount = len(jobs) / subJobSize
@@ -2207,17 +2207,17 @@ func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
 			subJobCount++
 		}
 	}
-	var subJobs []subJobT
+	var subJobs []subJob
 	for i := 0; i < subJobCount; i++ {
 		if i == subJobCount-1 {
 			//all the remaining jobs are sent in last sub-job batch.
-			subJobs = append(subJobs, subJobT{
+			subJobs = append(subJobs, subJob{
 				subJobs: jobs,
 				hasMore: false,
 			})
 			continue
 		}
-		subJobs = append(subJobs, subJobT{
+		subJobs = append(subJobs, subJob{
 			subJobs: jobs[:subJobSize],
 			hasMore: true,
 		})
@@ -2232,9 +2232,7 @@ func jobSplitter(jobs []*jobsdb.JobT) []subJobT {
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
-	proc.logger.Info("Processor mainPipeline started")
-	proc.logger.Info("Processor subJobSize= ", subJobSize)
-	proc.logger.Info("Processor pipelineBufferedItems= ", pipelineBufferedItems)
+	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
@@ -2242,7 +2240,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
 
-	chProc := make(chan subJobT, bufferSize)
+	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
 
 	go func() {
