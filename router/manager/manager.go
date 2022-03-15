@@ -72,7 +72,7 @@ func (r *LifecycleManager) StartNew() {
 // Stop stops the Router, this is a blocking call.
 func (r *LifecycleManager) Stop() {
 	r.currentCancel()
-	r.waitGroup.Wait()
+	//r.waitGroup.Wait()
 }
 
 // NewRouterManager creates a new Router instance

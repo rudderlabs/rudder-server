@@ -179,8 +179,9 @@ func TestRouterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-		gomock.Any()).Do(func() {c <- true}).AnyTimes()
-
+		gomock.Any()).Do(
+			func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
+				if len(c) == 0 {c<-true}}).AnyTimes()
 
 	ctx := context.Background()
 	rtDb := jobsdb.NewForReadWrite(
@@ -207,29 +208,20 @@ func TestRouterManager(t *testing.T) {
 	defer rtDb.Close()
 	defer brtDb.Close()
 	defer errDb.Close()
-	rtDb.Start()
-	brtDb.Start()
-	errDb.Start()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDb}
 	r := NewRouterManager(ctx, brtDb, errDb, tDb, mockMTI)
 	r.backendConfig = mockBackendConfig
 	r.reportingI = &reportingNOOP{}
-	go r.StartNew()
-	//<- c
-	//time.Sleep(1*time.Minute)
-	r.Stop()
-	rtDb.Stop()
-	brtDb.Stop()
-	errDb.Stop()
 
-	rtDb.Start()
-	brtDb.Start()
-	errDb.Start()
-	go r.StartNew()
-	<- c
-	//time.Sleep(1*time.Minute)
-	r.Stop()
-	rtDb.Stop()
-	brtDb.Stop()
-	errDb.Stop()
+	for i := 0; i < 5; i++ {
+		rtDb.Start()
+		brtDb.Start()
+		errDb.Start()
+		go r.StartNew()
+		<-c
+		r.Stop()
+		rtDb.Stop()
+		brtDb.Stop()
+		errDb.Stop()
+	}
 }
