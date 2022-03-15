@@ -5,6 +5,7 @@
 package mock_filemanager
 
 import (
+	context "context"
 	os "os"
 	reflect "reflect"
 
@@ -74,31 +75,31 @@ func (m *MockFileManager) EXPECT() *MockFileManagerMockRecorder {
 }
 
 // DeleteObjects mocks base method.
-func (m *MockFileManager) DeleteObjects(arg0 []string) error {
+func (m *MockFileManager) DeleteObjects(arg0 context.Context, arg1 []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteObjects", arg0)
+	ret := m.ctrl.Call(m, "DeleteObjects", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteObjects indicates an expected call of DeleteObjects.
-func (mr *MockFileManagerMockRecorder) DeleteObjects(arg0 interface{}) *gomock.Call {
+func (mr *MockFileManagerMockRecorder) DeleteObjects(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteObjects", reflect.TypeOf((*MockFileManager)(nil).DeleteObjects), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteObjects", reflect.TypeOf((*MockFileManager)(nil).DeleteObjects), arg0, arg1)
 }
 
 // Download mocks base method.
-func (m *MockFileManager) Download(arg0 *os.File, arg1 string) error {
+func (m *MockFileManager) Download(arg0 context.Context, arg1 *os.File, arg2 string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Download", arg0, arg1)
+	ret := m.ctrl.Call(m, "Download", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Download indicates an expected call of Download.
-func (mr *MockFileManagerMockRecorder) Download(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockFileManagerMockRecorder) Download(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockFileManager)(nil).Download), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockFileManager)(nil).Download), arg0, arg1, arg2)
 }
 
 // GetConfiguredPrefix mocks base method.
@@ -145,25 +146,25 @@ func (mr *MockFileManagerMockRecorder) GetObjectNameFromLocation(arg0 interface{
 }
 
 // ListFilesWithPrefix mocks base method.
-func (m *MockFileManager) ListFilesWithPrefix(arg0 string, arg1 int64) ([]*filemanager.FileObject, error) {
+func (m *MockFileManager) ListFilesWithPrefix(arg0 context.Context, arg1 string, arg2 int64) ([]*filemanager.FileObject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListFilesWithPrefix", arg0, arg1)
+	ret := m.ctrl.Call(m, "ListFilesWithPrefix", arg0, arg1, arg2)
 	ret0, _ := ret[0].([]*filemanager.FileObject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListFilesWithPrefix indicates an expected call of ListFilesWithPrefix.
-func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1, arg2)
 }
 
 // Upload mocks base method.
-func (m *MockFileManager) Upload(arg0 *os.File, arg1 ...string) (filemanager.UploadOutput, error) {
+func (m *MockFileManager) Upload(arg0 context.Context, arg1 *os.File, arg2 ...string) (filemanager.UploadOutput, error) {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0}
-	for _, a := range arg1 {
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "Upload", varargs...)
@@ -173,8 +174,8 @@ func (m *MockFileManager) Upload(arg0 *os.File, arg1 ...string) (filemanager.Upl
 }
 
 // Upload indicates an expected call of Upload.
-func (mr *MockFileManagerMockRecorder) Upload(arg0 interface{}, arg1 ...interface{}) *gomock.Call {
+func (mr *MockFileManagerMockRecorder) Upload(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0}, arg1...)
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upload", reflect.TypeOf((*MockFileManager)(nil).Upload), varargs...)
 }
