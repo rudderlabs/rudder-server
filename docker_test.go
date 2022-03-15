@@ -14,7 +14,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 
-	//"encoding/json"
 	_ "encoding/json"
 	"flag"
 	"fmt"
@@ -370,10 +369,10 @@ func run(m *testing.M) (int, error) {
 
 	wht.InitWHConfig()
 
-	//defer wht.SetWHPostgresDestination(pool)()
-	//defer wht.SetWHClickHouseDestination(pool)()
-	//defer wht.SetWHClickHouseClusterDestination(pool)()
-	//defer wht.SetWHMssqlDestination(pool)()
+	defer wht.SetWHPostgresDestination(pool)()
+	defer wht.SetWHClickHouseDestination(pool)()
+	defer wht.SetWHClickHouseClusterDestination(pool)()
+	defer wht.SetWHMssqlDestination(pool)()
 	defer wht.SetWHBigQueryDestination()()
 
 	AddWHSpecificSqlFunctionsToJobsDb()
@@ -405,28 +404,28 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                   webhookurl,
-			"disableDestinationwebhookUrl": disableDestinationwebhookurl,
-			"writeKey":                     writeKey,
-			"workspaceId":                  workspaceID,
-			"postgresPort":                 PostgresContainer.Port,
-			"address":                      RedisContainer.RedisAddress,
-			"minioEndpoint":                MINIOContainer.MinioEndpoint,
-			"minioBucketName":              MINIOContainer.MinioBucketName,
-			"kafkaPort":                    KafkaContainer.Port,
-			"postgresEventWriteKey":          wht.Test.PGTest.WriteKey,
-			"clickHouseEventWriteKey":        wht.Test.CHTest.WriteKey,
-			"clickHouseClusterEventWriteKey": wht.Test.CHClusterTest.WriteKey,
+			"webhookUrl":                          webhookurl,
+			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
+			"writeKey":                            writeKey,
+			"workspaceId":                         workspaceID,
+			"postgresPort":                        PostgresContainer.Port,
+			"address":                             RedisContainer.RedisAddress,
+			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
+			"minioBucketName":                     MINIOContainer.MinioBucketName,
+			"kafkaPort":                           KafkaContainer.Port,
+			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
+			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
+			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
 			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
-			"bqEventWriteKey": wht.Test.BQTest.WriteKey,
+			"bqEventWriteKey":                     wht.Test.BQTest.WriteKey,
 			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
 			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
 			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
-			"rwhBQProject":     os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_PROJECT"),
-			"rwhBQLocation":    os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_LOCATION"),
-			"rwhBQBucketName":  os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_BUCKET_NAME"),
-			"rwhBQCredentials": os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS_ESCAPED"),
+			"rwhBQProject":                        os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_PROJECT"),
+			"rwhBQLocation":                       os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_LOCATION"),
+			"rwhBQBucketName":                     os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_BUCKET_NAME"),
+			"rwhBQCredentials":                    os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS_ESCAPED"),
 		},
 	)
 
@@ -804,7 +803,6 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-
 // Verify Event Models EndPoint
 func TestEventModels(t *testing.T) {
 	// GET /schemas/event-models
@@ -931,7 +929,6 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 		panic(fmt.Errorf("error occurred with executing brt jobs function for events count with err %s", err.Error()))
 	}
 }
-
 
 // Verify Event in WareHouse Postgres
 func TestWHPostgresDestination(t *testing.T) {
