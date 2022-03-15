@@ -1917,7 +1917,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	}
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 1", func() {
-			var mergedJob storeMessage
+			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
@@ -2019,7 +2019,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	})
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 2", func() {
-			var mergedJob storeMessage
+			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
