@@ -63,7 +63,7 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 //NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
-	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem)
+	fileObjects, err := b.FM.ListFilesWithPrefix(context.TODO(), "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
@@ -167,7 +167,7 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 		pkgLogger.Errorf("error while getting absolute path: %v", err)
 		return "", fmt.Errorf("error while getting absolute path: %w", err)
 	}
-	err = b.FM.Download(tmpFilePtr, completeFileName)
+	err = b.FM.Download(context.TODO(), tmpFilePtr, completeFileName)
 	if err != nil {
 		if err == filemanager.ErrKeyNotFound {
 			pkgLogger.Debugf("file not found")
@@ -318,7 +318,7 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 		return fmt.Errorf("error while opening file, %w", err)
 	}
 	defer uploadFilePtr.Close()
-	_, err = b.FM.Upload(uploadFilePtr, fileNamePrefixes[1:len(fileNamePrefixes)-1]...)
+	_, err = b.FM.Upload(context.TODO(), uploadFilePtr, fileNamePrefixes[1:len(fileNamePrefixes)-1]...)
 	if err != nil {
 		return fmt.Errorf("error while uploading cleaned file: %w", err)
 	}
@@ -336,7 +336,7 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 	}
 	defer statusTrackerFilePtr.Close()
 
-	_, err = b.FM.Upload(statusTrackerFilePtr)
+	_, err = b.FM.Upload(context.TODO(), statusTrackerFilePtr)
 	if err != nil {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
@@ -588,7 +588,7 @@ func getFileSize(fileAbsPath string) int {
 
 func (b *Batch) cleanup(prefix string) {
 	pkgLogger.Debugf("removing all temporary files & directory locally & from destination.")
-	err := b.FM.DeleteObjects([]string{filepath.Join(prefix, StatusTrackerFileName)})
+	err := b.FM.DeleteObjects(context.TODO(), []string{filepath.Join(prefix, StatusTrackerFileName)})
 	if err != nil {
 		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}

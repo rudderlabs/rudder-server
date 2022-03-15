@@ -154,7 +154,7 @@ func insertMinioData() {
 		if err != nil {
 			panic(err)
 		}
-		uploadOutput, err := fm.Upload(filePtr)
+		uploadOutput, err := fm.Upload(context.TODO(), filePtr)
 		if err != nil {
 			panic(err)
 		}
@@ -452,7 +452,7 @@ func verifyBatchDelete(t *testing.T) {
 	}
 	defer os.Remove(DownloadedFileName)
 	key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
-	err = fm.Download(filePtr, key)
+	err = fm.Download(context.TODO(), filePtr, key)
 	if err != nil {
 		require.NoError(t, err, "batch verification failed")
 	}
