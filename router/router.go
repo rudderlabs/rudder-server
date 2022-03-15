@@ -1130,7 +1130,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
-		if respStatusCode >= 500 {
+		if respStatusCode >= 500 && respStatusCode < 1113 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
