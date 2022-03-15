@@ -632,8 +632,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
-	conf, _ := json.Marshal(batchJobs.BatchDestination.Destination.Config)
-	fmt.Println(string(conf))
 	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{

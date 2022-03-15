@@ -23,6 +23,8 @@ type WareHouseDestinationTest struct {
 	UserId         string
 	Schema         string
 	BQContext      context.Context
+	Tables         []string
+	PrimaryKeys    []string
 }
 
 type WareHouseTest struct {
@@ -105,5 +107,4 @@ func InitWHConfig() {
 	clickhouse.Init()
 	mssql.Init()
 	bq.Init()
-
 }

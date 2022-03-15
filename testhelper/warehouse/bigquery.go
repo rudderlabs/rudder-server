@@ -16,14 +16,12 @@ type BiqQueryTest struct {
 	Context     context.Context
 	EventsMap   EventsCountMap
 	WriteKey    string
+	Tables      []string
+	PrimaryKeys []string
 }
 
 // SetWHBigQueryDestination setup warehouse Big query destination
 func SetWHBigQueryDestination() (cleanup func()) {
-
-	fmt.Println(os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS"))
-	fmt.Println("##################################")
-
 	Test.BQTest = &BiqQueryTest{
 		WriteKey: randString(27),
 		Credentials: &bigquery.BQCredentialsT{
@@ -39,10 +37,13 @@ func SetWHBigQueryDestination() (cleanup func()) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
+			"_groups":       1,
 			"gateway":       6,
 			"batchRT":       8,
 		},
-		Context: context.Background(),
+		Context:     context.Background(),
+		Tables:      []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		PrimaryKeys: []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
 	}
 	bqTest := Test.BQTest
 	credentials := bqTest.Credentials
@@ -59,7 +60,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 	err = backoff.Retry(operation, backoffWithMaxRetry)
 
 	if err = backoff.Retry(operation, backoffWithMaxRetry); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse postgres with error: %s", err.Error()))
+		panic(fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error()))
 	}
 	return
 }
