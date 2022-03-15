@@ -1153,8 +1153,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				//Getting all the destinations which are enabled for this
 				//event
-				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
-				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+				// backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
+				// enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
@@ -1162,10 +1162,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
-				if len(enabledDestTypes) == 0 {
-					proc.logger.Debug("No enabled destinations")
-					continue
-				}
+				// if len(enabledDestTypes) == 0 {
+				// 	proc.logger.Debug("No enabled destinations")
+				// 	continue
+				// }
 
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 
