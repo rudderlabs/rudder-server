@@ -2002,8 +2002,9 @@ var _ = Describe("TestSubJobMerger", func() {
 					start:       time.Date(2022, time.March, 10, 10, 10, 10, 12, time.UTC),
 				},
 			}
+			mergedJobPtr := &mergedJob
 			for _, subJob := range subJobs {
-				mergedJob = subJobMerger(mergedJob, subJob)
+				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
 			}
 			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
 			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
@@ -2077,8 +2078,9 @@ var _ = Describe("TestSubJobMerger", func() {
 					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
 				},
 			}
+			mergedJobPtr := &mergedJob
 			for _, subJob := range subJobs {
-				mergedJob = subJobMerger(mergedJob, subJob)
+				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
 			}
 			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
 			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
