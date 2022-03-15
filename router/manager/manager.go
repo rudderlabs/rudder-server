@@ -46,14 +46,14 @@ func (r *LifecycleManager) Run(ctx context.Context) error {
 func (r *LifecycleManager) StartNew() {
 	r.rt = &router.Factory{
 		Reporting:     r.reportingI,
-		Multitenant:   multitenant.NOOP,
+		Multitenant:   r.multitenantStats,
 		BackendConfig: r.backendConfig,
 		RouterDB:      r.tenantRouterDB,
 		ProcErrorDB:   r.errDB,
 	}
 	r.brt = &batchrouter.Factory{
 		Reporting:     r.reportingI,
-		Multitenant:   multitenant.NOOP,
+		Multitenant:   r.multitenantStats,
 		BackendConfig: r.backendConfig,
 		RouterDB:      r.batchRouterDB,
 		ProcErrorDB:   r.errDB,
@@ -77,7 +77,7 @@ func (r *LifecycleManager) Stop() {
 
 // NewRouterManager creates a new Router instance
 func NewRouterManager(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
-	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
+	tenantRouterDB *jobsdb.MultiTenantHandleT, multitenantStat multitenant.MultiTenantI) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
@@ -88,7 +88,7 @@ func NewRouterManager(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
 		tenantRouterDB:   tenantRouterDB,
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
-		multitenantStats: multitenant.NOOP,
+		multitenantStats: multitenantStat,
 		backendConfig:    backendconfig.DefaultBackendConfig,
 	}
 }
