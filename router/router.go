@@ -633,7 +633,7 @@ func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostP
 		}
 	}
 
-	return responseArray, fmt.Errorf("transformer response unmarshal error: %w", err)
+	return responseArray, err
 }
 
 func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
@@ -751,7 +751,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
-						respStatusCode, respBody = 400, err.Error()
+						respStatusCode, respBody = 400, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
