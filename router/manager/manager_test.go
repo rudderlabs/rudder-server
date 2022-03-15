@@ -164,7 +164,7 @@ func TestRouterManager(t *testing.T) {
 	initRouter()
 	stats.Setup()
 	pkgLogger = logger.NewLogger().Child("router")
-	//c := make(chan bool)
+	c := make(chan bool)
 
 	asyncHelper := testutils.AsyncTestHelper{}
 	asyncHelper.Setup()
@@ -179,7 +179,7 @@ func TestRouterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-		gomock.Any()).AnyTimes()
+		gomock.Any()).Do(func() {c <- true}).AnyTimes()
 
 
 	ctx := context.Background()
@@ -216,7 +216,7 @@ func TestRouterManager(t *testing.T) {
 	r.reportingI = &reportingNOOP{}
 	go r.StartNew()
 	//<- c
-	time.Sleep(1*time.Minute)
+	//time.Sleep(1*time.Minute)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
@@ -226,8 +226,8 @@ func TestRouterManager(t *testing.T) {
 	brtDb.Start()
 	errDb.Start()
 	go r.StartNew()
-	//<- c
-	time.Sleep(1*time.Minute)
+	<- c
+	//time.Sleep(1*time.Minute)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
