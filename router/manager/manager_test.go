@@ -164,19 +164,22 @@ func TestRouterManager(t *testing.T) {
 	initRouter()
 	stats.Setup()
 	pkgLogger = logger.NewLogger().Child("router")
+	//c := make(chan bool)
 
 	asyncHelper := testutils.AsyncTestHelper{}
 	asyncHelper.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
-	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Times(2).Do(func(
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
 		channel chan utils.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
 		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-	})
+	}).AnyTimes()
+	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		gomock.Any()).AnyTimes()
 
 
 	ctx := context.Background()
@@ -208,23 +211,23 @@ func TestRouterManager(t *testing.T) {
 	brtDb.Start()
 	errDb.Start()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDb}
-	r := NewRouterManager(ctx, brtDb, errDb, tDb)
+	r := NewRouterManager(ctx, brtDb, errDb, tDb, mockMTI)
 	r.backendConfig = mockBackendConfig
-	r.multitenantStats = mockMTI
 	r.reportingI = &reportingNOOP{}
 	go r.StartNew()
-	time.Sleep(10*time.Second)
+	//<- c
+	time.Sleep(1*time.Minute)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
 	errDb.Stop()
 
-
 	rtDb.Start()
 	brtDb.Start()
 	errDb.Start()
 	go r.StartNew()
-	time.Sleep(10*time.Second)
+	//<- c
+	time.Sleep(1*time.Minute)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
