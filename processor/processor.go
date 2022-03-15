@@ -1342,8 +1342,9 @@ func (proc *HandleT) processJobsForDest(subJobs subJobT, parsedEventList [][]typ
 	}
 	processTime := time.Since(start)
 	proc.processJobsTime.SendTiming(processTime)
+	processJobThroughput := throughputPerSecond(totalEvents, processTime)
 	//processJob throughput per second.
-	proc.processJobThroughput.Count(int(float64(totalEvents) / (float64(processTime) / float64(time.Second))))
+	proc.processJobThroughput.Count(processJobThroughput)
 	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -1430,7 +1431,9 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	destProcTime := time.Since(destProcStart)
 	defer proc.destProcessing.SendTiming(destProcTime)
 
-	proc.transformationsThroughput.Count(int(float64(in.totalEvents) / (float64(destProcTime) / float64(time.Second))))
+	//this tells us how many transformations we are doing per second.
+	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
+	proc.transformationsThroughput.Count(transformationsThroughput)
 	return storeMessage{
 		in.statusList,
 		destJobs,
@@ -1565,7 +1568,8 @@ func (proc *HandleT) Store(in storeMessage) {
 	proc.statDBW.Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
 	//DB write throughput per second.
-	proc.DBWriteThroughput.Count(int(float64(len(destJobs)) / (float64(dbWriteTime) / float64(time.Second))))
+	dbWriteThroughput := throughputPerSecond(len(destJobs), dbWriteTime)
+	proc.DBWriteThroughput.Count(dbWriteThroughput)
 	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
 	proc.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -2278,8 +2282,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				dbReadThroughput := throughputPerSecond(events, dbReadTime)
 				//DB read throughput per second.
-				proc.DBReadThroughput.Count(int(float64(events) / (float64(dbReadTime) / float64(time.Second))))
+				proc.DBReadThroughput.Count(dbReadThroughput)
 
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
@@ -2303,6 +2308,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
+	//we need the below buffer size to ensure that `proc.Store(*mergedJob)` is not blocking rest of the Go routines.
 	chStore := make(chan storeMessage, (bufferSize+1)*(maxEventsToProcess/subJobSize+1))
 	wg.Add(1)
 	go func() {
@@ -2367,6 +2373,11 @@ func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) *storeMessage {
 	mergedJob.totalEvents += subJob.totalEvents
 
 	return mergedJob
+}
+
+func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
+	normalizedTime := (float64(timeTaken) / float64(time.Second))
+	return int(float64(processedJob) / normalizedTime)
 }
 
 func (proc *HandleT) crashRecover() {
