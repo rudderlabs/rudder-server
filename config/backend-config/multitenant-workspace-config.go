@@ -64,6 +64,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) Get(workspaces string) (Confi
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	//TODO : Uncomment it and add tests once we have cluster managers ready
 	//To support existing multitenant behaviour
 	// url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
 	// workspacesString := ""
@@ -125,7 +126,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) makeHTTPRequest(url string) (
 	if err != nil {
 		return []byte{}, 400, err
 	}
-
+	//TODO : Uncomment it and add tests once we have cluster managers ready
 	// req.SetBasicAuth(multitenantWorkspaceSecret, "")
 	req.SetBasicAuth(multiWorkspaceSecret, "")
 	//To support existing multitenant behaviour

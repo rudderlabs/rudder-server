@@ -435,7 +435,9 @@ func (bc *CommonBackendConfig) StartPolling(workspaces string) {
 func (bc *CommonBackendConfig) StopPolling() {
 	bc.cancel()
 	<-bc.blockChan
+	initializedLock.Lock()
 	initialized = false
+	initializedLock.Unlock()
 }
 
 func GetConfigBackendURL() string {
