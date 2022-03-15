@@ -359,7 +359,7 @@ func uploadLoadFile(filePath string, destination *backendconfig.DestinationT) (u
 
 	// uploading file to object storage
 	keyPrefixes := []string{rudderConnectionTestingFolder, destination.ID, time.Now().Format("01-02-2006")}
-	uploadOutput, err = uploader.Upload(uploadFile, keyPrefixes...)
+	uploadOutput, err = uploader.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to upload test file %s for testing destinationID: %s with error: %s", filePath, destination.ID, err)
 		return
@@ -409,7 +409,7 @@ func downloadLoadFile(location string, destination *backendconfig.DestinationT) 
 	defer testFile.Close()
 
 	// downloading temporary file to specified from object storage location
-	err = downloader.Download(testFile, location)
+	err = downloader.Download(context.TODO(), testFile, location)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to download test file %s for testing this destination id %s: err %v", location, destination.ID, err)
 		return
