@@ -1749,7 +1749,7 @@ var _ = Describe("TestJobSplitter", func() {
 		It("default subJobSize: 2k", func() {
 			loadConfig()
 
-			expectedSubJobs := []subJobT{
+			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
 						{
@@ -1777,7 +1777,7 @@ var _ = Describe("TestJobSplitter", func() {
 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
 			loadConfig()
 			subJobSize = 1
-			expectedSubJobs := []subJobT{
+			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
 						{
@@ -1824,7 +1824,7 @@ var _ = Describe("TestJobSplitter", func() {
 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
 			loadConfig()
 			subJobSize = 2
-			expectedSubJobs := []subJobT{
+			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
 						{
