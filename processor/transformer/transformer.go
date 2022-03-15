@@ -319,7 +319,10 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	for {
 		s := time.Now()
 		trace.WithRegion(ctx, "request/post", func() {
-			resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+			client := http.Client{}
+			resp, err = client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+			// resp, err = http.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+			// resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 		})
 		if err == nil {
 			//If no err returned by client.Post, reading body.
