@@ -1164,7 +1164,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for workspace := range batchRouterWorkspaceJobStatusCount {
 		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			brt.multitenantI.RemoveFromInMemoryCount(workspace, destID, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
+			brt.multitenantI.RemoveFromInMemoryCount(workspace, brt.destType, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
 		}
 	}
 	//tracking batch router errors
@@ -1598,7 +1598,7 @@ func (worker *workerT) workerProcess() {
 						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
-					brt.multitenantI.RemoveFromInMemoryCount(destDrainStat.Workspace, destID, drainStatsbyDest[destID].Count, "batch_router")
+					brt.multitenantI.RemoveFromInMemoryCount(destDrainStat.Workspace, brt.destType, drainStatsbyDest[destID].Count, "batch_router")
 				}
 			}
 			//Mark the jobs as executing

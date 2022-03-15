@@ -385,6 +385,11 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.backendConfigSubscriber()
 	})
 
+	g.Go(func() error {
+		proc.sendMetrics(ctx)
+		return nil
+	})
+
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
 		return nil
@@ -398,6 +403,30 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.transformer.Setup()
 
 	proc.crashRecover()
+}
+
+func (proc *HandleT) sendMetrics(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(statsInterval):
+			pendingJobCounts := proc.multitenantI.Status()
+			for tableType, tableStats := range pendingJobCounts {
+				for workspace, workspaceStats := range tableStats {
+					for destType, destTypeCount := range workspaceStats {
+						pendingEventCountStat := stats.NewTaggedStat("pending_event_count",
+							stats.GaugeType, stats.Tags{
+								"workspace":   workspace,
+								"destType":    destType,
+								"tablePrefix": tableType,
+							})
+						pendingEventCountStat.Gauge(destTypeCount)
+					}
+				}
+			}
+		}
+	}
 }
 
 // Start starts this processor's main loops.
@@ -458,6 +487,7 @@ var (
 	pollInterval              time.Duration
 	isUnLocked                bool
 	GWCustomVal               string
+	statsInterval             time.Duration
 )
 
 func loadConfig() {
@@ -487,6 +517,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
+	config.RegisterDurationConfigVariable(time.Duration(60), &statsInterval, true, time.Second, []string{"statsInterval", "statsIntervalInS"}...)
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
@@ -1491,8 +1522,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			if !ok {
 				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
 			}
-			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 

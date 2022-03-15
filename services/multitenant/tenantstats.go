@@ -8,10 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -50,12 +47,7 @@ type workspaceScore struct {
 }
 
 func Init() {
-	loadConfig()
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
-}
-
-func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(60), &multiTenantStatFrequency, true, time.Second, []string{"pendingEventCountStatFrequency", "pendingEventCountStatFrequencyInS"}...)
 }
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
@@ -82,36 +74,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 
 	multitenantStat.processorStageTime = time.Now()
 
-	rruntime.Go(func() {
-		multitenantStat.sendStats()
-	})
-
 	return &multitenantStat
-}
-
-func (multitenantStat *MultitenantStatsT) sendStats() {
-	multiTenantStatTicker := time.NewTicker(multiTenantStatFrequency)
-	defer multiTenantStatTicker.Stop()
-	for range multiTenantStatTicker.C {
-		func() {
-			multitenantStat.routerJobCountMutex.RLock()
-			defer multitenantStat.routerJobCountMutex.RUnlock()
-
-			for tableType, tableStats := range multitenantStat.routerNonTerminalCounts {
-				for workspace, workspaceStats := range tableStats {
-					for destType, destTypeCount := range workspaceStats {
-						pendingEventCountStat := stats.NewTaggedStat("pending_event_count",
-							stats.GaugeType, stats.Tags{
-								"workspace":   workspace,
-								"destType":    destType,
-								"tablePrefix": tableType,
-							})
-						pendingEventCountStat.Gauge(destTypeCount)
-					}
-				}
-			}
-		}()
-	}
 }
 
 //returns nonTerminalCounts
@@ -349,6 +312,8 @@ func (multitenantStat *MultitenantStatsT) getWorkspacesWithPendingJobs(destType 
 			val, ok := destWiseMap[destType]
 			if ok && val > 0 {
 				workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
+			} else if ok {
+				pkgLogger.Errorf("ws: %s, val: %d, ok: %v, destWiseMap: %v", workspaceKey, val, ok, destWiseMap)
 			}
 		}
 	}
