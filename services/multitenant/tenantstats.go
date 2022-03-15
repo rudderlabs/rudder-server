@@ -312,7 +312,7 @@ func (multitenantStat *MultitenantStatsT) getWorkspacesWithPendingJobs(destType 
 			val, ok := destWiseMap[destType]
 			if ok && val > 0 {
 				workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
-			} else if ok {
+			} else if val < 0 {
 				pkgLogger.Errorf("ws: %s, val: %d, ok: %v, destWiseMap: %v", workspaceKey, val, ok, destWiseMap)
 			}
 		}

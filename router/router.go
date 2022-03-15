@@ -1146,6 +1146,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Lock()
 			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 			worker.retryForJobMapMutex.Unlock()
+		} else if respStatusCode == 1113 {
+			addToFailedMap = false
 		} else {
 			status.JobState = jobsdb.Aborted.State
 		}
