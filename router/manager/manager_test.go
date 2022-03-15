@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest"
@@ -13,13 +14,16 @@ import (
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"log"
 	"os"
 	"os/signal"
@@ -106,9 +110,37 @@ func blockOnHold() {
 	<-c
 }
 
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+}
+func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
+}
+func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
+}
+
+const (
+	WriteKeyEnabled           = "enabled-write-key"
+	SourceIDEnabled           = "enabled-source"
+	GADestinationID           = "did1"
+	GADestinationDefinitionID = "gaid1"
+)
+
 var (
+	workspaceID = uuid.Must(uuid.NewV4()).String()
+	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 	sampleBackendConfig = backendConfig.ConfigT{
-		Sources: []backendConfig.SourceT{},
+		Sources: []backendConfig.SourceT{
+			{
+				WorkspaceID:  workspaceID,
+				ID:           SourceIDEnabled,
+				WriteKey:     WriteKeyEnabled,
+				Enabled:      true,
+				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
+					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			},
+		},
 	}
 )
 
@@ -131,13 +163,20 @@ func TestRouterManager(t *testing.T) {
 	RegisterTestingT(t)
 	initRouter()
 	stats.Setup()
+	pkgLogger = logger.NewLogger().Child("router")
 
 	asyncHelper := testutils.AsyncTestHelper{}
 	asyncHelper.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
+	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Times(2)
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Times(2).Do(func(
+		channel chan utils.DataEvent, topic backendConfig.Topic) {
+		// on Subscribe, emulate a backend configuration event
+		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+	})
 
 
 	ctx := context.Background()
@@ -171,8 +210,10 @@ func TestRouterManager(t *testing.T) {
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDb}
 	r := NewRouterManager(ctx, brtDb, errDb, tDb)
 	r.backendConfig = mockBackendConfig
+	r.multitenantStats = mockMTI
+	r.reportingI = &reportingNOOP{}
 	go r.StartNew()
-	time.Sleep(1*time.Second)
+	time.Sleep(10*time.Second)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
@@ -183,7 +224,7 @@ func TestRouterManager(t *testing.T) {
 	brtDb.Start()
 	errDb.Start()
 	go r.StartNew()
-	time.Sleep(1*time.Second)
+	time.Sleep(10*time.Second)
 	r.Stop()
 	rtDb.Stop()
 	brtDb.Stop()
