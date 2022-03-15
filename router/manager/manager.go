@@ -31,7 +31,6 @@ type LifecycleManager struct {
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
 	tenantRouterDB   *jobsdb.MultiTenantHandleT
-	DBs              *jobsdb.DBs
 	multitenantStats multitenant.MultiTenantI
 	reportingI       types.ReportingI
 	backendConfig    backendconfig.BackendConfig
