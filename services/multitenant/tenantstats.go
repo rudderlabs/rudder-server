@@ -90,12 +90,11 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 	multitenantStat := MultitenantStatsT{}
 	multitenantStat.routerNonTerminalCounts = make(map[string]map[string]map[string]*Counter)
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
-	multitenantStat.routerInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
 	for routerType := range routerDBs {
 		multitenantStat.routerNonTerminalCounts[routerType] = make(map[string]map[string]*Counter)
+		multitenantStat.routerInputRates[routerType] = make(map[string]map[string]misc.MovingAverage)
 		pileUpStatMap := make(map[string]map[string]int)
 		routerDBs[routerType].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {

@@ -55,7 +55,7 @@ var _ = Describe("tenantStats", func() {
 
 		It("TenantStats init", func() {
 
-			Expect(len(tenantStats.routerInputRates)).To(Equal(2))
+			Expect(len(tenantStats.routerInputRates)).To(Equal(1))
 			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(1))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
