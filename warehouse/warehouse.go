@@ -103,6 +103,20 @@ const (
 	triggerUploadQPName = "triggerUpload"
 )
 
+var whDestNameMap = map[string]string{
+	"BQ":             "bigquery",
+	"RS":             "redshift",
+	"MSSQL":          "mssql",
+	"POSTGRES":       "postgres",
+	"SNOWFLAKE":      "snowflake",
+	"CLICKHOUSE":     "clickhouse",
+	"DELTALAKE":      "deletalake",
+	"S3_DATALAKE":    "s3_datalake",
+	"GCS_DATALAKE":   "gcs_datalake",
+	"AZURE_DATALAKE": "azure_datalake",
+	"AZURE_SYNAPSE":  "azure_synapse",
+}
+
 type WorkerIdentifierT string
 type JobIDT int64
 
@@ -335,14 +349,14 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 		}
 	}
+	// TODO: Move config to global level based on use case
+	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whDestNameMap[destType]), "")
+	if namespacePrefix != "" {
+		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
+	}
 	var exists bool
 	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
-		// TODO: Move config to global based on use case
-		var namespacePrefix string
-		if destType == "BQ" {
-			namespacePrefix = config.GetString("Warehouse.bigquery.customDatasetPrefix", "")
-		}
-		namespace = warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
+		namespace = warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return namespace
 }
