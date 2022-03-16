@@ -533,8 +533,8 @@ func getValidNonTerminalStates() (validNonTerminalStates []string) {
 }
 
 var (
-	host, user, password, dbname, sslmode string
-	port                                  int
+	host, user, password, dbname, sslmode, appName string
+	port                                           int
 )
 
 var (
@@ -567,6 +567,9 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
+	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
+	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -604,8 +607,8 @@ func Init2() {
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+		"password=%s dbname=%s sslmode=%s application_name=%s",
+		host, port, user, password, dbname, sslmode, appName)
 
 }
 
@@ -2881,7 +2884,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// get a file uploader
 	fileUploader, errored := jd.getFileUploader()
 	jd.assertError(errored)
-	output, err = fileUploader.Upload(file, pathPrefixes...)
+	output, err = fileUploader.Upload(context.TODO(), file, pathPrefixes...)
 
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
