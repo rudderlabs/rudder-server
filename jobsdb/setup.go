@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -36,15 +37,23 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 		"Datasets": datasetIndices,
 	}
 
+	psqlInfo := GetConnectionString()
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(fmt.Errorf("Error DB for migrate open: %w", err))
+	}
+
+	defer db.Close()
+
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
-		Handle:                     jd.dbHandle,
+		Handle:                     db,
 		MigrationsTable:            jd.SchemaMigrationTable(),
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 
 	// execute any necessary migrations
-	err := m.MigrateFromTemplates("jobsdb", templateData)
+	err = m.MigrateFromTemplates("jobsdb", templateData)
 	if err != nil {
 		panic(fmt.Errorf("Error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
 	}
