@@ -74,6 +74,7 @@ func Init() {
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
+	fmt.Println("transformMessage: %+v", *transformMessage)
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
 		errTmp := fmt.Errorf("jobId: %d, err: %v", transformMessage.Data[0].JobMetadata.JobID, err)
