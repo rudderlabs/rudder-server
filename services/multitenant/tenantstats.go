@@ -18,44 +18,8 @@ var (
 	multiTenantStatFrequency time.Duration
 )
 
-type Counter struct {
-	ch    chan func()
-	count int
-}
-
-func NewChannelCounter() *Counter {
-	counter := &Counter{make(chan func(), 256), 0}
-	go func(counter *Counter) {
-		for f := range counter.ch {
-			f()
-		}
-	}(counter)
-	return counter
-}
-
-func (c *Counter) Add(num int) {
-	c.ch <- func() {
-		c.count += num
-	}
-}
-
-func (c *Counter) Sub(num int) {
-	c.ch <- func() {
-		c.count -= num
-	}
-}
-
-func (c *Counter) Read() int {
-	ret := make(chan int)
-	c.ch <- func() {
-		ret <- c.count
-		close(ret)
-	}
-	return <-ret
-}
-
 type MultitenantStatsT struct {
-	routerNonTerminalCounts map[string]map[string]map[string]*Counter
+	routerNonTerminalCounts map[string]*Counter
 	routerJobCountMutex     sync.RWMutex
 	routerInputRates        map[string]map[string]map[string]misc.MovingAverage
 	lastDrainedTimestamps   map[string]map[string]time.Time
@@ -88,12 +52,12 @@ func Init() {
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat := MultitenantStatsT{}
-	multitenantStat.routerNonTerminalCounts = make(map[string]map[string]map[string]*Counter)
+	multitenantStat.routerNonTerminalCounts = make(map[string]*Counter)
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
 	for routerType := range routerDBs {
-		multitenantStat.routerNonTerminalCounts[routerType] = make(map[string]map[string]*Counter)
+		multitenantStat.routerNonTerminalCounts[routerType] = NewChannelCounter()
 		multitenantStat.routerInputRates[routerType] = make(map[string]map[string]misc.MovingAverage)
 		pileUpStatMap := make(map[string]map[string]int)
 		routerDBs[routerType].GetPileUpCounts(pileUpStatMap)
@@ -115,13 +79,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 func (multitenantStat *MultitenantStatsT) Status() map[string]map[string]map[string]int {
 	counts := make(map[string]map[string]map[string]int)
 	for tableType, tableCounts := range multitenantStat.routerNonTerminalCounts {
-		counts[tableType] = make(map[string]map[string]int)
-		for workspace, workspaceCounts := range tableCounts {
-			counts[tableType][workspace] = make(map[string]int)
-			for destType, destCounts := range workspaceCounts {
-				counts[tableType][workspace][destType] = destCounts.Read()
-			}
-		}
+		counts[tableType] = tableCounts.Read()
 	}
 	return counts
 }
@@ -169,27 +127,11 @@ func (multitenantStat *MultitenantStatsT) CalculateSuccessFailureCounts(workspac
 }
 
 func (multitenantStat *MultitenantStatsT) AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	_, ok := multitenantStat.routerNonTerminalCounts[tableType][workspaceID]
-	if !ok {
-		multitenantStat.routerNonTerminalCounts[tableType][workspaceID] = make(map[string]*Counter)
-	}
-	_, ok = multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType]
-	if !ok {
-		multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] = NewChannelCounter()
-	}
-	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType].Add(count)
+	multitenantStat.routerNonTerminalCounts[tableType].Add(workspaceID, destinationType, count)
 }
 
 func (multitenantStat *MultitenantStatsT) RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	_, ok := multitenantStat.routerNonTerminalCounts[tableType][workspaceID]
-	if !ok {
-		multitenantStat.routerNonTerminalCounts[tableType][workspaceID] = make(map[string]*Counter)
-	}
-	_, ok = multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType]
-	if !ok {
-		multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType] = NewChannelCounter()
-	}
-	multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType].Sub(count)
+	multitenantStat.routerNonTerminalCounts[tableType].Sub(workspaceID, destinationType, count)
 	// if multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType].Read() < 0 {
 	// 	panic("removed but now < 0: " + destinationType) //TODO: REMOVE
 	// }

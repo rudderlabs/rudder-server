@@ -112,8 +112,8 @@ var _ = Describe("tenantStats", func() {
 
 			netCountWID1 := addJobWID1 - removeJobWID1
 			netCountWID2 := addJobWID2 - removeJobWID2
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read()).To(Equal(netCountWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1].Read()).To(Equal(netCountWID2))
+			Expect(tenantStats.routerNonTerminalCounts["router"].Read()[workspaceID1][destType1]).To(Equal(netCountWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"].Read()[workspaceID2][destType1]).To(Equal(netCountWID2))
 		})
 
 		It("Add and Remove from InMemory Counts", func() {
@@ -126,8 +126,8 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID2][destType1] = addJobWID2
 
 			tenantStats.ReportProcLoopAddStats(input, "router")
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read()).To(Equal(addJobWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1].Read()).To(Equal(addJobWID2))
+			Expect(tenantStats.routerNonTerminalCounts["router"].Read()[workspaceID1][destType1]).To(Equal(addJobWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"].Read()[workspaceID2][destType1]).To(Equal(addJobWID2))
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -208,7 +208,7 @@ func Benchmark_Counts(b *testing.B) {
 	}
 	errgroup.Wait()
 
-	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read())
+	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"].Read()[workspaceID1][destType1])
 }
 
 func Benchmark_Counts_Atomic(b *testing.B) {
