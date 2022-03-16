@@ -82,6 +82,7 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
+	maxParallelJobCreation              int
 )
 
 var (
@@ -178,6 +179,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
+	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -686,13 +688,19 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 			continue
 		}
 
+		jobCreationChan := make(chan struct{}, maxParallelJobCreation)
 		wg := sync.WaitGroup{}
+		wg.Add(len(wh.warehouses))
 		wh.configSubscriberLock.RLock()
 		for _, warehouse := range wh.warehouses {
+			jobCreationChan <- struct{}{}
 			w := warehouse
-			wg.Add(1)
 			rruntime.Go(func() {
-				defer wg.Done()
+				defer func() {
+					wg.Done()
+					<-jobCreationChan
+				}()
+
 				pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
 				err := wh.createJobs(w)
 				if err != nil {
