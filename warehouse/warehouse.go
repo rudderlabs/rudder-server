@@ -689,13 +689,13 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		}
 
 		jobCreationChan := make(chan struct{}, maxParallelJobCreation)
+		wh.configSubscriberLock.RLock()
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
-		wh.configSubscriberLock.RLock()
 		for _, warehouse := range wh.warehouses {
-			jobCreationChan <- struct{}{}
 			w := warehouse
 			rruntime.Go(func() {
+				jobCreationChan <- struct{}{}
 				defer func() {
 					wg.Done()
 					<-jobCreationChan
