@@ -116,7 +116,7 @@ var partitionKeyMap = map[string]string{
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	// TODO: do we need sorted order here?
 	keys := []string{}
 	for colName := range columns {
@@ -144,7 +144,7 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["id"]; ok {
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -761,62 +761,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
-	rsClient, err := rs.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer rsClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
-	pkgLogger.Infof("Creating test schema name in redshift for destinationID: %v with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rsClient.SQL.Exec(sqlStatement)
-	return
-}
-
-func (rs *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
-	rsClient, err := rs.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer rsClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
-		rs.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rsClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
-	_, err = rsClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
-	}
-	return
-}
-
-func (rs *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
-	rsClient, err := rs.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer rsClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
-		rs.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rsClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
+func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
@@ -828,6 +773,7 @@ func (rs *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		region = "us-east-1"
 	}
 
+	var sqlStatement string
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
@@ -850,14 +796,6 @@ func (rs *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		)
 	}
 
-	_, err = rsClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
-	_, err = rsClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("Error dropping staging tables in redshift for destinationID: %s with sqlStatement: %v", rs.Warehouse.Destination.ID, sqlStatement)
-	}
+	_, err = client.SQL.Exec(sqlStatement)
 	return
 }

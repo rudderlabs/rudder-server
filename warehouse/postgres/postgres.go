@@ -140,7 +140,7 @@ func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	}
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -517,7 +517,7 @@ func (pg *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -733,76 +733,13 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
-	pgClient, err := pg.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer pgClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
-	pkgLogger.Infof("Creating test schema name in clickhouse for destinationID: %v with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pgClient.SQL.Exec(sqlStatement)
-	return
-}
-
-func (pg *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
-	pgClient, err := pg.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer pgClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
-		pg.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pgClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
-	_, err = pgClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("Error dropping staging tables in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
-	}
-	return
-}
-
-func (pg *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
-	pgClient, err := pg.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer pgClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
-		pg.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pgClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		pg.Namespace,
 		stagingTableName,
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = pgClient.SQL.Exec(sqlStatement)
-	if err != nil {
-		return
-	}
-
-	_, err = pgClient.SQL.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("Error dropping staging tables in clickhouse for destinationID: %s with sqlStatement: %v", pg.Warehouse.Destination.ID, sqlStatement)
-	}
+	_, err = client.SQL.Exec(sqlStatement)
 	return
 }

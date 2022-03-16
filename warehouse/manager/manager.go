@@ -35,9 +35,7 @@ type ManagerI interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
-	CreateTestSchema(warehouse warehouseutils.WarehouseT) error
-	CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) error
-	LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) error
+	LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) error
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type

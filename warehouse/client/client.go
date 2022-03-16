@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
@@ -115,6 +114,35 @@ func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
+func (cl *Client) sqlQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
+	return cl.sqlQuery(statement)
+}
+
+func (cl *Client) bqQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
+	return
+}
+
+func (cl *Client) dbQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
+	executeResponse, err := cl.DBHandleT.Client.Execute(cl.DBHandleT.Context, &proto.ExecuteRequest{
+		Config:       cl.DBHandleT.CredConfig,
+		SqlStatement: statement,
+		Identifier:   cl.DBHandleT.CredIdentifier,
+	})
+	if err != nil {
+		return
+	}
+	errorCode := executeResponse.GetErrorCode()
+	if (errorCode != "" && errorCode != "42000") || (errorCode != "" && errorCode != "42S02") {
+		err = fmt.Errorf("error while executing with response: %v", executeResponse.GetErrorMessage())
+		return
+	}
+	result = warehouseutils.QueryResult{
+		Columns: []string{},
+		Values:  [][]string{},
+	}
+	return result, nil
+}
+
 func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
@@ -123,6 +151,17 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
+	}
+}
+
+func (cl *Client) QueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
+	switch cl.Type {
+	case BQClient:
+		return cl.bqQueryWrite(statement)
+	case DBClient:
+		return cl.dbQueryWrite(statement)
+	default:
+		return cl.sqlQueryWrite(statement)
 	}
 }
 

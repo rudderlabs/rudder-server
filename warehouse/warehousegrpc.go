@@ -8,11 +8,11 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 )
 
-type warehousegrpc struct {
+type WarehouseGrpc struct {
 	proto.UnimplementedWarehouseServer
 }
 
-func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
+func (w *WarehouseGrpc) GetWHUploads(context context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	uploadsReq := UploadsReqT{
 		WorkspaceID:     request.WorkspaceId,
 		SourceID:        request.SourceId,
@@ -27,7 +27,7 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHU
 	return res, err
 }
 
-func (w *warehousegrpc) TriggerWHUploads(context context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (w *WarehouseGrpc) TriggerWHUploads(context context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadsReq := UploadsReqT{
 		WorkspaceID:   request.WorkspaceId,
 		SourceID:      request.SourceId,
@@ -38,7 +38,7 @@ func (w *warehousegrpc) TriggerWHUploads(context context.Context, request *proto
 	return res, err
 }
 
-func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
+func (w *WarehouseGrpc) GetWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReqT{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -48,11 +48,11 @@ func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUp
 	return res, err
 }
 
-func (w *warehousegrpc) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+func (w *WarehouseGrpc) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
 	return wrapperspb.Bool(UploadAPI.enabled), nil
 }
 
-func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (w *WarehouseGrpc) TriggerWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadReq := UploadReqT{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -60,8 +60,4 @@ func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.
 	}
 	res, err := uploadReq.TriggerWHUpload()
 	return res, err
-}
-
-func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	return w.Validating(ctx, req, UploadAPI)
 }

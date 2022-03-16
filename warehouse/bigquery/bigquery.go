@@ -82,6 +82,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
 }
 
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+	arr := []string{}
+	for name, dataType := range columns {
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
+	}
+	return strings.Join(arr[:], ",")
+}
+
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
 	for columnName, columnType := range columns {
@@ -894,23 +902,15 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
-	bqClient, err := bq.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer bqClient.Close()
-
-	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
+func (bq *HandleT) VerifyCreateSchema(client *client.Client, warehouse warehouseutils.WarehouseT, ctx context.Context) (err error) {
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, warehouse))
 	if location == "" {
 		location = "US"
 	}
 
-	ds := bqClient.BQ.Dataset(bq.Namespace)
-	meta := &bigquery.DatasetMetadata{
+	err = client.BQ.Dataset(warehouse.Namespace).Create(ctx, &bigquery.DatasetMetadata{
 		Location: location,
-	}
-	err = ds.Create(bq.BQContext, meta)
+	})
 	if checkAndIgnoreAlreadyExistError(err) {
 		err = nil
 		return
@@ -918,46 +918,22 @@ func (bq *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err er
 	return
 }
 
-func (bq *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
-	bqClient, err := bq.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer bqClient.Close()
+func (bq *HandleT) VerifyCreateTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
+	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
 
-	sampleSchema := getTableSchema(columns)
-	metaData := &bigquery.TableMetadata{
-		Schema:           sampleSchema,
+	err = tableRef.Create(ctx, &bigquery.TableMetadata{
+		Schema:           getTableSchema(columns),
 		TimePartitioning: &bigquery.TimePartitioning{},
-	}
-	tableRef := bqClient.BQ.Dataset(bq.Namespace).Table(stagingTableName)
-	err = tableRef.Create(bq.BQContext, metaData)
+	})
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return
 	}
 
-	err = tableRef.Delete(bq.BQContext)
+	err = tableRef.Delete(ctx)
 	return
 }
 
-func (bq *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
-	bqClient, err := bq.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer bqClient.Close()
-
-	sampleSchema := getTableSchema(columns)
-	metaData := &bigquery.TableMetadata{
-		Schema:           sampleSchema,
-		TimePartitioning: &bigquery.TimePartitioning{},
-	}
-	tableRef := bqClient.BQ.Dataset(bq.Namespace).Table(stagingTableName)
-	err = tableRef.Create(bq.BQContext, metaData)
-	if !checkAndIgnoreAlreadyExistError(err) {
-		return
-	}
-
+func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -965,7 +941,7 @@ func (bq *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 	gcsRef.IgnoreUnknownValues = false
 
 	outputTable := partitionedTable(stagingTableName, time.Now().Format("2006-01-02"))
-	loader := bqClient.BQ.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+	loader := client.BQ.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(bq.BQContext)
 	if err != nil {
@@ -980,7 +956,5 @@ func (bq *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		err = status.Err()
 		return
 	}
-
-	err = tableRef.Delete(bq.BQContext)
 	return
 }

@@ -32,8 +32,8 @@ const (
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
 const (
-	tableOrViewNotFound = "42S02"
-	databaseNotFound    = "42000"
+	TableOrViewNotFound = "42S02"
+	DatabaseNotFound    = "42000"
 )
 
 var (
@@ -127,8 +127,8 @@ func getDeltaLakeDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-// columnsWithDataTypes returns columns with specified prefix and data type
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+// ColumnsWithDataTypes returns columns with specified prefix and data type
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
 		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
@@ -162,8 +162,8 @@ func GetDatabricksConnectorURL() string {
 	return config.GetEnv("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
-// checkAndIgnoreAlreadyExistError checks and ignores native errors.
-func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
+// CheckAndIgnoreAlreadyExistError checks and ignores native errors.
+func CheckAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
 	if errorCode == "" || errorCode == ignoreError {
 		return true
 	}
@@ -276,7 +276,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	if err != nil {
 		return tableNames, fmt.Errorf("%s Error while fetching tables: %v", dl.GetLogIdentifier(), err)
 	}
-	if !checkAndIgnoreAlreadyExistError(fetchTableResponse.GetErrorCode(), databaseNotFound) {
+	if !CheckAndIgnoreAlreadyExistError(fetchTableResponse.GetErrorCode(), DatabaseNotFound) {
 		err = fmt.Errorf("%s Error while fetching tables with response: %v", dl.GetLogIdentifier(), fetchTableResponse.GetErrorMessage())
 		return
 	}
@@ -311,7 +311,7 @@ func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement
 	if err != nil {
 		return fmt.Errorf("error while executing: %v", err)
 	}
-	if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), databaseNotFound) || !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), tableOrViewNotFound) {
+	if !CheckAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), DatabaseNotFound) || !CheckAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), TableOrViewNotFound) {
 		err = fmt.Errorf("error while executing with response: %v", executeResponse.GetErrorMessage())
 		return
 	}
@@ -340,7 +340,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	if err != nil {
 		return exists, fmt.Errorf("%s Error while fetching schemas: %v", dl.GetLogIdentifier(), err)
 	}
-	if !checkAndIgnoreAlreadyExistError(fetchSchemasResponse.GetErrorCode(), databaseNotFound) {
+	if !CheckAndIgnoreAlreadyExistError(fetchSchemasResponse.GetErrorCode(), DatabaseNotFound) {
 		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
@@ -377,7 +377,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 			Identifier:   dl.dbHandleT.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
-		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+		if err == nil && !CheckAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), TableOrViewNotFound) {
 			continue
 		}
 		if err != nil {
@@ -687,7 +687,7 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
@@ -776,7 +776,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		if err != nil {
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
 		}
-		if !checkAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), tableOrViewNotFound) {
+		if !CheckAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), TableOrViewNotFound) {
 			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetErrorMessage())
 		}
 
@@ -886,7 +886,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
 		return
 	}
-	if !checkAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
+	if !CheckAndIgnoreAlreadyExistError(response.GetErrorCode(), TableOrViewNotFound) {
 		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), response.GetErrorMessage())
 		return
 	}
@@ -977,59 +977,7 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) CreateTestSchema(warehouse warehouseutils.WarehouseT) (err error) {
-	dlClient, err := dl.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer dlClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, dl.Namespace)
-	pkgLogger.Infof("Creating test schema name in deltalake for destinationID: %v with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
-	return
-}
-
-func (dl *HandleT) CreateTestTable(warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string) (err error) {
-	dlClient, err := dl.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer dlClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s ( %v ) USING DELTA;`,
-		dl.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in deltalake for destinationID: %s with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
-	if err != nil {
-		return
-	}
-
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
-	return
-}
-
-func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
-	dlClient, err := dl.Connect(warehouse)
-	if err != nil {
-		return err
-	}
-	defer dlClient.Close()
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s ( %v ) USING DELTA;`,
-		dl.Namespace,
-		stagingTableName,
-		columnsWithDataTypes(columns, ""),
-	)
-	pkgLogger.Infof("Creating test table in deltalake for destinationID: %s with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
-	if err != nil {
-		return
-	}
-
+func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {
@@ -1041,6 +989,7 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		return
 	}
 
+	var sqlStatement string
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = PARQUET "+
@@ -1066,14 +1015,6 @@ func (dl *HandleT) LoadTestTable(location string, warehouse warehouseutils.Wareh
 		)
 	}
 
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, sqlStatement)
-	if err != nil {
-		return
-	}
-
-	err = dl.ExecuteSQLClient(dlClient.DBHandleT, fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("Error dropping staging tables in deltalake for destinationID: %s with sqlStatement: %v", dl.Warehouse.Destination.ID, sqlStatement)
-	}
+	err = dl.ExecuteSQLClient(client.DBHandleT, sqlStatement)
 	return
 }

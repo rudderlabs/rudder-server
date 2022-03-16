@@ -47,7 +47,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
-	timeWindowDestinations              []string
+	TimeWindowDestinations              []string
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -142,7 +142,7 @@ func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
+	TimeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -436,7 +436,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     getLoadFileType(wh.destType),
+		"load_file_type":     GetLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -1049,7 +1049,7 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-func getLoadFileFormat(whType string) string {
+func GetLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
 		return "json.gz"
@@ -1749,7 +1749,7 @@ func Start(ctx context.Context, app app.Interface) error {
 	return g.Wait()
 }
 
-func getLoadFileType(wh string) string {
+func GetLoadFileType(wh string) string {
 	switch wh {
 	case "BQ":
 		return warehouseutils.LOAD_FILE_TYPE_JSON
