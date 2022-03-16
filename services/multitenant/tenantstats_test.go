@@ -56,7 +56,7 @@ var _ = Describe("tenantStats", func() {
 		It("TenantStats init", func() {
 
 			Expect(len(tenantStats.routerInputRates)).To(Equal(2))
-			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(2))
+			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(1))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
 		})
@@ -112,8 +112,8 @@ var _ = Describe("tenantStats", func() {
 
 			netCountWID1 := addJobWID1 - removeJobWID1
 			netCountWID2 := addJobWID2 - removeJobWID2
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(netCountWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(netCountWID2))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read()).To(Equal(netCountWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1].Read()).To(Equal(netCountWID2))
 		})
 
 		It("Add and Remove from InMemory Counts", func() {
@@ -126,8 +126,8 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID2][destType1] = addJobWID2
 
 			tenantStats.ReportProcLoopAddStats(input, "router")
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read()).To(Equal(addJobWID1))
+			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1].Read()).To(Equal(addJobWID2))
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -189,14 +189,12 @@ func Benchmark_Counts(b *testing.B) {
 
 	b.ResetTimer()
 
-	const writeRatio = 10
+	const writeRatio = 1000
 
 	errgroup := errgroup.Group{}
 	errgroup.Go(func() error {
 		for i := 0; i < b.N; i++ {
-			tenantStats.routerJobCountMutex.Lock()
 			tenantStats.AddToInMemoryCount(workspaceID1, destType1, writeRatio+1, "router")
-			tenantStats.routerJobCountMutex.Unlock()
 		}
 		return nil
 	})
@@ -210,7 +208,7 @@ func Benchmark_Counts(b *testing.B) {
 	}
 	errgroup.Wait()
 
-	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1])
+	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1].Read())
 }
 
 func Benchmark_Counts_Atomic(b *testing.B) {

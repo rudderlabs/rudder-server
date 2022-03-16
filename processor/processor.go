@@ -117,6 +117,7 @@ type HandleT struct {
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
+	atomicAdd                      uint64
 }
 
 var defaultTransformerFeatures = `{
@@ -1481,8 +1482,6 @@ type storeMessage struct {
 func (proc *HandleT) Store(in storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
-	processorLoopStats["router"] = make(map[string]map[string]int)
-	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
@@ -1495,14 +1494,19 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadRouterBytes := 0
+		processorLoopStats["router"] = make(map[string]map[string]int)
 		for i := range destJobs {
 			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
 				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
+			// if destJobs[i].CustomVal == "WEBHOOK" {
+			// 	atomic.AddUint64(&proc.atomicAdd, 1)
+			// }
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
@@ -1517,6 +1521,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadBatchBytes := 0
+		processorLoopStats["batch_router"] = make(map[string]map[string]int)
 		for i := range batchDestJobs {
 			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
 			if !ok {
@@ -1525,11 +1530,15 @@ func (proc *HandleT) Store(in storeMessage) {
 			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
 	}
+
+	// proc.logger.Info("************************************************************")
+	// proc.logger.Infof("loaded %s jobs till now", atomic.LoadUint64(&proc.atomicAdd))
 
 	for _, jobs := range in.procErrorJobsByDestID {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
@@ -1568,9 +1577,6 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()

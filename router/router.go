@@ -1130,7 +1130,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
-		if respStatusCode >= 500 && respStatusCode < 1113 {
+		if respStatusCode >= 500 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
@@ -1146,8 +1146,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Lock()
 			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 			worker.retryForJobMapMutex.Unlock()
-		} else if respStatusCode == 1113 {
-			addToFailedMap = false
 		} else {
 			status.JobState = jobsdb.Aborted.State
 		}
@@ -1505,7 +1503,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerWorkspaceJobStatusCount := make(map[string]map[string]int)
+	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1518,14 +1516,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		workspaceID := resp.status.WorkspaceId
-		_, ok := routerWorkspaceJobStatusCount[workspaceID]
-		if !ok {
-			routerWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
-		}
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
-		_, ok = connectionDetailsMap[key]
+		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 			connectionDetailsMap[key] = cd
@@ -1550,11 +1544,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				}
 			}
 		case jobsdb.Succeeded.State:
-			routerWorkspaceJobStatusCount[workspaceID][rt.destName] += 1
+			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 		case jobsdb.Aborted.State:
-			routerWorkspaceJobStatusCount[workspaceID][rt.destName] += 1
+			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
@@ -1605,9 +1599,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	defer func() {
 		for workspace := range routerWorkspaceJobStatusCount {
-			for destType := range routerWorkspaceJobStatusCount[workspace] {
-				rt.MultitenantI.RemoveFromInMemoryCount(workspace, destType, routerWorkspaceJobStatusCount[workspace][destType], "router")
-			}
+			rt.MultitenantI.RemoveFromInMemoryCount(workspace, rt.destName, routerWorkspaceJobStatusCount[workspace], "router")
 		}
 	}()
 
