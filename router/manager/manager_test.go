@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -165,6 +166,7 @@ func TestRouterManager(t *testing.T) {
 	stats.Setup()
 	pkgLogger = logger.NewLogger().Child("router")
 	c := make(chan bool)
+	once := sync.Once{}
 
 	asyncHelper := testutils.AsyncTestHelper{}
 	asyncHelper.Setup()
@@ -181,7 +183,10 @@ func TestRouterManager(t *testing.T) {
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).Do(
 			func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
-				if len(c) == 0 {c<-true}}).AnyTimes()
+				once.Do(func() {
+					close(c)
+				})
+			}).AnyTimes()
 
 	ctx := context.Background()
 	rtDb := jobsdb.NewForReadWrite(
@@ -217,11 +222,13 @@ func TestRouterManager(t *testing.T) {
 		rtDb.Start()
 		brtDb.Start()
 		errDb.Start()
-		go r.StartNew()
+		r.StartNew()
 		<-c
 		r.Stop()
 		rtDb.Stop()
 		brtDb.Stop()
 		errDb.Stop()
+		c = make(chan bool)
+		once = sync.Once{}
 	}
 }

@@ -1664,7 +1664,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 // statusInsertLoop will run in a separate goroutine
 // Blocking method, returns when rt.responseQ channel is closed.
-func (rt *HandleT) statusInsertLoop(ctx context.Context) {
+func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
 
@@ -1678,8 +1678,6 @@ func (rt *HandleT) statusInsertLoop(ctx context.Context) {
 	for {
 		rt.perfStats.Start()
 		select {
-		case <-ctx.Done():
-			return
 		case pause := <-rt.statusLoopPauseChannel:
 			//Commit the buffer to disc
 			pkgLogger.Infof("[Router] flushing statuses to disc. Dest type: %s", rt.destName)
@@ -2182,7 +2180,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		return nil
 	}))
 	g.Go(misc.WithBugsnag(func() error {
-		rt.statusInsertLoop(ctx)
+		rt.statusInsertLoop()
 		return nil
 	}))
 
