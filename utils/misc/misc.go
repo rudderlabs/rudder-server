@@ -39,6 +39,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
@@ -1344,7 +1345,7 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
-func SortMap(inputMap map[string]MovingAverage) []string {
+func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	pairArr := make(pairList, len(inputMap))
 
 	i := 0

@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
@@ -50,8 +51,6 @@ type reporter interface {
 type tenantStats interface {
 	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
-	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
 }
@@ -1599,7 +1598,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	defer func() {
 		for workspace := range routerWorkspaceJobStatusCount {
-			rt.MultitenantI.RemoveFromInMemoryCount(workspace, rt.destName, routerWorkspaceJobStatusCount[workspace], "router")
+			metric.GetPendingEventsMeasurement("rt", workspace, rt.destName).Sub(float64(routerWorkspaceJobStatusCount[workspace]))
 		}
 	}()
 
@@ -2014,7 +2013,7 @@ func (rt *HandleT) readAndProcess() int {
 				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
 			rt.drainedJobsStat.Count(destDrainStat.Count)
-			rt.MultitenantI.RemoveFromInMemoryCount(destDrainStat.Workspace, rt.destName, drainStatsbyDest[destID].Count, "router")
+			metric.GetPendingEventsMeasurement("rt", destDrainStat.Workspace, rt.destName).Sub(float64(drainStatsbyDest[destID].Count))
 		}
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))

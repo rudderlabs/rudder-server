@@ -44,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -458,6 +459,21 @@ func (jd *HandleT) Status() interface{} {
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 		statusObj["migration-state"] = jd.migrationState
 	}
+	pendingEventMetrics := metric.GetManager().GetRegistry(metric.PENDING_EVENTS_REGISTRY).GetMetricsByName(fmt.Sprintf("%s_pending_events", jd.tablePrefix))
+	if len(pendingEventMetrics) > 0 {
+		pendingEvents := []map[string]interface{}{}
+		for _, pendingEvent := range pendingEventMetrics {
+			count := pendingEvent.Value.(metric.Gauge).IntValue()
+			if count > 0 {
+				pendingEvents = append(pendingEvents, map[string]interface{}{
+					"tags":  pendingEvent.Tags,
+					"count": count,
+				})
+			}
+		}
+		statusObj["pending-events"] = pendingEvents
+	}
+
 	return statusObj
 }
 

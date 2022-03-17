@@ -9,23 +9,27 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const (
+	// The default registry, which is always present
+	METRIC_PENDING_EVENTS string = "pending_event_count"
+)
+
 var (
-	pkgLogger                logger.LoggerI
-	multiTenantStatFrequency time.Duration
+	pkgLogger logger.LoggerI
 )
 
 type MultitenantStatsT struct {
-	routerNonTerminalCounts map[string]*Counter
 	routerJobCountMutex     sync.RWMutex
-	routerInputRates        map[string]map[string]map[string]misc.MovingAverage
+	routerInputRates        map[string]map[string]map[string]metric.MovingAverage
 	lastDrainedTimestamps   map[string]map[string]time.Time
-	failureRate             map[string]map[string]misc.MovingAverage
+	failureRate             map[string]map[string]metric.MovingAverage
 	routerSuccessRateMutex  sync.RWMutex
-	routerTenantLatencyStat map[string]map[string]misc.MovingAverage
+	routerTenantLatencyStat map[string]map[string]metric.MovingAverage
 	routerLatencyMutex      sync.RWMutex
 	processorStageTime      time.Time
 }
@@ -33,11 +37,8 @@ type MultitenantStatsT struct {
 type MultiTenantI interface {
 	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
-	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
-	Status() map[string]map[string]map[string]int
 }
 
 type workspaceScore struct {
@@ -52,36 +53,25 @@ func Init() {
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT {
 	multitenantStat := MultitenantStatsT{}
-	multitenantStat.routerNonTerminalCounts = make(map[string]*Counter)
-	multitenantStat.routerInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
+	multitenantStat.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
-	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
-	for routerType := range routerDBs {
-		multitenantStat.routerNonTerminalCounts[routerType] = NewChannelCounter()
-		multitenantStat.routerInputRates[routerType] = make(map[string]map[string]misc.MovingAverage)
+	multitenantStat.failureRate = make(map[string]map[string]metric.MovingAverage)
+	for dbPrefix := range routerDBs {
+		multitenantStat.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 		pileUpStatMap := make(map[string]map[string]int)
-		routerDBs[routerType].GetPileUpCounts(pileUpStatMap)
+		routerDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
-				multitenantStat.AddToInMemoryCount(workspace, destType, pileUpStatMap[workspace][destType], routerType)
+				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
 			}
 		}
 	}
 
-	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]misc.MovingAverage)
+	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
 
 	multitenantStat.processorStageTime = time.Now()
 
 	return &multitenantStat
-}
-
-//returns nonTerminalCounts
-func (multitenantStat *MultitenantStatsT) Status() map[string]map[string]map[string]int {
-	counts := make(map[string]map[string]map[string]int)
-	for tableType, tableCounts := range multitenantStat.routerNonTerminalCounts {
-		counts[tableType] = tableCounts.Read()
-	}
-	return counts
 }
 
 func (multitenantStat *MultitenantStatsT) UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64) {
@@ -89,11 +79,11 @@ func (multitenantStat *MultitenantStatsT) UpdateWorkspaceLatencyMap(destType str
 	defer multitenantStat.routerLatencyMutex.Unlock()
 	_, ok := multitenantStat.routerTenantLatencyStat[destType]
 	if !ok {
-		multitenantStat.routerTenantLatencyStat[destType] = make(map[string]misc.MovingAverage)
+		multitenantStat.routerTenantLatencyStat[destType] = make(map[string]metric.MovingAverage)
 	}
 	_, ok = multitenantStat.routerTenantLatencyStat[destType][workspaceID]
 	if !ok {
-		multitenantStat.routerTenantLatencyStat[destType][workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+		multitenantStat.routerTenantLatencyStat[destType][workspaceID] = metric.NewMovingAverage(metric.AVG_METRIC_AGE)
 	}
 	multitenantStat.routerTenantLatencyStat[destType][workspaceID].Add(val)
 }
@@ -104,11 +94,11 @@ func (multitenantStat *MultitenantStatsT) CalculateSuccessFailureCounts(workspac
 
 	_, ok := multitenantStat.failureRate[workspace]
 	if !ok {
-		multitenantStat.failureRate[workspace] = make(map[string]misc.MovingAverage)
+		multitenantStat.failureRate[workspace] = make(map[string]metric.MovingAverage)
 	}
 	_, ok = multitenantStat.failureRate[workspace][destType]
 	if !ok {
-		multitenantStat.failureRate[workspace][destType] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+		multitenantStat.failureRate[workspace][destType] = metric.NewMovingAverage(metric.AVG_METRIC_AGE)
 	}
 
 	if isSuccess {
@@ -126,47 +116,36 @@ func (multitenantStat *MultitenantStatsT) CalculateSuccessFailureCounts(workspac
 	}
 }
 
-func (multitenantStat *MultitenantStatsT) AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerNonTerminalCounts[tableType].Add(workspaceID, destinationType, count)
-}
-
-func (multitenantStat *MultitenantStatsT) RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerNonTerminalCounts[tableType].Sub(workspaceID, destinationType, count)
-	// if multitenantStat.routerNonTerminalCounts[tableType][workspaceID][destinationType].Read() < 0 {
-	// 	panic("removed but now < 0: " + destinationType) //TODO: REMOVE
-	// }
-}
-
-func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, tableType string) {
+func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, dbPrefix string) {
 	multitenantStat.routerJobCountMutex.Lock()
 	defer multitenantStat.routerJobCountMutex.Unlock()
 
 	timeTaken := time.Since(multitenantStat.processorStageTime)
 	for key := range stats {
-		_, ok := multitenantStat.routerInputRates[tableType][key]
+		_, ok := multitenantStat.routerInputRates[dbPrefix][key]
 		if !ok {
-			multitenantStat.routerInputRates[tableType][key] = make(map[string]misc.MovingAverage)
+			multitenantStat.routerInputRates[dbPrefix][key] = make(map[string]metric.MovingAverage)
 		}
 		for destType := range stats[key] {
-			_, ok := multitenantStat.routerInputRates[tableType][key][destType]
+			_, ok := multitenantStat.routerInputRates[dbPrefix][key][destType]
 			if !ok {
-				multitenantStat.routerInputRates[tableType][key][destType] = misc.NewMovingAverage()
+				multitenantStat.routerInputRates[dbPrefix][key][destType] = metric.NewMovingAverage()
 			}
-			multitenantStat.routerInputRates[tableType][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
-			multitenantStat.AddToInMemoryCount(key, destType, stats[key][destType], tableType)
+			multitenantStat.routerInputRates[dbPrefix][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
+			metric.GetPendingEventsMeasurement(dbPrefix, key, destType).Add(float64(stats[key][destType]))
 		}
 	}
-	for workspaceKey := range multitenantStat.routerInputRates[tableType] {
+	for workspaceKey := range multitenantStat.routerInputRates[dbPrefix] {
 		_, ok := stats[workspaceKey]
 		if !ok {
 			for destType := range multitenantStat.routerInputRates[workspaceKey] {
-				multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
+				multitenantStat.routerInputRates[dbPrefix][workspaceKey][destType].Add(0)
 			}
 		} else {
-			for destType := range multitenantStat.routerInputRates[tableType][workspaceKey] {
+			for destType := range multitenantStat.routerInputRates[dbPrefix][workspaceKey] {
 				_, ok := stats[workspaceKey][destType]
 				if !ok {
-					multitenantStat.routerInputRates[tableType][workspaceKey][destType].Add(0)
+					multitenantStat.routerInputRates[dbPrefix][workspaceKey][destType].Add(0)
 				}
 			}
 		}
@@ -174,14 +153,13 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 	multitenantStat.processorStageTime = time.Now()
 }
 
-func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
+func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(dbPrefix string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 	multitenantStat.routerLatencyMutex.RLock()
 	defer multitenantStat.routerLatencyMutex.RUnlock()
 
-	pendingEventCountMap := multitenantStat.Status()
-	workspacesWithJobs := multitenantStat.getWorkspacesWithPendingJobs(destType, multitenantStat.routerTenantLatencyStat[destType], pendingEventCountMap)
+	workspacesWithJobs := multitenantStat.getWorkspacesWithPendingJobs(dbPrefix, multitenantStat.routerTenantLatencyStat[dbPrefix])
 	boostedRouterTimeOut := getBoostedRouterTimeOut(routerTimeOut, timeGained, noOfWorkers)
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
@@ -190,61 +168,62 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	workspacePickUpCount := make(map[string]int)
 	usedLatencies := make(map[string]float64)
 
-	minLatency, maxLatency := getMinMaxWorkspaceLatency(workspacesWithJobs, multitenantStat.routerTenantLatencyStat[destType])
+	minLatency, maxLatency := getMinMaxWorkspaceLatency(workspacesWithJobs, multitenantStat.routerTenantLatencyStat[dbPrefix])
 
-	scores := multitenantStat.getSortedWorkspaceScoreList(workspacesWithJobs, maxLatency, minLatency, multitenantStat.routerTenantLatencyStat[destType], destType)
+	scores := multitenantStat.getSortedWorkspaceScoreList(workspacesWithJobs, maxLatency, minLatency, multitenantStat.routerTenantLatencyStat[dbPrefix], dbPrefix)
 	//TODO : Optimise the loop only for workspaces having jobs
 	//Latency sorted input rate pass
 	for _, scoredWorkspace := range scores {
 		workspaceKey := scoredWorkspace.workspaceId
-		workspaceCountKey, ok := multitenantStat.routerInputRates["router"][workspaceKey]
+		workspaceCountKey, ok := multitenantStat.routerInputRates["rt"][workspaceKey]
 		if ok {
-			destTypeCount, ok := workspaceCountKey[destType]
+			destTypeCount, ok := workspaceCountKey[dbPrefix]
 			if ok {
 
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
 					//Adding BETA
-					if pendingEventCountMap["router"][workspaceKey][destType] > 0 {
-						usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
+					if metric.GetPendingEventsMeasurement("rt", workspaceKey, dbPrefix).Value() > 0 {
+						usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value()
 						workspacePickUpCount[workspaceKey] = 1
 					}
 					continue
 				}
 				//TODO : Get rid of unReliableLatencyORInRate hack
 				unReliableLatencyORInRate := false
-				if multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value() != 0 {
-					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value())))
+				pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, dbPrefix).IntValue()
+				if multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value() != 0 {
+					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value())))
 					if tmpPickCount < 1 {
 						tmpPickCount = 1 //Adding BETA
-						pkgLogger.Debugf("[DRAIN DEBUG] %v  checking for high latency/low in rate workspace %v latency value %v in rate %v", destType, workspaceKey, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value())
+						pkgLogger.Debugf("[DRAIN DEBUG] %v  checking for high latency/low in rate workspace %v latency value %v in rate %v", dbPrefix, workspaceKey, multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value(), destTypeCount.Value())
 						unReliableLatencyORInRate = true
 					}
 					workspacePickUpCount[workspaceKey] = tmpPickCount
-					if workspacePickUpCount[workspaceKey] > pendingEventCountMap["router"][workspaceKey][destType] {
-						workspacePickUpCount[workspaceKey] = misc.MaxInt(pendingEventCountMap["router"][workspaceKey][destType], 0)
+					if workspacePickUpCount[workspaceKey] > pendingEvents {
+						workspacePickUpCount[workspaceKey] = misc.MaxInt(pendingEvents, 0)
 					}
 				} else {
-					workspacePickUpCount[workspaceKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), pendingEventCountMap["router"][workspaceKey][destType])
+					workspacePickUpCount[workspaceKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), pendingEvents)
 				}
 
-				timeRequired := float64(workspacePickUpCount[workspaceKey]) * multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
+				timeRequired := float64(workspacePickUpCount[workspaceKey]) * multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value()
 				if unReliableLatencyORInRate {
 					timeRequired = 0
 				}
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - workspacePickUpCount[workspaceKey]
-				usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value())
+				usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value()
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value(), destTypeCount.Value())
 			}
 		}
 	}
 
 	//Sort by workspaces who can get to realtime quickly
-	secondaryScores := multitenantStat.getSortedWorkspaceSecondaryScoreList(workspacesWithJobs, workspacePickUpCount, destType, multitenantStat.routerTenantLatencyStat[destType], pendingEventCountMap)
+	secondaryScores := multitenantStat.getSortedWorkspaceSecondaryScoreList(workspacesWithJobs, workspacePickUpCount, dbPrefix, multitenantStat.routerTenantLatencyStat[dbPrefix])
 	for _, scoredWorkspace := range secondaryScores {
 		workspaceKey := scoredWorkspace.workspaceId
-		workspaceCountKey, ok := pendingEventCountMap["router"][workspaceKey]
-		if !ok || workspaceCountKey[destType] <= 0 {
+		pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, dbPrefix).IntValue()
+		if pendingEvents <= 0 {
 			continue
 		}
 		//BETA already added in the above loop
@@ -253,18 +232,18 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 		}
 
 		pickUpCount := 0
-		if multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value() == 0 {
-			pickUpCount = misc.MinInt(workspaceCountKey[destType]-workspacePickUpCount[workspaceKey], runningJobCount)
+		if multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value() == 0 {
+			pickUpCount = misc.MinInt(pendingEvents-workspacePickUpCount[workspaceKey], runningJobCount)
 		} else {
-			tmpCount := int(runningTimeCounter / multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value())
-			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), workspaceCountKey[destType]-workspacePickUpCount[workspaceKey])
+			tmpCount := int(runningTimeCounter / multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value())
+			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), pendingEvents-workspacePickUpCount[workspaceKey])
 		}
-		usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
+		usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value()
 		workspacePickUpCount[workspaceKey] += pickUpCount
 		runningJobCount = runningJobCount - pickUpCount
-		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
+		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value()
 
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), workspaceCountKey[destType])
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[dbPrefix][workspaceKey].Value(), pendingEvents)
 	}
 
 	return workspacePickUpCount, usedLatencies
@@ -298,17 +277,14 @@ func (multitenantStat *MultitenantStatsT) getLastDrainedTimestamp(workspaceKey s
 	return lastDrainedTS
 }
 
-func (multitenantStat *MultitenantStatsT) getWorkspacesWithPendingJobs(destType string, latencyMap map[string]misc.MovingAverage, pendingEventCountMap map[string]map[string]map[string]int) []string {
+func (multitenantStat *MultitenantStatsT) getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.MovingAverage) []string {
 	workspacesWithJobs := make([]string, 0)
 	for workspaceKey := range latencyMap {
-		destWiseMap, ok := pendingEventCountMap["router"][workspaceKey]
-		if ok {
-			val, ok := destWiseMap[destType]
-			if ok && val > 0 {
-				workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
-			} else if val < 0 {
-				pkgLogger.Errorf("ws: %s, val: %d, ok: %v, destWiseMap: %v", workspaceKey, val, ok, destWiseMap)
-			}
+		val := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+		if val > 0 {
+			workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
+		} else if val < 0 {
+			pkgLogger.Errorf("ws: %s, val: %d", workspaceKey, val)
 		}
 	}
 	return workspacesWithJobs
@@ -321,7 +297,7 @@ func getBoostedRouterTimeOut(routerTimeOut time.Duration, timeGained float64, no
 	return time.Duration(1.3*float64(routerTimeOut)) + time.Duration(timeGained*float64(time.Second)/float64(noOfWorkers))
 }
 
-func getMinMaxWorkspaceLatency(workspacesWithJobs []string, latencyMap map[string]misc.MovingAverage) (float64, float64) {
+func getMinMaxWorkspaceLatency(workspacesWithJobs []string, latencyMap map[string]metric.MovingAverage) (float64, float64) {
 	minLatency := math.MaxFloat64
 	maxLatency := -math.MaxFloat64
 
@@ -337,7 +313,7 @@ func getMinMaxWorkspaceLatency(workspacesWithJobs []string, latencyMap map[strin
 	return minLatency, maxLatency
 }
 
-func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(workspacesWithJobs []string, maxLatency, minLatency float64, latencyMap map[string]misc.MovingAverage, destType string) []workspaceScore {
+func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(workspacesWithJobs []string, maxLatency, minLatency float64, latencyMap map[string]metric.MovingAverage, destType string) []workspaceScore {
 	scores := make([]workspaceScore, len(workspacesWithJobs))
 	for i, workspaceKey := range workspacesWithJobs {
 		scores[i] = workspaceScore{}
@@ -361,15 +337,14 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceScoreList(workspaces
 	return scores
 }
 
-func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(workspacesWithJobs []string, workspacePickUpCount map[string]int, destType string, latencyMap map[string]misc.MovingAverage, pendingEventCountMap map[string]map[string]map[string]int) []workspaceScore {
+func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(workspacesWithJobs []string, workspacePickUpCount map[string]int, destType string, latencyMap map[string]metric.MovingAverage) []workspaceScore {
 	//Sort by workspaces who can get to realtime quickly
 	scores := make([]workspaceScore, len(workspacesWithJobs))
 	for i, workspaceKey := range workspacesWithJobs {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = workspaceKey
-
-		workspaceCountKey, ok := pendingEventCountMap["router"][workspaceKey]
-		if !ok || workspaceCountKey[destType]-workspacePickUpCount[workspaceKey] <= 0 {
+		pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+		if pendingEvents-workspacePickUpCount[workspaceKey] <= 0 {
 			scores[i].score = math.MaxFloat64
 			scores[i].secondary_score = 0
 			continue
@@ -377,9 +352,9 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(w
 		if multitenantStat.getFailureRate(workspaceKey, destType) == 1 {
 			scores[i].score = math.MaxFloat64
 		} else {
-			scores[i].score = float64(workspaceCountKey[destType]-workspacePickUpCount[workspaceKey]) * latencyMap[workspaceKey].Value() / (1 - multitenantStat.getFailureRate(workspaceKey, destType))
+			scores[i].score = float64(pendingEvents-workspacePickUpCount[workspaceKey]) * latencyMap[workspaceKey].Value() / (1 - multitenantStat.getFailureRate(workspaceKey, destType))
 		}
-		scores[i].secondary_score = float64(workspaceCountKey[destType] - workspacePickUpCount[workspaceKey])
+		scores[i].secondary_score = float64(pendingEvents - workspacePickUpCount[workspaceKey])
 	}
 
 	sort.Slice(scores, func(i, j int) bool {

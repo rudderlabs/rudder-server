@@ -117,7 +117,6 @@ type HandleT struct {
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
-	atomicAdd                      uint64
 }
 
 var defaultTransformerFeatures = `{
@@ -285,8 +284,6 @@ func (proc *HandleT) Status() interface{} {
 		proc.dedupHandler.PrintHistogram()
 	}
 
-	statusRes["pending-events-count"] = append(statusRes["pending-events-count"], proc.multitenantI.Status())
-
 	return statusRes
 }
 
@@ -386,11 +383,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.backendConfigSubscriber()
 	})
 
-	g.Go(func() error {
-		proc.sendMetrics(ctx)
-		return nil
-	})
-
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
 		return nil
@@ -404,30 +396,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.transformer.Setup()
 
 	proc.crashRecover()
-}
-
-func (proc *HandleT) sendMetrics(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(statsInterval):
-			pendingJobCounts := proc.multitenantI.Status()
-			for tableType, tableStats := range pendingJobCounts {
-				for workspace, workspaceStats := range tableStats {
-					for destType, destTypeCount := range workspaceStats {
-						pendingEventCountStat := stats.NewTaggedStat("pending_event_count",
-							stats.GaugeType, stats.Tags{
-								"workspace":   workspace,
-								"destType":    destType,
-								"tablePrefix": tableType,
-							})
-						pendingEventCountStat.Gauge(destTypeCount)
-					}
-				}
-			}
-		}
-	}
 }
 
 // Start starts this processor's main loops.
@@ -488,7 +456,6 @@ var (
 	pollInterval              time.Duration
 	isUnLocked                bool
 	GWCustomVal               string
-	statsInterval             time.Duration
 )
 
 func loadConfig() {
@@ -518,7 +485,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
-	config.RegisterDurationConfigVariable(time.Duration(60), &statsInterval, true, time.Second, []string{"statsInterval", "statsIntervalInS"}...)
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
@@ -1501,12 +1467,9 @@ func (proc *HandleT) Store(in storeMessage) {
 				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			// if destJobs[i].CustomVal == "WEBHOOK" {
-			// 	atomic.AddUint64(&proc.atomicAdd, 1)
-			// }
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
@@ -1530,15 +1493,12 @@ func (proc *HandleT) Store(in storeMessage) {
 			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
 	}
-
-	// proc.logger.Info("************************************************************")
-	// proc.logger.Infof("loaded %s jobs till now", atomic.LoadUint64(&proc.atomicAdd))
 
 	for _, jobs := range in.procErrorJobsByDestID {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
