@@ -745,6 +745,8 @@ func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, 
 			Config:           destination.Config,
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
 	})
+	fileManagerTimeout := time.Duration(15 * time.Second)
+	fileManager.SetTimeout(&fileManagerTimeout)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config for testing this destination id %s: err %v", destination.ID, err)
 		return

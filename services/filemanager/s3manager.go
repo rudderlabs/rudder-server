@@ -269,6 +269,10 @@ type S3Manager struct {
 	Timeout *time.Duration
 }
 
+func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
+}
+
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey, startAfter string
 	var continuationToken, endPoint, region *string
