@@ -116,12 +116,6 @@ func (ct *CTHandleT) CreateSchemaQuery() (sqlStatement string) {
 	case "AZURE_SYNAPSE", "MSSQL":
 		sqlStatement = fmt.Sprintf(`IF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'%s' ) EXEC('CREATE SCHEMA [%s]');`,
 			ct.warehouse.Namespace, ct.warehouse.Namespace)
-	case "BQ":
-		location := strings.TrimSpace(warehouseutils.GetConfigValue(bigquery.GCPLocation, ct.warehouse))
-		if location == "" {
-			location = "US"
-		}
-		sqlStatement = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s OPTIONS( location="%s")`, ct.warehouse.Namespace, location)
 	case "CLICKHOUSE":
 		cluster := warehouseutils.GetConfigValue(clickhouse.Cluster, ct.warehouse)
 		clusterClause := ""
