@@ -113,7 +113,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
-				proto.RegisterWarehouseServer(srv, &WarehouseGrpc{})
+				proto.RegisterWarehouseServer(srv, &warehousegrpc{})
 			},
 		},
 	}

@@ -568,6 +568,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 		User:        cred.username,
 		Password:    cred.password,
 		Database:    cred.dbName,
+		Schema:      cred.schemaName,
 		Warehouse:   cred.whName,
 		Application: "Rudderstack",
 	}
@@ -897,7 +898,7 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return client.Client{}, err
 	}

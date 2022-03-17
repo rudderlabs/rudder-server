@@ -96,7 +96,7 @@ func Init7() {
 	//pkgLogger = logger.NewLogger().Child("warehouse").Child("connection_testing")
 }
 
-func (w *WarehouseGrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	handleT := CTHandleT{}
 	return handleT.Validating(ctx, req)
 }
@@ -174,12 +174,6 @@ func (ct *CTHandleT) CreateTableQuery() (sqlStatement string) {
 			ct.stagingTableName,
 			deltalake.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "BQ":
-		sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) PARTITION BY DATE_TRUNC(_PARTITIONTIME, MONTH)`,
-			ct.warehouse.Namespace,
-			ct.stagingTableName,
-			bigquery.ColumnsWithDataTypes(TestTableSchemaMap, ""),
-		)
 	case "CLICKHOUSE":
 		clusterClause := ""
 		engine := "ReplacingMergeTree"
@@ -207,7 +201,7 @@ func (ct *CTHandleT) DropTableQuery() (sqlStatement string) {
 		pkgLogger.Infof("[DCT] drop table query with sqlStatement: %s", sqlStatement)
 	}()
 	switch ct.warehouse.Type {
-	case "POSTGRES", "SNOWFLAKE", "RS", "AZURE_SYNAPSE", "MSSQL", "BQ":
+	case "POSTGRES", "SNOWFLAKE", "RS", "AZURE_SYNAPSE", "MSSQL":
 		sqlStatement = fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ct.warehouse.Namespace, ct.stagingTableName)
 	case "DELTALAKE":
 		sqlStatement = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, ct.warehouse.Namespace, ct.stagingTableName)
@@ -456,7 +450,7 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 		ct.infoRequest.Destination.ID,
 		uuid.Must(uuid.NewV4()),
 		time.Now().Unix(),
-		GetLoadFileFormat(destination.Name),
+		getLoadFileFormat(destination.Name),
 	)
 	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
 	if err != nil {
@@ -466,7 +460,7 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 
 	// creating writer for writing to temporary file based on file type
 	var writer warehouseutils.LoadFileWriterI
-	if GetLoadFileType(destination.DestinationDefinition.Name) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if getLoadFileType(destination.DestinationDefinition.Name) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		writer, err = warehouseutils.CreateParquetWriter(TestTableSchemaMap, filePath, destination.DestinationDefinition.Name)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
@@ -477,7 +471,7 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 	}
 
 	// creating event loader to add columns to temporary file
-	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, GetLoadFileType(destination.DestinationDefinition.Name), writer)
+	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, getLoadFileType(destination.DestinationDefinition.Name), writer)
 	for columnName, columnValue := range TestPayloadMap {
 		eventLoader.AddColumn(columnName, TestTableSchemaMap[columnName], columnValue)
 	}
@@ -545,7 +539,7 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 		destination.ID,
 		uuid.Must(uuid.NewV4()),
 		time.Now().Unix(),
-		GetLoadFileFormat(destination.DestinationDefinition.Name),
+		getLoadFileFormat(destination.DestinationDefinition.Name),
 	)
 	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
 	if err != nil {
@@ -577,7 +571,7 @@ func (ct *CTHandleT) verifyConnections() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
 
 	// no need to do for time window destinations
-	if misc.ContainsString(TimeWindowDestinations, destinationType) {
+	if misc.ContainsString(timeWindowDestinations, destinationType) {
 		return
 	}
 
@@ -596,7 +590,7 @@ func (ct *CTHandleT) verifyCreateSchema() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
 
 	// no need to do for time window destinations
-	if misc.ContainsString(TimeWindowDestinations, destinationType) {
+	if misc.ContainsString(timeWindowDestinations, destinationType) {
 		return
 	}
 
@@ -629,7 +623,7 @@ func (ct *CTHandleT) verifyCreateTable() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
 
 	// no need to do for time window destinations
-	if misc.ContainsString(TimeWindowDestinations, destinationType) {
+	if misc.ContainsString(timeWindowDestinations, destinationType) {
 		return
 	}
 
@@ -690,7 +684,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	destinationType := destination.DestinationDefinition.Name
 
 	// no need to do for time window destinations
-	if misc.ContainsString(TimeWindowDestinations, destinationType) {
+	if misc.ContainsString(timeWindowDestinations, destinationType) {
 		return
 	}
 
@@ -718,7 +712,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	}
 
 	// getting load file format
-	loadFileFormat := GetLoadFileFormat(destination.DestinationDefinition.Name)
+	loadFileFormat := getLoadFileFormat(destination.DestinationDefinition.Name)
 
 	// loading test table from staging file
 	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestTableSchemaMap, TestPayloadMap, loadFileFormat)

@@ -82,14 +82,6 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
-	arr := []string{}
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
-	}
-	return strings.Join(arr[:], ",")
-}
-
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
 	for columnName, columnType := range columns {
