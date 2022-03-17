@@ -56,7 +56,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 	if jobReceivedAt.Exists() {
 		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
 		if err == nil {
-			if time.Now().UTC().Sub(jobReceivedAtTime.UTC()) > getRetentionTimeForDestination(destID) {
+			if time.Since(jobReceivedAtTime) > getRetentionTimeForDestination(destID) {
 				return true, "job expired"
 			}
 		}
