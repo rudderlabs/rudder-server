@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
