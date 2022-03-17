@@ -5,7 +5,10 @@ package transformer
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/gob"
 	"encoding/json"
+
 	"fmt"
 	"io"
 	"net/http"
@@ -74,7 +77,16 @@ func Init() {
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
-	fmt.Printf("transformMessage: %+v", transformMessage)
+	fmt.Printf("transformMessage: %#v", transformMessage)
+
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(transformMessage); err != nil {
+		trans.logger.Errorf("Fail to GOB", err)
+	}
+	gob64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	fmt.Printf("transformMessage binary: %s", gob64)
+
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
 		errTmp := fmt.Errorf("jobId: %d, err: %v", transformMessage.Data[0].JobMetadata.JobID, err)
