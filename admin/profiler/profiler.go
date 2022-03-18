@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -42,7 +43,7 @@ func (p *Profiler) init() {
 	})
 }
 
-func (p *Profiler) StartServer(ctx context.Context) error {
+func (p *Profiler) StartServer(ctx context.Context, enablePrometheus bool) error {
 	p.init()
 	if !p.enabled {
 		pkgLogger.Infof("Profiler disabled: no pprof HTTP server")
@@ -71,6 +72,11 @@ func (p *Profiler) StartServer(ctx context.Context) error {
 		})
 		fmt.Fprintf(w, "\n}\n")
 	})
+
+	if enablePrometheus {
+		//prometheus.Init()
+		mux.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
+	}
 
 	srv := &http.Server{
 		Handler: mux,

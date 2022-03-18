@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"strconv"
 	"strings"
@@ -290,7 +291,7 @@ func Run(ctx context.Context) {
 
 	g.Go(func() error {
 		p := &profiler.Profiler{}
-		return p.StartServer(ctx)
+		return p.StartServer(ctx, true)
 	})
 
 	misc.AppStartTime = time.Now().Unix()
