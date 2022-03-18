@@ -831,6 +831,12 @@ type pendingEventsRequestPayload struct {
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	//Force return that there are pending
+	if config.GetBool("Gateway.DisablePendingEvents", false) {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
+		return
+	}
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
