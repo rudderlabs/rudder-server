@@ -73,6 +73,14 @@ func Init() {
 
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+
+	// Patch fix for handling panic when marshal fails, by assigning empty secret in router job transform as json.RawMessage(nil)
+	for _, routerJobT := range transformMessage.Data {
+		if len(routerJobT.JobMetadata.Secret) == 0 {
+			routerJobT.JobMetadata.Secret = json.RawMessage(nil)
+		}
+	}
+
 	//Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
