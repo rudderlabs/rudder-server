@@ -315,20 +315,21 @@ func (ct *CTHandleT) validateDestinationFunc(ctx context.Context, req json.RawMe
 
 func (ct *CTHandleT) getValidationSteps() (steps []*validationStep) {
 	steps = append(steps, &validationStep{
-
 		ID:        1,
 		Name:      "Verifying Object Storage",
 		Validator: ct.verifyingObjectStorage,
-	}, &validationStep{
-		ID:        2,
-		Name:      "Verifying Connections",
-		Validator: ct.verifyingConnections,
 	})
 
+	// Time window destination contains only object storage verification
 	if misc.ContainsString(timeWindowDestinations, ct.warehouse.Destination.Name) {
 		return
 	}
+
 	steps = append(steps, &validationStep{
+		ID:        2,
+		Name:      "Verifying Connections",
+		Validator: ct.verifyingConnections,
+	}, &validationStep{
 		ID:        3,
 		Name:      "Verifying Create Schema",
 		Validator: ct.verifyingCreateSchema,
