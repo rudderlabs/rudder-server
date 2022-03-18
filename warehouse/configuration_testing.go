@@ -245,7 +245,12 @@ func (ct *CTHandleT) getValidationFunctions() map[string]*validationFunc {
 	}
 }
 
-func (ct *CTHandleT) validationStepsFunc(_ context.Context, _ json.RawMessage, _ string) (json.RawMessage, error) {
+func (ct *CTHandleT) validationStepsFunc(_ context.Context, req json.RawMessage, _ string) (json.RawMessage, error) {
+	ct.infoRequest = &infoRequest{}
+	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
+		return nil, err
+	}
+
 	return json.Marshal(validationStepsResponse{
 		Steps: ct.getValidationSteps(),
 	})
@@ -308,34 +313,35 @@ func (ct *CTHandleT) validateDestinationFunc(ctx context.Context, req json.RawMe
 	return json.Marshal(resp)
 }
 
-func (ct *CTHandleT) getValidationSteps() []*validationStep {
-	return []*validationStep{
-		{
-			ID:        1,
-			Name:      "Verifying Object Storage",
-			Validator: ct.verifyingObjectStorage,
-		},
-		{
-			ID:        2,
-			Name:      "Verifying Connections",
-			Validator: ct.verifyingConnections,
-		},
-		{
-			ID:        3,
-			Name:      "Verifying Create Schema",
-			Validator: ct.verifyingCreateSchema,
-		},
-		{
-			ID:        4,
-			Name:      "Verifying Create Table",
-			Validator: ct.verifyingCreateTable,
-		},
-		{
-			ID:        5,
-			Name:      "Verifying Load Table",
-			Validator: ct.verifyingLoadTable,
-		},
+func (ct *CTHandleT) getValidationSteps() (steps []*validationStep) {
+	steps = append(steps, &validationStep{
+
+		ID:        1,
+		Name:      "Verifying Object Storage",
+		Validator: ct.verifyingObjectStorage,
+	}, &validationStep{
+		ID:        2,
+		Name:      "Verifying Connections",
+		Validator: ct.verifyingConnections,
+	})
+
+	if misc.ContainsString(timeWindowDestinations, ct.warehouse.Destination.Name) {
+		return
 	}
+	steps = append(steps, &validationStep{
+		ID:        3,
+		Name:      "Verifying Create Schema",
+		Validator: ct.verifyingCreateSchema,
+	}, &validationStep{
+		ID:        4,
+		Name:      "Verifying Create Table",
+		Validator: ct.verifyingCreateTable,
+	}, &validationStep{
+		ID:        5,
+		Name:      "Verifying Load Table",
+		Validator: ct.verifyingLoadTable,
+	})
+	return
 }
 
 /*
@@ -564,11 +570,6 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 func (ct *CTHandleT) verifyConnections() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
 
-	// no need to do for time window destinations
-	if misc.ContainsString(timeWindowDestinations, destinationType) {
-		return
-	}
-
 	// Getting warehouse manager
 	whManager, err := manager.New(destinationType)
 	if err != nil {
@@ -582,11 +583,6 @@ func (ct *CTHandleT) verifyConnections() (err error) {
 
 func (ct *CTHandleT) verifyCreateSchema() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
-
-	// no need to do for time window destinations
-	if misc.ContainsString(timeWindowDestinations, destinationType) {
-		return
-	}
 
 	// Getting warehouse manager
 	whManager, err := manager.New(destinationType)
@@ -615,11 +611,6 @@ func (ct *CTHandleT) verifyCreateSchema() (err error) {
 
 func (ct *CTHandleT) verifyCreateTable() (err error) {
 	destinationType := ct.infoRequest.Destination.DestinationDefinition.Name
-
-	// no need to do for time window destinations
-	if misc.ContainsString(timeWindowDestinations, destinationType) {
-		return
-	}
 
 	// Getting warehouse manager
 	whManager, err := manager.New(destinationType)
@@ -676,11 +667,6 @@ func (ct *CTHandleT) verifyLoadTable() (err error) {
 func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	destination := ct.infoRequest.Destination
 	destinationType := destination.DestinationDefinition.Name
-
-	// no need to do for time window destinations
-	if misc.ContainsString(timeWindowDestinations, destinationType) {
-		return
-	}
 
 	// Getting warehouse manager
 	whManager, err := manager.New(destinationType)
