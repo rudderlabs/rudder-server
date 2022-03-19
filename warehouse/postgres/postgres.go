@@ -559,6 +559,12 @@ func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+			pkgLogger.Error(err.Error())
+			return
+		}
+	}
 	pg.Warehouse = warehouse
 	pg.Db, err = Connect(pg.getConnectionCredentials())
 	if err != nil {
@@ -718,6 +724,12 @@ func (pg *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 }
 
 func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+			pkgLogger.Error(err.Error())
+			return client.Client{}, fmt.Errorf(err.Error())
+		}
+	}
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(

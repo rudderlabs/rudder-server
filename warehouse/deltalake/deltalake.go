@@ -1009,7 +1009,7 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
-			fmt.Sprintf(`CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val`),
+			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			loadFolder,
 			auth,
 		)
