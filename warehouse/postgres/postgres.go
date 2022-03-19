@@ -41,8 +41,6 @@ const (
 	verifyCA      = "verify-ca"
 )
 
-const PROVIDER = "POSTGRES"
-
 var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",

@@ -321,7 +321,7 @@ func (ct *CTHandleT) verifyCreateSchema() (err error) {
 	}
 	defer ct.client.Close()
 
-	if destinationType == "BQ" {
+	if destinationType == warehouseutils.BQ {
 		bqHandle := bigquery.HandleT{}
 		return bqHandle.VerifyCreateSchema(&ct.client, ct.warehouse, context.TODO())
 	}
@@ -352,7 +352,7 @@ func (ct *CTHandleT) verifyCreateTable() (err error) {
 	createTableQuery := ct.CreateTableQuery()
 	dropTableQuery := ct.DropTableQuery()
 
-	if destinationType == "BQ" {
+	if destinationType == warehouseutils.BQ {
 		bqHandle := bigquery.HandleT{}
 		return bqHandle.VerifyCreateTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
 	}

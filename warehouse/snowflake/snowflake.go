@@ -54,8 +54,6 @@ const (
 	SFPassword         = "password"
 )
 
-const PROVIDER = "SNOWFLAKE"
-
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
@@ -111,11 +109,11 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.UsersTable)
-	identifiesTable         = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentifiesTable)
-	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
-	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
+	usersTable              = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.UsersTable)
+	identifiesTable         = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentifiesTable)
+	discardsTable           = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.DiscardsTable)
+	identityMergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable   = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMappingsTable)
 )
 
 type tableLoadRespT struct {
@@ -792,7 +790,7 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
 	sf.Uploader = uploader
-	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
 	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	return err

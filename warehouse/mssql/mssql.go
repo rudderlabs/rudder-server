@@ -49,8 +49,6 @@ func diacriticLimit() int {
 	}
 }
 
-const PROVIDER = "MSSQL"
-
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",

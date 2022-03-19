@@ -63,8 +63,6 @@ const (
 	rudderStringLength  = 512
 )
 
-const PROVIDER = "RS"
-
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean encode runlength",
 	"int":      "bigint",

@@ -187,7 +187,7 @@ func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
 	}
 
 	// add loaded_at for bq to be segment compatible
-	if sh.warehouse.Type == "BQ" {
+	if sh.warehouse.Type == warehouseutils.BQ {
 		discards[sh.safeName("loaded_at")] = "datetime"
 	}
 	return discards

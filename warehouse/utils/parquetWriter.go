@@ -20,7 +20,7 @@ const (
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	"RS": {
+	RS: {
 		"bigint":   PARQUET_INT_64,
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
@@ -29,7 +29,7 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	"S3_DATALAKE": {
+	S3_DATALAKE: {
 		"bigint":   PARQUET_INT_64,
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
@@ -38,14 +38,14 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	"GCS_DATALAKE": {
+	GCS_DATALAKE: {
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
 		"float":    PARQUET_DOUBLE,
 		"string":   PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	"AZURE_DATALAKE": {
+	AZURE_DATALAKE: {
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
 		"float":    PARQUET_DOUBLE,

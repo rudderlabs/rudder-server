@@ -46,8 +46,6 @@ const (
 	GCPLocation    = "location"
 )
 
-const PROVIDER = "BQ"
-
 // maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
@@ -710,12 +708,12 @@ func (bq *HandleT) Cleanup() {
 }
 
 func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
-	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(PROVIDER)
+	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(warehouseutils.BQ)
 	return bq.LoadTable(identityMergeRulesTable)
 }
 
 func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
-	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(PROVIDER)
+	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(warehouseutils.BQ)
 	return bq.LoadTable(identityMappingsTable)
 }
 

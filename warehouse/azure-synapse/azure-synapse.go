@@ -49,8 +49,6 @@ func diacriticLimit() int {
 	}
 }
 
-const PROVIDER = "AZURE_SYNAPSE"
-
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",

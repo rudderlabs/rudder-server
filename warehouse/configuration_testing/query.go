@@ -24,14 +24,14 @@ func (ct *CTHandleT) CreateSchemaQuery() (sqlStatement string) {
 		pkgLogger.Infof("[DCT]  Create schema query with sqlStatement: %s", sqlStatement)
 	}()
 	switch ct.warehouse.Type {
-	case "POSTGRES", "SNOWFLAKE", "RS":
+	case warehouseutils.POSTGRES, warehouseutils.SNOWFLAKE, warehouseutils.RS:
 		sqlStatement = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, ct.warehouse.Namespace)
-	case "DELTALAKE":
+	case warehouseutils.DELTALAKE:
 		sqlStatement = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, ct.warehouse.Namespace)
-	case "AZURE_SYNAPSE", "MSSQL":
+	case warehouseutils.AZURE_SYNAPSE, warehouseutils.MSSQL:
 		sqlStatement = fmt.Sprintf(`IF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'%s' ) EXEC('CREATE SCHEMA [%s]');`,
 			ct.warehouse.Namespace, ct.warehouse.Namespace)
-	case "CLICKHOUSE":
+	case warehouseutils.CLICKHOUSE:
 		cluster := warehouseutils.GetConfigValue(clickhouse.Cluster, ct.warehouse)
 		clusterClause := ""
 		if len(strings.TrimSpace(cluster)) > 0 {
@@ -59,37 +59,37 @@ func (ct *CTHandleT) CreateTableQuery() (sqlStatement string) {
 	)
 
 	switch ct.warehouse.Type {
-	case "AZURE_SYNAPSE", "MSSQL":
+	case warehouseutils.AZURE_SYNAPSE, warehouseutils.MSSQL:
 		sqlStatement = fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 			CREATE TABLE %[1]s ( %v )`,
 			ct.stagingTableName,
 			mssql.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "POSTGRES":
+	case warehouseutils.POSTGRES:
 		sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
 			ct.warehouse.Namespace,
 			ct.stagingTableName,
 			postgres.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "RS":
+	case warehouseutils.RS:
 		sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
 			ct.warehouse.Namespace,
 			ct.stagingTableName,
 			redshift.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "SNOWFLAKE":
+	case warehouseutils.SNOWFLAKE:
 		sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" ( %v ) `,
 			ct.warehouse.Namespace,
 			ct.stagingTableName,
 			snowflake.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "DELTALAKE":
+	case warehouseutils.DELTALAKE:
 		sqlStatement = fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s ( %v ) USING DELTA;`,
 			ct.warehouse.Namespace,
 			ct.stagingTableName,
 			deltalake.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
-	case "CLICKHOUSE":
+	case warehouseutils.CLICKHOUSE:
 		clusterClause := ""
 		engine := "ReplacingMergeTree"
 		engineOptions := ""
@@ -122,11 +122,11 @@ func (ct *CTHandleT) DropTableQuery() (sqlStatement string) {
 		pkgLogger.Infof("[DCT] drop table query with sqlStatement: %s", sqlStatement)
 	}()
 	switch ct.warehouse.Type {
-	case "POSTGRES", "SNOWFLAKE", "RS", "AZURE_SYNAPSE", "MSSQL":
+	case warehouseutils.POSTGRES, warehouseutils.SNOWFLAKE, warehouseutils.RS, warehouseutils.AZURE_SYNAPSE, warehouseutils.MSSQL:
 		sqlStatement = fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ct.warehouse.Namespace, ct.stagingTableName)
-	case "DELTALAKE":
+	case warehouseutils.DELTALAKE:
 		sqlStatement = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, ct.warehouse.Namespace, ct.stagingTableName)
-	case "CLICKHOUSE":
+	case warehouseutils.CLICKHOUSE:
 		cluster := warehouseutils.GetConfigValue(clickhouse.Cluster, ct.warehouse)
 		clusterClause := ""
 		if len(strings.TrimSpace(cluster)) > 0 {
@@ -136,4 +136,3 @@ func (ct *CTHandleT) DropTableQuery() (sqlStatement string) {
 	}
 	return
 }
-
