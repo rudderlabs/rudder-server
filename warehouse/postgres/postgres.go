@@ -560,8 +560,9 @@ func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-			pkgLogger.Error(err.Error())
+		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
+			pkgLogger.Error(sslKeyError.Error())
+			err = fmt.Errorf(sslKeyError.Error())
 			return
 		}
 	}

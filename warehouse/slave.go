@@ -146,7 +146,7 @@ func (job *PayloadT) getDiscardsTable() string {
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := uuid.Must(uuid.NewV4()).String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -254,7 +254,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if misc.ContainsString(timeWindowDestinations, job.DestinationType) {
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))

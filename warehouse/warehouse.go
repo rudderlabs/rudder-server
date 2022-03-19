@@ -46,8 +46,6 @@ var (
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
-	WarehouseDestinations               []string
-	timeWindowDestinations              []string
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -80,7 +78,6 @@ var (
 	waitForWorkerSleep                  time.Duration
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
-	useParquetLoadFilesRS               bool
 )
 
 var (
@@ -141,8 +138,6 @@ func Init4() {
 func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -176,7 +171,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -436,7 +430,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     getLoadFileType(wh.destType),
+		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -1049,24 +1043,6 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-func getLoadFileFormat(whType string) string {
-	switch whType {
-	case "BQ":
-		return "json.gz"
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
-		return "parquet"
-	case "RS":
-		if useParquetLoadFilesRS {
-			return "parquet"
-		}
-		return "csv.gz"
-	case "DELTALAKE":
-		return "csv.gz"
-	default:
-		return "csv.gz"
-	}
-}
-
 func minimalConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
@@ -1082,7 +1058,7 @@ func minimalConfigSubscriber() {
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
 			for _, destination := range source.Destinations {
-				if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
 						dbHandle: dbHandle,
 						destType: destination.DestinationDefinition.Name,
@@ -1147,7 +1123,7 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
+			if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if !ok {
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1747,22 +1723,4 @@ func Start(ctx context.Context, app app.Interface) error {
 	})
 
 	return g.Wait()
-}
-
-func getLoadFileType(wh string) string {
-	switch wh {
-	case "BQ":
-		return warehouseutils.LOAD_FILE_TYPE_JSON
-	case "RS":
-		if useParquetLoadFilesRS {
-			return warehouseutils.LOAD_FILE_TYPE_PARQUET
-		}
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
-		return warehouseutils.LOAD_FILE_TYPE_PARQUET
-	case "DELTALAKE":
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	default:
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	}
 }

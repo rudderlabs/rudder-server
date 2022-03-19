@@ -116,7 +116,12 @@ const (
 	LOAD_FILE_TYPE_PARQUET = "parquet"
 )
 
-var pkgLogger logger.LoggerI
+var (
+	pkgLogger              logger.LoggerI
+	useParquetLoadFilesRS  bool
+	TimeWindowDestinations []string
+	WarehouseDestinations  []string
+)
 
 func Init() {
 	loadConfig()
@@ -126,10 +131,12 @@ func Init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
+	TimeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-
+	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 }
 
 type WarehouseT struct {
@@ -843,4 +850,40 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	}
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
 	return sslDirPath
+}
+
+func GetLoadFileType(wh string) string {
+	switch wh {
+	case "BQ":
+		return LOAD_FILE_TYPE_JSON
+	case "RS":
+		if useParquetLoadFilesRS {
+			return LOAD_FILE_TYPE_PARQUET
+		}
+		return LOAD_FILE_TYPE_CSV
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
+		return LOAD_FILE_TYPE_PARQUET
+	case "DELTALAKE":
+		return LOAD_FILE_TYPE_CSV
+	default:
+		return LOAD_FILE_TYPE_CSV
+	}
+}
+
+func GetLoadFileFormat(whType string) string {
+	switch whType {
+	case "BQ":
+		return "json.gz"
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
+		return "parquet"
+	case "RS":
+		if useParquetLoadFilesRS {
+			return "parquet"
+		}
+		return "csv.gz"
+	case "DELTALAKE":
+		return "csv.gz"
+	default:
+		return "csv.gz"
+	}
 }

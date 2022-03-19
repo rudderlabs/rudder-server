@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"net/http"
 	"time"
 
@@ -31,7 +32,6 @@ var (
 	enableProcessor, enableRouter, enableReplay                bool
 	objectStorageDestinations                                  []string
 	asyncDestinations                                          []string
-	warehouseDestinations                                      []string
 	routerLoaded                                               utilsync.First
 	processorLoaded                                            utilsync.First
 	pkgLogger                                                  logger.LoggerI
@@ -77,7 +77,6 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
 }
 
 func rudderCoreDBValidator() {
@@ -191,7 +190,7 @@ loop:
 				for _, destination := range source.Destinations {
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					//For batch router destinations
-					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)

@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -61,4 +62,9 @@ func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.
 	}
 	res, err := uploadReq.TriggerWHUpload()
 	return res, err
+}
+
+func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+	handleT := configuration_testing.CTHandleT{}
+	return handleT.Validating(ctx, req)
 }

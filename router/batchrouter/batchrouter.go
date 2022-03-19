@@ -48,8 +48,6 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
-	warehouseDestinations              []string
-	timeWindowDestinations             []string
 	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
@@ -979,7 +977,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1644,7 +1642,7 @@ func (worker *workerT) workerProcess() {
 						}
 
 						destUploadStat.End()
-					case misc.ContainsString(warehouseDestinations, brt.destType):
+					case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -1968,12 +1966,12 @@ func IsObjectStorageDestination(destType string) bool {
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.ContainsString(warehouseDestinations, destType)
+	return misc.ContainsString(warehouseutils.WarehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if !misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if !misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
@@ -2044,8 +2042,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
