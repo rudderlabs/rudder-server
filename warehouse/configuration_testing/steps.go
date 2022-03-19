@@ -32,25 +32,27 @@ func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 		return
 	}
 
-	steps = append(steps, &validationStep{
-		ID:        2,
-		Name:      "Verifying Connections",
-		Validator: ct.verifyingConnections,
-	})
-	steps = append(steps, &validationStep{
-		ID:        3,
-		Name:      "Verifying Create Schema",
-		Validator: ct.verifyingCreateSchema,
-	})
-	steps = append(steps, &validationStep{
-		ID:        4,
-		Name:      "Verifying Create Table",
-		Validator: ct.verifyingCreateTable,
-	})
-	steps = append(steps, &validationStep{
-		ID:        5,
-		Name:      "Verifying Load Table",
-		Validator: ct.verifyingLoadTable,
-	})
+	steps = append(steps,
+		&validationStep{
+			ID:        2,
+			Name:      "Verifying Connections",
+			Validator: ct.verifyingConnections,
+		},
+		&validationStep{
+			ID:        3,
+			Name:      "Verifying Create Schema",
+			Validator: ct.verifyingCreateSchema,
+		},
+		&validationStep{
+			ID:        4,
+			Name:      "Verifying Create Table",
+			Validator: ct.verifyingCreateTable,
+		},
+		&validationStep{
+			ID:        5,
+			Name:      "Verifying Load Table",
+			Validator: ct.verifyingLoadTable,
+		},
+	)
 	return
 }

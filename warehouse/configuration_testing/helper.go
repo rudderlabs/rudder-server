@@ -52,7 +52,7 @@ func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, 
 
 	provider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, misc.IsConfiguredToUseRudderObjectStorage(destination.Config))
 
-	fileManager, err = filemanager.New(&filemanager.SettingsT{
+	fileManager, err = fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,

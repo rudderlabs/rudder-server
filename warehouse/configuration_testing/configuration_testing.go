@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -13,11 +14,13 @@ import (
 var (
 	connectionTestingFolder string
 	pkgLogger               logger.LoggerI
+	fileManagerFactory      filemanager.FileManagerFactory
 )
 
 func Init() {
 	connectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("connection_testing")
+	fileManagerFactory = filemanager.DefaultFileManagerFactory
 }
 
 /*
