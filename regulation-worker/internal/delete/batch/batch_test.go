@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
@@ -170,6 +171,10 @@ func (ff mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanag
 type mockFileManager struct {
 	mockBucketLocation string
 	listCalled         bool
+}
+
+func (fm *mockFileManager) SetTimeout(timeout *time.Duration) {
+	return
 }
 
 //Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
