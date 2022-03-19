@@ -764,7 +764,7 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{Cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -804,7 +804,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
-		engineOptions = `'/clickhouse/{Cluster}/tables/{database}/{table}', '{replica}'`
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
