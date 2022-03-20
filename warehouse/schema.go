@@ -282,6 +282,10 @@ WarehouseSchema: https://jsonformatter.org/ca43d2
 LocalSchema: https://jsonformatter.org/1c2dd2
 */
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+	// return true if localSchema is empty
+	if len(localSchema) == 0 {
+		return true
+	}
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
