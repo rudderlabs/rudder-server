@@ -155,7 +155,16 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		if err != nil {
-			panic(err)
+			//NOTE: Transformer failed to give response in the right format
+			//Retrying. Go and fix transformer.
+			destinationJobs = []types.DestinationJobT{}
+			statusCode := 500
+			errorResp := fmt.Sprintf("Transformer returned invalid response: %v", string(respData))
+			trans.logger.Error(errorResp)
+			for _, routerJob := range transformMessage.Data {
+				resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: statusCode, Error: errorResp}
+				destinationJobs = append(destinationJobs, resp)
+			}
 		}
 	} else {
 		statusCode := 500
