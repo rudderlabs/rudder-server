@@ -76,6 +76,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	//Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
+		trans.logger.Errorf("problematic input for marshalling: %#v", string(rawJSON))
 		panic(err)
 	}
 	trans.logger.Debugf("[Router Transfomrer] :: input payload : %s", string(rawJSON))
