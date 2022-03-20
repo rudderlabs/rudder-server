@@ -159,7 +159,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			//Retrying. Go and fix transformer.
 			destinationJobs = []types.DestinationJobT{}
 			statusCode := 500
-			errorResp := fmt.Sprintf("Transformer returned invalid response: %v", string(respData))
+			errorResp := fmt.Sprintf("Transformer returned invalid response: %v for input: %v", string(respData), string(rawJSON))
 			trans.logger.Error(errorResp)
 			for _, routerJob := range transformMessage.Data {
 				resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: statusCode, Error: errorResp}
