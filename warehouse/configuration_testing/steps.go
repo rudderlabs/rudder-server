@@ -28,7 +28,7 @@ func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 	})
 
 	// Time window destination contains only object storage verification
-	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.warehouse.Destination.Name) {
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
 		return
 	}
 
