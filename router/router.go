@@ -751,7 +751,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
-						respStatusCode, respBody = 400, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+						respStatusCode, respBody = 599, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
