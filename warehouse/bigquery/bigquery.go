@@ -40,6 +40,11 @@ type HandleT struct {
 	Uploader  warehouseutils.UploaderI
 }
 
+type StagingLoadTableT struct {
+	partitionDate    string
+	stagingTableName string
+}
+
 // String constants for bigquery destination config
 const (
 	GCPProjectID   = "project"
@@ -231,13 +236,13 @@ func partitionedTable(tableName string, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool, skipTempTableDelete bool) (partitionDate string, stagingTableName string, err error) {
+func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
 		loadFile, err := bq.Uploader.GetSingleLoadFile(tableName)
 		if err != nil {
-			return "", "", err
+			return stagingLoadTable, err
 		}
 		loadFiles = append(loadFiles, loadFile)
 	} else {
@@ -251,8 +256,8 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	gcsRef.IgnoreUnknownValues = false
 
 	loadTableByAppend := func() (err error) {
-		partitionDate = time.Now().Format("2006-01-02")
-		outputTable := partitionedTable(tableName, partitionDate)
+		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
+		outputTable := partitionedTable(tableName, stagingLoadTable.partitionDate)
 
 		// create partitioned table in format tableName$20191221
 		loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
@@ -275,7 +280,8 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	}
 
 	loadTableByMerge := func() (err error) {
-		stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+		stagingLoadTable.stagingTableName = stagingTableName
 		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
 		stagingTableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
 		sampleSchema := getTableSchema(stagingTableColMap)
@@ -385,7 +391,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("BQ: Starting load for identifies and users tables\n")
-	partitionDate, identifyStagingTable, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false, true)
+	identifyLoadTable, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false, true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -440,10 +446,10 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	}
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
-	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
+	partition := fmt.Sprintf("TIMESTAMP('%s')", identifyLoadTable.partitionDate)
 	var identifiesFrom string
 	if isDedupEnabled {
-		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyStagingTable), loadedAtFilter())
+		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyLoadTable.stagingTableName), loadedAtFilter())
 	} else {
 		identifiesFrom = fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
 	}
@@ -465,7 +471,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	)
 	loadUserTableByAppend := func() {
 		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
-		partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+		partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
 		query := bq.Db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
 		query.WriteDisposition = bigquery.WriteAppend
@@ -513,7 +519,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			errorMap[warehouseutils.UsersTable] = status.Err()
 			return
 		}
-		defer bq.dropStagingTable(identifyStagingTable)
+		defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
 		defer bq.dropStagingTable(stagingTableName)
 
 		primaryKey := `ID`
@@ -747,7 +753,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	if misc.ContainsString([]string{warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable}, tableName) {
 		getLoadFileLocFromTableUploads = true
 	}
-	_, _, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads, false)
+	_, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads, false)
 	return err
 }
 
