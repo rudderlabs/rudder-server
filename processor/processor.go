@@ -117,6 +117,10 @@ type HandleT struct {
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
+	DBReadThroughput               stats.RudderStats
+	processJobThroughput           stats.RudderStats
+	transformationsThroughput      stats.RudderStats
+	DBWriteThroughput              stats.RudderStats
 }
 
 var defaultTransformerFeatures = `{
@@ -365,6 +369,11 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
+	proc.DBReadThroughput = proc.stats.NewStat("processor.db_read_throughput", stats.CountType)
+	proc.processJobThroughput = proc.stats.NewStat("processor.processJob_thoughput", stats.CountType)
+	proc.transformationsThroughput = proc.stats.NewStat("processor.transformations_throughput", stats.CountType)
+	proc.DBWriteThroughput = proc.stats.NewStat("processor.db_write_throughput", stats.CountType)
+
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -432,6 +441,7 @@ func (proc *HandleT) Shutdown() {
 var (
 	enablePipelining          bool
 	pipelineBufferedItems     int
+	subJobSize                int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
@@ -460,7 +470,8 @@ var (
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
-	config.RegisterIntConfigVariable(1, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -1076,9 +1087,9 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
+func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]types.SingularEventT) transformationMessage {
+	jobList := subJobs.subJobs
 	start := time.Now()
-	defer proc.processJobsTime.Since(start)
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1164,7 +1175,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					continue
 				}
 
-				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
@@ -1333,7 +1343,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
-
+	processTime := time.Since(start)
+	proc.processJobsTime.SendTiming(processTime)
+	processJobThroughput := throughputPerSecond(totalEvents, processTime)
+	//processJob throughput per second.
+	proc.processJobThroughput.Count(processJobThroughput)
 	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -1347,6 +1361,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		totalEvents,
 		start,
+
+		subJobs.hasMore,
 	}
 }
 
@@ -1364,6 +1380,8 @@ type transformationMessage struct {
 
 	totalEvents int
 	start       time.Time
+
+	hasMore bool
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1416,6 +1434,9 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	destProcTime := time.Since(destProcStart)
 	defer proc.destProcessing.SendTiming(destProcTime)
 
+	//this tells us how many transformations we are doing per second.
+	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
+	proc.transformationsThroughput.Count(transformationsThroughput)
 	return storeMessage{
 		in.statusList,
 		destJobs,
@@ -1429,6 +1450,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		in.uniqueMessageIds,
 		in.totalEvents,
 		in.start,
+		in.hasMore,
 	}
 }
 
@@ -1446,6 +1468,8 @@ type storeMessage struct {
 
 	totalEvents int
 	start       time.Time
+
+	hasMore bool
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -1539,13 +1563,16 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-
 	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
 	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
+	dbWriteTime := time.Since(beforeStoreStatus)
+	//DB write throughput per second.
+	dbWriteThroughput := throughputPerSecond(len(destJobs), dbWriteTime)
+	proc.DBWriteThroughput.Count(dbWriteThroughput)
 	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
 	proc.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -2091,7 +2118,10 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	proc.Store(
 		proc.transformations(
-			proc.processJobsForDest(unprocessedList, nil),
+			proc.processJobsForDest(subJob{
+				subJobs: unprocessedList,
+				hasMore: false,
+			}, nil),
 		),
 	)
 	proc.statLoopTime.Since(s)
@@ -2163,23 +2193,62 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 	}
 }
 
+//`jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
+//`subJobMerger` func merges the split jobs into a single batch before writing to DB.
+//So, to keep track of sub-batch we have `hasMore` variable.
+//each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
+type subJob struct {
+	subJobs []*jobsdb.JobT
+	hasMore bool
+}
+
+func jobSplitter(jobs []*jobsdb.JobT) []subJob {
+	subJobCount := 1
+	if len(jobs)/subJobSize > 1 {
+		subJobCount = len(jobs) / subJobSize
+		if len(jobs)%subJobSize != 0 {
+			subJobCount++
+		}
+	}
+	var subJobs []subJob
+	for i := 0; i < subJobCount; i++ {
+		if i == subJobCount-1 {
+			//all the remaining jobs are sent in last sub-job batch.
+			subJobs = append(subJobs, subJob{
+				subJobs: jobs,
+				hasMore: false,
+			})
+			continue
+		}
+		subJobs = append(subJobs, subJob{
+			subJobs: jobs[:subJobSize],
+			hasMore: true,
+		})
+		jobs = jobs[subJobSize:]
+	}
+
+	return subJobs
+}
+
 // mainPipeline: new way of handling jobs
 //
 // [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
 func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
+	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
+
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
 
-	chProc := make(chan []*jobsdb.JobT, bufferSize)
+	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
-
 		nextSleepTime := time.Duration(0)
 
 		for {
@@ -2191,7 +2260,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}
-
+				dbReadStart := time.Now()
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
@@ -2209,16 +2278,23 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					pkgLogger.Error(err)
 					panic(err)
 				}
-
+				dbReadTime := time.Since(dbReadStart)
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
 				}
+				dbReadThroughput := throughputPerSecond(events, dbReadTime)
+				//DB read throughput per second.
+				proc.DBReadThroughput.Count(dbReadThroughput)
+
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				chProc <- jobs
+				subJobs := jobSplitter(jobs)
+				for _, subJob := range subJobs {
+					chProc <- subJob
+				}
 			}
 		}
 	}()
@@ -2233,12 +2309,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		}
 	}()
 
-	chStore := make(chan storeMessage, bufferSize)
+	//we need the below buffer size to ensure that `proc.Store(*mergedJob)` is not blocking rest of the Go routines.
+	chStore := make(chan storeMessage, (bufferSize+1)*(maxEventsToProcess/subJobSize+1))
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(chStore)
-
 		for msg := range chTrans {
 			chStore <- proc.transformations(msg)
 		}
@@ -2246,13 +2322,63 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	wg.Add(1)
 	go func() {
+		var mergedJob storeMessage
+		firstSubJob := true
 		defer wg.Done()
-		for msg := range chStore {
-			proc.Store(msg)
+		for subJob := range chStore {
+
+			if firstSubJob && !subJob.hasMore {
+				proc.Store(subJob)
+				continue
+			}
+
+			if firstSubJob {
+				mergedJob = storeMessage{}
+				mergedJob.uniqueMessageIds = make(map[string]struct{})
+				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+				mergedJob.sourceDupStats = make(map[string]int)
+
+				mergedJob.start = subJob.start
+				firstSubJob = false
+			}
+			mergedJob := subJobMerger(&mergedJob, &subJob)
+
+			if !subJob.hasMore {
+				proc.Store(*mergedJob)
+				firstSubJob = true
+			}
 		}
 	}()
 
 	wg.Wait()
+}
+
+func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) *storeMessage {
+
+	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
+	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
+	mergedJob.batchDestJobs = append(mergedJob.batchDestJobs, subJob.batchDestJobs...)
+
+	mergedJob.procErrorJobs = append(mergedJob.procErrorJobs, subJob.procErrorJobs...)
+	for id, job := range subJob.procErrorJobsByDestID {
+		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
+	}
+
+	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
+	for tag, count := range subJob.sourceDupStats {
+		mergedJob.sourceDupStats[tag] += count
+	}
+	for id := range subJob.uniqueMessageIds {
+		mergedJob.uniqueMessageIds[id] = struct{}{}
+	}
+	mergedJob.totalEvents += subJob.totalEvents
+
+	return mergedJob
+}
+
+func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
+	normalizedTime := (float64(timeTaken) / float64(time.Second))
+	return int(float64(processedJob) / normalizedTime)
 }
 
 func (proc *HandleT) crashRecover() {

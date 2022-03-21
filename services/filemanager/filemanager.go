@@ -3,6 +3,7 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -35,12 +36,12 @@ type FileObject struct {
 
 // FileManager implements all upload methods
 type FileManager interface {
-	Upload(*os.File, ...string) (UploadOutput, error)
-	Download(*os.File, string) error
+	Upload(context.Context, *os.File, ...string) (UploadOutput, error)
+	Download(context.Context, *os.File, string) error
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
-	DeleteObjects(keys []string) error
-	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
+	DeleteObjects(ctx context.Context, keys []string) error
+	ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
 }
 
@@ -61,26 +62,38 @@ func New(settings *SettingsT) (FileManager, error) {
 
 // New returns FileManager backed by configured provider
 func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
+	var timeout time.Duration
+
 	switch settings.Provider {
 	case "S3":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.S3.timeout", "BatchRouter.timeout"}...)
 		return &S3Manager{
-			Config: GetS3Config(settings.Config),
+			Config:  GetS3Config(settings.Config),
+			Timeout: &timeout,
 		}, nil
 	case "GCS":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.GCS.timeout", "BatchRouter.timeout"}...)
 		return &GCSManager{
-			Config: GetGCSConfig(settings.Config),
+			Config:  GetGCSConfig(settings.Config),
+			Timeout: &timeout,
 		}, nil
 	case "AZURE_BLOB":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.AZURE_BLOB.timeout", "BatchRouter.timeout"}...)
 		return &AzureBlobStorageManager{
-			Config: GetAzureBlogStorageConfig(settings.Config),
+			Config:  GetAzureBlogStorageConfig(settings.Config),
+			Timeout: &timeout,
 		}, nil
 	case "MINIO":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.MINIO.timeout", "BatchRouter.timeout"}...)
 		return &MinioManager{
-			Config: GetMinioConfig(settings.Config),
+			Config:  GetMinioConfig(settings.Config),
+			Timeout: &timeout,
 		}, nil
 	case "DIGITAL_OCEAN_SPACES":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.DIGITAL_OCEAN_SPACES.timeout", "BatchRouter.timeout"}...)
 		return &DOSpacesManager{
-			Config: GetDOSpacesConfig(settings.Config),
+			Config:  GetDOSpacesConfig(settings.Config),
+			Timeout: &timeout,
 		}, nil
 	}
 	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
@@ -124,4 +137,11 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
 	}
 	return providerConfig
+}
+
+func getSafeTimeout(timeout *time.Duration) time.Duration {
+	if timeout == nil || *timeout == 0 {
+		return time.Second * 120
+	}
+	return *timeout
 }
