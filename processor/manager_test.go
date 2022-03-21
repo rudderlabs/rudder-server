@@ -138,56 +138,10 @@ func TestProcessorManager(t *testing.T) {
 	defer func() {isUnLocked = temp}()
 	initJobsDB()
 	stats.Setup()
-	ctx := context.Background()
-	gwDb := jobsdb.NewForReadWrite(
-		"gw",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-		)
-	rtDb := jobsdb.NewForReadWrite(
-		"rt",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-		)
-	brtDb := jobsdb.NewForReadWrite(
-		"batch_rt",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-		)
-	errDb := jobsdb.NewForReadWrite(
-		"proc_error",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-		)
-	defer gwDb.Close()
-	defer rtDb.Close()
-	defer brtDb.Close()
-	defer errDb.Close()
-	clearDb := false
-	gwDb.Start()
-	rtDb.Start()
-	brtDb.Start()
-	errDb.Start()
-
-	processor := New(ctx, &clearDb, gwDb, rtDb, brtDb, errDb)
-
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
-	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-	mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-		processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-	})
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
 	RegisterTestingT(t)
@@ -196,6 +150,7 @@ func TestProcessorManager(t *testing.T) {
 	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time, 0)
 	maxDSSize := 10
+	// tempDb is created to observe/manage the GW DB from the outside without touching the actual GW DB.
 	tempDb := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -206,49 +161,52 @@ func TestProcessorManager(t *testing.T) {
 		CustomVal: true,
 	}
 	tempDb.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
-
-	processor.backendConfig = mockBackendConfig
-	processor.transformer = mockTransformer
+	defer tempDb.TearDown()
 
 	customVal := "GW"
-	var sampleTestJob = jobsdb.JobT{
-		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.Must(uuid.NewV4()),
-		CustomVal:    customVal,
-	}
-
 	unprocessedListEmpty := tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 0, len(unprocessedListEmpty))
-	err := tempDb.Store([]*jobsdb.JobT{&sampleTestJob})
-	require.NoError(t, err)
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err = tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err := tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
-	unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{customVal},
-		JobCount:         20,
-		ParameterFilters: []jobsdb.ParameterFilterT{},
-	})
 
-	require.Equal(t, 11, len(unprocessedListEmpty))
-	unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{customVal},
-		JobCount:         20,
-		ParameterFilters: []jobsdb.ParameterFilterT{},
-	})
-	c := make(chan bool)
+	gwDb := jobsdb.NewForReadWrite("gw")
+	defer gwDb.Close()
+	rtDb := jobsdb.NewForReadWrite("rt")
+	defer rtDb.Close()
+	brtDb := jobsdb.NewForReadWrite("batch_rt")
+	defer brtDb.Close()
+	errDb := jobsdb.NewForReadWrite("proc_error")
+	defer errDb.Close()
 
-	require.Equal(t, 11, len(unprocessedListEmpty))
-	go processor.StartNew()
-	go func() {
+	clearDb := false
+	ctx := context.Background()
+	processor := New(ctx, &clearDb, gwDb, rtDb, brtDb, errDb)
+
+	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
+		gwDb.Start()
+		defer gwDb.Stop()
+		rtDb.Start()
+		defer rtDb.Stop()
+		brtDb.Start()
+		defer brtDb.Stop()
+		errDb.Start()
+		defer errDb.Stop()
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
+			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+		})
+		processor.backendConfig = mockBackendConfig
+		processor.transformer = mockTransformer
+		processor.StartNew()
+		defer processor.Stop()
 		Eventually(func() int {
 			return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
@@ -256,27 +214,23 @@ func TestProcessorManager(t *testing.T) {
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
-		c <- true
-	}()
-	<- c
-	processor.Stop()
-	gwDb.Stop()
-	rtDb.Stop()
-	brtDb.Stop()
-	errDb.Stop()
+	})
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
-		//mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+		gwDb.Start()
+		defer gwDb.Stop()
+		rtDb.Start()
+		defer rtDb.Stop()
+		brtDb.Start()
+		defer brtDb.Stop()
+		errDb.Start()
+		defer errDb.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-		gwDb.Start()
-		rtDb.Start()
-		brtDb.Start()
-		errDb.Start()
-		go processor.StartNew()
+		processor.StartNew()
 		err = tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -284,23 +238,12 @@ func TestProcessorManager(t *testing.T) {
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		require.Equal(t, 10, len(unprocessedListEmpty)) //is this flaky??? there is a possibility that this can fail
-		// in super-fast multi-threaded system.
 
-		go func() {
-			Eventually(func() int {return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{customVal},
-				JobCount:         20,
-				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
-			c <- true
-		}()
-		<- c
+		Eventually(func() int {return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobCount:         20,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 		processor.Stop()
-		tempDb.TearDown()
-		gwDb.Stop()
-		rtDb.Stop()
-		brtDb.Stop()
-		errDb.Stop()
 	})
 }
