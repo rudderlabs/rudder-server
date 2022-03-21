@@ -93,7 +93,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 
 	// *** Adding the header ***
 	// Inserting header to the sheet
-	err = insertDataToSheet(service, config.SheetId, config.SheetName, headerRow, true)
+	err = insertHeaderDataToSheet(service, config.SheetId, config.SheetName, headerRow)
 
 	return service, err
 }
@@ -104,7 +104,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	parsedJSON := gjson.ParseBytes(jsonData)
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheet := parsedJSON.Get("spreadSheet").String()
-	values, parseErr := parseTransformedData(parsedJSON)
+	valueList, parseErr := parseTransformedData(parsedJSON)
 
 	if parseErr != nil {
 		respStatus = "Failure"
@@ -114,9 +114,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	}
 
-	message := getSheetsData(values)
+	messageList := getSheetsDataRow(valueList)
 
-	err := insertDataToSheet(sheetsClient, spreadSheetId, spreadSheet, message, false)
+	err := insertRowDataToSheet(sheetsClient, spreadSheetId, spreadSheet, messageList)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -147,9 +147,9 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 	return sheetService, err
 }
 
-// Wrapper func to insert headerData or rowData based on boolean flag.
+// Wrapper func to insert headerData
 // Returns error for failure cases of API calls otherwise returns nil
-func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool) error {
+func insertHeaderDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -161,12 +161,27 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
 
-	if isHeader {
-		_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+	_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
-	} else {
-		_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+	return err
+}
+
+// Wrapper func to append row data list,
+// Returns error for failure cases of API calls otherwise returns nil
+func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, dataList [][]interface{}) error {
+	// Creating value range for inserting row into sheet
+	var vr sheets.ValueRange
+	vr.MajorDimension = "ROWS"
+	vr.Range = spreadSheetTab + "!A1"
+	vr.Values = dataList
+	var err error
+
+	if sheetsClient == nil {
+		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
+
+	_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+
 	return err
 }
 
@@ -182,25 +197,43 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 //			..
 // 		}
 // }
-func parseTransformedData(source gjson.Result) ([]string, error) {
-	messagefields := source.Get("message")
-	values := make([]string, len(messagefields.Map()))
-	var pos int
-	var err error
-	if messagefields.IsObject() {
-		for k, v := range messagefields.Map() {
-			pos, err = strconv.Atoi(k)
-			if err != nil {
-				return values, err
+func parseTransformedData(source gjson.Result) ([][]string, error) {
+	messages := source.Get("batch")
+	var valueList [][]string
+	for _, messageElement := range messages.Array() {
+		messagefields := messageElement.Get("message")
+		values := make([]string, len(messagefields.Map()))
+		var pos int
+		var err error
+		if messagefields.IsObject() {
+			for k, v := range messagefields.Map() {
+				pos, err = strconv.Atoi(k)
+				if err != nil {
+					return nil, err
+				}
+				values[pos] = v.Get("attributeValue").String()
 			}
-			values[pos] = v.Get("attributeValue").String()
 		}
+		valueList = append(valueList, values)
 	}
-	return values, err
+
+	return valueList, nil
 }
 
 // Func used to parse a string array to an interface array for compatibility
 // with sheets-api
+func getSheetsDataRow(typedata [][]string) [][]interface{} {
+	var dataList [][]interface{}
+	for _, v := range typedata {
+		data := make([]interface{}, len(v))
+		for key, value := range v {
+			data[key] = value
+		}
+		dataList = append(dataList, data)
+	}
+	return dataList
+}
+
 func getSheetsData(typedata []string) []interface{} {
 	data := make([]interface{}, len(typedata))
 	for key, value := range typedata {
