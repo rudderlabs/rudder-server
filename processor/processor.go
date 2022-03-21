@@ -1090,6 +1090,9 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]types.SingularEventT) transformationMessage {
 	jobList := subJobs.subJobs
 	start := time.Now()
+
+	proc.statNumRequests.Count(len(jobList))
+
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
