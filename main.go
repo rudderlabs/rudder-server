@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"strconv"
 	"strings"
@@ -340,7 +341,7 @@ func Run(ctx context.Context) {
 		if logger.Log != nil {
 			logger.Log.Sync()
 		}
-		stats.StopRuntimeStats()
+		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
@@ -362,7 +363,7 @@ func Run(ctx context.Context) {
 	if logger.Log != nil {
 		logger.Log.Sync()
 	}
-	stats.StopRuntimeStats()
+	stats.StopPeriodicStats()
 }
 
 func startStandbyWebHandler(ctx context.Context) error {

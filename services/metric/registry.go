@@ -11,17 +11,6 @@ type TagsWithValue struct {
 	Value interface{}
 }
 
-// Measurement acts as a key in a Registry.
-// Measurements should be backed by comparable struct
-type Measurement interface {
-	// GetKey gets the key of the measurement
-	GetKey() interface{}
-	// GetName gets the name of the measurement
-	GetName() string
-	// GetTags gets the tags of the measurement
-	GetTags() map[string]string
-}
-
 // Registry is a safe way to capture metrics in a highly concurrent environment.
 // The registry is responsible for creating and storing the various measurements and
 // guarantees consistency when competing goroutines try to update the same measurement
@@ -96,7 +85,7 @@ func NewRegistry() Registry {
 		return &SimpleEWMA{}
 	}
 	indexGenerator := func() interface{} {
-		return map[interface{}]TagsWithValue{}
+		return map[Measurement]TagsWithValue{}
 	}
 	return &registry{
 		counters:    sync.Pool{New: counterGenerator},
@@ -119,7 +108,7 @@ type registry struct {
 
 func (r *registry) GetCounter(m Measurement) (Counter, error) {
 	newCounter := r.counters.Get()
-	res, putBack := r.store.LoadOrStore(m.GetKey(), newCounter)
+	res, putBack := r.store.LoadOrStore(m, newCounter)
 	if putBack {
 		r.counters.Put(newCounter)
 	} else {
@@ -127,7 +116,7 @@ func (r *registry) GetCounter(m Measurement) (Counter, error) {
 	}
 	c, ok := res.(Counter)
 	if !ok {
-		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m.GetKey(), res)
+		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
 	}
 	return c, nil
 }
@@ -142,7 +131,7 @@ func (r *registry) MustGetCounter(m Measurement) Counter {
 
 func (r *registry) GetGauge(m Measurement) (Gauge, error) {
 	newGauge := r.gauges.Get()
-	res, putBack := r.store.LoadOrStore(m.GetKey(), newGauge)
+	res, putBack := r.store.LoadOrStore(m, newGauge)
 	if putBack {
 		r.gauges.Put(newGauge)
 	} else {
@@ -150,7 +139,7 @@ func (r *registry) GetGauge(m Measurement) (Gauge, error) {
 	}
 	g, ok := res.(Gauge)
 	if !ok {
-		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m.GetKey(), res)
+		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
 	}
 	return g, nil
 }
@@ -165,7 +154,7 @@ func (r *registry) MustGetGauge(m Measurement) Gauge {
 
 func (r *registry) GetSimpleMovingAvg(m Measurement) (MovingAverage, error) {
 	newEwma := r.simpleEwmas.Get()
-	res, putBack := r.store.LoadOrStore(m.GetKey(), newEwma)
+	res, putBack := r.store.LoadOrStore(m, newEwma)
 	if putBack {
 		r.simpleEwmas.Put(newEwma)
 	} else {
@@ -173,7 +162,7 @@ func (r *registry) GetSimpleMovingAvg(m Measurement) (MovingAverage, error) {
 	}
 	ma, ok := res.(MovingAverage)
 	if !ok {
-		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m.GetKey(), res)
+		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
 	}
 	return ma, nil
 }
@@ -190,7 +179,7 @@ func (r *registry) GetVarMovingAvg(m Measurement, age float64) (MovingAverage, e
 	newEwma := r.varEwmas.Get()
 	decay := 2 / (age + 1)
 	newEwma.(*VariableEWMA).decay = decay
-	res, putBack := r.store.LoadOrStore(m.GetKey(), newEwma)
+	res, putBack := r.store.LoadOrStore(m, newEwma)
 	if putBack {
 		r.varEwmas.Put(newEwma)
 	} else {
@@ -198,11 +187,11 @@ func (r *registry) GetVarMovingAvg(m Measurement, age float64) (MovingAverage, e
 	}
 	ma, ok := res.(*VariableEWMA)
 	if !ok {
-		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m.GetKey(), res)
+		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
 	}
 	if ma.decay != decay {
 		currentAge := 2/ma.decay + 1
-		return nil, fmt.Errorf("another moving average with age %f instead of %f exists in the registry with the same key [%+v]: %T", currentAge, age, m.GetKey(), res)
+		return nil, fmt.Errorf("another moving average with age %f instead of %f exists in the registry with the same key [%+v]: %T", currentAge, age, m, res)
 	}
 	return ma, nil
 }
@@ -225,7 +214,7 @@ func (r *registry) GetMetricsByName(name string) []TagsWithValue {
 		return []TagsWithValue{}
 	}
 	values := []TagsWithValue{}
-	for _, value := range metricsSet.(map[interface{}]TagsWithValue) {
+	for _, value := range metricsSet.(map[Measurement]TagsWithValue) {
 		values = append(values, value)
 	}
 	return values
@@ -239,5 +228,5 @@ func (r *registry) updateIndex(m Measurement, metric interface{}) {
 		r.sets.Put(newSet)
 	}
 
-	res.(map[interface{}]TagsWithValue)[m.GetKey()] = TagsWithValue{m.GetTags(), metric}
+	res.(map[Measurement]TagsWithValue)[m] = TagsWithValue{m.GetTags(), metric}
 }

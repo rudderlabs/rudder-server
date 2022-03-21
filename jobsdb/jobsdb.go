@@ -459,7 +459,7 @@ func (jd *HandleT) Status() interface{} {
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 		statusObj["migration-state"] = jd.migrationState
 	}
-	pendingEventMetrics := metric.GetManager().GetRegistry(metric.PENDING_EVENTS_REGISTRY).GetMetricsByName(fmt.Sprintf("%s_pending_events", jd.tablePrefix))
+	pendingEventMetrics := metric.GetManager().GetRegistry(metric.PUBLISHED_METRICS).GetMetricsByName(fmt.Sprintf("%s_pending_events", jd.tablePrefix))
 	if len(pendingEventMetrics) > 0 {
 		pendingEvents := []map[string]interface{}{}
 		for _, pendingEvent := range pendingEventMetrics {

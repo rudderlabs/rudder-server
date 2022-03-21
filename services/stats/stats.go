@@ -33,6 +33,7 @@ var enableCPUStats bool
 var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
+var mc metricStatsCollector
 var pkgLogger logger.LoggerI
 var statsSamplingRate float32
 
@@ -113,7 +114,7 @@ func Setup() {
 	}
 	if client != nil {
 		rruntime.Go(func() {
-			collectRuntimeStats(client)
+			collectPeriodicStats(client)
 		})
 	}
 }
@@ -287,7 +288,7 @@ func (rStats *RudderStatsT) Observe(value float64) {
 	rStats.Client.Histogram(rStats.Name, value)
 }
 
-func collectRuntimeStats(client *statsd.Client) {
+func collectPeriodicStats(client *statsd.Client) {
 	gaugeFunc := func(key string, val uint64) {
 		client.Gauge("runtime_"+key, val)
 	}
@@ -296,19 +297,23 @@ func collectRuntimeStats(client *statsd.Client) {
 	rc.EnableCPU = enableCPUStats
 	rc.EnableMem = enableMemStats
 	rc.EnableGC = enableGCStats
+
+	mc = newMetricStatsCollector()
 	if enabled {
 		rc.run()
+		mc.run()
 	}
 
 }
 
-// StopRuntimeStats stops collection of runtime stats.
-func StopRuntimeStats() {
+// StopPeriodicStats stops periodic collection of stats.
+func StopPeriodicStats() {
 	if !statsEnabled {
 		return
 	}
 
 	close(rc.Done)
+	close(mc.done)
 }
 
 func getTagsFormat() statsd.TagFormat {

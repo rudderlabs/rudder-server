@@ -13,21 +13,17 @@ type testMeasurement struct {
 	tag  string
 }
 
-func (r *testMeasurement) GetKey() interface{} {
-	return *r
-}
-
-func (r *testMeasurement) GetName() string {
+func (r testMeasurement) GetName() string {
 	return r.name
 }
 
-func (r *testMeasurement) GetTags() map[string]string {
+func (r testMeasurement) GetTags() map[string]string {
 	return map[string]string{"tag": r.tag}
 }
 func TestRegistryGet(t *testing.T) {
 	registry := NewRegistry()
 
-	counterKey := &testMeasurement{name: "key1"}
+	counterKey := testMeasurement{name: "key1"}
 	counter := registry.MustGetCounter(counterKey)
 	counter.Inc()
 	otherCounter := registry.MustGetCounter(counterKey)
@@ -36,7 +32,7 @@ func TestRegistryGet(t *testing.T) {
 		t.Errorf("Expected %f, got %f.", expected, got)
 	}
 
-	gaugeKey := &testMeasurement{name: "key2"}
+	gaugeKey := testMeasurement{name: "key2"}
 	gauge := registry.MustGetCounter(gaugeKey)
 	gauge.Inc()
 	otherGauge := registry.MustGetCounter(gaugeKey)
@@ -54,7 +50,7 @@ func TestRegistryGet(t *testing.T) {
 		t.Errorf("Expected error %q, got %q.", expected, got)
 	}
 
-	smaKey := &testMeasurement{name: "key3"}
+	smaKey := testMeasurement{name: "key3"}
 	sma := registry.MustGetSimpleMovingAvg(smaKey)
 	sma.Add(1)
 	otherSma := registry.MustGetSimpleMovingAvg(smaKey)
@@ -63,7 +59,7 @@ func TestRegistryGet(t *testing.T) {
 		t.Errorf("Expected %f, got %f.", expected, got)
 	}
 
-	vma10Key := &testMeasurement{name: "key4"}
+	vma10Key := testMeasurement{name: "key4"}
 	vma10 := registry.MustGetVarMovingAvg(vma10Key, 10)
 	vma10.Add(1)
 	otherVma10 := registry.MustGetVarMovingAvg(vma10Key, 10)
@@ -85,9 +81,9 @@ func TestRegistryGet(t *testing.T) {
 
 func TestRegistryNameIndex(t *testing.T) {
 	registry := NewRegistry()
-	m1 := &testMeasurement{name: "key1", tag: "tag1"}
-	m2 := &testMeasurement{name: "key1", tag: "tag2"}
-	m3 := &testMeasurement{name: "key2", tag: "tag1"}
+	m1 := testMeasurement{name: "key1", tag: "tag1"}
+	m2 := testMeasurement{name: "key1", tag: "tag2"}
+	m3 := testMeasurement{name: "key2", tag: "tag1"}
 	registry.MustGetCounter(m1).Inc()
 	registry.MustGetCounter(m2).Add(2)
 	registry.MustGetCounter(m3).Add(3)
@@ -105,7 +101,7 @@ func TestRegistryNameIndex(t *testing.T) {
 func TestRegistryGetConcurrently(t *testing.T) {
 	const concurrency = 1000
 	registry := NewRegistry()
-	var key = &testMeasurement{name: "key"}
+	var key = testMeasurement{name: "key"}
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {

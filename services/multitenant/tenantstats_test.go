@@ -38,7 +38,7 @@ var (
 var _ = Describe("tenantStats", func() {
 
 	BeforeEach(func() {
-		metric.Reset()
+		metric.GetManager().Reset()
 		config.Load()
 		logger.Init()
 		Init()
@@ -160,7 +160,7 @@ var _ = Describe("tenantStats", func() {
 func Benchmark_Counts(b *testing.B) {
 
 	b.ResetTimer()
-	metric.Reset()
+	metric.GetManager().Reset()
 	const writeRatio = 1000
 	gauge := metric.GetPendingEventsMeasurement("rt", workspaceID1, destType1)
 	errgroup := errgroup.Group{}
