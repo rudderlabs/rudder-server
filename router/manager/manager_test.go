@@ -189,45 +189,27 @@ func TestRouterManager(t *testing.T) {
 			}).AnyTimes()
 
 	ctx := context.Background()
-	rtDb := jobsdb.NewForReadWrite(
-		"rt",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-	)
-	brtDb := jobsdb.NewForReadWrite(
-		"batch_rt",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-	)
-	errDb := jobsdb.NewForReadWrite(
-		"proc_error",
-		jobsdb.WithClearDB(false),
-		jobsdb.WithMigrationMode("default"),
-		jobsdb.WithRetention(time.Duration(0)),
-		jobsdb.WithStatusHandler(),
-	)
-	defer rtDb.Close()
-	defer brtDb.Close()
-	defer errDb.Close()
-	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDb}
-	r := NewRouterManager(ctx, brtDb, errDb, tDb, mockMTI)
+	rtDB := jobsdb.NewForReadWrite("rt")
+	brtDB := jobsdb.NewForReadWrite("batch_rt")
+	errDB := jobsdb.NewForReadWrite("proc_error")
+	defer rtDB.Close()
+	defer brtDB.Close()
+	defer errDB.Close()
+	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+	r := NewRouterManager(ctx, brtDB, errDB, tDb, mockMTI)
 	r.backendConfig = mockBackendConfig
 	r.reportingI = &reportingNOOP{}
 
 	for i := 0; i < 5; i++ {
-		rtDb.Start()
-		brtDb.Start()
-		errDb.Start()
+		rtDB.Start()
+		brtDB.Start()
+		errDB.Start()
 		r.StartNew()
 		<-c
 		r.Stop()
-		rtDb.Stop()
-		brtDb.Stop()
-		errDb.Stop()
+		rtDB.Stop()
+		brtDB.Stop()
+		errDB.Stop()
 		c = make(chan bool)
 		once = sync.Once{}
 	}

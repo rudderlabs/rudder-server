@@ -150,8 +150,8 @@ func TestProcessorManager(t *testing.T) {
 	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time, 0)
 	maxDSSize := 10
-	// tempDb is created to observe/manage the GW DB from the outside without touching the actual GW DB.
-	tempDb := jobsdb.HandleT{
+	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
+	tempDB := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
@@ -160,11 +160,11 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	tempDb.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
-	defer tempDb.TearDown()
+	tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
+	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty := tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -173,31 +173,31 @@ func TestProcessorManager(t *testing.T) {
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err := tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err := tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
-	gwDb := jobsdb.NewForReadWrite("gw")
-	defer gwDb.Close()
-	rtDb := jobsdb.NewForReadWrite("rt")
-	defer rtDb.Close()
-	brtDb := jobsdb.NewForReadWrite("batch_rt")
-	defer brtDb.Close()
-	errDb := jobsdb.NewForReadWrite("proc_error")
-	defer errDb.Close()
+	gwDB := jobsdb.NewForReadWrite("gw")
+	defer gwDB.Close()
+	rtDB := jobsdb.NewForReadWrite("rt")
+	defer rtDB.Close()
+	brtDB := jobsdb.NewForReadWrite("batch_rt")
+	defer brtDB.Close()
+	errDB := jobsdb.NewForReadWrite("proc_error")
+	defer errDB.Close()
 
 	clearDb := false
 	ctx := context.Background()
-	processor := New(ctx, &clearDb, gwDb, rtDb, brtDb, errDb)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
-		gwDb.Start()
-		defer gwDb.Stop()
-		rtDb.Start()
-		defer rtDb.Stop()
-		brtDb.Start()
-		defer brtDb.Stop()
-		errDb.Start()
-		defer errDb.Stop()
+		gwDB.Start()
+		defer gwDB.Stop()
+		rtDB.Start()
+		defer rtDB.Stop()
+		brtDB.Start()
+		defer brtDB.Stop()
+		errDB.Start()
+		defer errDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
@@ -208,7 +208,7 @@ func TestProcessorManager(t *testing.T) {
 		processor.StartNew()
 		defer processor.Stop()
 		Eventually(func() int {
-			return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
+			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -217,29 +217,29 @@ func TestProcessorManager(t *testing.T) {
 	})
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
-		gwDb.Start()
-		defer gwDb.Stop()
-		rtDb.Start()
-		defer rtDb.Stop()
-		brtDb.Start()
-		defer brtDb.Stop()
-		errDb.Start()
-		defer errDb.Stop()
+		gwDB.Start()
+		defer gwDB.Stop()
+		rtDB.Start()
+		defer rtDB.Stop()
+		brtDB.Start()
+		defer brtDB.Stop()
+		errDB.Start()
+		defer errDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 		processor.StartNew()
-		err = tempDb.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty = tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
+		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		Eventually(func() int {return len(tempDb.GetUnprocessed(jobsdb.GetQueryParamsT{
+		Eventually(func() int {return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
