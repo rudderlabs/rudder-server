@@ -329,18 +329,6 @@ func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0 interface{}) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEach", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEach), arg0)
 }
 
-// TearDown mocks base method.
-func (m *MockJobsDB) TearDown() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "TearDown")
-}
-
-// TearDown indicates an expected call of TearDown.
-func (mr *MockJobsDBMockRecorder) TearDown() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TearDown", reflect.TypeOf((*MockJobsDB)(nil).TearDown))
-}
-
 // UpdateJobStatus mocks base method.
 func (m *MockJobsDB) UpdateJobStatus(arg0 []*jobsdb.JobStatusT, arg1 []string, arg2 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
