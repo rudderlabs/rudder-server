@@ -22,6 +22,9 @@ func (ct *CTHandleT) validateDestinationFunc(ctx context.Context, req json.RawMe
 		return nil, err
 	}
 
+	// Normalize info request
+	ct.normalizeRequest()
+
 	resp := validationResponse{}
 
 	// check if req has specified a step in query params
@@ -71,6 +74,17 @@ func (ct *CTHandleT) validateDestinationFunc(ctx context.Context, req json.RawMe
 	}
 
 	return json.Marshal(resp)
+}
+
+// normalizeRequest For a newly created destination Id and destination name will not
+// be present. so adding those.
+func (ct *CTHandleT) normalizeRequest() {
+	if ct.infoRequest.Destination.ID == "" {
+		ct.infoRequest.Destination.ID = GetRandomString()
+	}
+	if ct.infoRequest.Destination.Name == "" {
+		ct.infoRequest.Destination.ID = GetRandomString()
+	}
 }
 
 func (ct *CTHandleT) verifyingObjectStorage(ctx context.Context, vr *validationRequest) (step *validationStep) {

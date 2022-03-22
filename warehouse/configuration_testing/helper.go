@@ -32,8 +32,8 @@ var (
 func (ct *CTHandleT) warehouseAdapter() warehouseutils.WarehouseT {
 	destination := ct.infoRequest.Destination
 
-	randomSourceId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	randomSourceName := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	randomSourceId := GetRandomString()
+	randomSourceName := GetRandomString()
 	return warehouseutils.WarehouseT{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
@@ -73,4 +73,8 @@ func (ct *CTHandleT) parseOptions(req json.RawMessage, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func GetRandomString() string {
+	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }

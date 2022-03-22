@@ -890,3 +890,10 @@ func GetLoadFileFormat(whType string) string {
 		return "csv.gz"
 	}
 }
+
+func ValidateHost(hostname string) error {
+	if strings.ToLower(hostname) == "localhost" || hostname == "127.0.0.1" || hostname == "0.0.0.0" || hostname == "::" || hostname == "::1" {
+		return fmt.Errorf("invalid host name: %s. Hostnames like localhost, 127.0.0.1 etc., are not allowed", hostname)
+	}
+	return nil
+}

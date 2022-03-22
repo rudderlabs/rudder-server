@@ -2,7 +2,6 @@ package configuration_testing
 
 import (
 	"fmt"
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
@@ -55,7 +54,7 @@ func (ct *CTHandleT) CreateTableQuery() (sqlStatement string) {
 	// preparing staging table name
 	ct.stagingTableName = fmt.Sprintf(`%s%s`,
 		StagingTablePrefix,
-		strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""),
+		GetRandomString(),
 	)
 
 	switch ct.warehouse.Type {
