@@ -300,8 +300,17 @@ func collectPeriodicStats(client *statsd.Client) {
 
 	mc = newMetricStatsCollector()
 	if enabled {
-		rc.run()
-		mc.run()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			rc.run()
+		}()
+		go func() {
+			defer wg.Done()
+			mc.run()
+		}()
+		wg.Wait()
 	}
 
 }
