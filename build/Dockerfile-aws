@@ -1,5 +1,6 @@
-FROM frolvlad/alpine-glibc:alpine-3.13_glibc-2.33
-RUN apk add --no-cache ca-certificates postgresql-client curl
+FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
+RUN apk add --no-cache ca-certificates postgresql-client curl 
+RUN apk upgrade
 ADD rudder-server /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ADD build/wait-for /
