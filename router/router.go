@@ -614,7 +614,7 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 	return true
 }
 
-func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
+func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
 	var err error
 	var response integrations.PostParametersT
 	responseArray := make([]integrations.PostParametersT, 0)
@@ -625,17 +625,14 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 		} else {
 			responseArray = append(responseArray, response)
 		}
-
 	} else {
 		err = json.Unmarshal(payload, &response)
 		if err == nil {
 			responseArray = append(responseArray, response)
 		}
 	}
-	if err != nil {
-		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
-	}
-	return responseArray
+
+	return responseArray, err
 }
 
 func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
@@ -751,52 +748,56 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					result := getIterableStruct(destinationJob.Message, transformAt)
-					for _, val := range result {
-						err := integrations.ValidatePostInfo(val)
-						if err != nil {
-							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-							respBodyArr = append(respBodyArr, respBodyTemp)
-						} else {
-							// stat start
-							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-							defer cancel()
-							//transformer proxy start
-							if worker.rt.transformerProxy {
-								rtl_time := time.Now()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
-								worker.routerProxyStat.SendTiming(time.Since(rtl_time))
-								authType := router_utils.GetAuthType(destinationJob.Destination)
-								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-									pkgLogger.Debugf(`Sending for OAuth destination`)
-									// Token from header of the request
-									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
-										ctx:            ctx,
-										destinationJob: destinationJob,
-										workerId:       worker.workerID,
-										trRespStCd:     respStatusCode,
-										trRespBody:     respBodyTemp,
-										secret:         destinationJob.JobMetadataArray[0].Secret,
-									})
-								}
-							} else {
-								rdl_time := time.Now()
-								resp := worker.rt.netHandle.SendPost(sendCtx, val)
-								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-								// stat end
-								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
-							}
-							// transformer proxy end
-							if isSuccessStatus(respStatusCode) {
+					result, err := getIterableStruct(destinationJob.Message, transformAt)
+					if err != nil {
+						respStatusCode, respBody = 599, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+					} else {
+						for _, val := range result {
+							err := integrations.ValidatePostInfo(val)
+							if err != nil {
+								respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
-								respBodyArr = []string{respBodyTemp}
-								break
+								// stat start
+								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+								defer cancel()
+								//transformer proxy start
+								if worker.rt.transformerProxy {
+									rtl_time := time.Now()
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+									authType := router_utils.GetAuthType(destinationJob.Destination)
+									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+										pkgLogger.Debugf(`Sending for OAuth destination`)
+										// Token from header of the request
+										respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
+											ctx:            ctx,
+											destinationJob: destinationJob,
+											workerId:       worker.workerID,
+											trRespStCd:     respStatusCode,
+											trRespBody:     respBodyTemp,
+											secret:         destinationJob.JobMetadataArray[0].Secret,
+										})
+									}
+								} else {
+									rdl_time := time.Now()
+									resp := worker.rt.netHandle.SendPost(sendCtx, val)
+									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+									// stat end
+									worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
+								}
+								// transformer proxy end
+								if isSuccessStatus(respStatusCode) {
+									respBodyArr = append(respBodyArr, respBodyTemp)
+								} else {
+									respBodyArr = []string{respBodyTemp}
+									break
+								}
 							}
 						}
+						respBody = strings.Join(respBodyArr, " ")
 					}
-					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
