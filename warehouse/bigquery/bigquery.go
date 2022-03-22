@@ -289,7 +289,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 			Schema:           sampleSchema,
 			TimePartitioning: &bigquery.TimePartitioning{},
 		}
-		tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
+		tableRef := bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
 		err = tableRef.Create(bq.BQContext, metaData)
 		if err != nil {
 			pkgLogger.Infof("BQ: Error creating temporary staging table %s", stagingTableName)
