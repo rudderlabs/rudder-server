@@ -922,27 +922,27 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
 	defer cancel()
 
 	var pending bool
 	if !excludeGateway {
-		pending = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
-		if pending {
-			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
+		if err != nil || pending {
+			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(true))))
 			return
 		}
 	}
 
-	pending = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
-	if pending {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(true))))
 		return
 	}
 
-	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
-	if pending {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(true))))
 		return
 	}
 
