@@ -22,7 +22,7 @@ type pendingEventsMeasurement struct {
 }
 
 func (r pendingEventsMeasurement) GetName() string {
-	return fmt.Sprintf("%s_pending_events", r.tablePrefix)
+	return fmt.Sprintf("jobsdb_%s_pending_events_count", r.tablePrefix)
 }
 func (r pendingEventsMeasurement) GetTags() map[string]string {
 	res := map[string]string{
