@@ -29,7 +29,12 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = columnVal
 		}
 	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
-		newColumnVal = columnVal
+		intVal, ok := columnVal.(int64)
+		if !ok {
+			newColumnVal = nil
+		} else {
+			newColumnVal = float64(intVal)
+		}
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := columnVal.(float64)
 		if !ok {
