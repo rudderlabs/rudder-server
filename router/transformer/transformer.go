@@ -5,7 +5,7 @@ package transformer
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsoniter "github.com/json-iterator/go"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +27,8 @@ const (
 	BATCH            = "BATCH"
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 //HandleT is the handle for this class
 type HandleT struct {
@@ -58,6 +60,7 @@ var (
 	pkgLogger             logger.LoggerI
 )
 
+
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
@@ -74,7 +77,7 @@ func Init() {
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
-	rawJSON, err := json.Marshal(transformMessage)
+	rawJSON, err := jsonfast.Marshal(transformMessage)
 	if err != nil {
 		panic(err)
 	}
@@ -147,10 +150,10 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
-			err = json.Unmarshal(respData, &destinationJobs)
+			err = jsonfast.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
-			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
+			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
@@ -173,7 +176,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
-	rawJSON, err := json.Marshal(responseData)
+	rawJSON, err := jsonfast.Marshal(responseData)
 	if err != nil {
 		panic(err)
 	}
@@ -224,7 +227,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
-	err = json.Unmarshal(respData, &transformerResponse)
+	err = jsonfast.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
@@ -234,7 +237,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		return respCode, string(respData)
 	}
 	// unmarshal success
-	respData, err = json.Marshal(transformerResponse)
+	respData, err = jsonfast.Marshal(transformerResponse)
 	if err != nil {
 		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
 	}
