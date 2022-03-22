@@ -922,22 +922,25 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
+	defer cancel()
+
 	var pending bool
 	if !excludeGateway {
-		pending = gateway.readonlyGatewayDB.HavePendingJobs([]string{CustomVal}, -1, gwParameterFilters)
+		pending = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
 		if pending {
 			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
 			return
 		}
 	}
 
-	pending = gateway.readonlyRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	pending = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
 	if pending {
 		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
 		return
 	}
 
-	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
 	if pending {
 		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
 		return
