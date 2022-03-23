@@ -283,32 +283,31 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 }
 
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
-	if useDeepEqualSchemas {
-		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
-		return !eq
-	}
+	if skipDeepEqualSchemas {
+		// Iterating through all tableName in the localSchema
+		for tableName := range localSchema {
+			localColumns := localSchema[tableName]
+			warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
 
-	// Iterating through all tableName in the localSchema
-	for tableName := range localSchema {
-		localColumns := localSchema[tableName]
-		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
-
-		// If warehouse does not contain the specified table return true.
-		if !whColumnsExist {
-			return true
-		}
-		for columnName := range localColumns {
-			localColumn := localColumns[columnName]
-			warehouseColumn := warehouseColumns[columnName]
-
-			// If warehouse does not contain the specified column return true.
-			// If warehouse column does not match with the local one return true
-			if localColumn != warehouseColumn {
+			// If warehouse does not contain the specified table return true.
+			if !whColumnsExist {
 				return true
 			}
+			for columnName := range localColumns {
+				localColumn := localColumns[columnName]
+				warehouseColumn := warehouseColumns[columnName]
+
+				// If warehouse does not contain the specified column return true.
+				// If warehouse column does not match with the local one return true
+				if localColumn != warehouseColumn {
+					return true
+				}
+			}
 		}
+		return false
 	}
-	return false
+	eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
+	return !eq
 }
 
 func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
