@@ -136,7 +136,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 
 func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
-	defer func() {isUnLocked = temp}()
+	defer func() { isUnLocked = temp }()
 	initJobsDB()
 	stats.Setup()
 	mockCtrl := gomock.NewController(t)
@@ -240,11 +240,13 @@ func TestProcessorManager(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		Eventually(func() int {return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{customVal},
-			JobCount:         20,
-			ParameterFilters: []jobsdb.ParameterFilterT{},
-		}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		Eventually(func() int {
+			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         20,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			}))
+		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})
 }
