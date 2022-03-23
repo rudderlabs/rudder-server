@@ -4,20 +4,22 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/thoas/go-funk"
 )
 
 var (
-	scheduledTimesCache map[string][]int
-	minUploadBackoff    time.Duration
-	maxUploadBackoff    time.Duration
-	startUploadAlways   bool
+	scheduledTimesCache     map[string][]int
+	minUploadBackoff        time.Duration
+	maxUploadBackoff        time.Duration
+	startUploadAlways       bool
+	scheduledTimesCacheLock sync.RWMutex
 )
 
 func Init3() {
@@ -33,7 +35,10 @@ func loadConfigScheduling() {
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule
 // eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 func ScheduledTimes(syncFrequency, syncStartAt string) []int {
-	if cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]; ok {
+	scheduledTimesCacheLock.RLock()
+	cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]
+	scheduledTimesCacheLock.RUnlock()
+	if ok {
 		return cachedTimes
 	}
 	syncStartAtInMin := timeutil.MinsOfDay(syncStartAt)
@@ -59,8 +64,10 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 		prependTimes = append(prependTimes, mins)
 		counter++
 	}
-	times = append(funk.ReverseInt(prependTimes), times...)
+	times = append(misc.ReverseInt(prependTimes), times...)
+	scheduledTimesCacheLock.Lock()
 	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
+	scheduledTimesCacheLock.Unlock()
 	return times
 }
 

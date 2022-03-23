@@ -1,13 +1,13 @@
 package backendconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 
 	"github.com/cenkalti/backoff"
@@ -17,20 +17,16 @@ import (
 type MultiWorkspaceConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
+	sourceIDToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 //WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
-}
-type WorkspaceT struct {
-	WorkspaceID string `json:"id"`
-}
-
-type HostedWorkspacesT struct {
-	HostedWorkspaces []WorkspaceT `json:"workspaces"`
 }
 
 //SetUp sets up MultiWorkspaceConfig
@@ -44,6 +40,18 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
 	if workspaceID, ok := multiWorkspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+		return workspaceID
+	}
+
+	return ""
+}
+
+//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForSourceID(sourceID string) string {
+	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
+	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+
+	if workspaceID, ok := multiWorkspaceConfig.sourceIDToWorkspaceIDMap[sourceID]; ok {
 		return workspaceID
 	}
 
@@ -84,19 +92,21 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		return ConfigT{}, false
 	}
 	var workspaces WorkspacesT
-	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
+	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Error("Error while parsing request", err, statusCode)
 		return ConfigT{}, false
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
+	sourceIDToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
 		for _, source := range workspaceConfig.Sources {
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
+			sourceIDToWorkspaceIDMap[source.ID] = workspaceID
 			workspaceIDToLibrariesMap[workspaceID] = workspaceConfig.Libraries
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)

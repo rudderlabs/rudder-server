@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"google.golang.org/api/iterator"
 
@@ -14,14 +15,13 @@ import (
 )
 
 func (manager *GCSManager) objectURL(objAttrs *storage.ObjectAttrs) string {
-	if manager.Config.EndPoint != nil {
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		return fmt.Sprintf("%s/%s/%s", *manager.Config.EndPoint, objAttrs.Bucket, objAttrs.Name)
 	}
 	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", objAttrs.Bucket, objAttrs.Name)
 }
 
-func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
-
+func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
@@ -36,12 +36,16 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		}
 	}
 
-	client, err := manager.getClient()
+	client, err := manager.getClient(ctx)
 	if err != nil {
 		return UploadOutput{}, err
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
 	obj := client.Bucket(manager.Config.Bucket).Object(fileName)
-	w := obj.NewWriter(context.Background())
+	w := obj.NewWriter(ctx)
 	defer func() error {
 		return w.Close()
 	}()
@@ -49,7 +53,8 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		return UploadOutput{}, err
 	}
 	w.Close()
-	attrs, err := obj.Attrs(context.Background())
+
+	attrs, err := obj.Attrs(ctx)
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -57,15 +62,18 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	return UploadOutput{Location: manager.objectURL(attrs), ObjectName: fileName}, err
 }
 
-func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
-	ctx := context.Background()
 
 	// Create GCS storage client
-	client, err := manager.getClient()
+	client, err := manager.getClient(ctx)
 	if err != nil {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
 	// Create GCS Bucket handle
 	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
 		Prefix:    prefix,
@@ -85,11 +93,14 @@ func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (f
 	return
 }
 
-func (manager *GCSManager) getClient() (*storage.Client, error) {
+func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, error) {
 	var err error
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
 	if manager.client == nil {
-		ctx := context.Background()
-		if manager.Config.EndPoint != nil {
+		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
 		} else if manager.Config.Credentials == "" {
 			manager.client, err = storage.NewClient(ctx)
@@ -97,20 +108,22 @@ func (manager *GCSManager) getClient() (*storage.Client, error) {
 			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 		}
 	}
+
 	if manager.client == nil {
-		ctx := context.Background()
 		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 	}
 	return manager.client, err
 }
 
-func (manager *GCSManager) Download(output *os.File, key string) error {
-	ctx := context.Background()
-
-	client, err := manager.getClient()
+func (manager *GCSManager) Download(ctx context.Context, output *os.File, key string) error {
+	client, err := manager.getClient(ctx)
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
 	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
 		return err
@@ -139,8 +152,9 @@ func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) strin
 }
 
 type GCSManager struct {
-	Config *GCSConfig
-	client *storage.Client
+	Config  *GCSConfig
+	client  *storage.Client
+	Timeout *time.Duration
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
@@ -203,7 +217,7 @@ type GCSConfig struct {
 	DisableSSL     *bool
 }
 
-func (manager *GCSManager) DeleteObjects(locations []string) (err error) {
+func (manager *GCSManager) DeleteObjects(ctx context.Context, locations []string) (err error) {
 	return
 }
 

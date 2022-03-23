@@ -120,7 +120,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	timer := jobRun.timerStat("download_staging_file_time")
 	timer.Start()
 
-	err = downloader.Download(file, job.StagingFileLocation)
+	err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to download file")
 		return err
@@ -255,9 +255,9 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.ContainsString(timeWindowDestinations, job.DestinationType) {
-		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
+		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }
@@ -739,7 +739,17 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if (hasID && hasReceivedAt) || violatedConstraints.isViolated {
+	if violatedConstraints.isViolated {
+		if !hasID {
+			rowID = violatedConstraints.violatedIdentifier
+			hasID = true
+		}
+		if !hasReceivedAt {
+			receivedAt = time.Now().Format(misc.RFC3339Milli)
+			hasReceivedAt = true
+		}
+	}
+	if hasID && hasReceivedAt {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))

@@ -17,20 +17,18 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
 	github.com/aws/aws-sdk-go v1.37.23
-	github.com/bitly/go-simplejson v0.5.0 // indirect
-	github.com/bugsnag/bugsnag-go v1.9.0
-	github.com/bugsnag/panicwrap v1.2.0 // indirect
+	github.com/bugsnag/bugsnag-go/v2 v2.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/containerd/continuity v0.1.0 // indirect
 	github.com/denisenkom/go-mssqldb v0.10.0
-	github.com/dgraph-io/badger/v2 v2.2007.2
+	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-ini/ini v1.63.2 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
-	github.com/gofrs/uuid v4.1.0+incompatible
+	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.2
@@ -46,14 +44,13 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/lib/pq v1.10.4
 	github.com/minio/minio-go v6.0.14+incompatible
-	github.com/minio/minio-go/v6 v6.0.49
+	github.com/minio/minio-go/v6 v6.0.57
 	github.com/mkmik/multierror v0.3.0
-	github.com/onsi/ginkgo v1.16.4
+	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.10.1
-	github.com/opencontainers/runc v1.0.1 // indirect
+	github.com/opencontainers/runc v1.1.0 // indirect
 	github.com/ory/dockertest v3.3.5+incompatible
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/pelletier/go-toml v1.6.0 // indirect
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
@@ -63,11 +60,9 @@ require (
 	github.com/snowflakedb/gosnowflake v1.6.3
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.3.1
-	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/spf13/viper v1.6.2
+	github.com/spf13/viper v1.8.0
 	github.com/stretchr/testify v1.7.0
-	github.com/thoas/go-funk v0.5.0
+	github.com/thoas/go-funk v0.9.1
 	github.com/tidwall/gjson v1.10.2
 	github.com/tidwall/sjson v1.0.4
 	github.com/xdg/scram v1.0.3
@@ -76,16 +71,13 @@ require (
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/net v0.0.0-20210917221730-978cfadd31cf
-	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
+	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210927094055-39ccf1dd6fa6 // indirect
 	golang.org/x/tools v0.1.6 // indirect
-	google.golang.org/api v0.39.0
+	google.golang.org/api v0.44.0
 	google.golang.org/grpc v1.39.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
-	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 )

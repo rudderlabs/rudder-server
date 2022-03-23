@@ -32,7 +32,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/araddon/dateparse"
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	uuid "github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"
@@ -84,6 +84,17 @@ type RudderError struct {
 	StackTrace        string
 	Code              int
 }
+
+type pair struct {
+	key   string
+	value float64
+}
+
+type pairList []pair
+
+func (p pairList) Len() int           { return len(p) }
+func (p pairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p pairList) Less(i, j int) bool { return p[i].value < p[j].value }
 
 type RFP struct {
 	path         string
@@ -546,42 +557,6 @@ func ContainsInt(slice []int, val int) bool {
 	return false
 }
 
-func equal(expected, actual interface{}) bool {
-	if expected == nil || actual == nil {
-		return expected == actual
-	}
-	return reflect.DeepEqual(expected, actual)
-}
-
-// Contains returns true if an element is present in a iteratee.
-// https://github.com/thoas/go-funk
-func Contains(in interface{}, elem interface{}) bool {
-	inValue := reflect.ValueOf(in)
-	elemValue := reflect.ValueOf(elem)
-	inType := inValue.Type()
-
-	switch inType.Kind() {
-	case reflect.String:
-		return strings.Contains(inValue.String(), elemValue.String())
-	case reflect.Map:
-		for _, key := range inValue.MapKeys() {
-			if equal(key.Interface(), elem) {
-				return true
-			}
-		}
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < inValue.Len(); i++ {
-			if equal(inValue.Index(i).Interface(), elem) {
-				return true
-			}
-		}
-	default:
-		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
-	}
-
-	return false
-}
-
 // IncrementMapByKey starts with 1 and increments the counter of a key
 func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
@@ -719,6 +694,15 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 
 func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
+}
+
+func ConvertInterfaceToStringArray(input []interface{}) []string {
+	output := make([]string, len(input))
+	for i, val := range input {
+		valString, _ := val.(string)
+		output[i] = valString
+	}
+	return output
 }
 
 func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
@@ -1086,7 +1070,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -1188,6 +1172,13 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 
 func MinInt(a, b int) int {
 	if a <= b {
+		return a
+	}
+	return b
+}
+
+func MaxInt(a, b int) int {
+	if a >= b {
 		return a
 	}
 	return b
@@ -1353,6 +1344,25 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
+func SortMap(inputMap map[string]MovingAverage) []string {
+	pairArr := make(pairList, len(inputMap))
+
+	i := 0
+	for k, v := range inputMap {
+		pairArr[i] = pair{k, v.Value()}
+		i++
+	}
+
+	sort.Sort(pairArr)
+	var sortedWorkspaceList []string
+	//p is sorted
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedWorkspaceList = append(sortedWorkspaceList, k.key)
+	}
+	return sortedWorkspaceList
+}
+
 func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	select {
 	case <-ctx.Done():
@@ -1360,4 +1370,24 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	case <-time.After(delay):
 		return false
 	}
+}
+
+func Unique(stringSlice []string) []string {
+	keys := make(map[string]struct{})
+	list := []string{}
+	for _, entry := range stringSlice {
+		if _, ok := keys[entry]; !ok {
+			keys[entry] = struct{}{}
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
+// ReverseInt reverses an array of int
+func ReverseInt(s []int) []int {
+	for i, j := 0, len(s)-1; i < len(s)/2; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
 }

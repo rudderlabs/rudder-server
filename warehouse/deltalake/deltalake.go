@@ -13,6 +13,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"strings"
 	"time"
 )
@@ -45,6 +47,7 @@ var (
 	ssl                string
 	userAgent          string
 	grpcTimeout        time.Duration
+	healthTimeout      time.Duration
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -116,6 +119,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("1", &ssl, false, "Warehouse.deltalake.ssl")
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(15), &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -168,6 +172,10 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+	if err := checkHealth(); err != nil {
+		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
+	}
+
 	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -209,9 +217,9 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	defer cancel()
 
 	// Creating grpc connection using timeout context
-	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := stats.NewStat("warehouse.clickhouse.grpcTimeouts", stats.CountType)
+		execTimeouts := stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
 		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
@@ -905,7 +913,7 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 
 	ctx := context.Background()
 
-	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
+	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
 		databricksBuildVersion = "Unable to create grpc connection to databricks."
@@ -920,5 +928,38 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 		return
 	}
 	databricksBuildVersion = versionResponse.GetVersion()
+	return
+}
+
+// GetDatabricksVersion Gets the databricks version by making a grpc call to Version stub.
+func checkHealth() (err error) {
+	ctx := context.Background()
+	defer func() {
+		if err != nil {
+			healthTimeouts := stats.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
+			healthTimeouts.Count(1)
+		}
+	}()
+
+	// Getting health timeout context
+	tCtx, cancel := context.WithTimeout(ctx, healthTimeout)
+	defer cancel()
+
+	// Creating grpc connection using timeout context
+	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		return
+	}
+
+	healthClient := grpc_health_v1.NewHealthClient(conn)
+	healthResponse, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{
+		Service: "",
+	})
+	if err != nil {
+		return
+	}
+	if healthResponse.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
+		err = fmt.Errorf("databricks Service is not up")
+	}
 	return
 }

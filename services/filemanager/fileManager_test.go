@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/minio/minio-go/v6"
@@ -109,7 +110,7 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("bucket created successfully")
 
-	//Running Azure emulator, Azurite.
+	// Running Azure emulator, Azurite.
 	AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "mcr.microsoft.com/azure-storage/azurite",
 		Tag:        "latest",
@@ -176,15 +177,16 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("files list: ", fileList)
 
-	m.Run()
+	code := m.Run()
 	blockOnHold()
-	return 0
+	return code
 }
 
 func TestFileManager(t *testing.T) {
 
 	tests := []struct {
 		name     string
+		skip     string
 		destName string
 		config   map[string]interface{}
 	}{
@@ -247,6 +249,7 @@ func TestFileManager(t *testing.T) {
 			},
 		},
 		{
+			skip:     "storage emulator is not stable",
 			name:     "testing GCS filemanager functionality",
 			destName: "GCS",
 			config: map[string]interface{}{
@@ -262,6 +265,9 @@ func TestFileManager(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip != "" {
+				t.Skip(tt.skip)
+			}
 			fmFactory := filemanager.FileManagerFactoryT{}
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: tt.destName,
@@ -276,7 +282,7 @@ func TestFileManager(t *testing.T) {
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
 				require.NoError(t, err, "error while opening testData file to upload")
-				uploadOutput, err := fm.Upload(filePtr)
+				uploadOutput, err := fm.Upload(context.TODO(), filePtr)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -284,7 +290,7 @@ func TestFileManager(t *testing.T) {
 				filePtr.Close()
 			}
 			//list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix("", 1000)
+			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", 1000)
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 			require.NoError(t, err, "expected no error while listing files")
 
@@ -316,12 +322,25 @@ func TestFileManager(t *testing.T) {
 			filePtr.Close()
 
 			DownloadedFileName := "TmpDownloadedFile"
+
+			//fail to download the file with cancelled context
+			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+			if err != nil {
+				fmt.Println("error while Creating file to download data: ", err)
+			}
+			ctx, cancel := context.WithCancel(context.TODO())
+			cancel()
+			err = fm.Download(ctx, filePtr, key)
+			require.Error(t, err, "expected error while downloading file")
+			filePtr.Close()
+
 			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 			if err != nil {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
 			defer os.Remove(DownloadedFileName)
-			err = fm.Download(filePtr, key)
+			err = fm.Download(context.TODO(), filePtr, key)
+
 			require.NoError(t, err, "expected no error")
 			filePtr.Close()
 
@@ -337,8 +356,15 @@ func TestFileManager(t *testing.T) {
 
 			ans := strings.Compare(string(originalFile), string(downloadedFile))
 			require.Equal(t, 0, ans, "downloaded file different than actual file")
+
+			//fail to delete the file with cancelled context
+			ctx, cancel = context.WithCancel(context.TODO())
+			cancel()
+			err = fm.DeleteObjects(ctx, []string{key})
+			require.Error(t, err, "expected error while deleting file")
+
 			//delete that file
-			err = fm.DeleteObjects([]string{key})
+			err = fm.DeleteObjects(context.TODO(), []string{key})
 			require.NoError(t, err, "expected no error while deleting object")
 			// list files again & assert if that file is still present.
 			fmFactoryNew := filemanager.FileManagerFactoryT{}
@@ -349,12 +375,46 @@ func TestFileManager(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			newFileObject, err := fmNew.ListFilesWithPrefix("", 1000)
+			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", 1000)
 			if err != nil {
 				fmt.Println("error while getting new file object: ", err)
 			}
 			require.Equal(t, len(originalFileObject)-1, len(newFileObject), "expected original file list length to be greater than new list by 1, but is different")
 		})
+
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip != "" {
+				t.Skip(tt.skip)
+			}
+			fmFactory := filemanager.FileManagerFactoryT{}
+			fm, err := fmFactory.New(&filemanager.SettingsT{
+				Provider: tt.destName,
+				Config:   tt.config,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			//fail to upload file
+			file := fileList[0]
+			filePtr, err := os.Open(file)
+			require.NoError(t, err, "error while opening testData file to upload")
+			ctx, cancel := context.WithTimeout(context.TODO(), time.Second*5)
+			cancel()
+			_, err = fm.Upload(ctx, filePtr)
+			require.Error(t, err, "expected error while uploading file")
+			filePtr.Close()
+
+			//MINIO doesn't support list files with context cancellation
+			if tt.destName != "MINIO" {
+				//fail to fetch file list
+				ctx1, cancel := context.WithTimeout(context.TODO(), time.Second*5)
+				cancel()
+				_, err = fm.ListFilesWithPrefix(ctx1, "", 1000)
+				require.Error(t, err, "expected error while listing files")
+			}
+		})
+
 	}
 
 }

@@ -4,6 +4,8 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -73,11 +75,42 @@ type ReportingFeature interface {
 // ReportingFeatureSetup is a function that initializes a Reporting feature
 type ReportingFeatureSetup func(Interface) ReportingFeature
 
-var reportingFeatureSetup ReportingFeatureSetup
+var reportingFallback = &reportingFactoryFallback{}
+var reportingFeatureSetup ReportingFeatureSetup = func(a Interface) ReportingFeature {
+	return reportingFallback
+}
 
 // RegisterReportingFeature registers a config env feature implementation
 func RegisterReportingFeature(f ReportingFeatureSetup) {
 	reportingFeatureSetup = f
+}
+
+type reportingFactoryFallback struct {
+	once     sync.Once
+	instance types.ReportingI
+}
+
+func (f *reportingFactoryFallback) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
+	f.once.Do(func() {
+		f.instance = &reportingNOOP{}
+	})
+	return f.instance
+}
+func (f *reportingFactoryFallback) GetReportingInstance() types.ReportingI {
+	return f.instance
+}
+
+type reportingNOOP struct {
+}
+
+func (n *reportingNOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {}
+func (n *reportingNOOP) WaitForSetup(ctx context.Context, clientName string)   {}
+func (n *reportingNOOP) AddClient(ctx context.Context, c types.Config)         {}
+func (n *reportingNOOP) GetClient(clientName string) *types.Client {
+	return nil
+}
+func (n *reportingNOOP) Enabled() bool {
+	return false
 }
 
 /*********************************
@@ -86,7 +119,7 @@ Replay Feature
 
 // ReplayFeature handles inserting of failed jobs into repsective gw/rt jobsdb
 type ReplayFeature interface {
-	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.HandleT)
+	Setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT)
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature

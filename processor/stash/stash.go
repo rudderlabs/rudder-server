@@ -173,7 +173,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		panic(err)
 	}
 	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-	uploadOutput, err := st.errFileUploader.Upload(outputFile, prefixes...)
+	uploadOutput, err := st.errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
 
 	return StoreErrorOutputT{
 		Location: uploadOutput.Location,
@@ -207,6 +207,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
+			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
 	}
@@ -262,6 +263,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{}`),
 					Parameters:    []byte(`{}`),
+					WorkspaceId:   job.WorkspaceId,
 				}
 				statusList = append(statusList, &status)
 			}

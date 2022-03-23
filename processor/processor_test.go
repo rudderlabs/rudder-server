@@ -14,7 +14,6 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -34,6 +33,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
+	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -53,6 +53,7 @@ type testContext struct {
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
 	MockDedup             *mockDedup.MockDedupI
+	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 }
 
 func (c *testContext) Setup() {
@@ -64,21 +65,23 @@ func (c *testContext) Setup() {
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 
 	c.configInitialised = false
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 				c.configInitialised = true
 			}()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallback()).
+		})
+	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.dbReadBatchSize = 10000
 	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
+	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
 func (c *testContext) Finish() {
@@ -286,7 +289,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
 
 		It("should recover after crash", func() {
@@ -299,7 +302,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
 	})
 
@@ -318,7 +321,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize}).Return(emptyJobsList).Times(1)
 
@@ -439,7 +442,6 @@ var _ = Describe("Processor", func() {
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
 				},
 			}
-
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -471,7 +473,7 @@ var _ = Describe("Processor", func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
-
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(2)
 			// One Store call is expected for all events
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobs []*jobsdb.JobT) {
@@ -654,6 +656,7 @@ var _ = Describe("Processor", func() {
 			// We expect one transform call to destination B, after user transform for destination B.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(2)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -767,6 +770,7 @@ var _ = Describe("Processor", func() {
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(2)
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Len(2)).Times(1)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
@@ -781,6 +785,7 @@ var _ = Describe("Processor", func() {
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			Setup(processor, c, true, false)
 			processor.dedupHandler = c.MockDedup
+			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
 		})
 	})
@@ -884,6 +889,8 @@ var _ = Describe("Processor", func() {
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
 				})
+
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(2)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
@@ -1016,6 +1023,8 @@ var _ = Describe("Processor", func() {
 					FailedEvents: transformerResponses,
 				})
 
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(2)
+
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
@@ -1061,7 +1070,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 
 			setProcessorPausedVariable(processor, false)
 			go processor.Pause()
@@ -1079,7 +1088,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 
 			setProcessorPausedVariable(processor, true)
 			go processor.Pause()
@@ -1097,7 +1106,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 
 			setProcessorPausedVariable(processor, true)
 			go processor.Resume()
@@ -1115,7 +1124,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 
 			setProcessorPausedVariable(processor, false)
 			go processor.Resume()
@@ -1136,7 +1145,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
 			SetMainLoopTimeout(1 * time.Second)
@@ -1157,7 +1166,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 
 			SetMainLoopTimeout(1 * time.Second)
 
@@ -1165,7 +1174,7 @@ var _ = Describe("Processor", func() {
 			defer cancel()
 
 			go processor.mainLoop(ctx)
-			Eventually(func() bool { return isUnLocked }).Should(BeFalse())
+			Eventually(func() bool { return isUnLocked }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
 
@@ -1178,7 +1187,7 @@ var _ = Describe("Processor", func() {
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
-
+			Skip("FIXME skip this test for now")
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -1186,7 +1195,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 			defer processor.Shutdown()
 
 			processor.readLoopSleep = time.Millisecond
@@ -1234,7 +1243,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1412,7 +1421,7 @@ var _ = Describe("Static Function Tests", func() {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []string{"identify"},
+						"supportedMessageTypes": []interface{}{"identify"},
 					},
 				},
 			}
@@ -1695,13 +1704,14 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId stri
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	Setup(processor, c, enableDedup, enableReporting)
+	processor.multitenantI = c.MockMultitenantHandle
 	handlePendingGatewayJobs(processor)
 }
 
 func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	var clearDB = false
 	SetDisableDedupFeature(enableDedup)
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 	processor.reportingEnabled = enableReporting
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
@@ -1716,3 +1726,371 @@ func handlePendingGatewayJobs(processor *HandleT) {
 	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
 }
+
+var _ = Describe("TestJobSplitter", func() {
+	jobs := []*jobsdb.JobT{
+		{
+			JobID: 1,
+		},
+		{
+			JobID: 2,
+		},
+		{
+			JobID: 3,
+		},
+		{
+			JobID: 4,
+		},
+		{
+			JobID: 5,
+		},
+	}
+	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
+		It("default subJobSize: 2k", func() {
+			loadConfig()
+
+			expectedSubJobs := []subJob{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+						{
+							JobID: 3,
+						},
+						{
+							JobID: 4,
+						},
+						{
+							JobID: 5,
+						},
+					},
+					hasMore: false,
+				},
+			}
+			Expect(len(jobSplitter(jobs))).To(Equal(len(expectedSubJobs)))
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
+			loadConfig()
+			subJobSize = 1
+			expectedSubJobs := []subJob{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 3,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 4,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 5,
+						},
+					},
+					hasMore: false,
+				},
+			}
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
+			loadConfig()
+			subJobSize = 2
+			expectedSubJobs := []subJob{
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 3,
+						},
+						{
+							JobID: 4,
+						},
+					},
+					hasMore: true,
+				},
+				{
+					subJobs: []*jobsdb.JobT{
+						{
+							JobID: 5,
+						},
+					},
+					hasMore: false,
+				},
+			}
+			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+		})
+	})
+})
+
+var _ = Describe("TestSubJobMerger", func() {
+	subJobSize = 1
+	expectedMergedJob := storeMessage{
+		statusList: []*jobsdb.JobStatusT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+		destJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+		batchDestJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"jobError1": {&jobsdb.JobT{}},
+			"jobError2": {&jobsdb.JobT{}},
+		},
+		procErrorJobs: []*jobsdb.JobT{
+			{
+				JobID: 1,
+			},
+			{
+				JobID: 2,
+			},
+		},
+
+		reportMetrics: []*types.PUReportedMetric{{}, {}},
+		sourceDupStats: map[string]int{
+			"stat-1": 1,
+			"stat-2": 2,
+		},
+		uniqueMessageIds: map[string]struct{}{
+			"messageId-1": {},
+			"messageId-2": {},
+		},
+
+		totalEvents: 2,
+		start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+	}
+	Context("testing jobs merger, which merge sub-jobs into final job", func() {
+		It("subJobSize: 1", func() {
+			mergedJob := storeMessage{}
+			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+			mergedJob.sourceDupStats = make(map[string]int)
+
+			subJobs := []storeMessage{
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 1,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError1": {
+							&jobsdb.JobT{},
+						},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+					},
+					reportMetrics: []*types.PUReportedMetric{
+						{},
+					},
+					sourceDupStats: map[string]int{
+						"stat-1": 1,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-1": {},
+					},
+
+					totalEvents: 1,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+				},
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 2,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError2": {
+							&jobsdb.JobT{},
+						},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 2,
+						},
+					},
+
+					reportMetrics: []*types.PUReportedMetric{{}},
+					sourceDupStats: map[string]int{
+						"stat-2": 2,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-2": {},
+					},
+					totalEvents: 1,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 12, time.UTC),
+				},
+			}
+			mergedJobPtr := &mergedJob
+			for _, subJob := range subJobs {
+				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
+			}
+			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
+			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
+			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
+			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
+			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
+			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
+			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
+			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+	Context("testing jobs merger, which merge sub-jobs into final job", func() {
+		It("subJobSize: 2", func() {
+			mergedJob := storeMessage{}
+			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+			mergedJob.sourceDupStats = make(map[string]int)
+
+			subJobs := []storeMessage{
+				{
+					statusList: []*jobsdb.JobStatusT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					destJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+					batchDestJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+
+					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+						"jobError1": {&jobsdb.JobT{}},
+						"jobError2": {&jobsdb.JobT{}},
+					},
+					procErrorJobs: []*jobsdb.JobT{
+						{
+							JobID: 1,
+						},
+						{
+							JobID: 2,
+						},
+					},
+
+					reportMetrics: []*types.PUReportedMetric{{}, {}},
+					sourceDupStats: map[string]int{
+						"stat-1": 1,
+						"stat-2": 2,
+					},
+					uniqueMessageIds: map[string]struct{}{
+						"messageId-1": {},
+						"messageId-2": {},
+					},
+
+					totalEvents: 2,
+					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
+				},
+			}
+			mergedJobPtr := &mergedJob
+			for _, subJob := range subJobs {
+				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
+			}
+			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
+			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
+			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
+			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
+			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
+			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
+			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
+			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+})

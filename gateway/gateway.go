@@ -28,7 +28,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -80,6 +80,7 @@ var (
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
+	enabledWriteKeyWorkspaceMap                                               map[string]string
 	sourceIDToNameMap                                                         map[string]string
 	configSubscriberLock                                                      sync.RWMutex
 	maxReqSize                                                                int
@@ -106,6 +107,10 @@ var BatchEvent = []byte(`
 		]
 	}
 `)
+
+const (
+	DELIMITER = string("<<>>")
+)
 
 func Init() {
 	loadConfig()
@@ -180,9 +185,10 @@ type HandleT struct {
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
 	for sourceTag, count := range sourceStats {
 		tags := map[string]string{
-			"source":   sourceTag,
-			"writeKey": sourceTagMap[sourceTag],
-			"reqType":  sourceTagMap["reqType"],
+			"source":      sourceTag,
+			"writeKey":    sourceTagMap[sourceTag],
+			"reqType":     sourceTagMap["reqType"],
+			"workspaceId": sourceTagMap["workspaceId"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
@@ -413,21 +419,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceTagMap[sourceTag] = writeKey
 			sourceTagMap["reqType"] = req.reqType
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
+			//Should be function of body
+			configSubscriberLock.RLock()
+			workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
+			configSubscriberLock.RUnlock()
 
+			sourceTagMap["workspaceId"] = workspaceId
 			ipAddr := req.ipAddr
 
 			body := req.requestPayload
-
-			if enableRateLimit {
-				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
-				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- response.GetStatus(response.TooManyRequests)
-					preDbStoreCount++
-					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
-					continue
-				}
-			}
 
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
@@ -435,6 +435,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
+
+			if enableRateLimit {
+				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				if gateway.rateLimiter.LimitReached(restrictorKey) {
+					req.done <- response.GetStatus(response.TooManyRequests)
+					preDbStoreCount++
+					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
+					continue
+				}
+			}
+
 			gateway.requestSizeStat.Observe(float64(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
@@ -457,11 +469,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// set anonymousId if not set in payload
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
-
+			var builtUserID string
 			var notIdentifiable, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+				if builtUserID == "" {
+					builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+				}
+
 				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
 
 				if anonIDFromReq == "" {
@@ -533,14 +549,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
 			}
 
-			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
+				UserID:       builtUserID,
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
+				WorkspaceId:  workspaceId,
 			}
 			jobList = append(jobList, &newJob)
 
@@ -815,6 +831,12 @@ type pendingEventsRequestPayload struct {
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	//Force return that there are pending
+	if config.GetBool("Gateway.DisablePendingEvents", false) {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
+		return
+	}
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -900,33 +922,35 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
+	var pending bool
 	if !excludeGateway {
-		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
-		totalPendingTillNow = gwPendingCount
+		pending = gateway.readonlyGatewayDB.HavePendingJobs([]string{CustomVal}, -1, gwParameterFilters)
+		if pending {
+			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+			return
+		}
 	}
 
-	if totalPendingTillNow <= 0 {
-		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += rtPendingCount
+	pending = gateway.readonlyRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	if pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		return
 	}
 
-	if totalPendingTillNow <= 0 {
-		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += brtPendingCount
+	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
+	if pending {
+		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		return
 	}
 
-	whPending := false
-	if totalPendingTillNow <= 0 {
-		whPending = gateway.getWarehousePending(payload)
-	}
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
+}
 
-	pendingEventsResponse := totalPendingTillNow
-	if whPending {
-		pendingEventsResponse = 1
+func getIntResponseFromBool(resp bool) int {
+	if resp {
+		return 1
 	}
-
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+	return 0
 }
 
 func (gateway *HandleT) getWarehousePending(payload []byte) bool {
@@ -981,7 +1005,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	defer func() {
 		if err != nil {
 			gateway.logger.Debug(err.Error())
-			http.Error(w, response.GetStatus(err.Error()), 400)
+			http.Error(w, err.Error(), 400)
 		}
 	}()
 
@@ -1001,7 +1025,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if reqPayload.TaskRunID == "" {
-		err = errors.New("Empty task run id")
+		err = errors.New("empty task run id")
 		return
 	}
 	var resp []byte
@@ -1099,8 +1123,13 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(errorMessage)))
-			http.Error(w, response.GetStatus(errorMessage), 400)
+			if strings.Contains(errorMessage, response.GetStatus(response.TooManyRequests)) {
+				gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage)
+				http.Error(w, errorMessage, http.StatusTooManyRequests)
+				return
+			}
+			gateway.logger.Infof("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage)
+			http.Error(w, errorMessage, 400)
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1323,6 +1352,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 		// send req to webHandler
 		gateway.webHandler(w, r, reqType)
 	} else {
+		gateway.logger.Infof("IP: %s -- %s -- Error while handling beacon request: Write Key not found", misc.GetIPFromReq(r), r.URL.Path)
 		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 	}
 }
@@ -1466,12 +1496,14 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
+		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
 		for _, source := range sources.Sources {
 			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
+				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)

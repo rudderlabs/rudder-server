@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
@@ -55,6 +55,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -208,6 +209,7 @@ func runAllInit() {
 	rruntime.Init()
 	integrations.Init()
 	alert.Init()
+	multitenant.Init()
 	oauth.Init()
 	Init()
 
@@ -339,7 +341,7 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) == true {
+		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
 	}()
