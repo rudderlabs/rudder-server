@@ -258,6 +258,7 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 
 	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
 	if schemaChanged {
+		pkgLogger.Infof("syncRemoteSchema: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
@@ -896,7 +897,12 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	wg.Wait()
 
 	if alteredSchemaInAtleastOneTable {
-		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
+		err := job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		if err != nil {
+			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
+			loadErrors = append(loadErrors, err)
+		}
 	}
 
 	return loadErrors
@@ -1054,7 +1060,12 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 	errorMap := job.whManager.LoadUserTables()
 
 	if alteredIdentitySchema || alteredUserSchema {
-		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
+		err = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		if err != nil {
+			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
+		}
+
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -1121,7 +1132,11 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	}
 
 	if alteredSchema {
-		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		pkgLogger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
+		err := job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		if err != nil {
+			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
+		}
 	}
 
 	return job.processLoadTableResponse(errorMap)
