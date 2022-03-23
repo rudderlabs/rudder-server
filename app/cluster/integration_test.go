@@ -31,11 +31,11 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-server/utils"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -165,9 +165,7 @@ func initJobsDB() {
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
-	cluster.Init()
 }
-
 func TestDynamicClusterManager(t *testing.T) {
 	t.Skip("Skipping test for now on CI")
 	initJobsDB()
@@ -213,7 +211,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).AnyTimes()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{ch: make(chan servermode.ModeAck)}
 	dCM := &cluster.Dynamic{
 		GatewayDB:     gwDB,
 		RouterDB:      rtDB,
@@ -224,8 +222,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		Router:    router,
 		Provider:  provider,
 	}
-	dCM.Setup()
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wait := make(chan bool)
