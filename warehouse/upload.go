@@ -1468,7 +1468,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			{name: "attempt_number", value: strconv.Itoa(attempts)},
 		}
 
-		if destUploadCount, err := warehouseutils.GetWarehouseDestinationSuccessCount(dbHandle, job.upload.DestinationID); err != nil {
+		if destUploadCount, err := GetWarehouseDestinationSuccessCount(dbHandle, job.upload.DestinationID); err != nil {
 			tags = append(tags, tag{
 				name:  "exported_count",
 				value: strconv.Itoa(destUploadCount),
@@ -2073,3 +2073,18 @@ func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 // 	}
 // 	return batchedStagingFiles
 // }
+
+func GetWarehouseDestinationSuccessCount(dbHandle *sql.DB, destinationID string) (successfulExportCount int, err error) {
+	query := fmt.Sprintf("select count(*) from %s where destination_id='%s' ", warehouseutils.WarehouseUploadsTable, destinationID)
+	rows, err := dbHandle.Query(query)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&successfulExportCount); err != nil {
+			return 0, err
+		}
+	}
+	return
+}
