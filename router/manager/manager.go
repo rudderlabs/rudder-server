@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	objectStorageDestinations []string
-	asyncDestinations         []string
-	warehouseDestinations     []string
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
+	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
+	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
 	pkgLogger                 = logger.NewLogger().Child("router")
 )
 
@@ -31,30 +31,30 @@ type LifecycleManager struct {
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
 	tenantRouterDB   *jobsdb.MultiTenantHandleT
-	multitenantStats multitenant.MultiTenantI
-	reportingI       types.ReportingI
-	backendConfig    backendconfig.BackendConfig
+	MultitenantStats multitenant.MultiTenantI
+	ReportingI       types.ReportingI
+	BackendConfig    backendconfig.BackendConfig
 }
 
 func (r *LifecycleManager) Run(ctx context.Context) error {
 	return nil
 }
 
-// StartNew starts a Router, this is not a blocking call.
+// Start starts a Router, this is not a blocking call.
 //If the router is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
-func (r *LifecycleManager) StartNew() {
+func (r *LifecycleManager) Start() {
 	r.rt = &router.Factory{
-		Reporting:     r.reportingI,
-		Multitenant:   r.multitenantStats,
-		BackendConfig: r.backendConfig,
+		Reporting:     r.ReportingI,
+		Multitenant:   r.MultitenantStats,
+		BackendConfig: r.BackendConfig,
 		RouterDB:      r.tenantRouterDB,
 		ProcErrorDB:   r.errDB,
 	}
 	r.brt = &batchrouter.Factory{
-		Reporting:     r.reportingI,
-		Multitenant:   r.multitenantStats,
-		BackendConfig: r.backendConfig,
+		Reporting:     r.ReportingI,
+		Multitenant:   r.MultitenantStats,
+		BackendConfig: r.BackendConfig,
 		RouterDB:      r.batchRouterDB,
 		ProcErrorDB:   r.errDB,
 	}
@@ -75,21 +75,20 @@ func (r *LifecycleManager) Stop() {
 	r.waitGroup.Wait()
 }
 
-// NewRouterManager creates a new Router instance
-func NewRouterManager(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
-	tenantRouterDB *jobsdb.MultiTenantHandleT, multitenantStat multitenant.MultiTenantI) *LifecycleManager {
+// New creates a new Router instance
+func New(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
+	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
 	return &LifecycleManager{
-		rt:               &router.Factory{},
-		brt:              &batchrouter.Factory{},
-		mainCtx:          ctx,
-		tenantRouterDB:   tenantRouterDB,
-		batchRouterDB:    brtDb,
-		errDB:            errDb,
-		multitenantStats: multitenantStat,
-		backendConfig:    backendconfig.DefaultBackendConfig,
+		rt:             &router.Factory{},
+		brt:            &batchrouter.Factory{},
+		mainCtx:        ctx,
+		tenantRouterDB: tenantRouterDB,
+		batchRouterDB:  brtDb,
+		errDB:          errDb,
+		BackendConfig:  backendconfig.DefaultBackendConfig,
 	}
 }
 
@@ -97,7 +96,7 @@ func NewRouterManager(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
 func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory) {
 	ch := make(chan utils.DataEvent)
-	r.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	r.BackendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
