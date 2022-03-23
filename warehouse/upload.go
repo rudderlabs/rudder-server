@@ -2089,7 +2089,7 @@ func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 // }
 
 func (job *UploadJobT) GetWarehouseDestinationSuccessCount() (successfulExportCount int, err error) {
-	sqlStatement := fmt.Sprintf("select count(*) from %s where status = '%s' and source_id = '%s' and destination_id='%s' ",
+	sqlStatement := fmt.Sprintf("select count(*) from %s where status = '%s' and source_id = '%s' and destination_id = '%s' ",
 		warehouseutils.WarehouseUploadsTable,
 		ExportedData,
 		job.upload.SourceID,
