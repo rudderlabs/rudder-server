@@ -242,10 +242,11 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	gcsRef.IgnoreUnknownValues = false
 
 	partitionDate = time.Now().Format("2006-01-02")
-	outputTable := partitionedTable(tableName, partitionDate)
-
-	// create partitioned table in format tableName$20191221
-	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+	// outputTable := partitionedTable(tableName, partitionDate)
+	// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
+	// on the time when BigQuery ingests the data. To support custom field partitions omitting loading into partitioned table like tableName$20191221
+	// TODO: Support custom field partition on users & identifies tables
+	loader := bq.Db.Dataset(bq.Namespace).Table(tableName).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(bq.BQContext)
 	if err != nil {
