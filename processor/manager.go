@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -11,7 +12,7 @@ import (
 )
 
 type LifecycleManager struct {
-	*HandleT
+	HandleT          *HandleT
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        *errgroup.Group
@@ -20,9 +21,10 @@ type LifecycleManager struct {
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
 	clearDB          *bool
-	multitenantStats multitenant.MultiTenantI // need not initialize again
-	reportingI       types.ReportingI         // need not initialize again
-	backendConfig    backendconfig.BackendConfig
+	MultitenantStats multitenant.MultiTenantI // need not initialize again
+	ReportingI       types.ReportingI         // need not initialize again
+	BackendConfig    backendconfig.BackendConfig
+	Transformer      transformer.Transformer
 }
 
 func (proc *LifecycleManager) Run(ctx context.Context) error {
@@ -32,9 +34,13 @@ func (proc *LifecycleManager) Run(ctx context.Context) error {
 // StartNew starts a processor, this is not a blocking call.
 //If the processor is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
-func (proc *LifecycleManager) StartNew() {
-	proc.HandleT.Setup(proc.backendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
-		proc.errDB, proc.clearDB, proc.reporting, proc.multitenantStats)
+func (proc *LifecycleManager) Start() {
+	if proc.Transformer != nil {
+		proc.HandleT.transformer = proc.Transformer
+	}
+
+	proc.HandleT.Setup(proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
+		proc.errDB, proc.clearDB, proc.ReportingI, proc.MultitenantStats)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
@@ -42,7 +48,7 @@ func (proc *LifecycleManager) StartNew() {
 	g, ctx := errgroup.WithContext(currentCtx)
 	proc.waitGroup = g
 	g.Go(func() error {
-		proc.Start(ctx)
+		proc.HandleT.Start(ctx)
 		return nil
 	})
 }
@@ -50,7 +56,7 @@ func (proc *LifecycleManager) StartNew() {
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
-	proc.Shutdown()
+	proc.HandleT.Shutdown()
 	proc.waitGroup.Wait()
 }
 
@@ -64,8 +70,8 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
 		clearDB:          clearDb,
-		multitenantStats: multitenant.NOOP,
-		backendConfig:    backendconfig.DefaultBackendConfig,
+		MultitenantStats: multitenant.NOOP,
+		BackendConfig:    backendconfig.DefaultBackendConfig,
 	}
 	return proc
 }
