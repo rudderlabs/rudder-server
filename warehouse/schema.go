@@ -285,7 +285,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 	if useDeepEqualSchemas {
 		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
-		return eq
+		return !eq
 	}
 
 	// Iterating through all tableName in the localSchema
