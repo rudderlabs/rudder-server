@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -25,10 +24,6 @@ type Credentials struct {
 	Email      string `json:"client_email"`
 	PrivateKey string `json:"private_key"`
 	TokenUrl   string `json:"token_uri"`
-}
-
-type Opts struct {
-	Timeout time.Duration
 }
 
 // https://stackoverflow.com/questions/55951812/insert-into-bigquery-without-a-well-defined-struct
@@ -78,7 +73,7 @@ func NewProducer(destinationConfig interface{}) (*bigquery.Client, error) {
 	return bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}, o Opts) (statusCode int, respStatus string, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
 	bqClient := producer.(*bigquery.Client)
 	parsedJSON := gjson.ParseBytes(jsonData)
@@ -92,9 +87,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 	}
 	bqInserter := bqClient.Dataset(dsId).Table(tblId).Inserter()
-	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
-	defer cancel()
-	err = bqInserter.Put(ctx, genericRec)
+
+	err = bqInserter.Put(context.Background(), genericRec)
+
 	if err != nil {
 		return http.StatusBadRequest, "Failure", createErr(err, "error in data insertion").Error()
 	}

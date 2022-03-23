@@ -102,7 +102,7 @@ type StreamProducer interface {
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}, o Opts) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
@@ -119,9 +119,7 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	case "PERSONALIZE":
 		return personalize.Produce(jsonData, producer, config)
 	case "BQSTREAM":
-		return bqstream.Produce(jsonData, producer, config, bqstream.Opts{
-			Timeout: o.Timeout,
-		})
+		return bqstream.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}

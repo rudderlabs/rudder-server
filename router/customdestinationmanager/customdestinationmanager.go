@@ -105,9 +105,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config, streammanager.Opts{
-			Timeout: customManager.timeout,
-		})
+		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 
