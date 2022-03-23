@@ -196,15 +196,16 @@ func TestRouterManager(t *testing.T) {
 	defer brtDB.Close()
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	r := NewRouterManager(ctx, brtDB, errDB, tDb, mockMTI)
-	r.backendConfig = mockBackendConfig
-	r.reportingI = &reportingNOOP{}
+	r := New(ctx, brtDB, errDB, tDb)
+	r.BackendConfig = mockBackendConfig
+	r.ReportingI = &reportingNOOP{}
+	r.MultitenantStats = mockMTI
 
 	for i := 0; i < 5; i++ {
 		rtDB.Start()
 		brtDB.Start()
 		errDB.Start()
-		r.StartNew()
+		r.Start()
 		<-c
 		r.Stop()
 		rtDB.Stop()
