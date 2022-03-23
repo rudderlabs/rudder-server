@@ -929,7 +929,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	if !excludeGateway {
 		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
 		if err != nil || pending {
-			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(true))))
+			w.Write([]byte(`{ "pending_events": 1 }`))
 			return
 		}
 	}
