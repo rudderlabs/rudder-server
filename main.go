@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"strconv"
 	"strings"
@@ -302,6 +303,7 @@ func Run(ctx context.Context) {
 		})
 	} else {
 		if canStartServer() {
+			logger.Log.Info("calling handle Recovery mode")
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
 				return appHandler.StartRudderCore(ctx, options)

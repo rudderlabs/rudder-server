@@ -173,10 +173,14 @@ func alertOps(mode string) {
 
 // sendRecoveryModeStat sends the recovery mode metric every 10 seconds
 func sendRecoveryModeStat(appType string) {
+	logger.Log.Info("------------------inside sendRecoveryModeStat-------------")
+	logger.Log.Info("appType: ", appType)
+
 	recoveryModeStat := stats.NewTaggedStat("recovery.mode_normal", stats.GaugeType, stats.Tags{
 		"appType": appType,
 	})
 	for {
+		logger.Log.Info("CurrentMode: ", CurrentMode)
 		time.Sleep(10 * time.Second)
 		switch CurrentMode {
 		case normalMode:

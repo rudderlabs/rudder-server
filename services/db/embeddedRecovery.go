@@ -2,13 +2,14 @@ package db
 
 import (
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
 
 // HandleEmbeddedRecovery decides the recovery Mode in which app should run based on earlier crashes
 func HandleEmbeddedRecovery(forceNormal bool, forceDegraded bool, forceStandBy bool, forceMigrationMode string, currTime int64, appType string) {
-
+	logger.Log.Info("inside HandleEmbeddedRecovery func")
 	enabled := config.GetBool("recovery.enabled", true)
 	if !enabled {
 		return
