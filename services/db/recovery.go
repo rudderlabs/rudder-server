@@ -180,7 +180,7 @@ func sendRecoveryModeStat(appType string) {
 		"appType": appType,
 	})
 	for {
-		logger.Log.Info("CurrentMode: ", CurrentMode)
+		logger.Log.Info("---------------CurrentMode: ", CurrentMode)
 		time.Sleep(10 * time.Second)
 		switch CurrentMode {
 		case normalMode:

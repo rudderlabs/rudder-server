@@ -219,12 +219,16 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
+	logger.Log.Info("inside rstats.Gauge")
 	if !statsEnabled || rStats.dontProcess {
+		logger.Log.Info("statsEnabled: ", statsEnabled, " rStats.dontProcess: ", rStats.dontProcess)
 		return
 	}
+
 	if rStats.StatType != GaugeType {
 		panic(fmt.Errorf("rStats.StatType:%s is not gauge", rStats.StatType))
 	}
+	logger.Log.Info("calling rstats.Client.Gauge wth rStats.Name: ", rStats.Name, "value: ", value)
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
