@@ -6,6 +6,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"testing"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
@@ -20,12 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"testing"
-	"time"
 )
 
 var (
@@ -201,11 +202,11 @@ func TestProcessorManager(t *testing.T) {
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-		processor.backendConfig = mockBackendConfig
-		processor.transformer = mockTransformer
-		processor.StartNew()
+		processor.BackendConfig = mockBackendConfig
+		processor.HandleT.transformer = mockTransformer
+		processor.Start()
 		defer processor.Stop()
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -228,9 +229,9 @@ func TestProcessorManager(t *testing.T) {
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-		processor.StartNew()
+		processor.Start()
 		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
