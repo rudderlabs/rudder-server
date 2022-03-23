@@ -168,7 +168,7 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFil
 	var totalCount int64
 	for _, ds := range dsList {
 		count, err := jd.getUnprocessedJobsDSCount(ctx, ds, customValFilters, parameterFilters)
-		if count > 0 {
+		if count > 0 || err != nil {
 			return true, err
 		}
 		totalCount += count

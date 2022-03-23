@@ -833,7 +833,7 @@ type pendingEventsRequestPayload struct {
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	//Force return that there are pending
 	if config.GetBool("Gateway.DisablePendingEvents", false) {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
+		w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
