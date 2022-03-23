@@ -54,14 +54,10 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "GOOGLEPUBSUB":
-		producer, err := googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
-			Timeout: o.Timeout,
-		})
+		producer, err := googlepubsub.NewProducer(destinationConfig)
 		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
-			Timeout: o.Timeout,
-		})
+		producer, err := googlesheets.NewProducer(destinationConfig)
 		return producer, err
 	case "PERSONALIZE":
 		producer, err := personalize.NewProducer(destinationConfig, personalize.Opts{
