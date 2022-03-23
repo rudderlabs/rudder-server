@@ -936,7 +936,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 
 	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
 	if err != nil || pending {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(true))))
+		w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
