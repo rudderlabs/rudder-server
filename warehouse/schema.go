@@ -287,6 +287,9 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 	return consolidatedSchema
 }
 
+// hasSchemaChanged Default behaviour is to do the deep equals.
+// If we are skipping deep equals, then we are validating local schemas against warehouse schemas only.
+// Not the other way around.
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 	if !skipDeepEqualSchemas {
 		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
