@@ -1,12 +1,14 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"time"
@@ -22,7 +24,7 @@ import (
 ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
-	HavePendingJobs(customValFilters []string, count int, parameterFilters []ParameterFilterT) bool
+	HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error)
 	GetJobSummaryCount(arg string, prefix string) (string, error)
 	GetLatestFailedJobs(arg string, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
@@ -95,7 +97,10 @@ func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
-	err = jd.DbHandle.Ping()
+	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", time.Duration(10), time.Second))
+	defer cancel()
+
+	err = jd.DbHandle.PingContext(ctx)
 	jd.assertError(err)
 
 	jd.logger.Infof("Readonly user connected to %s DB", tablePrefix)
@@ -136,20 +141,20 @@ Count queries
 HavePendingJobs returns the true if there are pending events, else false. Pending events are
 those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
 */
-func (jd *ReadonlyHandleT) HavePendingJobs(customValFilters []string, count int, parameterFilters []ParameterFilterT) bool {
-	haveUnprocessed := jd.haveUnprocessedJobs(customValFilters, parameterFilters)
-	if haveUnprocessed {
-		return true
+func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error) {
+	haveUnprocessed, err := jd.haveUnprocessedJobs(ctx, customValFilters, parameterFilters)
+	if haveUnprocessed || err != nil {
+		return true, err
 	}
 
-	return jd.haveNonSucceededJobs(customValFilters, parameterFilters)
+	return jd.haveNonSucceededJobs(ctx, customValFilters, parameterFilters)
 }
 
 /*
 haveUnprocessedJobs returns true if there are unprocessed events, else false. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *ReadonlyHandleT) haveUnprocessedJobs(customValFilters []string, parameterFilters []ParameterFilterT) bool {
+func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -162,14 +167,14 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(customValFilters []string, parame
 	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
-		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
-		if count > 0 {
-			return true
+		count, err := jd.getUnprocessedJobsDSCount(ctx, ds, customValFilters, parameterFilters)
+		if count > 0 || err != nil {
+			return true, err
 		}
 		totalCount += count
 	}
 
-	return totalCount > 0 //If totalCount is 0, then there are no unprocessed events
+	return totalCount > 0, nil //If totalCount is 0, then there are no unprocessed events
 }
 
 func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
@@ -191,7 +196,7 @@ func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement str
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dataSetT, customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -200,10 +205,11 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
-	txn, err := jd.DbHandle.Begin()
+
+	txn, err := jd.DbHandle.BeginTx(ctx, nil)
 	if err != nil {
-		jd.logger.Errorf("transaction begin err. Dataset: %v. Err: %w", ds, err)
-		return 0
+		jd.logger.Errorf("transaction begin err. Dataset: %v. Err: %s", ds, err.Error())
+		return 0, err
 	}
 
 	var sqlStatement string
@@ -212,16 +218,16 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		txn.Rollback()
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
-		return 0
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
+		return 0, err
 	}
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		txn.Rollback()
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
-		return 0
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
+		return 0, err
 	}
 
 	var selectColumn string
@@ -255,30 +261,30 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	var count sql.NullInt64
 	err = row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
-		jd.logger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %w", ds, err)
-		return 0
+		jd.logger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %s", ds, err.Error())
+		return 0, err
 	}
 
 	if count.Valid {
-		return int64(count.Int64)
+		return int64(count.Int64), nil
 	}
 
 	jd.logger.Debugf("Returning 0 because unprocessed count is invalid. This could be because there are no unprocessed jobs. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
-	return 0
+	return 0, nil
 }
 
 /*
 haveNonSucceededJobs returns true if there are events which are not in terminal state, else false.
 This is a wrapper over GetProcessed call above
 */
-func (jd *ReadonlyHandleT) haveNonSucceededJobs(customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	return jd.haveProcessedJobs([]string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
+func (jd *ReadonlyHandleT) haveNonSucceededJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
+	return jd.haveProcessedJobs(ctx, []string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
 }
 
 /*
 haveProcessedJobs returns true if there are events of a given state, else false.
 */
-func (jd *ReadonlyHandleT) haveProcessedJobs(stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -294,22 +300,22 @@ func (jd *ReadonlyHandleT) haveProcessedJobs(stateFilter []string, customValFilt
 	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
-		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
-		if count > 0 {
-			return true
+		count, err := jd.getProcessedJobsDSCount(ctx, ds, stateFilter, customValFilters, parameterFilters)
+		if count > 0 || err != nil {
+			return true, err
 		}
 		totalCount += count
 	}
 
-	return totalCount > 0 //If totalCount is 0, then there are no processed events
+	return totalCount > 0, nil //If totalCount is 0, then there are no processed events
 }
 
 /*
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []string,
-	customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataSetT, stateFilters []string,
+	customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
 	checkValidJobState(jd, stateFilters)
 
 	var queryStat stats.RudderStats
@@ -345,10 +351,10 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 		sourceQuery = ""
 	}
 
-	txn, err := jd.DbHandle.Begin()
+	txn, err := jd.DbHandle.BeginTx(ctx, nil)
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
-		return 0
+		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %s", ds, err.Error())
+		return 0, err
 	}
 
 	var sqlStatement string
@@ -357,16 +363,16 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		txn.Rollback()
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
-		return 0
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
+		return 0, err
 	}
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		txn.Rollback()
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
-		return 0
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
+		return 0, err
 	}
 
 	var selectColumn string
@@ -397,16 +403,16 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	var count sql.NullInt64
 	err = row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
-		jd.logger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %w", ds, err)
-		return 0
+		jd.logger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %s", ds, err.Error())
+		return 0, err
 	}
 
 	if count.Valid {
-		return int64(count.Int64)
+		return int64(count.Int64), nil
 	}
 
 	jd.logger.Debugf("Returning 0 because processed count is invalid. This could be because there are no jobs in non terminal state. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
-	return 0
+	return 0, nil
 }
 
 func getStatusPrefix(jobPrefix string) string {

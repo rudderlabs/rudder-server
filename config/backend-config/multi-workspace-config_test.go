@@ -70,7 +70,7 @@ var _ = Describe("workspace-config", func() {
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
 			workspaceToken = "testToken"
-			config, ok := backendConfig.Get()
+			config, ok := backendConfig.Get("testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
 			Expect(ok).To(BeTrue())
@@ -93,7 +93,7 @@ var _ = Describe("workspace-config", func() {
 
 			workspaceToken = "testToken"
 			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
-			config, ok := backendConfig.Get()
+			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
@@ -101,7 +101,7 @@ var _ = Describe("workspace-config", func() {
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-			config, ok := backendConfig.Get()
+			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
@@ -110,7 +110,7 @@ var _ = Describe("workspace-config", func() {
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-			config, ok := backendConfig.Get()
+			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})

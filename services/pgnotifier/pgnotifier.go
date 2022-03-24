@@ -359,7 +359,6 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
-		"batchID":   batchID,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
 	notifier.trackBatch(batchID, &ch)

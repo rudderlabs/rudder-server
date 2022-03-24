@@ -89,6 +89,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	bqInserter := bqClient.Dataset(dsId).Table(tblId).Inserter()
 
 	err = bqInserter.Put(context.Background(), genericRec)
+
 	if err != nil {
 		return http.StatusBadRequest, "Failure", createErr(err, "error in data insertion").Error()
 	}
