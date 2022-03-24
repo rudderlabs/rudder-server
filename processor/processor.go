@@ -114,6 +114,7 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
+	storeTimeout                   time.Duration
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
@@ -304,6 +305,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
+	proc.storeTimeout = storeTimeout
 
 	proc.multitenantI = multitenantStat
 	proc.gatewayDB = gatewayDB
@@ -444,6 +446,7 @@ var (
 	subJobSize                int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
+	storeTimeout              time.Duration
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
 	fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 	maxEventsToProcess        int
@@ -473,6 +476,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(5*time.Minute, &storeTimeout, true, time.Millisecond, "Processor.storeTimeout")
+
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
@@ -1473,6 +1478,16 @@ type storeMessage struct {
 }
 
 func (proc *HandleT) Store(in storeMessage) {
+	ctx, cancel := context.WithTimeout(context.TODO(), proc.storeTimeout)
+	defer cancel()
+
+	go func() {
+		<-ctx.Done()
+		if ctx.Err() == context.DeadlineExceeded {
+			panic(fmt.Sprintf("processor .Store() timed out after %s", proc.storeTimeout))
+		}
+	}()
+
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	processorLoopStats["router"] = make(map[string]map[string]int)
