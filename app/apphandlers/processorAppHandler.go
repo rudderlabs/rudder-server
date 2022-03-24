@@ -10,6 +10,8 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -22,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"golang.org/x/sync/errgroup"
 
 	// This is necessary for compatibility with enterprise features
@@ -97,6 +100,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
+
+	// TODO: use jobsdb.New() && remove if
+	// TODO: Think what we need to do for replay
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
@@ -149,13 +155,25 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
+	var modeProvider state.StaticProvider
+	// FIXME: hacky way to determine servermode
+	if enableProcessor {
+		modeProvider = state.StaticProvider{
+			Mode: servermode.NormalMode,
+		}
+	}
+	dm := cluster.Dynamic{
+		Provider:      &modeProvider,
+		GatewayDB:     &gatewayDB,
+		RouterDB:      &routerDB,
+		BatchRouterDB: &batchRouterDB,
+		ErrorDB:       &procErrorDB,
+		Processor:     nil,
+		Router:        nil,
+	}
+
 	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
-	g.Go(func() error {
-		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
+		return dm.Run(ctx)
 	})
 
 	if enableReplay && processor.App.Features().Replay != nil {
