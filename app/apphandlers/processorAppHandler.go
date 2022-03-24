@@ -39,8 +39,6 @@ type ProcessorApp struct {
 
 var (
 	gatewayDB         jobsdb.HandleT
-	batchRouterDB     jobsdb.HandleT
-	procErrorDB       jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
@@ -91,41 +89,34 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := processor.App.Options().MigrationMode
+
+	var gwDB *jobsdb.HandleT
+	var rtDB *jobsdb.HandleT
+	var brtDB *jobsdb.HandleT
+	var errDB *jobsdb.HandleT
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
-	defer gatewayDB.TearDown()
+	gwDB = jobsdb.NewForRead("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
+	defer gwDB.Close()
+	gatewayDB = *gwDB
+	rtDB = jobsdb.NewForRead("rt", jobsdb.WithRetention(routerDBRetention), jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(router.QueryFilters))
+	defer rtDB.Close()
+	brtDB = jobsdb.NewForRead("batch_rt", jobsdb.WithRetention(routerDBRetention), jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters))
+	defer brtDB.Close()
+	errDB = jobsdb.NewForRead("proc_error", jobsdb.WithRetention(routerDBRetention), jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
 
-	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: rtDB} //FIXME copy locks ?
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(tenantRouterDB)
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB
-	var multitenantStats multitenant.MultiTenantI
-
-
-	// TODO: use jobsdb.New() && remove if
+	// TODO: remove if
 	// TODO: Think what we need to do for replay
 	if enableProcessor || enableReplay {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
-		defer routerDB.TearDown()
-
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
-		defer batchRouterDB.TearDown()
-
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
-		defer procErrorDB.TearDown()
-
 		if config.GetBool("EnableMultitenancy", false) {
-			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
-			multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-				"rt":       tenantRouterDB,
-				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-			})
-		} else {
-			tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
-			multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-				"rt":       tenantRouterDB,
-				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-			}))
+			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+			multitenantStats = multitenant.NewStats(tenantRouterDB)
 		}
 	}
 
@@ -136,29 +127,29 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			startProcessorFunc := func() {
 				g.Go(func() error {
 					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					StartProcessor(ctx, &clearDB, enableProcessor, gwDB, rtDB, brtDB, errDB, reportingI, multitenantStats)
 
 					return nil
 				})
 			}
 			startRouterFunc := func() {
 				g.Go(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					StartRouter(ctx, enableRouter, tenantRouterDB, brtDB, errDB, reportingI, multitenantStats)
 					return nil
 				})
 			}
 			enableRouter = false
 			enableProcessor = false
 
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
+			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, rtDB, brtDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				processor.App.Features().Migrator.Run(ctx, gwDB, rtDB, brtDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
 	}
 
-	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	operationmanager.Setup(gwDB, rtDB, brtDB)
 
 	g.Go(misc.WithBugsnag(func() error {
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
@@ -173,10 +164,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 	dm := cluster.Dynamic{
 		Provider:      &modeProvider,
-		GatewayDB:     &gatewayDB,
-		RouterDB:      &routerDB,
-		BatchRouterDB: &batchRouterDB,
-		ErrorDB:       &procErrorDB,
+		GatewayDB:     gwDB,
+		RouterDB:      rtDB,
+		BatchRouterDB: brtDB,
+		ErrorDB:       errDB,
 		Processor:     nil,
 		Router:        nil,
 	}
@@ -189,7 +180,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB, &batchRouterDB)
+		processor.App.Features().Replay.Setup(&replayDB, gwDB, rtDB, brtDB)
 	}
 
 	g.Go(func() error {
