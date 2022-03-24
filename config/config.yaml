@@ -173,6 +173,7 @@ Processor:
   loopSleep: 10ms
   maxLoopSleep: 5000ms
   fixedLoopSleep: 0ms
+  storeTimeout: 5m
   maxLoopProcessEvents: 10000
   transformBatchSize: 100
   userTransformBatchSize: 200
