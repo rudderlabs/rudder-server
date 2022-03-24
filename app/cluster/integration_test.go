@@ -31,11 +31,11 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
-	"github.com/rudderlabs/rudder-server/utils"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -165,7 +165,9 @@ func initJobsDB() {
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
+	cluster.Init()
 }
+
 func TestDynamicClusterManager(t *testing.T) {
 	initJobsDB()
 
@@ -221,6 +223,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		Router:    router,
 		Provider:  provider,
 	}
+	dCM.Setup()
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wait := make(chan bool)

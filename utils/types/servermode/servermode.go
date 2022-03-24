@@ -3,7 +3,6 @@ package servermode
 type Mode string
 
 const (
-	UndefinedMode Mode = ""
 	NormalMode    Mode = "NORMAL"
 	DegradedMode  Mode = "DEGRADED"
 )
