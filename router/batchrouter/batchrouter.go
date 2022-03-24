@@ -814,9 +814,12 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > brt.asyncUploadTimeout) {
+				uploadInterval, _ := destinationsMap[destinationID].Destination.Config["uploadInterval"].(string)
+				timeout := parseTime(uploadInterval, brt.asyncUploadTimeout)
+
+				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 					brt.asyncStructCleanUp(destinationID)
 					brt.setMultipleJobStatus(uploadResponse)
 				}
@@ -824,6 +827,14 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func parseTime(dur string, defaultDuration time.Duration) time.Duration {
+	parsedTime, err := strconv.ParseInt(dur, 10, 64)
+	if err != nil {
+		return defaultDuration
+	}
+	return time.Duration(parsedTime * 60 * int64(time.Second))
 }
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
