@@ -1271,7 +1271,6 @@ func whDestinationTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 func whGatewayTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	require.Contains(t, wdt.EventsCountMap, "gateway")
 	gwEvents := wdt.EventsCountMap["gateway"]
-
 	// Checking for the gateway jobs
 	t.Log("Checking for the gateway jobs")
 	require.Eventually(t, func() bool {
@@ -1307,7 +1306,7 @@ func whGatewayTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 		err := db.QueryRow(jobsSqlStatement).Scan(&count)
-		require.Equal(t, err, nil)
+		require.Equal(t, nil, err)
 		return count == int64(gwEvents)
 	}, time.Minute, 10*time.Millisecond)
 }
