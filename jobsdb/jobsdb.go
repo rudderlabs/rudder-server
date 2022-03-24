@@ -319,6 +319,7 @@ jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
 	dbHandle                      *sql.DB
+	ownerType                     OwnerType
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
@@ -341,11 +342,12 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	ownerType                     OwnerType
 	writeChannel                  chan writeJob
 	readChannel                   chan readJob
+	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	clearAll                      bool
 	maxReaders                    int
 	maxWriters                    int
 	MaxDSSize                     *int
@@ -533,8 +535,8 @@ func getValidNonTerminalStates() (validNonTerminalStates []string) {
 }
 
 var (
-	host, user, password, dbname, sslmode string
-	port                                  int
+	host, user, password, dbname, sslmode, appName string
+	port                                           int
 )
 
 var (
@@ -567,6 +569,9 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
+	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
+	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -604,9 +609,74 @@ func Init2() {
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+		"password=%s dbname=%s sslmode=%s application_name=%s",
+		host, port, user, password, dbname, sslmode, appName)
 
+}
+
+type OptsFunc func(jd *HandleT)
+
+// WithClearDB, if set to true it will remove all existing tables
+func WithClearDB(clearDB bool) OptsFunc {
+	return func(jd *HandleT) {
+		jd.clearAll = clearDB
+	}
+}
+
+func WithRetention(period time.Duration) OptsFunc {
+	return func(jd *HandleT) {
+		jd.dsRetentionPeriod = period
+	}
+}
+
+func WithQueryFilterKeys(filters QueryFiltersT) OptsFunc {
+	return func(jd *HandleT) {
+		jd.queryFilterKeys = filters
+	}
+}
+
+func WithMigrationMode(mode string) OptsFunc {
+	return func(jd *HandleT) {
+		jd.migrationState.migrationMode = mode
+	}
+}
+
+func WithStatusHandler() OptsFunc {
+	return func(jd *HandleT) {
+		jd.registerStatusHandler = true
+	}
+}
+
+func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Read, tablePrefix, opts...)
+}
+
+func NewForWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Write, tablePrefix, opts...)
+}
+
+func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(ReadWrite, tablePrefix, opts...)
+}
+
+func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
+	j := &HandleT{
+		ownerType:   ownerType,
+		tablePrefix: tablePrefix,
+		// default values:
+		migrationState: MigrationState{
+			migrationMode: "",
+		},
+		dsRetentionPeriod: 0,
+	}
+
+	for _, fn := range opts {
+		fn(j)
+	}
+
+	j.init()
+
+	return j
 }
 
 /*
@@ -618,6 +688,19 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.ownerType = ownerType
+	jd.clearAll = clearAll
+	jd.tablePrefix = tablePrefix
+	jd.dsRetentionPeriod = retentionPeriod
+	jd.migrationState.migrationMode = migrationMode
+	jd.registerStatusHandler = registerStatusHandler
+	jd.queryFilterKeys = queryFilterKeys
+
+	jd.init()
+	jd.Start()
+}
+
+func (jd *HandleT) init() {
 	jd.initGlobalDBHandle()
 
 	if jd.MaxDSSize == nil {
@@ -638,51 +721,29 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		db, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
+		// TODO: db.SetMaxOpenConns(20)
+
 		err = db.Ping()
 		jd.assertError(err)
 
 		jd.dbHandle = db
 	}
 
-	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
-	jd.backgroundCancel = cancel
-	jd.backgroundGroup = g
-
-	g.Go(func() error {
-		jd.initDBWriters(ctx)
-		return nil
-	})
-	g.Go(func() error {
-		jd.initDBReaders(ctx)
-		return nil
-	})
-
-	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, ownerType, clearAll)
-	}
+	jd.workersAndAuxSetup()
 }
 
-func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
+func (jd *HandleT) workersAndAuxSetup() {
+	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.ownerType = ownerType
-	jd.logger = pkgLogger.Child(tablePrefix)
-	jd.migrationState.migrationMode = migrationMode
-	jd.assert(tablePrefix != "", "tablePrefix received is empty")
-	jd.tablePrefix = tablePrefix
-	jd.dsRetentionPeriod = retentionPeriod
+	jd.logger = pkgLogger.Child(jd.tablePrefix)
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-	if registerStatusHandler {
-		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
+	if jd.registerStatusHandler {
+		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	jd.logger.Infof("Connected to %s DB", tablePrefix)
+	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
@@ -702,13 +763,39 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
-	jd.writeChannel = make(chan writeJob)
-	jd.readChannel = make(chan readJob)
-
 	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
 	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
+}
+
+// Start starts the jobsdb worker and housekeeping (migration, archive) threads.
+// Start should be called before any other jobsdb methods are called.
+func (jd *HandleT) Start() {
+	jd.writeChannel = make(chan writeJob)
+	jd.readChannel = make(chan readJob)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	jd.backgroundCancel = cancel
+	jd.backgroundGroup = g
+
+	g.Go(func() error {
+		jd.initDBWriters(ctx)
+		return nil
+	})
+	g.Go(func() error {
+		jd.initDBReaders(ctx)
+		return nil
+	})
+
+	if !jd.skipSetupDBSetup {
+		jd.setUpForOwnerType(ctx, jd.ownerType, jd.clearAll)
+
+		// Avoid clearing the database, if .Start() is called again.
+		jd.clearAll = false
+	}
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
@@ -886,14 +973,26 @@ func (jd *HandleT) dbReader(ctx context.Context) {
 	}
 }
 
-/*
-TearDown releases all the resources
-*/
-func (jd *HandleT) TearDown() {
+// Stop stops the background goroutines and waits until they finish.
+// Stop should be called once only after Start.
+// Only Start and Close can be called after Stop.
+func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
 	close(jd.readChannel)
 	close(jd.writeChannel)
 	jd.backgroundGroup.Wait()
+}
+
+// TearDown stops the background goroutines,
+//	waits until they finish and closes the database.
+func (jd *HandleT) TearDown() {
+	jd.Stop()
+	jd.Close()
+}
+
+// Close closes the database connection.
+// 	Stop should be called before Close.
+func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
 
