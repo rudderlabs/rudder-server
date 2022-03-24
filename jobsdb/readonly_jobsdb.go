@@ -22,8 +22,7 @@ import (
 ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
-	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
-	GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64
+	HavePendingJobs(customValFilters []string, count int, parameterFilters []ParameterFilterT) bool
 	GetJobSummaryCount(arg string, prefix string) (string, error)
 	GetLatestFailedJobs(arg string, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
@@ -134,20 +133,23 @@ func (jd *ReadonlyHandleT) getDSList() []dataSetT {
 Count queries
 */
 /*
-GetPendingJobsCount returns the count of pending events. Pending events are
+HavePendingJobs returns the true if there are pending events, else false. Pending events are
 those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
 */
-func (jd *ReadonlyHandleT) GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64 {
-	unProcessedCount := jd.GetUnprocessedCount(customValFilters, parameterFilters)
-	nonSucceededCount := jd.getNonSucceededJobsCount(customValFilters, parameterFilters)
-	return unProcessedCount + nonSucceededCount
+func (jd *ReadonlyHandleT) HavePendingJobs(customValFilters []string, count int, parameterFilters []ParameterFilterT) bool {
+	haveUnprocessed := jd.haveUnprocessedJobs(customValFilters, parameterFilters)
+	if haveUnprocessed {
+		return true
+	}
+
+	return jd.haveNonSucceededJobs(customValFilters, parameterFilters)
 }
 
 /*
-GetUnprocessedCount returns the number of unprocessed events. Unprocessed events are
+haveUnprocessedJobs returns true if there are unprocessed events, else false. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) haveUnprocessedJobs(customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -161,10 +163,13 @@ func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parame
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
+		if count > 0 {
+			return true
+		}
 		totalCount += count
 	}
 
-	return totalCount
+	return totalCount > 0 //If totalCount is 0, then there are no unprocessed events
 }
 
 func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
@@ -263,17 +268,17 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 }
 
 /*
-getNonSucceededJobsCount returns events which are not in terminal state.
+haveNonSucceededJobs returns true if there are events which are not in terminal state, else false.
 This is a wrapper over GetProcessed call above
 */
-func (jd *ReadonlyHandleT) getNonSucceededJobsCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
-	return jd.getProcessedCount([]string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
+func (jd *ReadonlyHandleT) haveNonSucceededJobs(customValFilters []string, parameterFilters []ParameterFilterT) bool {
+	return jd.haveProcessedJobs([]string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
 }
 
 /*
-getProcessedCount returns number of events of a given state.
+haveProcessedJobs returns true if there are events of a given state, else false.
 */
-func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) haveProcessedJobs(stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -290,10 +295,13 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
+		if count > 0 {
+			return true
+		}
 		totalCount += count
 	}
 
-	return totalCount
+	return totalCount > 0 //If totalCount is 0, then there are no processed events
 }
 
 /*

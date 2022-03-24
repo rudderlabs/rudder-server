@@ -2,6 +2,7 @@ package destination_connection_tester
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -146,7 +147,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 	}
 	defer misc.RemoveFilePaths(filename)
 	defer uploadFile.Close()
-	uploadOutput, err := uploader.Upload(uploadFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
@@ -180,7 +181,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 	if err != nil {
 		panic(err)
 	}
-	err = downloader.Download(testFile, testObjectKey)
+	err = downloader.Download(context.TODO(), testFile, testObjectKey)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
 	}
