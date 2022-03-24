@@ -15,21 +15,21 @@ import (
 )
 
 type mockModeProvider struct {
-	ch chan servermode.ModeAck
+	ch chan servermode.Ack
 }
 
-func (m *mockModeProvider) ServerMode() <-chan servermode.ModeAck {
+func (m *mockModeProvider) ServerMode() <-chan servermode.Ack {
 	return m.ch
 }
 
-func (m *mockModeProvider) SendMode(newMode servermode.ModeAck) {
+func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
 	m.ch <- newMode
 }
 
 type staticModeProvider servermode.Mode
 
-func (s *staticModeProvider) ServerMode() <-chan servermode.ModeAck {
-	ch := make(chan servermode.ModeAck, 1)
+func (s *staticModeProvider) ServerMode() <-chan servermode.Ack {
+	ch := make(chan servermode.Ack, 1)
 	ch <- servermode.WithACK(servermode.Mode(*s), func() {})
 	close(ch)
 	return ch
@@ -60,7 +60,7 @@ func Init() {
 func TestDynamicCluster(t *testing.T) {
 	Init()
 
-	provider := &mockModeProvider{ch: make(chan servermode.ModeAck)}
+	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
 
 	callCount := uint64(0)
 
