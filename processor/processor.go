@@ -476,7 +476,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
-	config.RegisterDurationConfigVariable(5*time.Minute, &storeTimeout, true, time.Millisecond, "Processor.storeTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(5*time.Minute/time.Minute), &storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -1478,9 +1478,11 @@ type storeMessage struct {
 }
 
 func (proc *HandleT) Store(in storeMessage) {
+	// FIXME: This is a hack to get around the fact that,
+	// 	processor will stuck in case write query takes for ever.
+	// SHOULD BE REMOVED AFTER PROPER TIMEOUTS ARE IMPLEMENTED.
 	ctx, cancel := context.WithTimeout(context.TODO(), proc.storeTimeout)
 	defer cancel()
-
 	go func() {
 		<-ctx.Done()
 		if ctx.Err() == context.DeadlineExceeded {
@@ -1494,29 +1496,6 @@ func (proc *HandleT) Store(in storeMessage) {
 	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
-	if len(destJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-
-		err := proc.routerDB.Store(destJobs)
-		if err != nil {
-			proc.logger.Errorf("Store into router table failed with error: %v", err)
-			proc.logger.Errorf("destJobs: %v", destJobs)
-			panic(err)
-		}
-		totalPayloadRouterBytes := 0
-		for i := range destJobs {
-			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
-		}
-
-		proc.statDestNumOutputEvents.Count(len(destJobs))
-		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
-	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		err := proc.batchRouterDB.Store(batchDestJobs)
@@ -1539,6 +1518,30 @@ func (proc *HandleT) Store(in storeMessage) {
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
+	}
+
+	if len(destJobs) > 0 {
+		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+
+		err := proc.routerDB.Store(destJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into router table failed with error: %v", err)
+			proc.logger.Errorf("destJobs: %v", destJobs)
+			panic(err)
+		}
+		totalPayloadRouterBytes := 0
+		for i := range destJobs {
+			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
+			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
+		}
+
+		proc.statDestNumOutputEvents.Count(len(destJobs))
+		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
+		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
