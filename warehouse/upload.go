@@ -898,11 +898,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 
 	if alteredSchemaInAtleastOneTable {
 		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		err := job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
-		if err != nil {
-			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
-			loadErrors = append(loadErrors, err)
-		}
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
 	return loadErrors
@@ -1061,11 +1057,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		err = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
-		if err != nil {
-			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
-		}
-
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -1133,10 +1125,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 	if alteredSchema {
 		pkgLogger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		err := job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
-		if err != nil {
-			pkgLogger.Infof("Failed to update local schema for %s", job.warehouse.Identifier)
-		}
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
 	return job.processLoadTableResponse(errorMap)

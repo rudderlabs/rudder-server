@@ -92,6 +92,11 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	destID := sHandle.warehouse.Destination.ID
 	destType := sHandle.warehouse.Type
 	marshalledSchema, err := json.Marshal(updatedSchema)
+	defer func() {
+		if err != nil {
+			pkgLogger.Infof("Failed to update local schema for with error: %s", err.Error())
+		}
+	}()
 	if err != nil {
 		return err
 	}
