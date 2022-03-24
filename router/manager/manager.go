@@ -30,7 +30,7 @@ type LifecycleManager struct {
 	gatewayDB        *jobsdb.HandleT
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
-	tenantRouterDB   *jobsdb.MultiTenantHandleT
+	tenantRouterDB   jobsdb.MultiTenantJobsDB
 	MultitenantStats multitenant.MultiTenantI
 	ReportingI       types.ReportingI
 	BackendConfig    backendconfig.BackendConfig
@@ -77,7 +77,7 @@ func (r *LifecycleManager) Stop() {
 
 // New creates a new Router instance
 func New(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
-	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
+	tenantRouterDB jobsdb.MultiTenantJobsDB) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
