@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -95,22 +96,34 @@ type RudderStatsT struct {
 
 //Setup creates a new statsd client
 func Setup() {
-	DefaultStats = &HandleT{}
-
 	if !statsEnabled {
 		return
 	}
 
-	var err error
+	DefaultStats = &HandleT{}
 	conn = statsd.Address(statsdServerURL)
-	//TODO: Add tags by calling a function...
-	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-	if err != nil {
-		// If nothing is listening on the target port, an error is returned and
-		// the returned client does nothing but is still usable. So we can
-		// just log the error and go on.
-		pkgLogger.Error(err)
+
+	maxWait := time.Minute * 10
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = maxWait
+	var err error
+
+	if err = backoff.Retry(func() error {
+		//TODO: Add tags by calling a function...
+		client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+		if err != nil {
+			pkgLogger.Errorf("error while setting statsd client: %v", err)
+		}
+		return err
+	}, bo); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
+			// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
+			panic(err)
+		}
 	}
+
 	if client != nil {
 		rruntime.Go(func() {
 			collectRuntimeStats(client)
@@ -219,16 +232,12 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
-	logger.Log.Info("inside rstats.Gauge")
 	if !statsEnabled || rStats.dontProcess {
-		logger.Log.Info("statsEnabled: ", statsEnabled, " rStats.dontProcess: ", rStats.dontProcess)
 		return
 	}
-
 	if rStats.StatType != GaugeType {
 		panic(fmt.Errorf("rStats.StatType:%s is not gauge", rStats.StatType))
 	}
-	logger.Log.Info("calling rstats.Client.Gauge wth rStats.Name: ", rStats.Name, "value: ", value)
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
