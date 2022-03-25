@@ -303,7 +303,6 @@ func Run(ctx context.Context) {
 		})
 	} else {
 		if canStartServer() {
-			logger.Log.Info("calling handle Recovery mode")
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
 				return appHandler.StartRudderCore(ctx, options)
