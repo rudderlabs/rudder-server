@@ -5,7 +5,6 @@ package transformer
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -22,6 +22,8 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	BATCH            = "BATCH"
@@ -74,8 +76,9 @@ func Init() {
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
-	rawJSON, err := json.Marshal(transformMessage)
+	rawJSON, err := jsonfast.Marshal(transformMessage)
 	if err != nil {
+		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
 	}
 	trans.logger.Debugf("[Router Transfomrer] :: input payload : %s", string(rawJSON))
@@ -147,15 +150,24 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
-			err = json.Unmarshal(respData, &destinationJobs)
+			err = jsonfast.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
-			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
+			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		if err != nil {
-			panic(err)
+			//NOTE: Transformer failed to give response in the right format
+			//Retrying. Go and fix transformer.
+			destinationJobs = []types.DestinationJobT{}
+			statusCode := 500
+			errorResp := fmt.Sprintf("Transformer returned invalid response: %s for input: %s", string(respData), string(rawJSON))
+			trans.logger.Error(errorResp)
+			for _, routerJob := range transformMessage.Data {
+				resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: statusCode, Error: errorResp}
+				destinationJobs = append(destinationJobs, resp)
+			}
 		}
 	} else {
 		statusCode := 500
@@ -173,7 +185,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
-	rawJSON, err := json.Marshal(responseData)
+	rawJSON, err := jsonfast.Marshal(responseData)
 	if err != nil {
 		panic(err)
 	}
@@ -224,7 +236,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
-	err = json.Unmarshal(respData, &transformerResponse)
+	err = jsonfast.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
@@ -234,7 +246,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		return respCode, string(respData)
 	}
 	// unmarshal success
-	respData, err = json.Marshal(transformerResponse)
+	respData, err = jsonfast.Marshal(transformerResponse)
 	if err != nil {
 		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
 	}
