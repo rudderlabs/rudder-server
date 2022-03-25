@@ -831,6 +831,12 @@ type pendingEventsRequestPayload struct {
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	//Force return that there are pending
+	if config.GetBool("Gateway.DisablePendingEvents", false) {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
+	}
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -916,33 +922,38 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
+	defer cancel()
+
+	var pending bool
 	if !excludeGateway {
-		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
-		totalPendingTillNow = gwPendingCount
+		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
+		if err != nil || pending {
+			w.Write([]byte(`{ "pending_events": 1 }`))
+			return
+		}
 	}
 
-	if totalPendingTillNow <= 0 {
-		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += rtPendingCount
+	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
 	}
 
-	if totalPendingTillNow <= 0 {
-		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += brtPendingCount
+	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
 	}
 
-	whPending := false
-	if totalPendingTillNow <= 0 {
-		whPending = gateway.getWarehousePending(payload)
-	}
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
+}
 
-	pendingEventsResponse := totalPendingTillNow
-	if whPending {
-		pendingEventsResponse = 1
+func getIntResponseFromBool(resp bool) int {
+	if resp {
+		return 1
 	}
-
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+	return 0
 }
 
 func (gateway *HandleT) getWarehousePending(payload []byte) bool {
