@@ -18,6 +18,13 @@ const (
 	DBClient  = "DBClient"
 )
 
+type QueryType int64
+
+const (
+	Read QueryType = iota
+	Write
+)
+
 type Client struct {
 	SQL       *sql.DB
 	BQ        *bigquery.Client
@@ -98,7 +105,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) dbReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
 		Config:       cl.DBHandleT.CredConfig,
 		SqlStatement: statement,
@@ -114,15 +121,7 @@ func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) sqlQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
-	return cl.sqlQuery(statement)
-}
-
-func (cl *Client) bqQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
-	return
-}
-
-func (cl *Client) dbQueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) dbWriteQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	executeResponse, err := cl.DBHandleT.Client.Execute(cl.DBHandleT.Context, &proto.ExecuteRequest{
 		Config:       cl.DBHandleT.CredConfig,
 		SqlStatement: statement,
@@ -143,25 +142,18 @@ func (cl *Client) dbQueryWrite(statement string) (result warehouseutils.QueryRes
 	return result, nil
 }
 
-func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) Query(statement string, queryType QueryType) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
 	case DBClient:
-		return cl.dbQuery(statement)
+		if queryType == Write {
+			return cl.dbWriteQuery(statement)
+		} else {
+			return cl.dbReadQuery(statement)
+		}
 	default:
 		return cl.sqlQuery(statement)
-	}
-}
-
-func (cl *Client) QueryWrite(statement string) (result warehouseutils.QueryResult, err error) {
-	switch cl.Type {
-	case BQClient:
-		return cl.bqQueryWrite(statement)
-	case DBClient:
-		return cl.dbQueryWrite(statement)
-	default:
-		return cl.sqlQueryWrite(statement)
 	}
 }
 

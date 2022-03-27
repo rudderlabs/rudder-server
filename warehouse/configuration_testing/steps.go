@@ -1,13 +1,12 @@
 package configuration_testing
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (ct *CTHandleT) validationStepsFunc(_ context.Context, req json.RawMessage, _ string) (json.RawMessage, error) {
+func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.RawMessage, error) {
 	ct.infoRequest = &infoRequest{}
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
@@ -18,8 +17,7 @@ func (ct *CTHandleT) validationStepsFunc(_ context.Context, req json.RawMessage,
 	})
 }
 
-// validationSteps returns validation steps
-// For time window destinations it only returns object storage.
+// validationSteps returns validation step for a Destination
 func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 	steps = append(steps, &validationStep{
 		ID:        1,

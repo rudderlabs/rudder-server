@@ -1,7 +1,6 @@
 package configuration_testing
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -10,22 +9,11 @@ import (
 
 type validationFunc struct {
 	Path string
-	Func func(context.Context, json.RawMessage, string) (json.RawMessage, error)
+	Func func(json.RawMessage, string) (json.RawMessage, error)
 }
 
 type infoRequest struct {
 	Destination backendconfig.DestinationT `json:"destination"`
-}
-
-type validationRequest struct {
-	validationStep *validationStep
-	infoRequest    *infoRequest
-}
-
-type validationResponse struct {
-	Success bool              `json:"success"`
-	Error   string            `json:"error"`
-	Steps   []*validationStep `json:"steps"`
 }
 
 type validationStep struct {
@@ -36,10 +24,16 @@ type validationStep struct {
 	Validator validator `json:"-"`
 }
 
-type validator func(ctx context.Context, req *validationRequest) *validationStep
+type validator func() error
 
 type validationStepsResponse struct {
 	Steps []*validationStep `json:"steps"`
+}
+
+type validationResponse struct {
+	Success bool              `json:"success"`
+	Error   string            `json:"error"`
+	Steps   []*validationStep `json:"steps"`
 }
 
 type CTHandleT struct {

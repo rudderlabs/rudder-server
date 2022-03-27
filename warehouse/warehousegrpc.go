@@ -66,5 +66,5 @@ func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.
 
 func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	handleT := configuration_testing.CTHandleT{}
-	return handleT.Validating(ctx, req)
+	return handleT.Validating(req)
 }

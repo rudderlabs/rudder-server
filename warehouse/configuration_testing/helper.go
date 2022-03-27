@@ -78,3 +78,9 @@ func (ct *CTHandleT) parseOptions(req json.RawMessage, v interface{}) error {
 func GetRandomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
+
+func (ct *CTHandleT) GetDestinationType() (destinationType string) {
+	destination := ct.infoRequest.Destination
+	destinationType = destination.DestinationDefinition.Name
+	return
+}

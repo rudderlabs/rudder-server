@@ -1,7 +1,6 @@
 package configuration_testing
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"github.com/rudderlabs/rudder-server/config"
@@ -19,30 +18,29 @@ var (
 
 func Init() {
 	connectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("connection_testing")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
 }
 
 /*
 	Validation Facade: Global invoking function for validation
 */
-func (ct *CTHandleT) Validating(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	validationFunctions := ct.validationFunctions()
-	f, ok := validationFunctions[req.Path]
+func (ct *CTHandleT) Validating(req *proto.WHValidationRequest) (response *proto.WHValidationResponse, err error) {
+	f, ok := ct.validationFunctions()[req.Path]
 	if !ok {
-		return nil, errors.New("path not found")
+		err = errors.New("path not found")
+		return
 	}
 
-	step := req.Step
-	result, err := f.Func(ctx, json.RawMessage(req.Body), step)
-	errorMessage := ""
-	if err != nil {
-		errorMessage = err.Error()
+	result, requestError := f.Func(json.RawMessage(req.Body), req.Step)
+	response = &proto.WHValidationResponse{
+		Data: string(result),
 	}
-	return &proto.WHValidationResponse{
-		Error: errorMessage,
-		Data:  string(result),
-	}, nil
+
+	if requestError != nil {
+		response.Error = requestError.Error()
+	}
+	return
 }
 
 // validationFunctions returns validating functions for validation
