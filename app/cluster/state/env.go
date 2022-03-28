@@ -1,10 +1,30 @@
 package state
 
-import "github.com/rudderlabs/rudder-server/utils/types/servermode"
+import (
+	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"os"
+)
 
 type Env struct {
+	Mode servermode.Mode
 }
 
 func (e *Env) ServerMode() <-chan servermode.ModeAck {
+	ch := make(chan servermode.ModeAck, 1)
+	serverMode := os.Getenv("RSERVER_MODE")
+	e.setMode(serverMode)
+	ch <- servermode.WithACK(servermode.Mode(e.Mode), func() {})
+	return ch
+}
 
+func (e *Env) setMode(mode string) {
+	switch mode {
+	case "normal":
+		e.Mode = servermode.NormalMode
+	case "degraded":
+		e.Mode = servermode.DegradedMode
+	default:
+		fmt.Println("Invalid value of RSERVER_MODE")
+	}
 }

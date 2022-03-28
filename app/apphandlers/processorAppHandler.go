@@ -164,6 +164,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		Processor:     proc,
 		Router:        rt,
 	}
+	dm.Setup()
 
 	g.Go(func() error {
 		return dm.Run(ctx)
