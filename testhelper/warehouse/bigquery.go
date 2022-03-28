@@ -3,6 +3,7 @@ package warehouse_test
 import (
 	bq "cloud.google.com/go/bigquery"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -11,7 +12,7 @@ import (
 )
 
 type BiqQueryTest struct {
-	Credentials *bigquery.BQCredentialsT
+	Credentials *BigQueryCredentials
 	DB          *bq.Client
 	Context     context.Context
 	EventsMap   EventsCountMap
@@ -19,15 +20,29 @@ type BiqQueryTest struct {
 	Tables      []string
 	PrimaryKeys []string
 }
+type BigQueryCredentials struct {
+	ProjectID   string            `json:"projectID"`
+	Credentials map[string]string `json:"credentials"`
+	Location    string            `json:"location"`
+	Bucket      string            `json:"bucketName"`
+}
 
 // SetWHBigQueryDestination setup warehouse Big query destination
 func SetWHBigQueryDestination() (cleanup func()) {
+
+	cred := os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS")
+	if cred == "" {
+		panic("")
+	}
+	var bqCredentials BigQueryCredentials
+	var err error
+	err = json.Unmarshal([]byte(cred), &bqCredentials)
+	if err != nil {
+		panic("")
+	}
 	Test.BQTest = &BiqQueryTest{
-		WriteKey: randString(27),
-		Credentials: &bigquery.BQCredentialsT{
-			ProjectID:   os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_PROJECT"),
-			Credentials: os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS"),
-		},
+		WriteKey:    randString(27),
+		Credentials: &bqCredentials,
 		EventsMap: EventsCountMap{
 			"identifies":    1,
 			"users":         1,
@@ -46,13 +61,16 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		PrimaryKeys: []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
 	}
 	bqTest := Test.BQTest
-	credentials := bqTest.Credentials
-	cleanup = func() {}
-	var err error
 
+	//Convert Map to Bytes(which can we easily be converted to JSON string)
+	credentials, _ := json.Marshal(bqTest.Credentials.Credentials)
+	cleanup = func() {}
 	operation := func() error {
 		var err error
-		bqTest.DB, err = bigquery.Connect(credentials, bqTest.Context)
+		bqTest.DB, err = bigquery.Connect(&bigquery.BQCredentialsT{
+			ProjectID:   bqTest.Credentials.ProjectID,
+			Credentials: string(credentials),
+		}, bqTest.Context)
 		return err
 	}
 

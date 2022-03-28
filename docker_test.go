@@ -306,6 +306,15 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+func jsonEscape(i string) string {
+	b, err := json.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+	// Trim the beginning and trailing " character
+	return string(b[1 : len(b)-1])
+}
+
 func run(m *testing.M) (int, error) {
 	setupStart := time.Now()
 
@@ -401,31 +410,33 @@ func run(m *testing.M) (int, error) {
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
+	mapToJsonByteCred, _ := json.Marshal(wht.Test.BQTest.Credentials.Credentials)
+
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                          webhookurl,
-			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
-			"writeKey":                            writeKey,
-			"workspaceId":                         workspaceID,
-			"postgresPort":                        PostgresContainer.Port,
-			"address":                             RedisContainer.RedisAddress,
-			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
-			"minioBucketName":                     MINIOContainer.MinioBucketName,
-			"kafkaPort":                           KafkaContainer.Port,
-			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
-			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
-			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
-			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
-			"bqEventWriteKey":                     wht.Test.BQTest.WriteKey,
-			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
-			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
-			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
-			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
-			"rwhBQProject":                        os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_PROJECT"),
-			"rwhBQLocation":                       os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_LOCATION"),
-			"rwhBQBucketName":                     os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_BUCKET_NAME"),
-			"rwhBQCredentials":                    os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS_ESCAPED"),
+			"webhookUrl":                           webhookurl,
+			"disableDestinationwebhookUrl":         disableDestinationwebhookurl,
+			"writeKey":                             writeKey,
+			"workspaceId":                          workspaceID,
+			"postgresPort":                         PostgresContainer.Port,
+			"address":                              RedisContainer.RedisAddress,
+			"minioEndpoint":                        MINIOContainer.MinioEndpoint,
+			"minioBucketName":                      MINIOContainer.MinioBucketName,
+			"kafkaPort":                            KafkaContainer.Port,
+			"postgresEventWriteKey":                wht.Test.PGTest.WriteKey,
+			"clickHouseEventWriteKey":              wht.Test.CHTest.WriteKey,
+			"clickHouseClusterEventWriteKey":       wht.Test.CHClusterTest.WriteKey,
+			"mssqlEventWriteKey":                   wht.Test.MSSQLTest.WriteKey,
+			"bqEventWriteKey":                      wht.Test.BQTest.WriteKey,
+			"rwhPostgresDestinationPort":           wht.Test.PGTest.Credentials.Port,
+			"rwhClickHouseDestinationPort":         wht.Test.CHTest.Credentials.Port,
+			"rwhClickHouseClusterDestinationPxort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
+			"rwhMSSqlDestinationPort":              wht.Test.MSSQLTest.Credentials.Port,
+			"rwhBQProject":                         wht.Test.BQTest.Credentials.ProjectID,
+			"rwhBQLocation":                        wht.Test.BQTest.Credentials.Location,
+			"rwhBQBucketName":                      wht.Test.BQTest.Credentials.Bucket,
+			"rwhBQCredentials":                     jsonEscape(string(mapToJsonByteCred)),
 		},
 	)
 
