@@ -107,13 +107,7 @@ type registry struct {
 }
 
 func (r *registry) GetCounter(m Measurement) (Counter, error) {
-	newCounter := r.counters.Get()
-	res, putBack := r.store.LoadOrStore(m, newCounter)
-	if putBack {
-		r.counters.Put(newCounter)
-	} else {
-		r.updateIndex(m, res)
-	}
+	res := r.get(m, r.counters)
 	c, ok := res.(Counter)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -130,13 +124,7 @@ func (r *registry) MustGetCounter(m Measurement) Counter {
 }
 
 func (r *registry) GetGauge(m Measurement) (Gauge, error) {
-	newGauge := r.gauges.Get()
-	res, putBack := r.store.LoadOrStore(m, newGauge)
-	if putBack {
-		r.gauges.Put(newGauge)
-	} else {
-		r.updateIndex(m, res)
-	}
+	res := r.get(m, r.gauges)
 	g, ok := res.(Gauge)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -153,13 +141,7 @@ func (r *registry) MustGetGauge(m Measurement) Gauge {
 }
 
 func (r *registry) GetSimpleMovingAvg(m Measurement) (MovingAverage, error) {
-	newEwma := r.simpleEwmas.Get()
-	res, putBack := r.store.LoadOrStore(m, newEwma)
-	if putBack {
-		r.simpleEwmas.Put(newEwma)
-	} else {
-		r.updateIndex(m, res)
-	}
+	res := r.get(m, r.simpleEwmas)
 	ma, ok := res.(MovingAverage)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -176,14 +158,17 @@ func (r *registry) MustGetSimpleMovingAvg(m Measurement) MovingAverage {
 }
 
 func (r *registry) GetVarMovingAvg(m Measurement, age float64) (MovingAverage, error) {
-	newEwma := r.varEwmas.Get()
 	decay := 2 / (age + 1)
+	newEwma := r.varEwmas.Get()
 	newEwma.(*VariableEWMA).decay = decay
-	res, putBack := r.store.LoadOrStore(m, newEwma)
-	if putBack {
-		r.varEwmas.Put(newEwma)
-	} else {
-		r.updateIndex(m, res)
+	res, ok := r.store.Load(m)
+	if !ok {
+		res, ok = r.store.LoadOrStore(m, newEwma)
+		if ok {
+			r.varEwmas.Put(newEwma)
+		} else {
+			r.updateIndex(m, res)
+		}
 	}
 	ma, ok := res.(*VariableEWMA)
 	if !ok {
@@ -229,4 +214,18 @@ func (r *registry) updateIndex(m Measurement, metric interface{}) {
 	}
 
 	res.(map[Measurement]TagsWithValue)[m] = TagsWithValue{m.GetTags(), metric}
+}
+
+func (r *registry) get(m Measurement, pool sync.Pool) interface{} {
+	res, ok := r.store.Load(m)
+	if !ok {
+		new := pool.Get()
+		res, ok = r.store.LoadOrStore(m, new)
+		if ok {
+			pool.Put(new)
+		} else {
+			r.updateIndex(m, res)
+		}
+	}
+	return res
 }

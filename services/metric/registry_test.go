@@ -135,3 +135,76 @@ func mustGetVMA(registry Registry, key Measurement, age float64) (err error) {
 	registry.MustGetVarMovingAvg(key, age)
 	return errors.New("")
 }
+
+func BenchmarkRegistryGetCounterAndInc1(b *testing.B) {
+	benchmarkRegistryGetCounterAndInc(b, 1)
+}
+
+func BenchmarkRegistryGetCounterAndInc10(b *testing.B) {
+	benchmarkRegistryGetCounterAndInc(b, 10)
+}
+
+func BenchmarkRegistryGetCounterAndInc100(b *testing.B) {
+	benchmarkRegistryGetCounterAndInc(b, 100)
+}
+
+func benchmarkRegistryGetCounterAndInc(b *testing.B, concurrency int) {
+	b.StopTimer()
+	var start, end sync.WaitGroup
+	start.Add(1)
+	n := b.N / concurrency
+	registry := NewRegistry()
+	var key = testMeasurement{name: "key"}
+	end.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			for i := 0; i < n; i++ {
+				counter := registry.MustGetCounter(key)
+				counter.Inc()
+			}
+			end.Done()
+		}()
+	}
+
+	b.StartTimer()
+	start.Done()
+	end.Wait()
+}
+
+func BenchmarkMutexMapGetIntAndInc1(b *testing.B) {
+	benchmarkMutexMapGetIntAndInc(b, 1)
+}
+
+func BenchmarkMutexMapGetIntAndInc10(b *testing.B) {
+	benchmarkMutexMapGetIntAndInc(b, 10)
+}
+
+func BenchmarkMutexMapGetIntAndInc100(b *testing.B) {
+	benchmarkMutexMapGetIntAndInc(b, 100)
+}
+
+func benchmarkMutexMapGetIntAndInc(b *testing.B, concurrency int) {
+	b.StopTimer()
+	var mutex sync.RWMutex
+	var start, end sync.WaitGroup
+	start.Add(1)
+	n := b.N / concurrency
+	registry := map[string]int{"key": 0}
+	end.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+
+		go func() {
+
+			for i := 0; i < n; i++ {
+				mutex.Lock()
+				registry["key"] += 1
+				mutex.Unlock()
+			}
+			end.Done()
+		}()
+	}
+
+	b.StartTimer()
+	start.Done()
+	end.Wait()
+}
