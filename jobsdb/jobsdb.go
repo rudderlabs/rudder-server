@@ -1431,8 +1431,8 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
 	}
 
-	//No dataset should have 0 as the index.
-	//0_1, 0_2 are allowed.
+	// No dataset should have 0 as the index.
+	// 0_1, 0_2 are allowed.
 	if beforeIndex == "0" {
 		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
 	}
