@@ -204,7 +204,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 
 	// logger.Log.Info("stats client: ", client)
 	if client == nil {
-		logger.Log.Info("client is nil")
+		logger.Log.Info("----client is nil----")
 
 	}
 	// logger.Log.Info("stats taggedClient: ", taggedClient)
@@ -245,7 +245,9 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
-
+	if rStats.Client == nil {
+		fmt.Println("client is nil")
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
