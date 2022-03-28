@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -814,12 +815,11 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-				uploadInterval, _ := destinationsMap[destinationID].Destination.Config["uploadInterval"].(string)
-				timeout := parseTime(uploadInterval, brt.asyncUploadTimeout)
 
+				timeout := brt.parseUploadIntervalFromConfig(destinationsMap[destinationID].Destination.Config)
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					uploadResponse := asyncdestinationmanager.Upload(resolveURL(transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 					brt.asyncStructCleanUp(destinationID)
 					brt.setMultipleJobStatus(uploadResponse)
 				}
@@ -829,12 +829,36 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 	}
 }
 
-func parseTime(dur string, defaultDuration time.Duration) time.Duration {
+func resolveURL(base, relative string) string {
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		pkgLogger.Fatal(err)
+	}
+	relURL, err := url.Parse(relative)
+	if err != nil {
+		pkgLogger.Fatal(err)
+	}
+	destURL := baseURL.ResolveReference(relURL).String()
+	return destURL
+}
+
+func (brt *HandleT) parseUploadIntervalFromConfig(destinationConfig map[string]interface{}) time.Duration {
+	uploadInterval, ok := destinationConfig["uploadInterval"]
+	if !ok {
+		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
+	}
+	dur, ok := uploadInterval.(string)
+	if !ok {
+		brt.logger.Debugf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
+	}
 	parsedTime, err := strconv.ParseInt(dur, 10, 64)
 	if err != nil {
-		return defaultDuration
+		brt.logger.Debugf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
 	}
-	return time.Duration(parsedTime * 60 * int64(time.Second))
+	return time.Duration(parsedTime * int64(time.Minute))
 }
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
