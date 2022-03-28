@@ -136,7 +136,22 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	proc := processor.New(ctx, &options.ClearDB, gwDB, rtDB, brtDB, errDB)
-	rt := routerManager.New(ctx, brtDB, errDB, tenantRouterDB)
+
+	rtFactory := &router.Factory{
+		Reporting:     reportingI,
+		Multitenant:   multitenantStats,
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		RouterDB:      tenantRouterDB,
+		ProcErrorDB:   errDB,
+	}
+	brtFactory := &batchrouter.Factory{
+		Reporting:     reportingI,
+		Multitenant:   multitenantStats,
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		RouterDB:      brtDB,
+		ProcErrorDB:   errDB,
+	}
+	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
 		Provider:      &modeProvider,
@@ -147,7 +162,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		Processor:     proc,
 		Router:        rt,
 	}
-	dm.Setup()
 
 	g.Go(func() error {
 		return dm.Run(ctx)

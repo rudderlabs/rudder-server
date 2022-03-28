@@ -193,15 +193,25 @@ func TestDynamicClusterManager(t *testing.T) {
 	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1)
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	router := routermanager.New(ctx, brtDB, errDB, tDb)
-	router.BackendConfig = mockBackendConfig
-	router.ReportingI = &reportingNOOP{}
-	router.MultitenantStats = mockMTI
+	rtFactory := &router.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      tDb,
+		ProcErrorDB:   errDB,
+	}
+	brtFactory := &batchrouter.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      brtDB,
+		ProcErrorDB:   errDB,
+	}
+	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
 		channel chan utils.DataEvent, topic backendConfig.Topic) {
@@ -223,7 +233,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		Router:    router,
 		Provider:  provider,
 	}
-	dCM.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 

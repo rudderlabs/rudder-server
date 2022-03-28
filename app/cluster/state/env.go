@@ -15,6 +15,7 @@ func (e *Env) ServerMode() <-chan servermode.ModeAck {
 	serverMode := os.Getenv("RSERVER_MODE")
 	e.setMode(serverMode)
 	ch <- servermode.WithACK(servermode.Mode(e.Mode), func() {})
+	close(ch)
 	return ch
 }
 
