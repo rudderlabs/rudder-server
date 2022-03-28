@@ -110,6 +110,7 @@ func Setup() {
 	var err error
 	rruntime.Go(func() {
 		if err = backoff.Retry(func() error {
+			logger.Log.Info("-----trying to create new statsd.New connection")
 			//TODO: Add tags by calling a function...
 			client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 			if err != nil {
@@ -123,10 +124,10 @@ func Setup() {
 				panic(err)
 			}
 		}
-		logger.Log.Info("statsd client setup succeeded.")
+		logger.Log.Info("-----**-----statsd client setup succeeded.-----**----")
 		// pkgLogger.Info("statsd client setup succeeded.")
 		if client != nil {
-			logger.Log.Info("collecting runtime stats")
+			logger.Log.Info("-----collecting runtime stats")
 			collectRuntimeStats(client)
 		}
 	})
