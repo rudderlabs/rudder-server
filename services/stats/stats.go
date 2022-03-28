@@ -123,6 +123,7 @@ func Setup() {
 				panic(err)
 			}
 		}
+		pkgLogger.Info("statsd client setup succeeded.")
 		if client != nil {
 			collectRuntimeStats(client)
 		}
@@ -194,6 +195,9 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
+
+	logger.Log.Info("stats client: ", client)
+	logger.Log.Info("stats taggedClient: ", taggedClient)
 
 	return &RudderStatsT{
 		Name:        Name,
