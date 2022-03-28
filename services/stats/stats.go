@@ -242,6 +242,7 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
+	
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}

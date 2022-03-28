@@ -185,6 +185,7 @@ func sendRecoveryModeStat(appType string) {
 		time.Sleep(10 * time.Second)
 		switch CurrentMode {
 		case normalMode:
+			logger.Log.Info("sending gauge to recovery.mode_normal")
 			recoveryModeStat.Gauge(1)
 		case degradedMode:
 			recoveryModeStat.Gauge(2)
