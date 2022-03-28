@@ -108,11 +108,11 @@ func Setup() {
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var err error
-	var c *statsd.Client
+	// var c *statsd.Client
 	rruntime.Go(func() {
 		if err = backoff.Retry(func() error {
 			//TODO: Add tags by calling a function...
-			c, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+			client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 			if err != nil {
 				pkgLogger.Errorf("error while setting statsd client: %v", err)
 			}
@@ -126,10 +126,10 @@ func Setup() {
 		}
 
 		pkgLogger.Info("statsd client setup succeeded.")
-		if c != nil {
-			client = c
-			collectRuntimeStats(client)
-		}
+		// if c != nil {
+		// client = c
+		collectRuntimeStats(client)
+		// }
 	})
 
 }
