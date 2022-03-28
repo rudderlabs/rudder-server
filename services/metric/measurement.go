@@ -10,6 +10,8 @@ type Measurement interface {
 	GetTags() map[string]string
 }
 
+const JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
+
 // GetPendingEventsMeasurement gets the measurement for pending events metric
 func GetPendingEventsMeasurement(tablePrefix string, workspace string, destType string) Gauge {
 	return GetManager().GetRegistry(PUBLISHED_METRICS).MustGetGauge(pendingEventsMeasurement{tablePrefix, workspace, destType})
@@ -22,7 +24,7 @@ type pendingEventsMeasurement struct {
 }
 
 func (r pendingEventsMeasurement) GetName() string {
-	return fmt.Sprintf("jobsdb_%s_pending_events_count", r.tablePrefix)
+	return fmt.Sprintf(JOBSDB_PENDING_EVENTS_COUNT, r.tablePrefix)
 }
 func (r pendingEventsMeasurement) GetTags() map[string]string {
 	res := map[string]string{
