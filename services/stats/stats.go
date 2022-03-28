@@ -108,11 +108,12 @@ func Setup() {
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var err error
+	var c *statsd.Client
 	rruntime.Go(func() {
 		if err = backoff.Retry(func() error {
 			logger.Log.Info("-----trying to create new statsd.New connection")
 			//TODO: Add tags by calling a function...
-			client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+			c, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 			if err != nil {
 				pkgLogger.Errorf("error while setting statsd client: %v", err)
 			}
@@ -124,9 +125,11 @@ func Setup() {
 				panic(err)
 			}
 		}
+
 		logger.Log.Info("-----**-----statsd client setup succeeded.-----**----")
 		// pkgLogger.Info("statsd client setup succeeded.")
-		if client != nil {
+		if c != nil {
+			client = c
 			logger.Log.Info("-----collecting runtime stats")
 			collectRuntimeStats(client)
 		}
@@ -242,7 +245,7 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
-	
+
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
