@@ -126,6 +126,7 @@ func Setup() {
 		logger.Log.Info("statsd client setup succeeded.")
 		// pkgLogger.Info("statsd client setup succeeded.")
 		if client != nil {
+			logger.Log.Info("collecting runtime stats")
 			collectRuntimeStats(client)
 		}
 	})
@@ -197,8 +198,12 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 		taggedClientsMapLock.Unlock()
 	}
 
-	logger.Log.Info("stats client: ", client)
-	logger.Log.Info("stats taggedClient: ", taggedClient)
+	// logger.Log.Info("stats client: ", client)
+	if client == nil {
+		logger.Log.Info("client is nil")
+
+	}
+	// logger.Log.Info("stats taggedClient: ", taggedClient)
 
 	return &RudderStatsT{
 		Name:        Name,
@@ -242,6 +247,7 @@ func (rStats *RudderStatsT) Gauge(value interface{}) {
 	if rStats.StatType != GaugeType {
 		panic(fmt.Errorf("rStats.StatType:%s is not gauge", rStats.StatType))
 	}
+
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
