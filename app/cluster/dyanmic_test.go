@@ -84,7 +84,6 @@ func TestDynamicCluster(t *testing.T) {
 		Processor: processor,
 		Router:    router,
 	}
-	dc.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -94,37 +93,37 @@ func TestDynamicCluster(t *testing.T) {
 		close(wait)
 	}()
 
-	//t.Run("UNDEFINED -> NORMAL", func(t *testing.T) {
-	//	chACK := make(chan bool)
-	//	provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
-	//		close(chACK)
-	//	}))
-	//
-	//	require.Eventually(t, func() bool {
-	//		<-chACK
-	//		return true
-	//	}, time.Second, time.Millisecond)
-	//
-	//	require.Equal(t, "start", gatewayDB.status)
-	//	require.Equal(t, "start", routerDB.status)
-	//	require.Equal(t, "start", batchRouterDB.status)
-	//	require.Equal(t, "start", errorDB.status)
-	//
-	//	require.Equal(t, "start", processor.status)
-	//	require.Equal(t, "start", router.status)
-	//
-	//	t.Log("dbs should be started before processor")
-	//	require.True(t, gatewayDB.callOrder < processor.callOrder)
-	//	require.True(t, routerDB.callOrder < processor.callOrder)
-	//	require.True(t, batchRouterDB.callOrder < processor.callOrder)
-	//	require.True(t, errorDB.callOrder < processor.callOrder)
-	//
-	//	t.Log("dbs should be started before router")
-	//	require.True(t, gatewayDB.callOrder < router.callOrder)
-	//	require.True(t, routerDB.callOrder < router.callOrder)
-	//	require.True(t, batchRouterDB.callOrder < router.callOrder)
-	//	require.True(t, errorDB.callOrder < router.callOrder)
-	//})
+	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
+		chACK := make(chan bool)
+		provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+			close(chACK)
+		}))
+
+		require.Eventually(t, func() bool {
+			<-chACK
+			return true
+		}, time.Second, time.Millisecond)
+
+		require.Equal(t, "start", gatewayDB.status)
+		require.Equal(t, "start", routerDB.status)
+		require.Equal(t, "start", batchRouterDB.status)
+		require.Equal(t, "start", errorDB.status)
+
+		require.Equal(t, "start", processor.status)
+		require.Equal(t, "start", router.status)
+
+		t.Log("dbs should be started before processor")
+		require.True(t, gatewayDB.callOrder < processor.callOrder)
+		require.True(t, routerDB.callOrder < processor.callOrder)
+		require.True(t, batchRouterDB.callOrder < processor.callOrder)
+		require.True(t, errorDB.callOrder < processor.callOrder)
+
+		t.Log("dbs should be started before router")
+		require.True(t, gatewayDB.callOrder < router.callOrder)
+		require.True(t, routerDB.callOrder < router.callOrder)
+		require.True(t, batchRouterDB.callOrder < router.callOrder)
+		require.True(t, errorDB.callOrder < router.callOrder)
+	})
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan bool)
@@ -190,7 +189,7 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, errorDB.callOrder < router.callOrder)
 	})
 
-	t.Run("Shutdown from Normal ", func(t *testing.T) {
+	t.Run("Normal -> Shutdown", func(t *testing.T) {
 		cancel()
 		<-wait
 

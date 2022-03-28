@@ -12,17 +12,9 @@ import (
 )
 
 var (
-	pkgLogger logger.LoggerI
-	controller string = "ETCD"
+	controller     string = "ETCD"
 	controllertype string = "Dynamic"
-	once sync.Once
 )
-
-func Init() {
-	once.Do(func() {
-		pkgLogger = logger.NewLogger().Child("cluster")
-	})
-}
 
 type modeProvider interface {
 	ServerMode() <-chan servermode.ModeAck
@@ -52,14 +44,15 @@ type Dynamic struct {
 	serverStopCountStat  stats.RudderStats
 
 	logger logger.LoggerI
+
+	once sync.Once
 }
 
-func (d *Dynamic) Setup()  {
-	Init()
+func (d *Dynamic) init() {
 	d.currentMode = servermode.DegradedMode
-	d.logger = pkgLogger
+	d.logger = logger.NewLogger().Child("cluster")
 	tag := stats.Tags{
-		"controlled_by": controller,
+		"controlled_by":   controller,
 		"controller_type": controllertype,
 	}
 	d.serverStartTimeStat = stats.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
@@ -69,6 +62,9 @@ func (d *Dynamic) Setup()  {
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
+	d.once.Do(func() {
+		d.init()
+	})
 	for {
 		select {
 		case <-ctx.Done():

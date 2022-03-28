@@ -188,7 +188,6 @@ func TestRouterManager(t *testing.T) {
 				})
 			}).AnyTimes()
 
-	ctx := context.Background()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
 	errDB := jobsdb.NewForReadWrite("proc_error")
@@ -196,10 +195,21 @@ func TestRouterManager(t *testing.T) {
 	defer brtDB.Close()
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	r := New(ctx, brtDB, errDB, tDb)
-	r.BackendConfig = mockBackendConfig
-	r.ReportingI = &reportingNOOP{}
-	r.MultitenantStats = mockMTI
+	rtFactory := &router.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      tDb,
+		ProcErrorDB:   errDB,
+	}
+	brtFactory := &batchrouter.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      brtDB,
+		ProcErrorDB:   errDB,
+	}
+	r := New(rtFactory, brtFactory, mockBackendConfig)
 
 	for i := 0; i < 5; i++ {
 		rtDB.Start()
