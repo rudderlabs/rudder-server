@@ -111,7 +111,6 @@ func Setup() {
 	var c *statsd.Client
 	rruntime.Go(func() {
 		if err = backoff.Retry(func() error {
-			logger.Log.Info("-----trying to create new statsd.New connection")
 			//TODO: Add tags by calling a function...
 			c, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 			if err != nil {
@@ -126,11 +125,9 @@ func Setup() {
 			}
 		}
 
-		logger.Log.Info("-----**-----statsd client setup succeeded.-----**----")
-		// pkgLogger.Info("statsd client setup succeeded.")
+		pkgLogger.Info("statsd client setup succeeded.")
 		if c != nil {
 			client = c
-			logger.Log.Info("-----collecting runtime stats")
 			collectRuntimeStats(client)
 		}
 	})
@@ -201,14 +198,6 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
-
-	// logger.Log.Info("stats client: ", client)
-	if client == nil {
-		logger.Log.Info("----client is nil----")
-
-	}
-	// logger.Log.Info("stats taggedClient: ", taggedClient)
-
 	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
@@ -245,16 +234,12 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
-	if rStats.Client == nil {
-		fmt.Println("client is nil")
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	if rStats.StatType != GaugeType {
 		panic(fmt.Errorf("rStats.StatType:%s is not gauge", rStats.StatType))
 	}
-
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
