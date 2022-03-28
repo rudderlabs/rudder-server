@@ -108,27 +108,26 @@ func Setup() {
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var err error
-
-	if err = backoff.Retry(func() error {
-		//TODO: Add tags by calling a function...
-		client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-		if err != nil {
-			pkgLogger.Errorf("error while setting statsd client: %v", err)
+	rruntime.Go(func() {
+		if err = backoff.Retry(func() error {
+			//TODO: Add tags by calling a function...
+			client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+			if err != nil {
+				pkgLogger.Errorf("error while setting statsd client: %v", err)
+			}
+			return err
+		}, bo); err != nil {
+			if bo.NextBackOff() == backoff.Stop {
+				//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
+				// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
+				panic(err)
+			}
 		}
-		return err
-	}, bo); err != nil {
-		if bo.NextBackOff() == backoff.Stop {
-			//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
-			// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
-			panic(err)
-		}
-	}
-
-	if client != nil {
-		rruntime.Go(func() {
+		if client != nil {
 			collectRuntimeStats(client)
-		})
-	}
+		}
+	})
+
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
