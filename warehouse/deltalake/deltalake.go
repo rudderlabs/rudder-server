@@ -162,8 +162,8 @@ func GetDatabricksConnectorURL() string {
 	return config.GetEnv("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
-// CheckAndIgnoreAlreadyExistError checks and ignores native errors.
-func CheckAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
+// checkAndIgnoreAlreadyExistError checks and ignores native errors.
+func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
 	if errorCode == "" || errorCode == ignoreError {
 		return true
 	}
@@ -276,7 +276,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	if err != nil {
 		return tableNames, fmt.Errorf("%s Error while fetching tables: %v", dl.GetLogIdentifier(), err)
 	}
-	if !CheckAndIgnoreAlreadyExistError(fetchTableResponse.GetErrorCode(), databaseNotFound) {
+	if !checkAndIgnoreAlreadyExistError(fetchTableResponse.GetErrorCode(), databaseNotFound) {
 		err = fmt.Errorf("%s Error while fetching tables with response: %v", dl.GetLogIdentifier(), fetchTableResponse.GetErrorMessage())
 		return
 	}
@@ -311,7 +311,7 @@ func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement
 	if err != nil {
 		return fmt.Errorf("error while executing: %v", err)
 	}
-	if !CheckAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), databaseNotFound) || !CheckAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), tableOrViewNotFound) {
+	if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), databaseNotFound) || !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), tableOrViewNotFound) {
 		err = fmt.Errorf("error while executing with response: %v", executeResponse.GetErrorMessage())
 		return
 	}
@@ -340,7 +340,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	if err != nil {
 		return exists, fmt.Errorf("%s Error while fetching schemas: %v", dl.GetLogIdentifier(), err)
 	}
-	if !CheckAndIgnoreAlreadyExistError(fetchSchemasResponse.GetErrorCode(), databaseNotFound) {
+	if !checkAndIgnoreAlreadyExistError(fetchSchemasResponse.GetErrorCode(), databaseNotFound) {
 		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
@@ -377,7 +377,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 			Identifier:   dl.dbHandleT.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
-		if err == nil && !CheckAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
 			continue
 		}
 		if err != nil {
@@ -668,6 +668,9 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
+	if err := warehouseutils.ValidateHost(warehouseutils.GetConfigValue(DLHost, dl.Warehouse)); err != nil {
+		return nil, err
+	}
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -776,7 +779,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		if err != nil {
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
 		}
-		if !CheckAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), tableOrViewNotFound) {
+		if !checkAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), tableOrViewNotFound) {
 			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetErrorMessage())
 		}
 
@@ -886,7 +889,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
 		return
 	}
-	if !CheckAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
+	if !checkAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
 		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), response.GetErrorMessage())
 		return
 	}

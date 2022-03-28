@@ -97,6 +97,9 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
+	if err := warehouseutils.ValidateHost(cred.Host); err != nil {
+		return nil, err
+	}
 	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
 		cred.User,
 		cred.Password,

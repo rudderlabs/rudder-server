@@ -196,6 +196,9 @@ func Init() {
 
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
+	if err := warehouseutils.ValidateHost(cred.Host); err != nil {
+		return nil, err
+	}
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
