@@ -96,11 +96,12 @@ type RudderStatsT struct {
 
 //Setup creates a new statsd client
 func Setup() {
+	DefaultStats = &HandleT{}
+
 	if !statsEnabled {
 		return
 	}
 
-	DefaultStats = &HandleT{}
 	conn = statsd.Address(statsdServerURL)
 
 	maxWait := time.Minute * 10
