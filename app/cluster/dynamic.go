@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -14,10 +15,13 @@ var (
 	pkgLogger logger.LoggerI
 	controller string = "ETCD"
 	controllertype string = "Dynamic"
+	once sync.Once
 )
 
 func Init() {
-	pkgLogger = logger.NewLogger().Child("cluster")
+	once.Do(func() {
+		pkgLogger = logger.NewLogger().Child("cluster")
+	})
 }
 
 type modeProvider interface {
@@ -51,6 +55,7 @@ type Dynamic struct {
 }
 
 func (d *Dynamic) Setup()  {
+	Init()
 	d.currentMode = servermode.DegradedMode
 	d.logger = pkgLogger
 	tag := stats.Tags{
