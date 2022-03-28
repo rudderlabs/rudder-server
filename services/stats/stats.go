@@ -94,6 +94,38 @@ type RudderStatsT struct {
 	dontProcess bool
 }
 
+func statsdClientWithExpoBackoff(opts ...statsd.Option) *statsd.Client {
+	maxWait := time.Minute * 10
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = maxWait
+	var err error
+	var c *statsd.Client
+	// rruntime.Go(func() {
+	if err = backoff.Retry(func() error {
+		//TODO: Add tags by calling a function...
+		c, err = statsd.New(opts...)
+		if err != nil {
+			pkgLogger.Errorf("error while setting statsd client: %v", err)
+		}
+		return err
+	}, bo); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
+			// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
+			panic(err)
+		}
+	}
+
+	// pkgLogger.Info("statsd client setup succeeded.")
+	// if c != nil {
+	// 	client = c
+	// 	collectRuntimeStats(client)
+	// }
+	// })
+	return c
+}
+
 //Setup creates a new statsd client
 func Setup() {
 	DefaultStats = &HandleT{}
@@ -101,30 +133,10 @@ func Setup() {
 	if !statsEnabled {
 		return
 	}
-
 	conn = statsd.Address(statsdServerURL)
+	c := statsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 
-	maxWait := time.Minute * 10
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
-	var err error
-	var c *statsd.Client
 	rruntime.Go(func() {
-		if err = backoff.Retry(func() error {
-			//TODO: Add tags by calling a function...
-			c, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-			if err != nil {
-				pkgLogger.Errorf("error while setting statsd client: %v", err)
-			}
-			return err
-		}, bo); err != nil {
-			if bo.NextBackOff() == backoff.Stop {
-				//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
-				// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
-				panic(err)
-			}
-		}
 
 		pkgLogger.Info("statsd client setup succeeded.")
 		if c != nil {
@@ -132,7 +144,6 @@ func Setup() {
 			collectRuntimeStats(client)
 		}
 	})
-
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -187,12 +198,8 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVal = strings.ReplaceAll(tagVal, ":", "-")
 			tagVals = append(tagVals, tagName, tagVal)
 		}
-		var err error
-		if config.GetBool("useNewClient", false) {
-			taggedClient, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-			if err != nil {
-				pkgLogger.Error(err)
-			}
+		if config.GetBool("useNewClient", false) || client == nil {
+			taggedClient = statsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		} else {
 			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		}
@@ -213,6 +220,9 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 
 // Count increases the stat by n. Only applies to CountType stats
 func (rStats *RudderStatsT) Count(n int) {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -224,6 +234,9 @@ func (rStats *RudderStatsT) Count(n int) {
 
 // Increment increases the stat by 1. Is the Equivalent of Count(1). Only applies to CountType stats
 func (rStats *RudderStatsT) Increment() {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -235,6 +248,9 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -247,6 +263,9 @@ func (rStats *RudderStatsT) Gauge(value interface{}) {
 // Start starts a new timing for this stat. Only applies to TimerType stats
 
 func (rStats *RudderStatsT) Start() {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -270,6 +289,9 @@ func (rStats *RudderStatsT) End() {
 
 // Deprecated: Use concurrent safe SendTiming() instead
 func (rStats *RudderStatsT) DeferredTimer() {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -283,6 +305,9 @@ func (rStats *RudderStatsT) Since(start time.Time) {
 
 // Timing sends a timing for this stat. Only applies to TimerType stats
 func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
+	if client == nil {
+		return
+	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -304,6 +329,9 @@ func (rStats *RudderStatsT) Observe(value float64) {
 }
 
 func collectRuntimeStats(client *statsd.Client) {
+	if client == nil {
+		return
+	}
 	gaugeFunc := func(key string, val uint64) {
 		client.Gauge("runtime_"+key, val)
 	}
