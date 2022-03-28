@@ -123,7 +123,8 @@ func Setup() {
 				panic(err)
 			}
 		}
-		pkgLogger.Info("statsd client setup succeeded.")
+		logger.Log.Info("statsd client setup succeeded.")
+		// pkgLogger.Info("statsd client setup succeeded.")
 		if client != nil {
 			collectRuntimeStats(client)
 		}
