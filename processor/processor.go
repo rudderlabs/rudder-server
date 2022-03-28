@@ -1494,31 +1494,6 @@ func (proc *HandleT) Store(in storeMessage) {
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
-	if len(destJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-
-		err := proc.routerDB.Store(destJobs)
-		if err != nil {
-			proc.logger.Errorf("Store into router table failed with error: %v", err)
-			proc.logger.Errorf("destJobs: %v", destJobs)
-			panic(err)
-		}
-		totalPayloadRouterBytes := 0
-		processorLoopStats["router"] = make(map[string]map[string]int)
-		for i := range destJobs {
-			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
-		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
-
-		proc.statDestNumOutputEvents.Count(len(destJobs))
-		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
-	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		err := proc.batchRouterDB.Store(batchDestJobs)
@@ -1554,6 +1529,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadRouterBytes := 0
+		processorLoopStats["router"] = make(map[string]map[string]int)
 		for i := range destJobs {
 			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
@@ -1562,6 +1538,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
@@ -1605,7 +1582,6 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
