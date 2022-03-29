@@ -134,16 +134,18 @@ func Setup() {
 	rruntime.Go(func() {
 		//this is a blocking call
 		getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-		taggedClientsMapLock.Lock()
 
-		taggedClientsMapLock.RLock()
+		taggedClientsMapLock.Lock()
 		for i, tagValue := range tagValsList {
 			taggedClient := client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagValue...), statsd.SampleRate(statsSamplingRate))
 			taggedClientsMap[tagStrList[i]] = taggedClient
 		}
-		taggedClientsMapLock.RUnlock()
+		taggedClientsMapLock.Unlock()
 
 		pkgLogger.Info("statsd client setup succeeded.")
+		isMockClient = false
+		tagValsList = nil
+		tagStrList = nil
 		collectRuntimeStats(client)
 	})
 }
