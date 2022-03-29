@@ -103,7 +103,8 @@ func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) {
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var err error
-	if err = backoff.Retry(func() error {
+
+	getNewClient := func() error {
 		//statsd.New returns client even when err!=nil, although that client won't work.
 		//But, since we don't want getting new client to be a blocking call. So, setting it even with the non-working client.
 		//And, will be updated once we have `err==nil`, until then stats sent to telegraf will be dropped.
@@ -113,7 +114,9 @@ func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) {
 			pkgLogger.Errorf("error while setting statsd client: %v", err)
 		}
 		return err
-	}, bo); err != nil {
+	}
+
+	if err = backoff.Retry(getNewClient, bo); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
 			//if setup didn't succeed in bo.MaxElapsedTime, then we panic. Since, if `RSERVER_ENABLE_STATS` is `true`
 			// & we failed to complete statsd setup in maxElapsedTime then something is wrong. And, we don't want to loose metrics by ignoring the error.
@@ -136,7 +139,6 @@ func Setup() {
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 	if err != nil {
 		rruntime.Go(func() {
-			//this is a blocking call
 			getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 
 			taggedClientsMapLock.Lock()
