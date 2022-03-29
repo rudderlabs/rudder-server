@@ -137,8 +137,9 @@ func Setup() {
 	var err error
 	//NOTE: this is to get atleast a dummy client, even in case of failure. So, that nil pointer error is not received when client is called.
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-	if err != nil {
-		rruntime.Go(func() {
+	rruntime.Go(func() {
+		if err != nil {
+
 			getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 
 			taggedClientsMapLock.Lock()
@@ -152,9 +153,10 @@ func Setup() {
 			isMockClient = false
 			tagValsList = nil
 			tagStrList = nil
-		})
-	}
-	collectRuntimeStats(client)
+		}
+
+		collectRuntimeStats(client)
+	})
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
