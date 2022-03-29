@@ -256,18 +256,7 @@ func Run(ctx context.Context) {
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				}})
-
-			misc.RecordAppError(fmt.Errorf("%v", r))
-			pkgLogger.Fatal(r)
-			panic(r)
-		}
-	}()
+	misc.BugsnagNotify(ctx, "Core")
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
