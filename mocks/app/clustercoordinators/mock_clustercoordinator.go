@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	clustercoordinator "github.com/rudderlabs/rudder-server/app/clustercoordinators"
+	servermode "github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 // MockClusterManagerFactory is a mock of ClusterManagerFactory interface.
@@ -128,4 +129,18 @@ func (m *MockClusterManager) WatchForWorkspaces(arg0 context.Context, arg1 strin
 func (mr *MockClusterManagerMockRecorder) WatchForWorkspaces(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WatchForWorkspaces", reflect.TypeOf((*MockClusterManager)(nil).WatchForWorkspaces), arg0, arg1)
+}
+
+// WorkspaceServed mocks base method.
+func (m *MockClusterManager) WorkspaceServed() <-chan servermode.Ack {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WorkspaceServed")
+	ret0, _ := ret[0].(<-chan servermode.Ack)
+	return ret0
+}
+
+// WorkspaceServed indicates an expected call of WorkspaceServed.
+func (mr *MockClusterManagerMockRecorder) WorkspaceServed() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WorkspaceServed", reflect.TypeOf((*MockClusterManager)(nil).WorkspaceServed))
 }
