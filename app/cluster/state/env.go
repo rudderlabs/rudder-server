@@ -2,16 +2,17 @@ package state
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"os"
+
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 type Env struct {
 	Mode servermode.Mode
 }
 
-func (e *Env) ServerMode() <-chan servermode.ModeAck {
-	ch := make(chan servermode.ModeAck, 1)
+func (e *Env) ServerMode() <-chan servermode.Ack {
+	ch := make(chan servermode.Ack, 1)
 	serverMode := os.Getenv("RSERVER_MODE")
 	e.setMode(serverMode)
 	ch <- servermode.WithACK(servermode.Mode(e.Mode), func() {})
