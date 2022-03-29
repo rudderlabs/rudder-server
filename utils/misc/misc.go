@@ -1408,3 +1408,7 @@ func ReverseInt(s []int) []int {
 	}
 	return s
 }
+
+func IsMultiTenant() bool {
+	return config.GetBool("EnableMultitenancy", false)
+}
