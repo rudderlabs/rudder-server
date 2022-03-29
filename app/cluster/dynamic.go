@@ -17,10 +17,10 @@ var (
 )
 
 type modeProvider interface {
-	ServerMode() <-chan servermode.ModeAck
+	ServerMode() <-chan servermode.Ack
 }
 
-type Lifecycle interface {
+type lifecycle interface {
 	Start()
 	Stop()
 }
@@ -28,13 +28,13 @@ type Lifecycle interface {
 type Dynamic struct {
 	Provider modeProvider
 
-	GatewayDB     Lifecycle
-	RouterDB      Lifecycle
-	BatchRouterDB Lifecycle
-	ErrorDB       Lifecycle
+	GatewayDB     lifecycle
+	RouterDB      lifecycle
+	BatchRouterDB lifecycle
+	ErrorDB       lifecycle
 
-	Processor Lifecycle
-	Router    Lifecycle
+	Processor lifecycle
+	Router    lifecycle
 
 	currentMode servermode.Mode
 

@@ -31,7 +31,7 @@ func (proc *LifecycleManager) Run(ctx context.Context) error {
 	return nil
 }
 
-// StartNew starts a processor, this is not a blocking call.
+// Start starts a processor, this is not a blocking call.
 //If the processor is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
 func (proc *LifecycleManager) Start() {

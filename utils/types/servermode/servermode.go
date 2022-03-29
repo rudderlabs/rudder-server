@@ -7,21 +7,21 @@ const (
 	DegradedMode  Mode = "DEGRADED"
 )
 
-type ModeAck struct {
+type Ack struct {
 	ack  func()
 	mode Mode
 }
 
-func (m ModeAck) Ack() {
+func (m Ack) Ack() {
 	m.ack()
 }
 
-func (m ModeAck) Mode() Mode {
+func (m Ack) Mode() Mode {
 	return m.mode
 }
 
-func WithACK(mode Mode, ack func()) ModeAck {
-	return ModeAck{
+func WithACK(mode Mode, ack func()) Ack {
+	return Ack{
 		mode: mode,
 		ack:  ack,
 	}
