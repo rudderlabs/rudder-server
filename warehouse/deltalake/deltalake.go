@@ -668,9 +668,6 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
-	if err := warehouseutils.ValidateHost(warehouseutils.GetConfigValue(DLHost, dl.Warehouse)); err != nil {
-		return nil, err
-	}
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),

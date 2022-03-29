@@ -508,9 +508,6 @@ type RedshiftCredentialsT struct {
 }
 
 func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	if err := warehouseutils.ValidateHost(cred.host); err != nil {
-		return nil, err
-	}
 	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
 		cred.username,
 		cred.password,

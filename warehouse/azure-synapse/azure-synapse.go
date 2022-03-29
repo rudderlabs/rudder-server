@@ -112,9 +112,6 @@ var partitionKeyMap = map[string]string{
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
-	if err := warehouseutils.ValidateHost(cred.host); err != nil {
-		return nil, err
-	}
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
