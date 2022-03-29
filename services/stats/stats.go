@@ -212,7 +212,6 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagStrList = append(tagStrList, tagStr)
 			tagValsList = append(tagValsList, tagVals)
 		}
-		fmt.Println("client in clone: ", client)
 		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 
 		taggedClientsMapLock.Lock()
