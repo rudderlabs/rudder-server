@@ -131,23 +131,28 @@ func Setup() {
 	}
 	conn = statsd.Address(statsdServerURL)
 	// since, we don't want setup to be a blocking call, creating a separate `go routine`` for retry to get statsd client.
-	rruntime.Go(func() {
-		//this is a blocking call
-		getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+	var err error
+	//NOTE: this is to get atleast a dummy client, even in case of failure. So, that nil pointer error is not received when client is called.
+	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+	if err != nil {
+		rruntime.Go(func() {
+			//this is a blocking call
+			getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 
-		taggedClientsMapLock.Lock()
-		for i, tagValue := range tagValsList {
-			taggedClient := client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagValue...), statsd.SampleRate(statsSamplingRate))
-			taggedClientsMap[tagStrList[i]] = taggedClient
-		}
-		taggedClientsMapLock.Unlock()
+			taggedClientsMapLock.Lock()
+			for i, tagValue := range tagValsList {
+				taggedClient := client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagValue...), statsd.SampleRate(statsSamplingRate))
+				taggedClientsMap[tagStrList[i]] = taggedClient
+			}
+			taggedClientsMapLock.Unlock()
 
-		pkgLogger.Info("statsd client setup succeeded.")
-		isMockClient = false
-		tagValsList = nil
-		tagStrList = nil
-		collectRuntimeStats(client)
-	})
+			pkgLogger.Info("statsd client setup succeeded.")
+			isMockClient = false
+			tagValsList = nil
+			tagStrList = nil
+			collectRuntimeStats(client)
+		})
+	}
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -207,7 +212,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagStrList = append(tagStrList, tagStr)
 			tagValsList = append(tagValsList, tagVals)
 		}
-
+		fmt.Println("client in clone: ", client)
 		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 
 		taggedClientsMapLock.Lock()
