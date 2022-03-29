@@ -193,7 +193,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.statusCode != 0 {
 			code = resp.statusCode
 		}
-		pkgLogger.Debug(resp.err)
+		pkgLogger.Info(resp.err)
 		http.Error(w, resp.err, code)
 	} else {
 		pkgLogger.Debug(response.GetStatus(response.Ok))

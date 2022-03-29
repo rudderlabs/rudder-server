@@ -3,16 +3,17 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 var (
-	pkgLogger logger.LoggerI
-	controller string = "ETCD"
+	pkgLogger      logger.LoggerI
+	controller     string = "ETCD"
 	controllertype string = "Dynamic"
 )
 
@@ -50,11 +51,11 @@ type Dynamic struct {
 	logger logger.LoggerI
 }
 
-func (d *Dynamic) Setup()  {
+func (d *Dynamic) Setup() {
 	d.currentMode = servermode.DegradedMode
 	d.logger = pkgLogger
 	tag := stats.Tags{
-		"controlled_by": controller,
+		"controlled_by":   controller,
 		"controller_type": controllertype,
 	}
 	d.serverStartTimeStat = stats.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
@@ -64,6 +65,7 @@ func (d *Dynamic) Setup()  {
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
+	serverModeChan := d.Provider.ServerMode()
 	for {
 		select {
 		case <-ctx.Done():
@@ -71,7 +73,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				d.stop()
 			}
 			return nil
-		case newMode := <-d.Provider.ServerMode():
+		case newMode := <-serverModeChan:
 			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
 			err := d.handleModeChange(newMode.Mode())
 			if err != nil {
