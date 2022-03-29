@@ -36,6 +36,9 @@ var enableGCStats bool
 var rc runtimeStatsCollector
 var pkgLogger logger.LoggerI
 var statsSamplingRate float32
+var isMockClient bool
+var tagValsList [][]string
+var tagStrList []string
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -94,18 +97,19 @@ type RudderStatsT struct {
 	dontProcess bool
 }
 
-func statsdClientWithExpoBackoff(opts ...statsd.Option) *statsd.Client {
+func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) {
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var err error
-	var c *statsd.Client
-	// rruntime.Go(func() {
 	if err = backoff.Retry(func() error {
-		//TODO: Add tags by calling a function...
-		c, err = statsd.New(opts...)
+		//statsd.New returns client even when err!=nil, although that client won't work.
+		//But, since we don't want getting new client to be a blocking call. So, setting it even with the non-working client.
+		//And, will be updated once we have `err==nil`, until then stats sent to telegraf will be dropped.
+		client, err = statsd.New(opts...)
 		if err != nil {
+			isMockClient = true
 			pkgLogger.Errorf("error while setting statsd client: %v", err)
 		}
 		return err
@@ -116,14 +120,6 @@ func statsdClientWithExpoBackoff(opts ...statsd.Option) *statsd.Client {
 			panic(err)
 		}
 	}
-
-	// pkgLogger.Info("statsd client setup succeeded.")
-	// if c != nil {
-	// 	client = c
-	// 	collectRuntimeStats(client)
-	// }
-	// })
-	return c
 }
 
 //Setup creates a new statsd client
@@ -134,15 +130,21 @@ func Setup() {
 		return
 	}
 	conn = statsd.Address(statsdServerURL)
-	c := statsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-
+	// since, we don't want setup to be a blocking call, creating a separate `go routine`` for retry to get statsd client.
 	rruntime.Go(func() {
+		//this is a blocking call
+		getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+		taggedClientsMapLock.Lock()
+
+		taggedClientsMapLock.RLock()
+		for i, tagValue := range tagValsList {
+			taggedClient := client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagValue...), statsd.SampleRate(statsSamplingRate))
+			taggedClientsMap[tagStrList[i]] = taggedClient
+		}
+		taggedClientsMapLock.RUnlock()
 
 		pkgLogger.Info("statsd client setup succeeded.")
-		if c != nil {
-			client = c
-			collectRuntimeStats(client)
-		}
+		collectRuntimeStats(client)
 	})
 }
 
@@ -191,21 +193,26 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 	taggedClientsMapLock.RUnlock()
 
 	if !found {
-		taggedClientsMapLock.Lock()
+
 		tagVals := make([]string, 0, len(tags)*2)
 		for tagName, tagVal := range tags {
 			tagName = strings.ReplaceAll(tagName, ":", "-")
 			tagVal = strings.ReplaceAll(tagVal, ":", "-")
 			tagVals = append(tagVals, tagName, tagVal)
 		}
-		if config.GetBool("useNewClient", false) || client == nil {
-			taggedClient = statsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-		} else {
-			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+
+		if isMockClient {
+			tagStrList = append(tagStrList, tagStr)
+			tagValsList = append(tagValsList, tagVals)
 		}
+
+		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+
+		taggedClientsMapLock.Lock()
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
+
 	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
@@ -220,9 +227,6 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 
 // Count increases the stat by n. Only applies to CountType stats
 func (rStats *RudderStatsT) Count(n int) {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -234,9 +238,6 @@ func (rStats *RudderStatsT) Count(n int) {
 
 // Increment increases the stat by 1. Is the Equivalent of Count(1). Only applies to CountType stats
 func (rStats *RudderStatsT) Increment() {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -248,9 +249,6 @@ func (rStats *RudderStatsT) Increment() {
 
 // Gauge records an absolute value for this stat. Only applies to GaugeType stats
 func (rStats *RudderStatsT) Gauge(value interface{}) {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -263,9 +261,6 @@ func (rStats *RudderStatsT) Gauge(value interface{}) {
 // Start starts a new timing for this stat. Only applies to TimerType stats
 
 func (rStats *RudderStatsT) Start() {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -289,9 +284,6 @@ func (rStats *RudderStatsT) End() {
 
 // Deprecated: Use concurrent safe SendTiming() instead
 func (rStats *RudderStatsT) DeferredTimer() {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -305,9 +297,6 @@ func (rStats *RudderStatsT) Since(start time.Time) {
 
 // Timing sends a timing for this stat. Only applies to TimerType stats
 func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
-	if client == nil {
-		return
-	}
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -329,9 +318,6 @@ func (rStats *RudderStatsT) Observe(value float64) {
 }
 
 func collectRuntimeStats(client *statsd.Client) {
-	if client == nil {
-		return
-	}
 	gaugeFunc := func(key string, val uint64) {
 		client.Gauge("runtime_"+key, val)
 	}
