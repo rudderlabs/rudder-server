@@ -55,7 +55,6 @@ func Init() {
 	config.Load()
 	stats.Setup()
 	logger.Init()
-	cluster.Init()
 }
 
 func TestDynamicCluster(t *testing.T) {
