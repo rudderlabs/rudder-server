@@ -2642,9 +2642,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 		for idx, ds := range dsList {
 
-			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
-
 			var idxCheck bool
 			if jd.ownerType == Read {
 				//if jobsdb owner is read, expempting the last two datasets from migration.
@@ -2657,6 +2654,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
+
+			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
+			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
