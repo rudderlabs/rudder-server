@@ -1371,6 +1371,12 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
 func computeInsertVals(before, after []string) ([]string, error) {
 	for {
+		//Safe check: In the current jobsdb implementation, indices don't go more
+		//than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
+		if len(before) > 4 {
+			return before, fmt.Errorf("can't compute insert index due to bad inputs. before: %v, after: %v", before, after)
+		}
+
 		calculatedVals := make([]string, len(before))
 		copy(calculatedVals, before)
 		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
@@ -1391,25 +1397,27 @@ func computeInsertVals(before, after []string) ([]string, error) {
 			}
 		}
 
-		var comparison bool
 		if !equals {
-			comparison, err = dsComparitor(calculatedVals, after)
+			comparison, err := dsComparitor(calculatedVals, after)
 			if err != nil {
 				return calculatedVals, err
 			}
-		} else {
-			comparison = false
+			if !comparison {
+				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
+			}
 		}
 
-		//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
-		if comparison {
-			//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
-			//In all other cases, we allow only two levels
-			if (before[0] == "0" && len(calculatedVals) == 3) ||
-				(before[0] != "0" && len(calculatedVals) == 2) {
+		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+		//In all other cases, we allow only two levels
+		if (before[0] == "0" && len(calculatedVals) == 3) ||
+			(before[0] != "0" && len(calculatedVals) == 2) {
+			if equals {
+				return calculatedVals, fmt.Errorf("calculatedVals and after are same. computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
+			} else {
 				return calculatedVals, nil
 			}
 		}
+
 		before = append(before, "0")
 	}
 }
@@ -1421,6 +1429,12 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	}
 	if !comparison {
 		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
+	}
+
+	// No dataset should have 0 as the index.
+	// 0_1, 0_2 are allowed.
+	if beforeIndex == "0" {
+		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
 	}
 
 	beforeVals := strings.Split(beforeIndex, "_")
@@ -2628,9 +2642,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 		for idx, ds := range dsList {
 
-			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
-
 			var idxCheck bool
 			if jd.ownerType == Read {
 				//if jobsdb owner is read, expempting the last two datasets from migration.
@@ -2643,6 +2654,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
+
+			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
+			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
