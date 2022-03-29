@@ -2,6 +2,8 @@ package clustercoordinator
 
 import (
 	"context"
+
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 type NOOPManager struct {
@@ -29,6 +31,11 @@ func (manager *NOOPManager) Watch(ctx context.Context, key string) chan interfac
 func (manager *NOOPManager) WatchForWorkspaces(ctx context.Context, key string) chan string {
 	resultChan := make(chan string, 1)
 	resultChan <- key
+	return resultChan
+}
+
+func (manager *NOOPManager) WorkspaceServed() <-chan servermode.Ack {
+	resultChan := make(chan servermode.Ack, 1)
 	return resultChan
 }
 

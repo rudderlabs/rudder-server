@@ -4,6 +4,8 @@ package clustercoordinator
 
 import (
 	"context"
+
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 var (
@@ -22,6 +24,7 @@ type ClusterManager interface {
 	Watch(ctx context.Context, key string) chan interface{}
 	Put(ctx context.Context, key string, value string) error
 	WatchForWorkspaces(ctx context.Context, key string) chan string
+	WorkspaceServed() <-chan servermode.Ack
 }
 
 // SettingsT sets configuration for FileManager

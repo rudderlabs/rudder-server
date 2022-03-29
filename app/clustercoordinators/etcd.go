@@ -7,17 +7,20 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
 
 var (
-	etcdGetTimeout   time.Duration
-	etcdWatchTimeout time.Duration
-	keepaliveTime    time.Duration
-	keepaliveTimeout time.Duration
-	dialTimeout      time.Duration
+	etcdGetTimeout    time.Duration
+	etcdWatchTimeout  time.Duration
+	keepaliveTime     time.Duration
+	keepaliveTimeout  time.Duration
+	dialTimeout       time.Duration
+	workspaceWatchKey string
+	workspaceFetchKey string
 )
 
 func etcdInit() {
@@ -26,6 +29,8 @@ func etcdInit() {
 	config.RegisterDurationConfigVariable(time.Duration(30), &keepaliveTime, true, time.Second, "etcd.keepaliveTime")
 	config.RegisterDurationConfigVariable(time.Duration(10), &keepaliveTimeout, true, time.Second, "etcd.keepaliveTimeout")
 	config.RegisterDurationConfigVariable(time.Duration(20), &dialTimeout, true, time.Second, "etcd.dialTimeout")
+	workspaceWatchKey = config.GetEnv("WORKSPACE_RELOAD_TRIGGER_KEY", "")
+	workspaceFetchKey = config.GetEnv("WORKSPACE_FETCH_KEY", "")
 }
 
 type ETCDManager struct {
@@ -96,6 +101,25 @@ func (manager *ETCDManager) WatchForWorkspaces(ctx context.Context, key string) 
 		}
 		close(resultChan)
 	}(resultChan, ctx, key)
+	return resultChan
+}
+
+func (manager *ETCDManager) WorkspaceServed() <-chan servermode.Ack {
+	resultChan := make(chan servermode.Ack, 1)
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+	go func(returnChan chan servermode.Ack) {
+		etcdWatchChan := manager.Client.Watch(ctx, workspaceWatchKey)
+		for watchResp := range etcdWatchChan {
+			for _, event := range watchResp.Events {
+				switch event.Type {
+				case mvccpb.PUT:
+					returnChan <- servermode.WithACK(servermode.Mode(event.Kv.Value), func() {})
+				}
+			}
+		}
+		close(resultChan)
+	}(resultChan)
 	return resultChan
 }
 

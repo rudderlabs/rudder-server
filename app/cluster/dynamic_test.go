@@ -2,12 +2,13 @@ package cluster_test
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -19,6 +20,10 @@ type mockModeProvider struct {
 }
 
 func (m *mockModeProvider) ServerMode() <-chan servermode.Ack {
+	return m.ch
+}
+
+func (m *mockModeProvider) WorkspaceServed() <-chan servermode.Ack {
 	return m.ch
 }
 
@@ -94,7 +99,6 @@ func TestDynamicCluster(t *testing.T) {
 		close(wait)
 	}()
 
-
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan bool)
 		provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
@@ -158,7 +162,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
 	})
-
 
 	t.Run("Shutdown from Normal ", func(t *testing.T) {
 		cancel()

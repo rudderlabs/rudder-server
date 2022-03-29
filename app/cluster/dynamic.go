@@ -23,6 +23,7 @@ func Init() {
 
 type modeProvider interface {
 	ServerMode() <-chan servermode.Ack
+	WorkspaceServed() <-chan servermode.Ack
 }
 
 type lifecycle interface {
@@ -41,7 +42,8 @@ type Dynamic struct {
 	Processor lifecycle
 	Router    lifecycle
 
-	currentMode servermode.Mode
+	currentMode         servermode.Mode
+	currentWorkspaceIDs string
 
 	serverStartTimeStat  stats.RudderStats
 	serverStopTimeStat   stats.RudderStats
@@ -66,6 +68,7 @@ func (d *Dynamic) Setup() {
 
 func (d *Dynamic) Run(ctx context.Context) error {
 	serverModeChan := d.Provider.ServerMode()
+	workspacesChan := d.Provider.WorkspaceServed()
 	for {
 		select {
 		case <-ctx.Done():
@@ -82,6 +85,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 			d.logger.Debugf("Acknowledging the mode change.")
 			newMode.Ack()
+		case newSequenceID := <-workspacesChan:
+			d.logger.Debugf("Got trigger to update the workspace config, new mode: %s, old mode: %s", newMode.Mode(), d.currentWorkspaceIDs)
+
 		}
 	}
 }
