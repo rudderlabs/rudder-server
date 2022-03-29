@@ -35,7 +35,7 @@ type staticModeProvider servermode.Mode
 
 func (s *staticModeProvider) ServerMode() <-chan servermode.Ack {
 	ch := make(chan servermode.Ack, 1)
-	ch <- servermode.WithACK(servermode.Mode(*s), func() {})
+	ch <- servermode.WithACK(servermode.Mode(*s), "", func() {})
 	close(ch)
 	return ch
 }
@@ -101,7 +101,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+		provider.SendMode(servermode.WithACK(servermode.NormalMode, "", func() {
 			close(chACK)
 		}))
 
@@ -133,7 +133,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.DegradedMode, func() {
+		provider.SendMode(servermode.WithACK(servermode.DegradedMode, "", func() {
 			close(chACK)
 		}))
 

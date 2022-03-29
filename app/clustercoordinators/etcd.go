@@ -114,7 +114,7 @@ func (manager *ETCDManager) WorkspaceServed() <-chan servermode.Ack {
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					returnChan <- servermode.WithACK(servermode.Mode(event.Kv.Value), func() {})
+					returnChan <- servermode.WithACK("", string(event.Kv.Value), func() {})
 				}
 			}
 		}

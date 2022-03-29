@@ -3,13 +3,14 @@ package servermode
 type Mode string
 
 const (
-	NormalMode    Mode = "NORMAL"
-	DegradedMode  Mode = "DEGRADED"
+	NormalMode   Mode = "NORMAL"
+	DegradedMode Mode = "DEGRADED"
 )
 
 type Ack struct {
-	ack  func()
-	mode Mode
+	ack        func()
+	mode       Mode
+	workspaces string
 }
 
 func (m Ack) Ack() {
@@ -20,9 +21,14 @@ func (m Ack) Mode() Mode {
 	return m.mode
 }
 
-func WithACK(mode Mode, ack func()) Ack {
+func (m Ack) Workspaces() string {
+	return m.workspaces
+}
+
+func WithACK(mode Mode, workspaces string, ack func()) Ack {
 	return Ack{
-		mode: mode,
-		ack:  ack,
+		mode:       mode,
+		ack:        ack,
+		workspaces: workspaces,
 	}
 }

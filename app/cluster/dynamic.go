@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -49,6 +50,7 @@ type Dynamic struct {
 	serverStopTimeStat   stats.RudderStats
 	serverStartCountStat stats.RudderStats
 	serverStopCountStat  stats.RudderStats
+	backendConfig        backendconfig.BackendConfig
 
 	logger logger.LoggerI
 }
@@ -64,6 +66,7 @@ func (d *Dynamic) Setup() {
 	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
 	d.serverStartCountStat = stats.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
 	d.serverStopCountStat = stats.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
+	d.backendConfig = backendconfig.DefaultBackendConfig
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
@@ -85,9 +88,13 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 			d.logger.Debugf("Acknowledging the mode change.")
 			newMode.Ack()
-		case newSequenceID := <-workspacesChan:
-			d.logger.Debugf("Got trigger to update the workspace config, new mode: %s, old mode: %s", newMode.Mode(), d.currentWorkspaceIDs)
-
+		case newWorkspaces := <-workspacesChan:
+			err := d.handleWorkspaceChange(newWorkspaces.Workspaces())
+			if err != nil {
+				d.logger.Error(err)
+				return err
+			}
+			newWorkspaces.Ack()
 		}
 	}
 }
@@ -119,6 +126,15 @@ func (d *Dynamic) stop() {
 	d.GatewayDB.Stop()
 	d.serverStopTimeStat.SendTiming(time.Since(start))
 	d.serverStopCountStat.Increment()
+}
+
+func (d *Dynamic) handleWorkspaceChange(workspaces string) error {
+	if d.currentWorkspaceIDs == workspaces {
+		return nil
+	}
+	d.backendConfig.StopPolling()
+	d.backendConfig.StartPolling(workspaces)
+	return nil
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
