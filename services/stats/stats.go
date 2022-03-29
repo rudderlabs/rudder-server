@@ -152,9 +152,9 @@ func Setup() {
 			isMockClient = false
 			tagValsList = nil
 			tagStrList = nil
-			collectRuntimeStats(client)
 		})
 	}
+	collectRuntimeStats(client)
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
