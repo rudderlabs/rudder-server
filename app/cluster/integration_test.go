@@ -165,7 +165,7 @@ func initJobsDB() {
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
-	cluster.Init()
+	Init()
 }
 
 func TestDynamicClusterManager(t *testing.T) {
