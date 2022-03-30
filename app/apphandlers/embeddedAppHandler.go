@@ -72,10 +72,9 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gwDB := jobsdb.NewForReadWrite("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
+	gwDB := jobsdb.NewForRead("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
 	defer gwDB.Close()
-	gatewayDB = *gwDB
 	rtDB := jobsdb.NewForReadWrite("rt", jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(router.QueryFilters))
@@ -177,10 +176,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if enableGateway {
 		var gw gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
+		gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		defer gatewayDB.TearDown()
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, gwDB, &rateLimiter, embedded.VersionHandler)
+		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 		defer gw.Shutdown()
 
 		g.Go(func() error {
