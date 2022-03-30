@@ -27,6 +27,7 @@ var (
 	pkgLogger                             logger.LoggerI
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
+	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 )
 
@@ -242,11 +243,14 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 	gcsRef.IgnoreUnknownValues = false
 
 	partitionDate = time.Now().Format("2006-01-02")
-	// outputTable := partitionedTable(tableName, partitionDate)
+	outputTable := tableName
 	// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
-	// on the time when BigQuery ingests the data. To support custom field partitions omitting loading into partitioned table like tableName$20191221
+	// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 	// TODO: Support custom field partition on users & identifies tables
-	loader := bq.Db.Dataset(bq.Namespace).Table(tableName).LoaderFrom(gcsRef)
+	if !customPartitionsEnabled {
+		outputTable = partitionedTable(tableName, partitionDate)
+	}
+	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(bq.BQContext)
 	if err != nil {
@@ -464,6 +468,7 @@ func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled")
 
 }
