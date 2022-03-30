@@ -15,7 +15,8 @@ func (jd *HandleT) SetupForImport() {
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
-	ds := jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+	ds := jd.newDataSetStruct(jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
+	jd.addDS(ds, false)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
@@ -70,7 +71,8 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
 		jd.dsListLock.Lock()
-		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+		jd.migrationState.dsForImport = jd.newDataSetStruct(jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
+		jd.addDS(jd.migrationState.dsForImport, false)
 		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
 		jd.assert(found, "There should be a setup checkpoint at this point. If not something went wrong. Go debug")
 		setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
@@ -154,7 +156,8 @@ func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
 	if jd.isEmpty(dsList[dsListLen-1]) {
 		ds = dsList[dsListLen-1]
 	} else {
-		ds = jd.addNewDS(appendToDsList, dataSetT{})
+		ds = jd.newDataSetStruct(jd.computeNewIdxForAppend())
+		jd.addDS(ds, true)
 	}
 
 	var serialInt sql.NullInt64

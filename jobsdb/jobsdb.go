@@ -554,13 +554,6 @@ var (
 	useNewCacheBurst                             bool
 )
 
-//Different scenarios for addNewDS
-const (
-	appendToDsList     = "appendToDsList"
-	insertForMigration = "insertForMigration"
-	insertForImport    = "insertForImport"
-)
-
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -873,7 +866,7 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.addNewDS(appendToDsList, dataSetT{})
+		jd.addDS(jd.newDataSetStruct(jd.computeNewIdxForAppend()), true)
 	}
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
@@ -1240,37 +1233,26 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	return len(levelVals), levelVals, nil
 }
 
-func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
+func (jd *HandleT) newDataSetStruct(dsIdx string) dataSetT {
 	jobTable := fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, dsIdx)
 	jobStatusTable := fmt.Sprintf("%s_job_status_%s", jd.tablePrefix, dsIdx)
-	return jobTable, jobStatusTable
+	return dataSetT{
+		JobTable:       jobTable,
+		JobStatusTable: jobStatusTable,
+		Index:          dsIdx,
+	}
 }
 
-func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
-	jd.logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
-	var newDSIdx string
-	appendLast := newDSType == appendToDsList
+func (jd *HandleT) addDS(ds dataSetT, isNew bool) {
+	jd.logger.Infof("Creating new DS %+v", ds)
 
 	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 
 	queryStat.Start()
 	defer queryStat.End()
 
-	switch newDSType {
-	case appendToDsList:
-		newDSIdx = jd.computeNewIdxForAppend()
-	case insertForMigration:
-		newDSIdx = jd.computeNewIdxForIntraNodeMigration(insertBeforeDS)
-	case insertForImport:
-		newDSIdx = jd.computeNewIdxForInterNodeMigration(insertBeforeDS)
-	default:
-		panic("Unknown usage for newDSType : " + newDSType)
-
-	}
-	jd.assert(newDSIdx != "", "newDSIdx is empty")
-
 	defer func() {
-		if appendLast {
+		if isNew {
 			// Tracking time interval between new ds creations. Hence calling end before start
 			if jd.isStatNewDSPeriodInitialized {
 				jd.statNewDSPeriod.End()
@@ -1280,7 +1262,7 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 		}
 	}()
 
-	return jd.createDS(appendLast, newDSIdx)
+	jd.createDS(ds, isNew)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -1477,10 +1459,7 @@ type transactionHandler interface {
 	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
-	var newDS dataSetT
-	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
-	newDS.Index = newDSIdx
+func (jd *HandleT) createDS(newDS dataSetT, refreshList bool) {
 
 	//Mark the start of operation. If we crash somewhere here, we delete the
 	//DS being added
@@ -1506,7 +1485,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 
 	//TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDSIdx, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1525,16 +1504,12 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	if appendLast {
-		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
-		jd.JournalMarkDone(opID)
-		return newDSWithSeqNumber
-	}
-
-	//This is the migration case. We don't yet update the in-memory list till
+	//In case of a migration, we don't yet update the in-memory list till
 	//we finish the migration
+	if refreshList {
+		jd.setSequenceNumber(newDS.Index)
+	}
 	jd.JournalMarkDone(opID)
-	return newDS
 }
 
 func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
@@ -2589,7 +2564,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			//take the list lock
 			jd.dsListLock.Lock()
 			jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-			jd.addNewDS(appendToDsList, dataSetT{})
+			jd.addDS(jd.newDataSetStruct(jd.computeNewIdxForAppend()), true)
 			jd.dsListLock.Unlock()
 		}
 	}
@@ -2680,9 +2655,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
-				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
-				jd.inProgressMigrationTargetDS = &migrateTo
-				jd.dsListLock.Unlock()
+
+				migrateTo := jd.newDataSetStruct(jd.computeNewIdxForIntraNodeMigration(insertBeforeDS))
 
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
@@ -2690,10 +2664,13 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
-
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
 				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
+
+				jd.addDS(migrateTo, false)
+				jd.inProgressMigrationTargetDS = &migrateTo
+				jd.dsListLock.Unlock()
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
