@@ -82,7 +82,7 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
-	skipDeepEqualSchemas                 bool
+	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 )
 
@@ -1408,13 +1408,17 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	} else {
 		sourceOrDestColumn = "destination_id"
 	}
-	var lastStagingFileID int64
+	var lastStagingFileIDRes sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(end_staging_file_id) FROM %[1]s WHERE %[1]s.%[3]s='%[2]s'`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
 
-	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
 		return
+	}
+	lastStagingFileID := int64(0)
+	if lastStagingFileIDRes.Valid {
+		lastStagingFileID = lastStagingFileIDRes.Int64
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(*)
