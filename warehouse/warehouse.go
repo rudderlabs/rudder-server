@@ -79,8 +79,8 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
-	maxParallelJobCreation              int
 	skipDeepEqualSchemas                bool
+	maxParallelJobCreation              int
 )
 
 var (
@@ -681,7 +681,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Add(len(wh.warehouses))
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				jobCreationChan <- struct{}{}
 				defer func() {
 					wg.Done()
@@ -1021,20 +1021,20 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
 
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		wh.backendConfigSubscriber()
 	})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.runUploadJobAllocator(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.mainLoop(ctx)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
 		wh.uploadStatusTrack(ctx)
 		return nil
@@ -1672,7 +1672,7 @@ func Start(ctx context.Context, app app.Interface) error {
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
 		if isMaster() {
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
@@ -1694,7 +1694,7 @@ func Start(ctx context.Context, app app.Interface) error {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-			g.Go(misc.WithBugsnag(func() error {
+			g.Go(misc.WithBugsnagForWarehouse(func() error {
 				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 				return nil
 			}))
@@ -1707,7 +1707,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
 	}
@@ -1715,14 +1715,14 @@ func Start(ctx context.Context, app app.Interface) error {
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))

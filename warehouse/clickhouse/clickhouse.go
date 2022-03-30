@@ -614,7 +614,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
 			gzipFile.Close()
