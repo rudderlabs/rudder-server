@@ -158,7 +158,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	multitenantStat.routerLatencyMutex.RLock()
 	defer multitenantStat.routerLatencyMutex.RUnlock()
 
-	workspacesWithJobs := multitenantStat.getWorkspacesWithPendingJobs(destType, multitenantStat.routerTenantLatencyStat[destType])
+	workspacesWithJobs := getWorkspacesWithPendingJobs(destType, multitenantStat.routerTenantLatencyStat[destType])
 	boostedRouterTimeOut := getBoostedRouterTimeOut(routerTimeOut, timeGained, noOfWorkers)
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
@@ -276,7 +276,7 @@ func (multitenantStat *MultitenantStatsT) getLastDrainedTimestamp(workspaceKey s
 	return lastDrainedTS
 }
 
-func (multitenantStat *MultitenantStatsT) getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.MovingAverage) []string {
+func getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.MovingAverage) []string {
 	workspacesWithJobs := make([]string, 0)
 	for workspaceKey := range latencyMap {
 		val := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()

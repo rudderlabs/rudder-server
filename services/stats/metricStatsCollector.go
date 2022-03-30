@@ -28,7 +28,7 @@ func newMetricStatsCollector() metricStatsCollector {
 
 // run gathers statistics from package metric and outputs them as
 func (c metricStatsCollector) run() {
-	c.outputStats()
+	outputStats()
 
 	// Gauges are a 'snapshot' rather than a histogram. Pausing for some interval
 	// aims to get a 'recent' snapshot out before statsd flushes metrics.
@@ -39,24 +39,24 @@ func (c metricStatsCollector) run() {
 		case <-c.done:
 			return
 		case <-tick.C:
-			c.outputStats()
+			outputStats()
 		}
 	}
 }
 
-func (c metricStatsCollector) outputStats() {
+func outputStats() {
 	metric.GetManager().GetRegistry(metric.PUBLISHED_METRICS).Range(func(key, value interface{}) bool {
 		m := key.(metric.Measurement)
-		switch value.(type) {
+		switch value := value.(type) {
 		case metric.Gauge:
 			NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
-				Gauge(value.(metric.Gauge).Value())
+				Gauge(value.Value())
 		case metric.Counter:
 			NewTaggedStat(m.GetName(), CountType, Tags(m.GetTags())).
-				Count(int(value.(metric.Counter).Value()))
+				Count(int(value.Value()))
 		case metric.MovingAverage:
 			NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
-				Gauge(value.(metric.MovingAverage).Value())
+				Gauge(value.Value())
 		}
 		return true
 	})

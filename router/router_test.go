@@ -509,9 +509,9 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
 				DoAndReturn(
 					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-						assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-						assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-						assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+						assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+						assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+						assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 						return []types.DestinationJobT{
 							{
 								Message: []byte(`{"message": "some transformed message"}`),
@@ -650,9 +650,9 @@ var _ = Describe("Router", func() {
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -852,11 +852,11 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
-					assertRouterJobs(transformMessage.Data[3], unprocessedJobsList[2])
-					assertRouterJobs(transformMessage.Data[4], unprocessedJobsList[3])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[3], unprocessedJobsList[2])
+					assertRouterJobs(&transformMessage.Data[4], unprocessedJobsList[3])
 
 					return []types.DestinationJobT{
 						{
@@ -1043,9 +1043,9 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -1114,7 +1114,7 @@ var _ = Describe("Router", func() {
 	})
 })
 
-func assertRouterJobs(routerJob types.RouterJobT, job *jobsdb.JobT) {
+func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 	Expect(routerJob.JobMetadata.JobID).To(Equal(job.JobID))
 	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
 }

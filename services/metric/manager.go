@@ -30,10 +30,6 @@ type manager struct {
 	registries map[string]Registry
 }
 
-func (r *manager) createRegistry(key string) {
-	r.registries[key] = NewRegistry()
-}
-
 func (r *manager) GetRegistry(key string) Registry {
 	return r.registries[key]
 }

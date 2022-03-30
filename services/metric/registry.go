@@ -107,7 +107,7 @@ type registry struct {
 }
 
 func (r *registry) GetCounter(m Measurement) (Counter, error) {
-	res := r.get(m, r.counters)
+	res := r.get(m, &r.counters)
 	c, ok := res.(Counter)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -124,7 +124,7 @@ func (r *registry) MustGetCounter(m Measurement) Counter {
 }
 
 func (r *registry) GetGauge(m Measurement) (Gauge, error) {
-	res := r.get(m, r.gauges)
+	res := r.get(m, &r.gauges)
 	g, ok := res.(Gauge)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -141,7 +141,7 @@ func (r *registry) MustGetGauge(m Measurement) Gauge {
 }
 
 func (r *registry) GetSimpleMovingAvg(m Measurement) (MovingAverage, error) {
-	res := r.get(m, r.simpleEwmas)
+	res := r.get(m, &r.simpleEwmas)
 	ma, ok := res.(MovingAverage)
 	if !ok {
 		return nil, fmt.Errorf("a different type of metric exists in the registry with the same key [%+v]: %T", m, res)
@@ -216,13 +216,13 @@ func (r *registry) updateIndex(m Measurement, metric interface{}) {
 	res.(map[Measurement]TagsWithValue)[m] = TagsWithValue{m.GetTags(), metric}
 }
 
-func (r *registry) get(m Measurement, pool sync.Pool) interface{} {
+func (r *registry) get(m Measurement, pool *sync.Pool) interface{} {
 	res, ok := r.store.Load(m)
 	if !ok {
-		new := pool.Get()
-		res, ok = r.store.LoadOrStore(m, new)
+		newValue := pool.Get()
+		res, ok = r.store.LoadOrStore(m, newValue)
 		if ok {
-			pool.Put(new)
+			pool.Put(newValue)
 		} else {
 			r.updateIndex(m, res)
 		}
