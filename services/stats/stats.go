@@ -142,6 +142,7 @@ func Setup() {
 			connEstablished = false
 			c, err := getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 			if err != nil {
+				statsEnabled = false
 				pkgLogger.Errorf("error while creating new statsd client: %v", err)
 			} else {
 				client = c
