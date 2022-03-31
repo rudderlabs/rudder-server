@@ -56,7 +56,7 @@ const (
 	secure        = "secure"
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
-	cluster       = "cluster"
+	Cluster       = "cluster"
 )
 const partitionField = "received_at"
 
@@ -276,8 +276,8 @@ func (ch *HandleT) getConnectionCredentials() CredentialsT {
 	return credentials
 }
 
-// columnsWithDataTypes creates columns and its datatype into sql format for creating table
-func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
+// ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
+func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
@@ -738,7 +738,7 @@ func (ch *HandleT) createSchema() (err error) {
 		return err
 	}
 	defer dbHandle.Close()
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
@@ -760,13 +760,13 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "AggregatingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -800,13 +800,13 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -815,7 +815,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
@@ -984,6 +984,11 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
+	ch.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.CLICKHOUSE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
@@ -997,4 +1002,38 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
+}
+
+func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		ch.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		generateArgumentString("?", len(columns)),
+	)
+	txn, err := client.SQL.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	var recordInterface []interface{}
+	for _, value := range payloadMap {
+		recordInterface = append(recordInterface, value)
+	}
+	if _, err = stmt.Exec(recordInterface...); err != nil {
+		return
+	}
+
+	if err = stmt.Close(); err != nil {
+		return
+	}
+	if err = txn.Commit(); err != nil {
+		return
+	}
+	return
 }

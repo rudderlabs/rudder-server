@@ -213,6 +213,10 @@ type MinioManager struct {
 	Timeout *time.Duration
 }
 
+func (manager *MinioManager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
+}
+
 type MinioConfig struct {
 	Bucket          string
 	Prefix          string

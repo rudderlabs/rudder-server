@@ -52,8 +52,6 @@ const (
 	GCPLocation    = "location"
 )
 
-const PROVIDER = "BQ"
-
 // maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
@@ -840,12 +838,12 @@ func (bq *HandleT) Cleanup() {
 }
 
 func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
-	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(PROVIDER)
+	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(warehouseutils.BQ)
 	return bq.LoadTable(identityMergeRulesTable)
 }
 
 func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
-	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(PROVIDER)
+	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(warehouseutils.BQ)
 	return bq.LoadTable(identityMappingsTable)
 }
 
@@ -1022,4 +1020,61 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
+}
+
+func (bq *HandleT) VerifyCreateSchema(client *client.Client, warehouse warehouseutils.WarehouseT, ctx context.Context) (err error) {
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, warehouse))
+	if location == "" {
+		location = "US"
+	}
+
+	err = client.BQ.Dataset(warehouse.Namespace).Create(ctx, &bigquery.DatasetMetadata{
+		Location: location,
+	})
+	if checkAndIgnoreAlreadyExistError(err) {
+		err = nil
+		return
+	}
+	return
+}
+
+func (bq *HandleT) VerifyCreateTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
+	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
+
+	err = tableRef.Create(ctx, &bigquery.TableMetadata{
+		Schema:           getTableSchema(columns),
+		TimePartitioning: &bigquery.TimePartitioning{},
+	})
+	if !checkAndIgnoreAlreadyExistError(err) {
+		return
+	}
+
+	err = tableRef.Delete(ctx)
+	return
+}
+
+func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
+	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
+	gcsRef.SourceFormat = bigquery.JSON
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
+
+	outputTable := partitionedTable(stagingTableName, time.Now().Format("2006-01-02"))
+	loader := client.BQ.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+
+	job, err := loader.Run(bq.BQContext)
+	if err != nil {
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		return
+	}
+
+	if status.Err() != nil {
+		err = status.Err()
+		return
+	}
+	return
 }
