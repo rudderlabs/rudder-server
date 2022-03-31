@@ -2,8 +2,6 @@ package rruntime
 
 import (
 	"context"
-	"fmt"
-	"runtime"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -31,18 +29,15 @@ func Init() {
 func Go(function func()) {
 	go func() {
 		ctx := bugsnag.StartSession(context.Background())
-		defer func() {
-			if r := recover(); r != nil {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					}})
+		defer misc.BugsnagNotify(ctx, "Core")()
+		function()
+	}()
+}
 
-				misc.RecordAppError(fmt.Errorf("%v", r))
-				pkgLogger.Fatal(r)
-				panic(r)
-			}
-		}()
+func GoForWarehouse(function func()) {
+	go func() {
+		ctx := bugsnag.StartSession(context.Background())
+		defer misc.BugsnagNotify(ctx, "Warehouse")()
 		function()
 	}()
 }

@@ -199,7 +199,7 @@ func (job *UploadJobT) identityMappingsTableName() string {
 
 func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		select {
 		case <-ch:
 			// do nothing
@@ -454,7 +454,7 @@ func (job *UploadJobT) run() (err error) {
 			var wg sync.WaitGroup
 			wg.Add(3)
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededUserTableCount int
 				for _, userTable := range userTables {
 					if _, ok := currentJobSucceededTables[userTable]; ok {
@@ -474,7 +474,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededIdentityTableCount int
 				for _, identityTable := range identityTables {
 					if _, ok := currentJobSucceededTables[identityTable]; ok {
@@ -494,7 +494,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				specialTables := append(userTables, identityTables...)
 				err = job.exportRegularTables(specialTables)
 				if err != nil {
@@ -879,7 +879,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		tName := tableName
 		loadChan <- struct{}{}
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
 				alteredSchemaInAtleastOneTable = true
@@ -1688,7 +1688,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		wg.Add(1)
 		batchStartIdx := i
 		batchEndIdx := j
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
 			var loadFiles []loadFileUploadOutputT
