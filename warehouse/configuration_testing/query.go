@@ -51,12 +51,6 @@ func (ct *CTHandleT) CreateTableQuery() (sqlStatement string) {
 	defer func() {
 		pkgLogger.Infof("[DCT]  Create table query with sqlStatement: %s", sqlStatement)
 	}()
-	// preparing staging table name
-	ct.stagingTableName = fmt.Sprintf(`%s%s`,
-		StagingTablePrefix,
-		GetRandomString(),
-	)
-
 	switch ct.warehouse.Type {
 	case warehouseutils.AZURE_SYNAPSE, warehouseutils.MSSQL:
 		sqlStatement = fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')

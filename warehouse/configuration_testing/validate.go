@@ -144,17 +144,10 @@ func (ct *CTHandleT) verifyingCreateTable() (err error) {
 	}
 
 	// Cleanup
-	defer ct.client.Close()
-	defer ct.client.Query(ct.DropTableQuery(), client.Write)
+	defer ct.cleanup()
 
-	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		return bqHandle.VerifyCreateTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
-	}
-
-	// Creating create table query and running over the warehouse
-	_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
-	return
+	// Create table
+	return ct.createTable()
 }
 
 func (ct *CTHandleT) verifyingLoadTable() (err error) {
@@ -307,11 +300,10 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	}
 
 	// Cleanup
-	defer ct.client.Close()
-	defer ct.client.Query(ct.DropTableQuery(), client.Write)
+	defer ct.cleanup()
 
-	// Creating create table query and running over the warehouse
-	_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
+	// Create table
+	err = ct.createTable()
 	if err != nil {
 		return
 	}
@@ -319,4 +311,33 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	// loading test table from staging file
 	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestTableSchemaMap, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
 	return
+}
+
+func (ct *CTHandleT) createTable() (err error) {
+	// Set staging table name
+	ct.stagingTableName = fmt.Sprintf(`%s%s`,
+		StagingTablePrefix,
+		GetRandomString(),
+	)
+	// Creating create table query and running over the warehouse
+	if ct.GetDestinationType() == warehouseutils.BQ {
+		bqHandle := bigquery.HandleT{}
+		err = bqHandle.CreateTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
+	} else {
+		_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
+	}
+	return
+}
+
+func (ct *CTHandleT) cleanup() {
+	// Closing connection
+	ct.client.Close()
+
+	// Dropping table
+	if ct.GetDestinationType() == warehouseutils.BQ {
+		bqHandle := bigquery.HandleT{}
+		bqHandle.DeleteTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
+	} else {
+		ct.client.Query(ct.DropTableQuery(), client.Write)
+	}
 }
