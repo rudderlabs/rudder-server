@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -1200,7 +1201,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for workspace := range batchRouterWorkspaceJobStatusCount {
 		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			brt.multitenantI.RemoveFromInMemoryCount(workspace, destID, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
+			metric.GetPendingEventsMeasurement("batch_rt", workspace, brt.destType).Sub(float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
 		}
 	}
 	//tracking batch router errors
@@ -1582,8 +1583,9 @@ func (worker *workerT) workerProcess() {
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
 						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
-							Count:   0,
-							Reasons: []string{},
+							Count:     0,
+							Reasons:   []string{},
+							Workspace: job.WorkspaceId,
 						}
 					}
 					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
@@ -1626,12 +1628,14 @@ func (worker *workerT) workerProcess() {
 				}
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-						"destType": brt.destType,
-						"destId":   destID,
-						"module":   "batchrouter",
-						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
+						"destType":  brt.destType,
+						"destId":    destID,
+						"module":    "batchrouter",
+						"reasons":   strings.Join(destDrainStat.Reasons, ", "),
+						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
+					metric.GetPendingEventsMeasurement("batch_rt", destDrainStat.Workspace, brt.destType).Sub(float64(drainStatsbyDest[destID].Count))
 				}
 			}
 			//Mark the jobs as executing

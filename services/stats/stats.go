@@ -37,6 +37,7 @@ var (
 	conn   statsd.Option
 	client *statsd.Client
 	rc     runtimeStatsCollector
+	mc     metricStatsCollector
 
 	taggedClientsMapLock    sync.RWMutex
 	taggedClientsMap        = make(map[string]*statsd.Client)
@@ -160,7 +161,7 @@ func Setup() {
 			}
 		}
 
-		collectRuntimeStats(client)
+		collectPeriodicStats(client)
 	})
 }
 
@@ -331,7 +332,7 @@ func (rStats *RudderStatsT) Observe(value float64) {
 	rStats.Client.Histogram(rStats.Name, value)
 }
 
-func collectRuntimeStats(client *statsd.Client) {
+func collectPeriodicStats(client *statsd.Client) {
 	gaugeFunc := func(key string, val uint64) {
 		client.Gauge("runtime_"+key, val)
 	}
@@ -340,19 +341,32 @@ func collectRuntimeStats(client *statsd.Client) {
 	rc.EnableCPU = enableCPUStats
 	rc.EnableMem = enableMemStats
 	rc.EnableGC = enableGCStats
+
+	mc = newMetricStatsCollector()
 	if enabled {
-		rc.run()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			rc.run()
+		}()
+		go func() {
+			defer wg.Done()
+			mc.run()
+		}()
+		wg.Wait()
 	}
 
 }
 
-// StopRuntimeStats stops collection of runtime stats.
-func StopRuntimeStats() {
+// StopPeriodicStats stops periodic collection of stats.
+func StopPeriodicStats() {
 	if !statsEnabled {
 		return
 	}
 
 	close(rc.Done)
+	close(mc.done)
 }
 
 func getTagsFormat() statsd.TagFormat {

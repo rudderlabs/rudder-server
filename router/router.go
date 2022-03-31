@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
@@ -50,8 +51,6 @@ type reporter interface {
 type tenantStats interface {
 	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
-	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
 }
@@ -1504,7 +1503,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerWorkspaceJobStatusCount := make(map[string]map[string]int)
+	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1516,17 +1515,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
-		rt.configSubscriberLock.RLock()
-		workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
-		rt.configSubscriberLock.RUnlock()
-		_, ok := routerWorkspaceJobStatusCount[workspaceID]
-		if !ok {
-			routerWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
-		}
+		workspaceID := resp.status.WorkspaceId
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
-		_, ok = connectionDetailsMap[key]
+		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 			connectionDetailsMap[key] = cd
@@ -1541,30 +1534,30 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
+
+		switch resp.status.JobState {
+		case jobsdb.Failed.State:
+			if resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
+				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
+				if resp.status.AttemptNum == 1 {
+					sd.Count++
+				}
+			}
+		case jobsdb.Succeeded.State:
+			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
-		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
-			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
-		}
-
-		if resp.status.JobState != jobsdb.Failed.State {
-			if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
-				routerWorkspaceJobStatusCount[workspaceID][rt.destName] += 1
-				sd.Count++
-			}
-			if resp.status.JobState == jobsdb.Succeeded.State {
-				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
-			}
-		}
-		//REPORTING - ROUTER - END
-
-		statusList = append(statusList, resp.status)
-
-		if resp.status.JobState == jobsdb.Aborted.State {
+			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
+		case jobsdb.Aborted.State:
+			routerWorkspaceJobStatusCount[workspaceID] += 1
+			sd.Count++
+			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
+
+		//REPORTING - ROUTER - END
+
+		statusList = append(statusList, resp.status)
 
 		//tracking router errors
 		if diagnostics.EnableDestinationFailuresMetric {
@@ -1604,11 +1597,12 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	for workspace := range routerWorkspaceJobStatusCount {
-		for destType := range routerWorkspaceJobStatusCount[workspace] {
-			rt.MultitenantI.RemoveFromInMemoryCount(workspace, destType, routerWorkspaceJobStatusCount[workspace][destType], "router")
+	defer func() {
+		for workspace := range routerWorkspaceJobStatusCount {
+			metric.GetPendingEventsMeasurement("rt", workspace, rt.destName).
+				Sub(float64(routerWorkspaceJobStatusCount[workspace]))
 		}
-	}
+	}()
 
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
@@ -1961,8 +1955,9 @@ func (rt *HandleT) readAndProcess() int {
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
 				drainStatsbyDest[destID] = &router_utils.DrainStats{
-					Count:   0,
-					Reasons: []string{},
+					Count:     0,
+					Reasons:   []string{},
+					Workspace: job.WorkspaceId,
 				}
 			}
 			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
@@ -1972,7 +1967,6 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
-			rt.MultitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
@@ -2021,6 +2015,7 @@ func (rt *HandleT) readAndProcess() int {
 				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
 			rt.drainedJobsStat.Count(destDrainStat.Count)
+			metric.GetPendingEventsMeasurement("rt", destDrainStat.Workspace, rt.destName).Sub(float64(drainStatsbyDest[destID].Count))
 		}
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
