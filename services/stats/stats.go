@@ -103,10 +103,9 @@ type RudderStatsT struct {
 }
 
 func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) (*statsd.Client, error) {
-	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
+	bo.MaxElapsedTime = 0
 	var err error
 	var c *statsd.Client
 	newClient := func() error {
@@ -154,10 +153,10 @@ func Setup() {
 
 				pkgLogger.Info("statsd client setup succeeded.")
 				connEstablished = true
-				taggedClientsMapLock.Unlock()
 
 				taggedClientPendingKeys = nil
 				taggedClientPendingTags = nil
+				taggedClientsMapLock.Unlock()
 			}
 		}
 
