@@ -95,6 +95,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDB := jobsdb.NewForRead(
 		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -104,6 +105,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	gatewayDB = *gwDB
 	rtDB := jobsdb.NewForReadWrite(
 		"rt",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -112,6 +114,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	defer rtDB.Close()
 	brtDB := jobsdb.NewForReadWrite(
 		"batch_rt",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -120,6 +123,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	defer brtDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),

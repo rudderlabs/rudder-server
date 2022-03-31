@@ -19,14 +19,17 @@ type mockModeProvider struct {
 	ch chan servermode.Ack
 }
 
-func (m *mockModeProvider) ServerMode() <-chan servermode.Ack {
-	return m.ch
+func (m *mockModeProvider) ServerMode() (<-chan servermode.Ack, error) {
+	return m.ch, nil
 }
 
 func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
 	m.ch <- newMode
 }
 
+func (m *mockModeProvider) Close() {
+
+}
 type staticModeProvider servermode.Mode
 
 func (s *staticModeProvider) ServerMode() <-chan servermode.Ack {

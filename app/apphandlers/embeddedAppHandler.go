@@ -74,6 +74,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDB := jobsdb.NewForRead(
 		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -82,6 +83,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	defer gwDB.Close()
 	rtDB := jobsdb.NewForReadWrite(
 		"rt",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -90,6 +92,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	defer rtDB.Close()
 	brtDB := jobsdb.NewForReadWrite(
 		"batch_rt",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -98,6 +101,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	defer brtDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
@@ -202,6 +206,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
 		gatewayDB = *jobsdb.NewForWrite(
 			"gw",
+			jobsdb.WithClearDB(options.ClearDB),
 			jobsdb.WithRetention(gwDBRetention),
 			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
