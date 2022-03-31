@@ -82,6 +82,8 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
+	skipDeepEqualSchemas                bool
+	maxParallelJobCreation              int
 )
 
 var (
@@ -192,6 +194,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
+	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
+	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -310,7 +314,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				// test and send connection status to control plane
 				if val, ok := destination.Config["testConnection"].(bool); ok && val {
 					destination := destination
-					rruntime.Go(func() {
+					rruntime.GoForWarehouse(func() {
 						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
 						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 					})
@@ -705,13 +709,19 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 			continue
 		}
 
-		wg := sync.WaitGroup{}
+		jobCreationChan := make(chan struct{}, maxParallelJobCreation)
 		wh.configSubscriberLock.RLock()
+		wg := sync.WaitGroup{}
+		wg.Add(len(wh.warehouses))
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
-			wg.Add(1)
-			rruntime.Go(func() {
-				defer wg.Done()
+			rruntime.GoForWarehouse(func() {
+				jobCreationChan <- struct{}{}
+				defer func() {
+					wg.Done()
+					<-jobCreationChan
+				}()
+
 				pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
 				err := wh.createJobs(w)
 				if err != nil {
@@ -1045,20 +1055,20 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
 
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		wh.backendConfigSubscriber()
 	})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.runUploadJobAllocator(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.mainLoop(ctx)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
 		wh.uploadStatusTrack(ctx)
 		return nil
@@ -1714,7 +1724,7 @@ func Start(ctx context.Context, app app.Interface) error {
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
 		if isMaster() {
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
@@ -1736,7 +1746,7 @@ func Start(ctx context.Context, app app.Interface) error {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-			g.Go(misc.WithBugsnag(func() error {
+			g.Go(misc.WithBugsnagForWarehouse(func() error {
 				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 				return nil
 			}))
@@ -1749,7 +1759,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
 	}
@@ -1757,14 +1767,14 @@ func Start(ctx context.Context, app app.Interface) error {
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))

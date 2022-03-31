@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +21,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
+
+var contentTypeRegex *regexp.Regexp
+
+func init() {
+	contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
+}
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
@@ -182,12 +190,13 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			//Detecting content type of the respBody
 			contentTypeHeader = http.DetectContentType(respBody)
 		}
+		mediaType, _, _ := mime.ParseMediaType(contentTypeHeader)
 
-		// If content type is not of type "*text*", overriding it with empty string
-		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-			respBody = []byte("")
+		// If media type is not in some human readable format (text,json,xml), override the response with an empty string
+		// https://www.iana.org/assignments/media-types/media-types.xhtml
+		isHumanReadable := contentTypeRegex.MatchString(mediaType)
+		if !isHumanReadable {
+			respBody = []byte("redacted due to unsupported content-type")
 		}
 
 		if err != nil {

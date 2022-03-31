@@ -713,7 +713,7 @@ func setupSlave(ctx context.Context) error {
 	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
 			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
@@ -729,7 +729,7 @@ func setupSlave(ctx context.Context) error {
 			return nil
 		}))
 	}
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		return notifier.RunMaintenanceWorker(ctx)
 	}))
 	return g.Wait()

@@ -1070,7 +1070,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -1255,20 +1255,37 @@ func GetDatabricksVersion() (version string) {
 	return
 }
 
+func WithBugsnagForWarehouse(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer BugsnagNotify(ctx, "Warehouse")()
+		return fn()
+	}
+}
+
+func BugsnagNotify(ctx context.Context, team string) func() {
+	return func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				},
+				"Team": {
+					"Name": team,
+				},
+			})
+
+			RecordAppError(fmt.Errorf("%v", r))
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+	}
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
-		defer func() {
-			if r := recover(); r != nil {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					}})
-
-				RecordAppError(fmt.Errorf("%v", r))
-				panic(r)
-			}
-		}()
+		defer BugsnagNotify(ctx, "Core")()
 		return fn()
 	}
 }
@@ -1390,4 +1407,8 @@ func ReverseInt(s []int) []int {
 		s[i], s[j] = s[j], s[i]
 	}
 	return s
+}
+
+func IsMultiTenant() bool {
+	return config.GetBool("EnableMultitenancy", false)
 }
