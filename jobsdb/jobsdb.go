@@ -464,19 +464,21 @@ func (jd *HandleT) Status() interface{} {
 	pendingEventMetrics := metric.GetManager()
 	 .GetRegistry(metric.PUBLISHED_METRICS)
 	 .GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
-	if len(pendingEventMetrics) > 0 {
-		pendingEvents := []map[string]interface{}{}
-		for _, pendingEvent := range pendingEventMetrics {
-			count := pendingEvent.Value.(metric.Gauge).IntValue()
-			if count > 0 {
-				pendingEvents = append(pendingEvents, map[string]interface{}{
-					"tags":  pendingEvent.Tags,
-					"count": count,
-				})
-			}
-		}
-		statusObj["pending-events"] = pendingEvents
+	if len(pendingEventMetrics) == 0 {
+		return statusObj
 	}
+	pendingEvents := []map[string]interface{}{}
+	for _, pendingEvent := range pendingEventMetrics {
+		count := pendingEvent.Value.(metric.Gauge).IntValue()
+		if count > 0 {
+			pendingEvents = append(pendingEvents, map[string]interface{}{
+				"tags":  pendingEvent.Tags,
+				"count": count,
+			})
+		}
+	}
+	statusObj["pending-events"] = pendingEvents
+	
 
 	return statusObj
 }
