@@ -45,6 +45,8 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	gwDB := jobsdb.NewForWrite("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
 	defer gwDB.Close()
+	gwDB.Start()
+	defer gwDB.Stop()
 
 	enableGateway := true
 	if gatewayApp.App.Features().Migrator != nil {
