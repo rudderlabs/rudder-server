@@ -311,8 +311,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 // 	1. user set name from destinationConfig
 // 	2. from existing record in wh_schemas with same source + dest combo
 // 	3. convert source name
-func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
-	configMap := config.(map[string]interface{})
+func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+	configMap := configI.(map[string]interface{})
 	var namespace string
 	if destType == warehouseutils.CLICKHOUSE {
 		//TODO: Handle if configMap["database"] is nil
@@ -323,6 +323,11 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 		if len(strings.TrimSpace(namespace)) > 0 {
 			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 		}
+	}
+	// TODO: Move config to global level based on use case
+	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), "")
+	if namespacePrefix != "" {
+		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 	var exists bool
 	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {

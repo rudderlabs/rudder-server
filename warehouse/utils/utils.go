@@ -90,6 +90,20 @@ var (
 	AWSCredsExpiryInS         int64
 )
 
+var WHDestNameMap = map[string]string{
+	BQ:             "bigquery",
+	RS:             "redshift",
+	MSSQL:          "mssql",
+	POSTGRES:       "postgres",
+	SNOWFLAKE:      "snowflake",
+	CLICKHOUSE:     "clickhouse",
+	DELTALAKE:      "deltalake",
+	S3_DATALAKE:    "s3_datalake",
+	GCS_DATALAKE:   "gcs_datalake",
+	AZURE_DATALAKE: "azure_datalake",
+	AZURE_SYNAPSE:  "azure_synapse",
+}
+
 var ObjectStorageMap = map[string]string{
 	RS:             "S3",
 	S3_DATALAKE:    "S3",

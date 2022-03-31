@@ -1045,7 +1045,7 @@ func (bq *HandleT) VerifyCreateSchema(client *client.Client, warehouse warehouse
 	return
 }
 
-func (bq *HandleT) VerifyCreateTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
+func (bq *HandleT) CreateTestTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
 	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
 
 	err = tableRef.Create(ctx, &bigquery.TableMetadata{
@@ -1055,7 +1055,11 @@ func (bq *HandleT) VerifyCreateTable(client *client.Client, warehouse warehouseu
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return
 	}
+	return
+}
 
+func (bq *HandleT) DeleteTestTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
+	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
 	err = tableRef.Delete(ctx)
 	return
 }
