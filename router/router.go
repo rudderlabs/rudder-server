@@ -1599,8 +1599,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	defer func() {
 		for workspace := range routerWorkspaceJobStatusCount {
-			metric.GetPendingEventsMeasurement("rt", workspace, rt.destName)
-			    .Sub(float64(routerWorkspaceJobStatusCount[workspace]))
+			metric.GetPendingEventsMeasurement("rt", workspace, rt.destName).
+				Sub(float64(routerWorkspaceJobStatusCount[workspace]))
 		}
 	}()
 
