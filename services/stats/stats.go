@@ -240,7 +240,6 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
-//
 func (rStats *RudderStatsT) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
 		return
