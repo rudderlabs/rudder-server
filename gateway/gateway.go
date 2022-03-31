@@ -833,7 +833,7 @@ type pendingEventsRequestPayload struct {
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	//Force return that there are pending
 	if config.GetBool("Gateway.DisablePendingEvents", false) {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
+		w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
@@ -922,24 +922,27 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
+	defer cancel()
+
 	var pending bool
 	if !excludeGateway {
-		pending = gateway.readonlyGatewayDB.HavePendingJobs([]string{CustomVal}, -1, gwParameterFilters)
-		if pending {
-			w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
+		if err != nil || pending {
+			w.Write([]byte(`{ "pending_events": 1 }`))
 			return
 		}
 	}
 
-	pending = gateway.readonlyRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
-	if pending {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
-	pending = gateway.readonlyBatchRouterDB.HavePendingJobs(nil, -1, rtParameterFilters)
-	if pending {
-		w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(pending))))
+	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 

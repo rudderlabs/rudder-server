@@ -1,36 +1,41 @@
-package manager
+package cluster_test
 
 import (
 	"context"
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"testing"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/config"
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
+	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+
+	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"log"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -145,7 +150,7 @@ var (
 	}
 )
 
-func initRouter() {
+func initJobsDB() {
 	config.Load()
 	logger.Init()
 	stash.Init()
@@ -154,64 +159,90 @@ func initRouter() {
 	jobsdb.Init2()
 	jobsdb.Init3()
 	archiver.Init()
+	stats.Setup()
 	router.Init()
 	router.Init2()
 	batchrouter.Init()
 	batchrouter.Init2()
+	processor.Init()
+	cluster.Init()
 }
 
-func TestRouterManager(t *testing.T) {
-	RegisterTestingT(t)
-	initRouter()
-	stats.Setup()
-	pkgLogger = logger.NewLogger().Child("router")
-	c := make(chan bool)
-	once := sync.Once{}
+func TestDynamicClusterManager(t *testing.T) {
+	initJobsDB()
 
-	asyncHelper := testutils.AsyncTestHelper{}
-	asyncHelper.Setup()
+	processor.SetFeaturesRetryAttempts(0)
+
 	mockCtrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
+	gwDB := jobsdb.NewForReadWrite("gw")
+	defer gwDB.Close()
+	rtDB := jobsdb.NewForReadWrite("rt")
+	defer rtDB.Close()
+	brtDB := jobsdb.NewForReadWrite("batch_rt")
+	defer brtDB.Close()
+	errDB := jobsdb.NewForReadWrite("proc_error")
+	defer errDB.Close()
+
+	clearDb := false
+	ctx := context.Background()
+
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	processor.BackendConfig = mockBackendConfig
+	processor.Transformer = mockTransformer
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+	mockTransformer.EXPECT().Setup().Times(1)
+
+	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+	router := routermanager.New(ctx, brtDB, errDB, tDb)
+	router.BackendConfig = mockBackendConfig
+	router.ReportingI = &reportingNOOP{}
+	router.MultitenantStats = mockMTI
+
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
 		channel chan utils.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
 		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-		gomock.Any()).Do(
-			func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
-				once.Do(func() {
-					close(c)
-				})
-			}).AnyTimes()
+		gomock.Any()).AnyTimes()
 
-	ctx := context.Background()
-	rtDB := jobsdb.NewForReadWrite("rt")
-	brtDB := jobsdb.NewForReadWrite("batch_rt")
-	errDB := jobsdb.NewForReadWrite("proc_error")
-	defer rtDB.Close()
-	defer brtDB.Close()
-	defer errDB.Close()
-	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	r := New(ctx, brtDB, errDB, tDb)
-	r.BackendConfig = mockBackendConfig
-	r.ReportingI = &reportingNOOP{}
-	r.MultitenantStats = mockMTI
+	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	dCM := &cluster.Dynamic{
+		GatewayDB:     gwDB,
+		RouterDB:      rtDB,
+		BatchRouterDB: brtDB,
+		ErrorDB:       errDB,
 
-	for i := 0; i < 5; i++ {
-		rtDB.Start()
-		brtDB.Start()
-		errDB.Start()
-		r.Start()
-		<-c
-		r.Stop()
-		rtDB.Stop()
-		brtDB.Stop()
-		errDB.Stop()
-		c = make(chan bool)
-		once = sync.Once{}
+		Processor: processor,
+		Router:    router,
+		Provider:  provider,
 	}
+	dCM.Setup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	wait := make(chan bool)
+	go func() {
+		dCM.Run(ctx)
+		close(wait)
+	}()
+
+	chACK := make(chan bool)
+	provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+		close(chACK)
+	}))
+
+	require.Eventually(t, func() bool {
+		<-chACK
+		return true
+	}, time.Second, time.Millisecond)
+
+	cancel()
+	<-wait
 }

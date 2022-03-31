@@ -171,7 +171,7 @@ func GetPGNotifierConnectionString() string {
 }
 
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
@@ -222,7 +222,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 }
 
 func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
-	//rruntime.Go(func() {
+	//rruntime.GoForWarehouse(func() {
 	//	response := <-ch
 	var err error
 	if response.Err != nil {
@@ -359,7 +359,6 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
-		"batchID":   batchID,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
 	notifier.trackBatch(batchID, &ch)
@@ -369,7 +368,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
 
 	jobs := make(chan ClaimT, jobsBufferSize)
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
 		defer close(jobs)
 		for {
