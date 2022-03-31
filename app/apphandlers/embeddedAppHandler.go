@@ -72,17 +72,37 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gwDB := jobsdb.NewForRead("gw", jobsdb.WithRetention(gwDBRetention),
-		jobsdb.WithMigrationMode(migrationMode), jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
+	gwDB := jobsdb.NewForRead(
+		"gw",
+		jobsdb.WithRetention(gwDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		)
 	defer gwDB.Close()
-	rtDB := jobsdb.NewForReadWrite("rt", jobsdb.WithRetention(routerDBRetention),
-		jobsdb.WithMigrationMode(migrationMode), jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(router.QueryFilters))
+	rtDB := jobsdb.NewForReadWrite(
+		"rt",
+		jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(router.QueryFilters),
+		)
 	defer rtDB.Close()
-	brtDB := jobsdb.NewForReadWrite("batch_rt", jobsdb.WithRetention(routerDBRetention),
-		jobsdb.WithMigrationMode(migrationMode), jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters))
+	brtDB := jobsdb.NewForReadWrite(
+		"batch_rt",
+		jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
+		)
 	defer brtDB.Close()
-	errDB := jobsdb.NewForReadWrite("proc_error", jobsdb.WithRetention(routerDBRetention),
-		jobsdb.WithMigrationMode(migrationMode), jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
+	errDB := jobsdb.NewForReadWrite(
+		"proc_error",
+		jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		)
 
 	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: rtDB}
@@ -177,9 +197,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if enableGateway {
 		var gw gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
-
-		gatewayDB = *jobsdb.NewForWrite("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
-			jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
+		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
+		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+		gatewayDB = *jobsdb.NewForWrite(
+			"gw",
+			jobsdb.WithRetention(gwDBRetention),
+			jobsdb.WithMigrationMode(migrationMode),
+			jobsdb.WithStatusHandler(),
+			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+			)
 		defer gwDB.Close()
 		gatewayDB.Start()
 		defer gatewayDB.Stop()
