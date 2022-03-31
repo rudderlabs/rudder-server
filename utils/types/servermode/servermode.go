@@ -26,3 +26,10 @@ func WithACK(mode Mode, ack func()) Ack {
 		ack:  ack,
 	}
 }
+
+func (mode Mode) Valid() bool {
+	if mode == NormalMode || mode == DegradedMode {
+		return true
+	}
+	return false
+}
