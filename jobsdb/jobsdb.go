@@ -866,7 +866,7 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.addDS(jd.newDataSetStruct(jd.computeNewIdxForAppend()), true)
+		jd.addNewDS(newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend()))
 	}
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
@@ -1233,9 +1233,9 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	return len(levelVals), levelVals, nil
 }
 
-func (jd *HandleT) newDataSetStruct(dsIdx string) dataSetT {
-	jobTable := fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, dsIdx)
-	jobStatusTable := fmt.Sprintf("%s_job_status_%s", jd.tablePrefix, dsIdx)
+func newDataSet(tablePrefix string, dsIdx string) dataSetT {
+	jobTable := fmt.Sprintf("%s_jobs_%s", tablePrefix, dsIdx)
+	jobStatusTable := fmt.Sprintf("%s_job_status_%s", tablePrefix, dsIdx)
 	return dataSetT{
 		JobTable:       jobTable,
 		JobStatusTable: jobStatusTable,
@@ -1243,26 +1243,26 @@ func (jd *HandleT) newDataSetStruct(dsIdx string) dataSetT {
 	}
 }
 
-func (jd *HandleT) addDS(ds dataSetT, isNew bool) {
+func (jd *HandleT) addNewDS(ds dataSetT) {
 	jd.logger.Infof("Creating new DS %+v", ds)
-
 	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-
 	queryStat.Start()
 	defer queryStat.End()
+	jd.createDS(ds, true)
+	// Tracking time interval between new ds creations. Hence calling end before start
+	if jd.isStatNewDSPeriodInitialized {
+		jd.statNewDSPeriod.End()
+	}
+	jd.statNewDSPeriod.Start()
+	jd.isStatNewDSPeriodInitialized = true
+}
 
-	defer func() {
-		if isNew {
-			// Tracking time interval between new ds creations. Hence calling end before start
-			if jd.isStatNewDSPeriodInitialized {
-				jd.statNewDSPeriod.End()
-			}
-			jd.statNewDSPeriod.Start()
-			jd.isStatNewDSPeriodInitialized = true
-		}
-	}()
-
-	jd.createDS(ds, isNew)
+func (jd *HandleT) addDS(ds dataSetT) {
+	jd.logger.Infof("Creating DS %+v", ds)
+	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+	jd.createDS(ds, false)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -2564,7 +2564,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			//take the list lock
 			jd.dsListLock.Lock()
 			jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-			jd.addDS(jd.newDataSetStruct(jd.computeNewIdxForAppend()), true)
+			jd.addNewDS(newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend()))
 			jd.dsListLock.Unlock()
 		}
 	}
@@ -2656,7 +2656,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
 
-				migrateTo := jd.newDataSetStruct(jd.computeNewIdxForIntraNodeMigration(insertBeforeDS))
+				migrateTo := newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(insertBeforeDS))
 
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
@@ -2668,7 +2668,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				jd.assertError(err)
 				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
 
-				jd.addDS(migrateTo, false)
+				jd.addDS(migrateTo)
 				jd.inProgressMigrationTargetDS = &migrateTo
 				jd.dsListLock.Unlock()
 
