@@ -102,20 +102,6 @@ const (
 	triggerUploadQPName = "triggerUpload"
 )
 
-var whDestNameMap = map[string]string{
-	"BQ":             "bigquery",
-	"RS":             "redshift",
-	"MSSQL":          "mssql",
-	"POSTGRES":       "postgres",
-	"SNOWFLAKE":      "snowflake",
-	"CLICKHOUSE":     "clickhouse",
-	"DELTALAKE":      "deletalake",
-	"S3_DATALAKE":    "s3_datalake",
-	"GCS_DATALAKE":   "gcs_datalake",
-	"AZURE_DATALAKE": "azure_datalake",
-	"AZURE_SYNAPSE":  "azure_synapse",
-}
-
 type WorkerIdentifierT string
 type JobIDT int64
 
@@ -339,7 +325,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 		}
 	}
 	// TODO: Move config to global level based on use case
-	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whDestNameMap[destType]), "")
+	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), "")
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
