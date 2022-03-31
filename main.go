@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"runtime/pprof"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
@@ -177,6 +178,7 @@ func runAllInit() {
 	warehouse.Init4()
 	warehouse.Init5()
 	warehouse.Init6()
+	configuration_testing.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()

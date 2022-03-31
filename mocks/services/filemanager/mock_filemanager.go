@@ -8,6 +8,7 @@ import (
 	context "context"
 	os "os"
 	reflect "reflect"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	filemanager "github.com/rudderlabs/rudder-server/services/filemanager"
@@ -158,6 +159,18 @@ func (m *MockFileManager) ListFilesWithPrefix(arg0 context.Context, arg1 string,
 func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1, arg2)
+}
+
+// SetTimeout mocks base method.
+func (m *MockFileManager) SetTimeout(arg0 *time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTimeout", arg0)
+}
+
+// SetTimeout indicates an expected call of SetTimeout.
+func (mr *MockFileManagerMockRecorder) SetTimeout(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTimeout", reflect.TypeOf((*MockFileManager)(nil).SetTimeout), arg0)
 }
 
 // Upload mocks base method.
