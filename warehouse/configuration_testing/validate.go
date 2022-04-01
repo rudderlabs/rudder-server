@@ -330,9 +330,6 @@ func (ct *CTHandleT) createTable() (err error) {
 }
 
 func (ct *CTHandleT) cleanup() {
-	// Closing connection
-	ct.client.Close()
-
 	// Dropping table
 	if ct.GetDestinationType() == warehouseutils.BQ {
 		bqHandle := bigquery.HandleT{}
@@ -340,4 +337,7 @@ func (ct *CTHandleT) cleanup() {
 	} else {
 		ct.client.Query(ct.DropTableQuery(), client.Write)
 	}
+
+	// Closing connection
+	ct.client.Close()
 }
