@@ -136,7 +136,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 	}
-	multitenantStats := multitenant.NewStats(tenantRouterDB)
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(tenantRouterDB)
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {

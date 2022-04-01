@@ -117,7 +117,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 
 	}
-	multitenantStats := multitenant.NewStats(tenantRouterDB)
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(tenantRouterDB)
 
 	enableGateway := true
 	if embedded.App.Features().Migrator != nil {
