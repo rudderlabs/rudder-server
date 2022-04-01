@@ -131,7 +131,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 
-	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
