@@ -66,10 +66,9 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	g, ctx := errgroup.WithContext(ctx)
 
 	if enableGateway {
-		var gw gateway.HandleT
-		var rateLimiter ratelimiter.HandleT
-
+		rateLimiter := ratelimiter.HandleT{}
 		rateLimiter.SetUp()
+		gw := gateway.HandleT{}
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
 		defer gw.Shutdown()
@@ -87,4 +86,8 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 func (gateway *GatewayApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
+}
+
+func (gatewayApp *GatewayApp) LegacyStart(ctx context.Context, options *app.Options) error {
+	return nil
 }

@@ -80,10 +80,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 			return nil
 		case newMode := <-modeChan:
-			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
+			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
 			err = d.handleModeChange(newMode.Mode())
 			if err != nil {
-				d.logger.Error(err)
 				return err
 			}
 			d.logger.Debugf("Acknowledging the mode change.")

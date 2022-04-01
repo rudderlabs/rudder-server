@@ -132,11 +132,11 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
-		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
+	multitenantStats := multitenant.NewStats(tenantRouterDB)
+
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
@@ -170,6 +170,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	if enableProcessor && enableRouter {
 		modeProvider = state.StaticProvider{
 			Mode: servermode.NormalMode,
+		}
+	} else {
+		modeProvider = state.StaticProvider{
+			Mode: servermode.DegradedMode,
 		}
 	}
 
@@ -254,4 +258,8 @@ func startHealthWebHandler(ctx context.Context) error {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, &gatewayDB)
+}
+
+func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Options) error {
+	return nil
 }

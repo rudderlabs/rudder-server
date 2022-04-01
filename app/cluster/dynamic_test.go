@@ -28,7 +28,7 @@ func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
 }
 
 func (m *mockModeProvider) Close() {
-
+	close(m.ch)
 }
 type staticModeProvider servermode.Mode
 

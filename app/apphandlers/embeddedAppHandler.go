@@ -112,11 +112,11 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
-		multitenantStats = multitenant.NewStats(tenantRouterDB)
+
 	}
+	multitenantStats := multitenant.NewStats(tenantRouterDB)
 
 	enableGateway := true
 	if embedded.App.Features().Migrator != nil {
@@ -201,8 +201,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	if enableGateway {
-		var gw gateway.HandleT
-		var rateLimiter ratelimiter.HandleT
+		rateLimiter := ratelimiter.HandleT{}
+		rateLimiter.SetUp()
 		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
@@ -218,7 +218,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		gatewayDB.Start()
 		defer gatewayDB.Stop()
 
-		rateLimiter.SetUp()
+		gw := gateway.HandleT{}
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 		defer gw.Shutdown()
@@ -236,4 +236,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {
 	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
+}
+
+func (embedded *EmbeddedApp) LegacyStart(ctx context.Context, options *app.Options) error {
+	return nil
 }
