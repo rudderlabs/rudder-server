@@ -45,6 +45,7 @@ type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
 	StartRudderCore(context.Context, *app.Options) error
+	LegacyStart(context.Context, *app.Options) error
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {

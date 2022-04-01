@@ -3,6 +3,7 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"net/http"
 	"strconv"
 	"time"
@@ -100,7 +101,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
-		)
+	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = *gwDBForProcessor
 	routerDB := jobsdb.NewForReadWrite(
@@ -110,7 +111,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(router.QueryFilters),
-		)
+	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
@@ -119,7 +120,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
-		)
+	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
@@ -128,7 +129,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
-		)
+	)
 
 	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
@@ -136,7 +137,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 	}
 	multitenantStats := multitenant.NewStats(tenantRouterDB)
-
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
@@ -261,5 +261,113 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Options) error {
-	return nil
+	pkgLogger.Info("Processor starting")
+
+	var batchRouterDB jobsdb.HandleT
+	var procErrorDB jobsdb.HandleT
+
+	rudderCoreDBValidator()
+	rudderCoreWorkSpaceTableSetup()
+	rudderCoreNodeSetup()
+	rudderCoreBaseSetup()
+	g, ctx := errgroup.WithContext(ctx)
+
+	//Setting up reporting client
+	if processor.App.Features().Reporting != nil {
+		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+
+		g.Go(misc.WithBugsnag(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+			return nil
+		}))
+	}
+
+	pkgLogger.Info("Clearing DB ", options.ClearDB)
+
+	transformationdebugger.Setup()
+	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+
+	migrationMode := processor.App.Options().MigrationMode
+	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	defer gatewayDB.TearDown()
+
+	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
+
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
+	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+
+	if enableProcessor || enableReplay {
+		//setting up router, batch router, proc error DBs only if processor is enabled.
+		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		defer routerDB.TearDown()
+
+		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		defer batchRouterDB.TearDown()
+
+		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		defer procErrorDB.TearDown()
+
+		if config.GetBool("EnableMultitenancy", false) {
+			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
+			multitenantStats = multitenant.NewStats(tenantRouterDB)
+		}
+	}
+
+	reportingI := processor.App.Features().Reporting.GetReportingInstance()
+
+	if processor.App.Features().Migrator != nil {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
+			startProcessorFunc := func() {
+				g.Go(func() error {
+					clearDB := false
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+
+					return nil
+				})
+			}
+			startRouterFunc := func() {
+				g.Go(func() error {
+					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+					return nil
+				})
+			}
+			enableRouter = false
+			enableProcessor = false
+
+			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
+			g.Go(func() error {
+				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				return nil
+			})
+		}
+	}
+
+	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+
+	g.Go(misc.WithBugsnag(func() error {
+		return operationmanager.OperationManager.StartProcessLoop(ctx)
+	}))
+
+	g.Go(func() error {
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+		return nil
+	})
+	g.Go(func() error {
+		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+		return nil
+	})
+
+	if enableReplay && processor.App.Features().Replay != nil {
+		var replayDB jobsdb.HandleT
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		defer replayDB.TearDown()
+		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB, &batchRouterDB)
+	}
+
+	g.Go(func() error {
+		return startHealthWebHandler(ctx)
+	})
+	err := g.Wait()
+	return err
 }
