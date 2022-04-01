@@ -117,7 +117,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	var completeErr error
@@ -175,7 +175,7 @@ func (r *RouterRpcHandler) GetDSJobCount(arg string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
@@ -188,7 +188,7 @@ func (r *RouterRpcHandler) GetDSFailedJobs(arg string, result *string) (err erro
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
@@ -201,7 +201,7 @@ func (r *RouterRpcHandler) GetJobByID(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
@@ -214,7 +214,7 @@ func (r *RouterRpcHandler) GetJobIDStatus(arg string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
@@ -227,7 +227,7 @@ func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 

@@ -58,7 +58,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{backendconfig.DestinationT{ID: GADestinationID, Name: "ga dest", DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: GADestinationID, Name: "ga dest", DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
@@ -225,7 +225,6 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
-			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 			done := make(chan struct{})
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
@@ -314,7 +313,7 @@ var _ = Describe("Router", func() {
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
-			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), false, true).AnyTimes()
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 
@@ -381,11 +380,8 @@ var _ = Describe("Router", func() {
 
 			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetAllJobs(workspaceCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}, 10).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
-
-			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any()).Times(1).After(callGetAllJobs)
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Times(1)
@@ -513,9 +509,9 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
 				DoAndReturn(
 					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-						assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-						assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-						assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+						assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+						assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+						assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 						return []types.DestinationJobT{
 							{
 								Message: []byte(`{"message": "some transformed message"}`),
@@ -547,7 +543,6 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
-			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
@@ -655,9 +650,9 @@ var _ = Describe("Router", func() {
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -857,11 +852,11 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
-					assertRouterJobs(transformMessage.Data[3], unprocessedJobsList[2])
-					assertRouterJobs(transformMessage.Data[4], unprocessedJobsList[3])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[3], unprocessedJobsList[2])
+					assertRouterJobs(&transformMessage.Data[4], unprocessedJobsList[3])
 
 					return []types.DestinationJobT{
 						{
@@ -937,7 +932,6 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).AnyTimes().After(callAcquireLocks)
@@ -1049,9 +1043,9 @@ var _ = Describe("Router", func() {
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 
-					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
 
 					return []types.DestinationJobT{
 						{
@@ -1120,7 +1114,7 @@ var _ = Describe("Router", func() {
 	})
 })
 
-func assertRouterJobs(routerJob types.RouterJobT, job *jobsdb.JobT) {
+func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 	Expect(routerJob.JobMetadata.JobID).To(Equal(job.JobID))
 	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
 }

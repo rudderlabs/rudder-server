@@ -207,6 +207,10 @@ type AzureBlobStorageManager struct {
 	Timeout *time.Duration
 }
 
+func (manager *AzureBlobStorageManager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
+}
+
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
 	var containerName, accountName, accountKey, prefix string
 	var endPoint *string

@@ -277,7 +277,7 @@ func NewProcessor() *HandleT {
 func (proc *HandleT) Status() interface{} {
 	proc.transformEventsByTimeMutex.RLock()
 	defer proc.transformEventsByTimeMutex.RUnlock()
-	statusRes := make(map[string][]TransformRequestT)
+	statusRes := make(map[string][]interface{})
 	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
 		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
 	}
@@ -1492,8 +1492,6 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
-	processorLoopStats["router"] = make(map[string]map[string]int)
-	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
@@ -1505,15 +1503,16 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadBatchBytes := 0
+		processorLoopStats["batch_router"] = make(map[string]map[string]int)
 		for i := range batchDestJobs {
 			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
 			if !ok {
 				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
 			}
-			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
@@ -1530,6 +1529,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadRouterBytes := 0
+		processorLoopStats["router"] = make(map[string]map[string]int)
 		for i := range destJobs {
 			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
@@ -1538,6 +1538,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
@@ -1581,8 +1582,6 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()

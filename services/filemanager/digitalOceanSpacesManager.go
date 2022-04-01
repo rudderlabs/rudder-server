@@ -203,6 +203,10 @@ type DOSpacesManager struct {
 	Timeout *time.Duration
 }
 
+func (manager *DOSpacesManager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
+}
+
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, accessKey string
 	var region *string

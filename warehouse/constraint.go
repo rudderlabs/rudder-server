@@ -32,7 +32,7 @@ type IndexConstraintT struct {
 func Init6() {
 	config.RegisterBoolConfigVariable(true, &enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
 	constraintsMap = map[string][]ConstraintsI{
-		"BQ": []ConstraintsI{
+		warehouseutils.BQ: []ConstraintsI{
 			&IndexConstraintT{
 				TableName:    "rudder_identity_merge_rules",
 				ColumnName:   "merge_property_1_value",
@@ -46,7 +46,7 @@ func Init6() {
 				Limit:        512,
 			},
 		},
-		"SNOWFLAKE": []ConstraintsI{
+		warehouseutils.SNOWFLAKE: []ConstraintsI{
 			&IndexConstraintT{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "MERGE_PROPERTY_1_VALUE",

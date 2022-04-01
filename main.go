@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"runtime/pprof"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
@@ -178,6 +179,7 @@ func runAllInit() {
 	warehouse.Init4()
 	warehouse.Init5()
 	warehouse.Init6()
+	configuration_testing.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
@@ -258,18 +260,7 @@ func Run(ctx context.Context) {
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				}})
-
-			misc.RecordAppError(fmt.Errorf("%v", r))
-			pkgLogger.Fatal(r)
-			panic(r)
-		}
-	}()
+	defer misc.BugsnagNotify(ctx, "Core")()
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
@@ -351,7 +342,7 @@ func Run(ctx context.Context) {
 		if logger.Log != nil {
 			logger.Log.Sync()
 		}
-		stats.StopRuntimeStats()
+		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
@@ -373,7 +364,7 @@ func Run(ctx context.Context) {
 	if logger.Log != nil {
 		logger.Log.Sync()
 	}
-	stats.StopRuntimeStats()
+	stats.StopPeriodicStats()
 }
 
 func startStandbyWebHandler(ctx context.Context) error {
