@@ -21,6 +21,7 @@ package logger
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -327,8 +328,8 @@ func (l *LoggerT) LogRequest(req *http.Request) {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		queryParams := req.request.URL.Query()
-		paramsBytes, err := json.Marshal(queryParams)
+		queryParams := req.URL.Query()
+		paramsBytes, _ := json.Marshal(queryParams)
 		//print raw request body for debugging purposes
 		Log.Debug("Request Body: ", bodyString)
 		Log.Debug("queryParams: ", string(paramsBytes))
