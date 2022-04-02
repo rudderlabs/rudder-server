@@ -10,9 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -154,43 +151,6 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 	return uploadOutput.ObjectName, err
 }
 
-func downloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
-	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: provider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         provider,
-			Config:           destination.Config,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
-	})
-	if err != nil {
-		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
-		panic(err)
-	}
-
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
-	}
-	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destination.ID, uuid.Must(uuid.NewV4()), time.Now().Unix())
-	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
-	if err != nil {
-		pkgLogger.Errorf("DCT: Failed to create directory at path %s: err %v", testFilePath, err)
-		panic(err)
-	}
-	testFile, err := os.Create(testFilePath)
-	if err != nil {
-		panic(err)
-	}
-	err = downloader.Download(context.TODO(), testFile, testObjectKey)
-	if err != nil {
-		pkgLogger.Errorf("DCT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
-	}
-	testFile.Close()
-	misc.RemoveFilePaths(testFilePath)
-	return err
-
-}
-
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
@@ -200,30 +160,4 @@ func TestBatchDestinationConnection(destination backendconfig.DestinationT) stri
 		error = err.Error()
 	}
 	return error
-}
-
-func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
-	provider := destination.DestinationDefinition.Name
-	whManager, err := manager.New(provider)
-	if err != nil {
-		panic(err)
-	}
-	testFileNameWithPath := createTestFileForBatchDestination(destination.ID)
-	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, misc.IsConfiguredToUseRudderObjectStorage(destination.Config))
-	keyPrefixes := []string{rudderConnectionTestingFolder, destination.ID, time.Now().Format("01-02-2006")}
-	objectKeyName, err := uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
-	if err != nil {
-		return err.Error()
-	}
-	err = downloadTestFileForBatchDestination(objectKeyName, storageProvider, destination)
-	if err != nil {
-		return err.Error()
-	}
-	err = whManager.TestConnection(warehouseutils.WarehouseT{
-		Destination: destination,
-	})
-	if err != nil {
-		return err.Error()
-	}
-	return ""
 }

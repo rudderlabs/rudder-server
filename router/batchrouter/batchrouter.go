@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -49,8 +50,6 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
-	warehouseDestinations              []string
-	timeWindowDestinations             []string
 	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
@@ -1017,7 +1016,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1202,7 +1201,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for workspace := range batchRouterWorkspaceJobStatusCount {
 		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			brt.multitenantI.RemoveFromInMemoryCount(workspace, destID, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
+			metric.GetPendingEventsMeasurement("batch_rt", workspace, brt.destType).Sub(float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
 		}
 	}
 	//tracking batch router errors
@@ -1584,8 +1583,9 @@ func (worker *workerT) workerProcess() {
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
 						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
-							Count:   0,
-							Reasons: []string{},
+							Count:     0,
+							Reasons:   []string{},
+							Workspace: job.WorkspaceId,
 						}
 					}
 					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
@@ -1628,12 +1628,14 @@ func (worker *workerT) workerProcess() {
 				}
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-						"destType": brt.destType,
-						"destId":   destID,
-						"module":   "batchrouter",
-						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
+						"destType":  brt.destType,
+						"destId":    destID,
+						"module":    "batchrouter",
+						"reasons":   strings.Join(destDrainStat.Reasons, ", "),
+						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
+					metric.GetPendingEventsMeasurement("batch_rt", destDrainStat.Workspace, brt.destType).Sub(float64(drainStatsbyDest[destID].Count))
 				}
 			}
 			//Mark the jobs as executing
@@ -1682,7 +1684,7 @@ func (worker *workerT) workerProcess() {
 						}
 
 						destUploadStat.End()
-					case misc.ContainsString(warehouseDestinations, brt.destType):
+					case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -2006,12 +2008,12 @@ func IsObjectStorageDestination(destType string) bool {
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.ContainsString(warehouseDestinations, destType)
+	return misc.ContainsString(warehouseutils.WarehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if !misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if !misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
@@ -2082,8 +2084,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker

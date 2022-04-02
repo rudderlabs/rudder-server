@@ -39,6 +39,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
@@ -1255,20 +1256,37 @@ func GetDatabricksVersion() (version string) {
 	return
 }
 
+func WithBugsnagForWarehouse(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer BugsnagNotify(ctx, "Warehouse")()
+		return fn()
+	}
+}
+
+func BugsnagNotify(ctx context.Context, team string) func() {
+	return func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				},
+				"Team": {
+					"Name": team,
+				},
+			})
+
+			RecordAppError(fmt.Errorf("%v", r))
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+	}
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
-		defer func() {
-			if r := recover(); r != nil {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					}})
-
-				RecordAppError(fmt.Errorf("%v", r))
-				panic(r)
-			}
-		}()
+		defer BugsnagNotify(ctx, "Core")()
 		return fn()
 	}
 }
@@ -1344,7 +1362,7 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
-func SortMap(inputMap map[string]MovingAverage) []string {
+func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	pairArr := make(pairList, len(inputMap))
 
 	i := 0
