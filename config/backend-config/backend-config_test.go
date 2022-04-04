@@ -186,8 +186,10 @@ var _ = Describe("BackendConfig", func() {
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
+			mockPubSub.EXPECT().Publish(string(TopicProcessConfig), gomock.Any()).Times(1)
 			mockPubSub.EXPECT().Subscribe(string(TopicProcessConfig), gomock.AssignableToTypeOf(ch)).Times(1)
-			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), string(TopicProcessConfig), gomock.Eq(SampleFilteredSources)).Times(1)
+			filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+			Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 			backendConfig.Subscribe(ch, TopicProcessConfig)
 
 		})
@@ -195,7 +197,6 @@ var _ = Describe("BackendConfig", func() {
 			ch := make(chan utils.DataEvent)
 			curSourceJSON = SampleBackendConfig
 			mockPubSub.EXPECT().Subscribe(string(TopicBackendConfig), gomock.AssignableToTypeOf(ch)).Times(1)
-			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), string(TopicBackendConfig), SampleBackendConfig).Times(1)
 			backendConfig.Subscribe(ch, TopicBackendConfig)
 		})
 	})

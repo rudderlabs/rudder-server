@@ -46,18 +46,6 @@ func (mr *MockPublishSubscriberMockRecorder) Publish(arg0, arg1 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockPublishSubscriber)(nil).Publish), arg0, arg1)
 }
 
-// PublishToChannel mocks base method.
-func (m *MockPublishSubscriber) PublishToChannel(arg0 utils.DataChannel, arg1 string, arg2 interface{}) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "PublishToChannel", arg0, arg1, arg2)
-}
-
-// PublishToChannel indicates an expected call of PublishToChannel.
-func (mr *MockPublishSubscriberMockRecorder) PublishToChannel(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishToChannel", reflect.TypeOf((*MockPublishSubscriber)(nil).PublishToChannel), arg0, arg1, arg2)
-}
-
 // Subscribe mocks base method.
 func (m *MockPublishSubscriber) Subscribe(arg0 string, arg1 utils.DataChannel) {
 	m.ctrl.T.Helper()

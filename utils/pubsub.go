@@ -14,56 +14,109 @@ type DataEvent struct {
 // DataChannel is a channel which can accept an DataEvent
 type DataChannel chan DataEvent
 
-// DataChannelSlice is a slice of DataChannels
-type DataChannelSlice []DataChannel
 type PublishSubscriber interface {
 	Publish(topic string, data interface{})
-	PublishToChannel(channel DataChannel, topic string, data interface{})
 	Subscribe(topic string, ch DataChannel)
 }
 
 // EventBus stores the information about subscribers interested for a particular topic
 type EventBus struct {
-	subscribers map[string]DataChannelSlice
-	rm          sync.RWMutex
+	lastEventMutex sync.RWMutex
+	// lastEvent holds the last event for each topic so that we can send it to new subscribers
+	lastEvent map[string]*DataEvent
+
+	subscribersMutex sync.RWMutex
+	// subscribers keep the list of subscription publishers per topic
+	subscribers map[string]publisherSlice
 }
 
 func (eb *EventBus) Publish(topic string, data interface{}) {
-	eb.rm.RLock()
-	if chans, found := eb.subscribers[topic]; found {
-		// this is done because the slices refer to same array even though they are passed by value
-		// thus we are creating a new slice with our elements thus preserve locking correctly.
-		// special thanks for /u/freesid who pointed it out
-		channels := append(DataChannelSlice{}, chans...)
-		go func(data DataEvent, dataChannelSlices DataChannelSlice) {
-			for _, ch := range dataChannelSlices {
-				//Publishing to channels in separate goroutines
-				go func(ch DataChannel, data DataEvent) {
-					ch <- data
-				}(ch, data)
-			}
-		}(DataEvent{Data: data, Topic: topic}, channels)
-	}
-	eb.rm.RUnlock()
-}
+	eb.subscribersMutex.RLock()
+	defer eb.subscribersMutex.RUnlock()
+	eb.lastEventMutex.Lock()
+	defer eb.lastEventMutex.Unlock()
 
-func (eb *EventBus) PublishToChannel(channel DataChannel, topic string, data interface{}) {
-	eb.rm.RLock()
-	go func() {
-		channel <- DataEvent{Data: data, Topic: topic}
-	}()
-	eb.rm.RUnlock()
+	evt := &DataEvent{Data: data, Topic: topic}
+	if eb.lastEvent == nil {
+		eb.lastEvent = map[string]*DataEvent{}
+	}
+	eb.lastEvent[topic] = evt
+
+	if publishers, found := eb.subscribers[topic]; found {
+		for _, publisher := range publishers {
+			publisher.publish(evt)
+		}
+	}
+
 }
 
 func (eb *EventBus) Subscribe(topic string, ch DataChannel) {
-	eb.rm.Lock()
+	eb.subscribersMutex.Lock()
+	defer eb.subscribersMutex.Unlock()
+	eb.lastEventMutex.RLock()
+	defer eb.lastEventMutex.RUnlock()
+
+	p := &publisher{channel: ch}
 	if prev, found := eb.subscribers[topic]; found {
-		eb.subscribers[topic] = append(prev, ch)
+		eb.subscribers[topic] = append(prev, p)
 	} else {
 		if eb.subscribers == nil {
-			eb.subscribers = map[string]DataChannelSlice{}
+			eb.subscribers = map[string]publisherSlice{}
 		}
-		eb.subscribers[topic] = append([]DataChannel{}, ch)
+		eb.subscribers[topic] = publisherSlice{p}
 	}
-	eb.rm.Unlock()
+	if eb.lastEvent[topic] != nil {
+		p.publish(eb.lastEvent[topic])
+	}
+}
+
+// publisherSlice is a slice of publisher pointers
+type publisherSlice []*publisher
+
+// publisher is responsible to publish an event to a single subscriber (channel).
+type publisher struct {
+	// the channel where events are published
+	channel chan DataEvent
+
+	lastValueLock sync.Mutex
+	// the last value waiting to be published to the channel
+	lastValue *DataEvent
+
+	startedLock sync.Mutex
+	// flag indicating whether the publisher's internal goroutine is started or not
+	started bool
+}
+
+// publish sets the publisher's lastValue and starts the
+// internal goroutine if it is not already started
+func (r *publisher) publish(data *DataEvent) {
+
+	r.lastValueLock.Lock()
+	defer r.lastValueLock.Unlock()
+	r.startedLock.Lock()
+	defer r.startedLock.Unlock()
+
+	// update last value
+	r.lastValue = data
+
+	// start publish loop if not started
+	if !r.started {
+		go r.startLoop()
+		r.started = true
+	}
+}
+
+// startLoop publishes lastValues to the subscriber's channel until there is no other lastValue to publish
+func (r *publisher) startLoop() {
+
+	for r.lastValue != nil {
+		r.lastValueLock.Lock()
+		v := *r.lastValue
+		r.lastValue = nil
+		r.lastValueLock.Unlock()
+		r.channel <- v
+	}
+	r.startedLock.Lock()
+	r.started = false
+	r.startedLock.Unlock()
 }

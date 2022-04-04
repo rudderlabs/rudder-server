@@ -362,15 +362,6 @@ Available topics are:
 */
 func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Topic) {
 	Eb.Subscribe(string(topic), channel)
-	curSourceJSONLock.RLock()
-
-	if topic == TopicProcessConfig {
-		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
-	} else if topic == TopicBackendConfig {
-		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
-	}
-	curSourceJSONLock.RUnlock()
 }
 
 /*
