@@ -21,16 +21,26 @@ type BiqQueryTest struct {
 	PrimaryKeys []string
 }
 type BigQueryCredentials struct {
-	ProjectID   string            `json:"projectID"`
-	Credentials map[string]string `json:"credentials"`
-	Location    string            `json:"location"`
-	Bucket      string            `json:"bucketName"`
+	ProjectID          string            `json:"projectID"`
+	Credentials        map[string]string `json:"credentials"`
+	Location           string            `json:"location"`
+	Bucket             string            `json:"bucketName"`
+	CredentialsEscaped string
+}
+
+func jsonEscape(i string) string {
+	b, err := json.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+	// Trim the beginning and trailing " character
+	return string(b[1 : len(b)-1])
 }
 
 // SetWHBigQueryDestination setup warehouse Big query destination
 func SetWHBigQueryDestination() (cleanup func()) {
 
-	cred := os.Getenv("RSERVER_WAREHOUSE_BIGQUERY_CREDENTIALS")
+	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
 	if cred == "" {
 		panic("")
 	}
@@ -62,7 +72,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 	}
 	bqTest := Test.BQTest
 
-	//Convert Map to Bytes(which can we easily be converted to JSON string)
+	//Convert Map to Bytes(which can  easily be converted to JSON string)
 	credentials, _ := json.Marshal(bqTest.Credentials.Credentials)
 	cleanup = func() {}
 	operation := func() error {
@@ -73,6 +83,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		}, bqTest.Context)
 		return err
 	}
+	bqTest.Credentials.CredentialsEscaped = jsonEscape(string(credentials))
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(5))
 	err = backoff.Retry(operation, backoffWithMaxRetry)

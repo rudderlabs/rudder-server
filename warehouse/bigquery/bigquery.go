@@ -601,7 +601,8 @@ func loadConfig() {
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", true) || isUsersTableDedupEnabled
+	config.RegisterBoolConfigVariable(true, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", true)
 }
 
 func Init() {

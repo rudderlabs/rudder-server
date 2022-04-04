@@ -25,6 +25,7 @@ type WareHouseDestinationTest struct {
 	BQContext      context.Context
 	Tables         []string
 	PrimaryKeys    []string
+	MessageId      string
 }
 
 type WareHouseTest struct {
