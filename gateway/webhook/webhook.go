@@ -253,11 +253,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 
+				pkgLogger.Infof("Query Params: %s", string(paramsBytes))
 				if err != nil {
 					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
-
+				pkgLogger.Infof("Body Before : %s", string(body))
 				bodyString, err := sjson.SetRaw(string(body), "query_parameters", string(paramsBytes))
 				if err != nil {
 					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInSetJSON)}
