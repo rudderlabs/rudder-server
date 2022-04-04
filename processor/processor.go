@@ -1998,8 +1998,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				} else {
 					// add to FailedEvents
 					errMessage = "Message type " + messageType + " not supported"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
+					pkgLogger.Debug(destinationDef.Name + ": " + errMessage)
 				}
 			} else {
 				// allow event
