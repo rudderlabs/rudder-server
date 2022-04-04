@@ -169,6 +169,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		modeProvider = state.StaticProvider{
 			Mode: servermode.NormalMode,
 		}
+	} else {
+		modeProvider = state.StaticProvider{
+			Mode: servermode.DegradedMode,
+		}
 	}
 
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB)
