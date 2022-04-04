@@ -288,7 +288,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Start()
 
 		batchResponse := bt.transform(payloadArr, breq.sourceType)
-
+		payloadArrString := ""
+		for _, payload := range payloadArr {
+			payloadArrString = payloadArrString + string(payload)
+		}
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
@@ -298,7 +301,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				statusCode = batchResponse.statusCode
 			}
 			for _, req := range breq.batchRequest {
-				req.done <- webhookErrorRespT{statusCode: statusCode, err: batchResponse.batchError.Error()}
+				req.done <- webhookErrorRespT{statusCode: statusCode, err: payloadArrString}
 			}
 			continue
 		}
