@@ -40,6 +40,7 @@ phases:
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
+      - echo $VERSION
       # Build Open source version
       - make test
       - RSERVER_ENABLE_MULTITENANCY=true  go test -v ./docker_test.go -integration -count 1
