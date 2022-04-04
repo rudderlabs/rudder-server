@@ -48,6 +48,8 @@ const (
 	ErrorInParseForm = "Error during parsing form"
 	//ErrorInParseMultiform - Error during parsing multiform
 	ErrorInParseMultiform = "Error during parsing multiform"
+	//ErrorInSetJSON - Error during setting JSON
+	ErrorInSetJSON = "Error during setting JSON"
 )
 
 var (

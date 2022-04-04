@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -257,11 +258,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					continue
 				}
 
-				closingBraceIdx := bytes.LastIndexByte(body, '}')
-				appendData := []byte(`, "query_parameters": `)
-				appendData = append(appendData, paramsBytes...)
-				body = append(body[:closingBraceIdx], appendData...)
-				body = append(body, '}')
+				bodyString, err := sjson.SetRaw(string(body), "query_parameters", string(paramsBytes))
+				if err != nil {
+					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInSetJSON)}
+					continue
+				}
+				body = []byte(bodyString)
 			}
 
 			if !json.Valid(body) {
