@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"runtime/pprof"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"

@@ -130,11 +130,13 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
-		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+		"rt":       tenantRouterDB,
+		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+	})
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {

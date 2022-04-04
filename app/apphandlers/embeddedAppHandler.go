@@ -111,11 +111,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
-		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+		"rt":       tenantRouterDB,
+		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+	})
 
 	enableGateway := true
 	if embedded.App.Features().Migrator != nil {
