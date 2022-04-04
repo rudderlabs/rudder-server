@@ -316,7 +316,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			webRequest := webRequests[idx]
 			output := resp.output
 			if resp.err != "" {
-				webRequests[idx].done <- webhookErrorRespT{err: resp.err, statusCode: resp.statusCode}
+				webRequests[idx].done <- webhookErrorRespT{err: payloadArrString, statusCode: resp.statusCode}
 				continue
 			}
 			rruntime.Go(func() {
