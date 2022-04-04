@@ -104,11 +104,11 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat, "reqType": "webhook"})
-	pkgLogger.Debugf("Webhook: Failing request since: %v", reason)
 	statusCode := 400
 	if code != 0 {
 		statusCode = code
 	}
+	pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
 	webhook.gwHandle.IncrementAckCount(1)
 }
@@ -193,10 +193,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.statusCode != 0 {
 			code = resp.statusCode
 		}
-		pkgLogger.Debug(resp.err)
+		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.err)
 		http.Error(w, resp.err, code)
 	} else {
-		pkgLogger.Debug(response.GetStatus(response.Ok))
+		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
@@ -384,7 +384,7 @@ func (webhook *HandleT) printStats(ctx context.Context) {
 		if lastRecvCount != webhook.recvCount || lastackCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
 			lastackCount = webhook.ackCount
-			pkgLogger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+			pkgLogger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
 		}
 
 		select {
