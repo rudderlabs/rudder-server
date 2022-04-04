@@ -3,6 +3,8 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
@@ -12,7 +14,6 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -82,7 +83,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
-		)
+	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
@@ -91,7 +92,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(router.QueryFilters),
-		)
+	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
@@ -100,7 +101,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
-		)
+	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
@@ -109,13 +110,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
-		)
+	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 	}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(tenantRouterDB)
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+		"rt":       tenantRouterDB,
+		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+	})
 
 	enableGateway := true
 	if embedded.App.Features().Migrator != nil {
@@ -212,7 +216,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
 			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
-			)
+		)
 		defer gwDBForProcessor.Close()
 		gatewayDB.Start()
 		defer gatewayDB.Stop()

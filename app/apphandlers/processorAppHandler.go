@@ -3,10 +3,11 @@ package apphandlers
 import (
 	"context"
 	"fmt"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"net/http"
 	"strconv"
 	"time"
+
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
@@ -135,7 +136,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 	}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(tenantRouterDB)
+	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+		"rt":       tenantRouterDB,
+		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+	})
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
