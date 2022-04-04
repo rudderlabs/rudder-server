@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
@@ -168,7 +167,7 @@ func GetTransformerURL() string {
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	if misc.ContainsString(warehouse.WarehouseDestinations, destType) {
+	if misc.ContainsString(warehouseutils.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))

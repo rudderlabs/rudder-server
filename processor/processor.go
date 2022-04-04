@@ -114,6 +114,7 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
+	storeTimeout                   time.Duration
 	multitenantI                   multitenant.MultiTenantI
 	backgroundWait                 func() error
 	backgroundCancel               context.CancelFunc
@@ -276,7 +277,7 @@ func NewProcessor() *HandleT {
 func (proc *HandleT) Status() interface{} {
 	proc.transformEventsByTimeMutex.RLock()
 	defer proc.transformEventsByTimeMutex.RUnlock()
-	statusRes := make(map[string][]TransformRequestT)
+	statusRes := make(map[string][]interface{})
 	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
 		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
 	}
@@ -304,6 +305,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
+	proc.storeTimeout = storeTimeout
 
 	proc.multitenantI = multitenantStat
 	proc.gatewayDB = gatewayDB
@@ -444,6 +446,7 @@ var (
 	subJobSize                int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
+	storeTimeout              time.Duration
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
 	fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 	maxEventsToProcess        int
@@ -473,6 +476,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5*time.Minute/time.Minute), &storeTimeout, true, time.Minute, "Processor.storeTimeout")
+
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
@@ -1473,12 +1478,47 @@ type storeMessage struct {
 }
 
 func (proc *HandleT) Store(in storeMessage) {
+	// FIXME: This is a hack to get around the fact that,
+	// 	processor will stuck in case write query takes for ever.
+	// SHOULD BE REMOVED AFTER PROPER TIMEOUTS ARE IMPLEMENTED.
+	ctx, cancel := context.WithTimeout(context.TODO(), proc.storeTimeout)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		if ctx.Err() == context.DeadlineExceeded {
+			panic(fmt.Sprintf("processor .Store() timed out after %s", proc.storeTimeout))
+		}
+	}()
+
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
-	processorLoopStats["router"] = make(map[string]map[string]int)
-	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
+	if len(batchDestJobs) > 0 {
+		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
+		err := proc.batchRouterDB.Store(batchDestJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
+			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
+			panic(err)
+		}
+		totalPayloadBatchBytes := 0
+		processorLoopStats["batch_router"] = make(map[string]map[string]int)
+		for i := range batchDestJobs {
+			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
+			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
+		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
+
+		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
+		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
+		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
+	}
+
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
@@ -1489,6 +1529,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		totalPayloadRouterBytes := 0
+		processorLoopStats["router"] = make(map[string]map[string]int)
 		for i := range destJobs {
 			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
@@ -1497,33 +1538,11 @@ func (proc *HandleT) Store(in storeMessage) {
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
+		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
 		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
-	}
-	if len(batchDestJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		err := proc.batchRouterDB.Store(batchDestJobs)
-		if err != nil {
-			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
-			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
-			panic(err)
-		}
-		totalPayloadBatchBytes := 0
-		for i := range batchDestJobs {
-			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
-			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
-		}
-
-		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
-		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
-		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -1563,8 +1582,6 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
-	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
@@ -1978,11 +1995,6 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 					responses = append(responses, resp)
-				} else {
-					// add to FailedEvents
-					errMessage = "Message type " + messageType + " not supported"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
 				}
 			} else {
 				// allow event

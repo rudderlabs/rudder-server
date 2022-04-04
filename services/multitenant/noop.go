@@ -33,3 +33,7 @@ func (*noop) AddWorkspaceToLatencyMap(destType string, workspaceID string) {
 func (*noop) UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64) {
 
 }
+
+func (*noop) Status() map[string]map[string]map[string]int {
+	return map[string]map[string]map[string]int{}
+}

@@ -145,7 +145,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 
@@ -202,7 +202,7 @@ func (g *GatewayRPCHandler) GetDSList(emptyInput string, result *string) (err er
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := g.readOnlyJobsDB.GetDSListString()
@@ -214,7 +214,7 @@ func (g *GatewayRPCHandler) GetDSJobCount(arg string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := g.readOnlyJobsDB.GetJobSummaryCount(arg, prefix)
@@ -226,7 +226,7 @@ func (g *GatewayRPCHandler) GetDSFailedJobs(arg string, result *string) (err err
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := g.readOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
@@ -238,7 +238,7 @@ func (g *GatewayRPCHandler) GetJobByID(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := g.readOnlyJobsDB.GetJobByID(arg, prefix)
@@ -250,7 +250,7 @@ func (g *GatewayRPCHandler) GetJobIDStatus(arg string, result *string) (err erro
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := g.readOnlyJobsDB.GetJobIDStatus(arg, prefix)

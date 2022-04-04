@@ -27,7 +27,7 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	jobTableName := prefix + dsName
@@ -55,7 +55,7 @@ func (s *StashRpcHandler) GetDSList(dsName string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetDSListString()
@@ -67,7 +67,7 @@ func (s *StashRpcHandler) GetDSFailedJobs(arg string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
@@ -79,7 +79,7 @@ func (s *StashRpcHandler) GetJobByID(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobByID(arg, prefix)
@@ -91,7 +91,7 @@ func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobIDStatus(arg, prefix)
@@ -139,7 +139,7 @@ func (s *StashRpcHandler) GetDSJobCount(arg string, result *string) (err error) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobSummaryCount(arg, prefix)

@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
@@ -50,8 +51,6 @@ type reporter interface {
 type tenantStats interface {
 	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
-	AddToInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
-	RemoveFromInMemoryCount(workspaceID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
 }
@@ -615,7 +614,7 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 	return true
 }
 
-func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
+func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
 	var err error
 	var response integrations.PostParametersT
 	responseArray := make([]integrations.PostParametersT, 0)
@@ -626,17 +625,14 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 		} else {
 			responseArray = append(responseArray, response)
 		}
-
 	} else {
 		err = json.Unmarshal(payload, &response)
 		if err == nil {
 			responseArray = append(responseArray, response)
 		}
 	}
-	if err != nil {
-		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
-	}
-	return responseArray
+
+	return responseArray, err
 }
 
 func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
@@ -752,52 +748,56 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					result := getIterableStruct(destinationJob.Message, transformAt)
-					for _, val := range result {
-						err := integrations.ValidatePostInfo(val)
-						if err != nil {
-							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-							respBodyArr = append(respBodyArr, respBodyTemp)
-						} else {
-							// stat start
-							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-							defer cancel()
-							//transformer proxy start
-							if worker.rt.transformerProxy {
-								rtl_time := time.Now()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
-								worker.routerProxyStat.SendTiming(time.Since(rtl_time))
-								authType := router_utils.GetAuthType(destinationJob.Destination)
-								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-									pkgLogger.Debugf(`Sending for OAuth destination`)
-									// Token from header of the request
-									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
-										ctx:            ctx,
-										destinationJob: destinationJob,
-										workerId:       worker.workerID,
-										trRespStCd:     respStatusCode,
-										trRespBody:     respBodyTemp,
-										secret:         destinationJob.JobMetadataArray[0].Secret,
-									})
-								}
-							} else {
-								rdl_time := time.Now()
-								resp := worker.rt.netHandle.SendPost(sendCtx, val)
-								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-								// stat end
-								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
-							}
-							// transformer proxy end
-							if isSuccessStatus(respStatusCode) {
+					result, err := getIterableStruct(destinationJob.Message, transformAt)
+					if err != nil {
+						respStatusCode, respBody = 599, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
+					} else {
+						for _, val := range result {
+							err := integrations.ValidatePostInfo(val)
+							if err != nil {
+								respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
-								respBodyArr = []string{respBodyTemp}
-								break
+								// stat start
+								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+								defer cancel()
+								//transformer proxy start
+								if worker.rt.transformerProxy {
+									rtl_time := time.Now()
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+									authType := router_utils.GetAuthType(destinationJob.Destination)
+									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+										pkgLogger.Debugf(`Sending for OAuth destination`)
+										// Token from header of the request
+										respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
+											ctx:            ctx,
+											destinationJob: destinationJob,
+											workerId:       worker.workerID,
+											trRespStCd:     respStatusCode,
+											trRespBody:     respBodyTemp,
+											secret:         destinationJob.JobMetadataArray[0].Secret,
+										})
+									}
+								} else {
+									rdl_time := time.Now()
+									resp := worker.rt.netHandle.SendPost(sendCtx, val)
+									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+									// stat end
+									worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
+								}
+								// transformer proxy end
+								if isSuccessStatus(respStatusCode) {
+									respBodyArr = append(respBodyArr, respBodyTemp)
+								} else {
+									respBodyArr = []string{respBodyTemp}
+									break
+								}
 							}
 						}
+						respBody = strings.Join(respBodyArr, " ")
 					}
-					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
@@ -1503,7 +1503,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerWorkspaceJobStatusCount := make(map[string]map[string]int)
+	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1515,17 +1515,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
-		rt.configSubscriberLock.RLock()
-		workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
-		rt.configSubscriberLock.RUnlock()
-		_, ok := routerWorkspaceJobStatusCount[workspaceID]
-		if !ok {
-			routerWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
-		}
+		workspaceID := resp.status.WorkspaceId
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
-		_, ok = connectionDetailsMap[key]
+		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 			connectionDetailsMap[key] = cd
@@ -1540,30 +1534,30 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
+
+		switch resp.status.JobState {
+		case jobsdb.Failed.State:
+			if resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
+				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
+				if resp.status.AttemptNum == 1 {
+					sd.Count++
+				}
+			}
+		case jobsdb.Succeeded.State:
+			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
-		}
-		if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) {
-			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
-		}
-
-		if resp.status.JobState != jobsdb.Failed.State {
-			if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
-				routerWorkspaceJobStatusCount[workspaceID][rt.destName] += 1
-				sd.Count++
-			}
-			if resp.status.JobState == jobsdb.Succeeded.State {
-				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
-			}
-		}
-		//REPORTING - ROUTER - END
-
-		statusList = append(statusList, resp.status)
-
-		if resp.status.JobState == jobsdb.Aborted.State {
+			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
+		case jobsdb.Aborted.State:
+			routerWorkspaceJobStatusCount[workspaceID] += 1
+			sd.Count++
+			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
+
+		//REPORTING - ROUTER - END
+
+		statusList = append(statusList, resp.status)
 
 		//tracking router errors
 		if diagnostics.EnableDestinationFailuresMetric {
@@ -1603,11 +1597,12 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	for workspace := range routerWorkspaceJobStatusCount {
-		for destType := range routerWorkspaceJobStatusCount[workspace] {
-			rt.MultitenantI.RemoveFromInMemoryCount(workspace, destType, routerWorkspaceJobStatusCount[workspace][destType], "router")
+	defer func() {
+		for workspace := range routerWorkspaceJobStatusCount {
+			metric.GetPendingEventsMeasurement("rt", workspace, rt.destName).
+				Sub(float64(routerWorkspaceJobStatusCount[workspace]))
 		}
-	}
+	}()
 
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
@@ -1960,8 +1955,9 @@ func (rt *HandleT) readAndProcess() int {
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
 				drainStatsbyDest[destID] = &router_utils.DrainStats{
-					Count:   0,
-					Reasons: []string{},
+					Count:     0,
+					Reasons:   []string{},
+					Workspace: job.WorkspaceId,
 				}
 			}
 			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
@@ -1971,7 +1967,6 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
-			rt.MultitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
@@ -2020,6 +2015,7 @@ func (rt *HandleT) readAndProcess() int {
 				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
 			rt.drainedJobsStat.Count(destDrainStat.Count)
+			metric.GetPendingEventsMeasurement("rt", destDrainStat.Workspace, rt.destName).Sub(float64(drainStatsbyDest[destID].Count))
 		}
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
