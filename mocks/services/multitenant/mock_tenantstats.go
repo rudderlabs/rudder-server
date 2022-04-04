@@ -34,18 +34,6 @@ func (m *MockMultiTenantI) EXPECT() *MockMultiTenantIMockRecorder {
 	return m.recorder
 }
 
-// AddToInMemoryCount mocks base method.
-func (m *MockMultiTenantI) AddToInMemoryCount(arg0, arg1 string, arg2 int, arg3 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddToInMemoryCount", arg0, arg1, arg2, arg3)
-}
-
-// AddToInMemoryCount indicates an expected call of AddToInMemoryCount.
-func (mr *MockMultiTenantIMockRecorder) AddToInMemoryCount(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddToInMemoryCount", reflect.TypeOf((*MockMultiTenantI)(nil).AddToInMemoryCount), arg0, arg1, arg2, arg3)
-}
-
 // CalculateSuccessFailureCounts mocks base method.
 func (m *MockMultiTenantI) CalculateSuccessFailureCounts(arg0, arg1 string, arg2, arg3 bool) {
 	m.ctrl.T.Helper()
@@ -71,18 +59,6 @@ func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.
 func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4)
-}
-
-// RemoveFromInMemoryCount mocks base method.
-func (m *MockMultiTenantI) RemoveFromInMemoryCount(arg0, arg1 string, arg2 int, arg3 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "RemoveFromInMemoryCount", arg0, arg1, arg2, arg3)
-}
-
-// RemoveFromInMemoryCount indicates an expected call of RemoveFromInMemoryCount.
-func (mr *MockMultiTenantIMockRecorder) RemoveFromInMemoryCount(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveFromInMemoryCount", reflect.TypeOf((*MockMultiTenantI)(nil).RemoveFromInMemoryCount), arg0, arg1, arg2, arg3)
 }
 
 // ReportProcLoopAddStats mocks base method.

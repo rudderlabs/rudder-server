@@ -2,18 +2,18 @@ package manager
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -35,36 +35,37 @@ type ManagerI interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
+	LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) error
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type
 func New(destType string) (ManagerI, error) {
 	switch destType {
-	case "RS":
+	case warehouseutils.RS:
 		var rs redshift.HandleT
 		return &rs, nil
-	case "BQ":
+	case warehouseutils.BQ:
 		var bq bigquery.HandleT
 		return &bq, nil
-	case "SNOWFLAKE":
+	case warehouseutils.SNOWFLAKE:
 		var sf snowflake.HandleT
 		return &sf, nil
-	case "POSTGRES":
+	case warehouseutils.POSTGRES:
 		var pg postgres.HandleT
 		return &pg, nil
-	case "CLICKHOUSE":
+	case warehouseutils.CLICKHOUSE:
 		var ch clickhouse.HandleT
 		return &ch, nil
-	case "MSSQL":
+	case warehouseutils.MSSQL:
 		var ms mssql.HandleT
 		return &ms, nil
-	case "AZURE_SYNAPSE":
+	case warehouseutils.AZURE_SYNAPSE:
 		var as azuresynapse.HandleT
 		return &as, nil
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
+	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		var dl datalake.HandleT
 		return &dl, nil
-	case "DELTALAKE":
+	case warehouseutils.DELTALAKE:
 		var dl deltalake.HandleT
 		return &dl, nil
 	}

@@ -38,7 +38,6 @@ type HandleT struct {
 	Namespace     string
 	CloudProvider string
 	ObjectStorage string
-	Stage         string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
 }
@@ -54,8 +53,6 @@ const (
 	SFUserName         = "user"
 	SFPassword         = "password"
 )
-
-const PROVIDER = "SNOWFLAKE"
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
@@ -112,11 +109,11 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.UsersTable)
-	identifiesTable         = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentifiesTable)
-	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
-	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
+	usersTable              = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.UsersTable)
+	identifiesTable         = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentifiesTable)
+	discardsTable           = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.DiscardsTable)
+	identityMergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable   = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMappingsTable)
 )
 
 type tableLoadRespT struct {
@@ -124,7 +121,7 @@ type tableLoadRespT struct {
 	stagingTable string
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
@@ -133,7 +130,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -201,7 +198,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *HandleT) authString() string {
 	var auth string
-	if sf.Uploader.UseRudderStorage() {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
@@ -793,7 +790,7 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
 	sf.Uploader = uploader
-	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
 	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	return err
@@ -893,10 +890,31 @@ func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.SNOWFLAKE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
+	)
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
+
+	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
+		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName),
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		loadFolder,
+		sf.authString(),
+	)
+
+	_, err = client.SQL.Exec(sqlStatement)
+	return
 }

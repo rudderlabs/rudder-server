@@ -3,6 +3,7 @@ package warehouse
 import (
 	"encoding/json"
 	"errors"
+	client2 "github.com/rudderlabs/rudder-server/warehouse/client"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -71,7 +72,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	defer client.Close()
 
 	pkgLogger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
-	*reply, err = client.Query(s.SQLStatement)
+	*reply, err = client.Query(s.SQLStatement, client2.Read)
 	return err
 }
 

@@ -171,7 +171,7 @@ func GetPGNotifierConnectionString() string {
 }
 
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
@@ -222,7 +222,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 }
 
 func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
-	//rruntime.Go(func() {
+	//rruntime.GoForWarehouse(func() {
 	//	response := <-ch
 	var err error
 	if response.Err != nil {
@@ -368,7 +368,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
 
 	jobs := make(chan ClaimT, jobsBufferSize)
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
 		defer close(jobs)
 		for {
