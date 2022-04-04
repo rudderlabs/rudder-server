@@ -128,16 +128,16 @@ const (
 )
 
 var (
-	workspaceID = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.Must(uuid.NewV4()).String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
@@ -182,11 +182,11 @@ func TestRouterManager(t *testing.T) {
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).Do(
-			func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
-				once.Do(func() {
-					close(c)
-				})
-			}).AnyTimes()
+		func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
+			once.Do(func() {
+				close(c)
+			})
+		}).AnyTimes()
 
 	rtDB := jobsdb.NewForReadWrite("rt")
 	brtDB := jobsdb.NewForReadWrite("batch_rt")

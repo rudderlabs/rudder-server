@@ -72,26 +72,48 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gwDB := jobsdb.NewForRead("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
-		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
-	defer gwDB.Close()
-	rtDB := jobsdb.NewForReadWrite("rt", jobsdb.WithRetention(routerDBRetention),
+	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
+	//Processor.
+	gwDBForProcessor := jobsdb.NewForRead(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
-		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(router.QueryFilters))
-	defer rtDB.Close()
-	brtDB := jobsdb.NewForReadWrite("batch_rt", jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+	)
+	defer gwDBForProcessor.Close()
+	routerDB := jobsdb.NewForReadWrite(
+		"rt",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
-		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters))
-	defer brtDB.Close()
-	errDB := jobsdb.NewForReadWrite("proc_error", jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(router.QueryFilters),
+	)
+	defer routerDB.Close()
+	batchRouterDB := jobsdb.NewForReadWrite(
+		"batch_rt",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
-		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
+	)
+	defer batchRouterDB.Close()
+	errDB := jobsdb.NewForReadWrite(
+		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(routerDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+	)
 
-	// TODO: Always initialize multi-tenant stats after PR#1736 gets merged.
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: rtDB}
+	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 	if config.GetBool("EnableMultitenancy", false) {
-		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 		multitenantStats = multitenant.NewStats(tenantRouterDB)
 	}
 
@@ -101,14 +123,14 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			startProcessorFunc := func() {
 				clearDB := false
 				g.Go(misc.WithBugsnag(func() error {
-					StartProcessor(ctx, &clearDB, enableProcessor, gwDB, rtDB, brtDB, errDB,
+					StartProcessor(ctx, &clearDB, enableProcessor, gwDBForProcessor, routerDB, batchRouterDB, errDB,
 						reportingI, multitenantStats)
 					return nil
 				}))
 			}
 			startRouterFunc := func() {
 				g.Go(misc.WithBugsnag(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, brtDB, errDB, reportingI, multitenantStats)
+					StartRouter(ctx, enableRouter, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenantStats)
 					return nil
 				}))
 			}
@@ -116,10 +138,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			enableProcessor = false
 			enableGateway = (migrationMode != db.EXPORT)
 
-			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDB, rtDB, brtDB)
+			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor, routerDB, batchRouterDB)
 
 			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, gwDB, rtDB, brtDB, startProcessorFunc,
+				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
 					startRouterFunc) //TODO
 				return nil
 			})
@@ -132,9 +154,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		modeProvider = state.StaticProvider{
 			Mode: servermode.NormalMode,
 		}
+	} else {
+		modeProvider = state.StaticProvider{
+			Mode: servermode.DegradedMode,
+		}
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDB, rtDB, brtDB, errDB)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB)
 
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
@@ -147,16 +173,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		Reporting:     reportingI,
 		Multitenant:   multitenantStats,
 		BackendConfig: backendconfig.DefaultBackendConfig,
-		RouterDB:      brtDB,
+		RouterDB:      batchRouterDB,
 		ProcErrorDB:   errDB,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
 		Provider:      &modeProvider,
-		GatewayDB:     gwDB,
-		RouterDB:      rtDB,
-		BatchRouterDB: brtDB,
+		GatewayDB:     gwDBForProcessor,
+		RouterDB:      routerDB,
+		BatchRouterDB: batchRouterDB,
 		ErrorDB:       errDB,
 		Processor:     proc,
 		Router:        rt,
@@ -170,14 +196,26 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gwDB, rtDB, brtDB)
+		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
 	}
 
 	if enableGateway {
 		var gw gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
-		gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
-		defer gatewayDB.TearDown()
+		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
+		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+		gatewayDB = *jobsdb.NewForWrite(
+			"gw",
+			jobsdb.WithClearDB(options.ClearDB),
+			jobsdb.WithRetention(gwDBRetention),
+			jobsdb.WithMigrationMode(migrationMode),
+			jobsdb.WithStatusHandler(),
+			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		)
+		defer gwDBForProcessor.Close()
+		gatewayDB.Start()
+		defer gatewayDB.Stop()
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)

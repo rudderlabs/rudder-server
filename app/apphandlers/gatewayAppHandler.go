@@ -42,16 +42,24 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	migrationMode := gatewayApp.App.Options().MigrationMode
 
-	gwDB := jobsdb.NewForWrite("gw", jobsdb.WithRetention(gwDBRetention), jobsdb.WithMigrationMode(migrationMode),
-		jobsdb.WithStatusHandler(), jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}))
-	defer gwDB.Close()
+	gatewayDB := jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(gwDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+	)
+	defer gatewayDB.Close()
+	gatewayDB.Start()
+	defer gatewayDB.Stop()
 
 	enableGateway := true
 	if gatewayApp.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			enableGateway = (migrationMode != db.EXPORT)
 
-			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gwDB, nil, nil)
+			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
 		}
 	}
 
@@ -63,7 +71,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gwDB, &rateLimiter, gatewayApp.VersionHandler)
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
 		defer gw.Shutdown()
 
 		g.Go(func() error {

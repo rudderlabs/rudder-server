@@ -133,16 +133,16 @@ const (
 )
 
 var (
-	workspaceID = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.Must(uuid.NewV4()).String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},

@@ -2,25 +2,38 @@ package state
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app/cluster"
 	"os"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
-type Env struct {
-	Mode servermode.Mode
+var _ cluster.ModeProvider = &EnvProvider{}
+
+type EnvProvider struct {
+	Mode   servermode.Mode
+	ch     chan servermode.Ack
+	chOnce sync.Once
 }
 
-func (e *Env) ServerMode() <-chan servermode.Ack {
-	ch := make(chan servermode.Ack, 1)
+func (e *EnvProvider) ServerMode() (<-chan servermode.Ack, error) {
+	e.chOnce.Do(func() {
+		e.ch = make(chan servermode.Ack, 1)
+	})
 	serverMode := os.Getenv("RSERVER_MODE")
 	e.setMode(serverMode)
-	ch <- servermode.WithACK(servermode.Mode(e.Mode), func() {})
-	close(ch)
-	return ch
+	e.ch <- servermode.WithACK(servermode.Mode(e.Mode), func() {})
+	return e.ch, nil
 }
 
-func (e *Env) setMode(mode string) {
+func (e *EnvProvider) Close() {
+	if e.ch != nil {
+		close(e.ch)
+	}
+}
+
+func (e *EnvProvider) setMode(mode string) {
 	switch mode {
 	case "normal":
 		e.Mode = servermode.NormalMode

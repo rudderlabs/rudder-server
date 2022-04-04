@@ -16,8 +16,9 @@ var (
 	controllertype string = "Dynamic"
 )
 
-type modeProvider interface {
-	ServerMode() <-chan servermode.Ack
+type ModeProvider interface {
+	ServerMode() (<-chan servermode.Ack, error)
+	Close()
 }
 
 type lifecycle interface {
@@ -26,7 +27,7 @@ type lifecycle interface {
 }
 
 type Dynamic struct {
-	Provider modeProvider
+	Provider ModeProvider
 
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
@@ -65,6 +66,11 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	d.once.Do(func() {
 		d.init()
 	})
+	defer d.Provider.Close()
+	modeChan, err := d.Provider.ServerMode()
+	if err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -72,9 +78,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				d.stop()
 			}
 			return nil
-		case newMode := <-d.Provider.ServerMode():
+		case newMode := <-modeChan:
 			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
-			err := d.handleModeChange(newMode.Mode())
+			err = d.handleModeChange(newMode.Mode())
 			if err != nil {
 				d.logger.Error(err)
 				return err
@@ -115,6 +121,9 @@ func (d *Dynamic) stop() {
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
+	if !newMode.Valid() {
+		return fmt.Errorf("unsupported mode: %s", newMode)
+	}
 	if d.currentMode == newMode {
 		// TODO add logging
 		return nil
