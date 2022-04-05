@@ -199,10 +199,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
-	processor.MultitenantStats = mockMTI
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1)
 

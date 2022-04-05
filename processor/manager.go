@@ -61,7 +61,7 @@ func (proc *LifecycleManager) Stop() {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT) *LifecycleManager {
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT, tenanatDB multitenant.MultiTenantI) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx:          ctx,
@@ -70,7 +70,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
 		clearDB:          clearDb,
-		MultitenantStats: multitenant.NOOP,
+		MultitenantStats: tenanatDB,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 	}
 	return proc

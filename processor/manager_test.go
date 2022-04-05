@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"log"
 	"os"
 	"os/signal"
@@ -188,7 +189,13 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt": &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+		},
+	}
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()

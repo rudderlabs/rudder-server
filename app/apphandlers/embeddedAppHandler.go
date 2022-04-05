@@ -166,8 +166,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		},
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB)
-	proc.MultitenantStats = mtStat
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, mtStat)
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
 		Multitenant:   mtStat,
