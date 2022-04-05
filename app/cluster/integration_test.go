@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"log"
 	"os"
 	"os/signal"
@@ -191,9 +192,14 @@ func TestDynamicClusterManager(t *testing.T) {
 	clearDb := false
 	ctx := context.Background()
 
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
+	}
+
 	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
+	processor.MultitenantStats = mtStat
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1)
 
@@ -233,6 +239,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		Processor: processor,
 		Router:    router,
 		Provider:  provider,
+		MultiTenantStat: mtStat,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

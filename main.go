@@ -101,6 +101,7 @@ var (
 	IdleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
+	legacyAppHandler          bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -115,7 +116,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-
+	config.RegisterBoolConfigVariable(false, &legacyAppHandler, false, "LegacyAppHandler")
 }
 
 func Init() {
@@ -296,6 +297,9 @@ func Run(ctx context.Context) {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
+				if legacyAppHandler{
+					return appHandler.LegacyStart(ctx, options)
+				}
 				return appHandler.StartRudderCore(ctx, options)
 			}))
 		}

@@ -115,6 +115,7 @@ func (d *Dynamic) stop() {
 	d.serverStopTimeStat.Start()
 	d.Processor.Stop()
 	d.Router.Stop()
+	d.MultiTenantStat.Stop()
 
 	d.RouterDB.Stop()
 	d.BatchRouterDB.Stop()

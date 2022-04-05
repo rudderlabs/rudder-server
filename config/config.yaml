@@ -245,3 +245,4 @@ PgNotifier:
   trackBatchInterval: 2s
   maxAttempt: 3
 EnableMultitenancy: true
+LegacyAppHandler: false

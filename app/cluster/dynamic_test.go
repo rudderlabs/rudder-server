@@ -3,6 +3,8 @@ package cluster_test
 import (
 	"context"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"sync/atomic"
@@ -26,7 +28,7 @@ func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
 	m.ch <- newMode
 }
 
-func (m *mockModeProvider) Close()  {
+func (m *mockModeProvider) Close() {
 	close(m.ch)
 }
 
@@ -59,7 +61,6 @@ func Init() {
 	config.Load()
 	stats.Setup()
 	logger.Init()
-	cluster.Init()
 }
 
 func TestDynamicCluster(t *testing.T) {
@@ -77,6 +78,9 @@ func TestDynamicCluster(t *testing.T) {
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
 
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
+	}
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -87,8 +91,9 @@ func TestDynamicCluster(t *testing.T) {
 
 		Processor: processor,
 		Router:    router,
+
+		MultiTenantStat: mtStat,
 	}
-	dc.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -97,7 +102,6 @@ func TestDynamicCluster(t *testing.T) {
 		dc.Run(ctx)
 		close(wait)
 	}()
-
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan bool)
@@ -162,7 +166,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
 	})
-
 
 	t.Run("Shutdown from Normal ", func(t *testing.T) {
 		cancel()
