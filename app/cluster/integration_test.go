@@ -193,7 +193,10 @@ func TestDynamicClusterManager(t *testing.T) {
 	ctx := context.Background()
 
 	mtStat := &multitenant.MultitenantStatsT{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt": &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+		},
 	}
 
 	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
