@@ -2005,6 +2005,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	var err error
 
 	if copyID {
+		if jd.tablePrefix == "rt" {
+			_, err = txHandler.Exec(fmt.Sprintf(`drop index "customval_workspace_%s"`, ds.Index))
+			if err != nil {
+				return err
+			}
+		}
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 			"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
 	} else {
@@ -2034,6 +2040,15 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		}
 	}
 	_, err = stmt.Exec()
+
+	if copyID {
+		if jd.tablePrefix == "rt" {
+			_, err = txHandler.Exec(fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, ds.Index, ds.JobTable))
+			if err != nil {
+				return err
+			}
+		}
+	}
 
 	return err
 }
@@ -2469,10 +2484,20 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		return err
 	}
 
+	_, err = txn.Exec(fmt.Sprintf(`alter table "%[1]s" drop constraint "%[1]s_pkey"`, ds.JobStatusTable))
+	if err != nil {
+		return err
+	}
+
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
 	stateFiltersByWorkspace, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
 	if err != nil {
 		txn.Rollback()
+		return err
+	}
+
+	_, err = txn.Exec(fmt.Sprintf(`alter table "%[1]s" add constraint "%[1]s_pkey" primary key (job_id, job_state, id)`, ds.JobStatusTable))
+	if err != nil {
 		return err
 	}
 
