@@ -364,14 +364,14 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
 	os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
 
-	//wht.InitWHConfig()
-	//
-	//defer wht.SetWHPostgresDestination(pool)()
-	//defer wht.SetWHClickHouseDestination(pool)()
-	//defer wht.SetWHClickHouseClusterDestination(pool)()
-	//defer wht.SetWHMssqlDestination(pool)()
-	//
-	//AddWHSpecificSqlFunctionsToJobsDb()
+	wht.InitWHConfig()
+
+	defer wht.SetWHPostgresDestination(pool)()
+	defer wht.SetWHClickHouseDestination(pool)()
+	defer wht.SetWHClickHouseClusterDestination(pool)()
+	defer wht.SetWHMssqlDestination(pool)()
+
+	AddWHSpecificSqlFunctionsToJobsDb()
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -410,14 +410,14 @@ func run(m *testing.M) (int, error) {
 			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
 			"minioBucketName":                     MINIOContainer.MinioBucketName,
 			"kafkaPort":                           KafkaContainer.Port,
-			//"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
-			//"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
-			//"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
-			//"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
-			//"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
-			//"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
-			//"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
-			//"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
+			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
+			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
+			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
+			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
+			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
+			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
+			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
+			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 		},
 	)
 	defer func() {
