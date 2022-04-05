@@ -114,10 +114,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 	}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-		"rt":       tenantRouterDB,
-		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-	})
 
 	enableGateway := true
 	if embedded.App.Features().Migrator != nil {
@@ -126,13 +122,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 				clearDB := false
 				g.Go(misc.WithBugsnag(func() error {
 					StartProcessor(ctx, &clearDB, enableProcessor, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-						reportingI, multitenantStats)
+						reportingI, multitenant.NOOP)
 					return nil
 				}))
 			}
 			startRouterFunc := func() {
 				g.Go(misc.WithBugsnag(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenantStats)
+					StartRouter(ctx, enableRouter, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP)
 					return nil
 				}))
 			}
@@ -162,18 +158,25 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB)
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+		},
+	}
 
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB)
+	proc.MultitenantStats = mtStat
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
-		Multitenant:   multitenantStats,
+		Multitenant:   mtStat,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      tenantRouterDB,
 		ProcErrorDB:   errDB,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:     reportingI,
-		Multitenant:   multitenantStats,
+		Multitenant:   mtStat,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      batchRouterDB,
 		ProcErrorDB:   errDB,
@@ -188,6 +191,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		ErrorDB:       errDB,
 		Processor:     proc,
 		Router:        rt,
+		MultiTenantStat: mtStat,
 	}
 
 	g.Go(func() error {

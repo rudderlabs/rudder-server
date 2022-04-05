@@ -37,6 +37,8 @@ type Dynamic struct {
 	Processor lifecycle
 	Router    lifecycle
 
+	MultiTenantStat lifecycle
+
 	currentMode servermode.Mode
 
 	serverStartTimeStat  stats.RudderStats
@@ -99,6 +101,8 @@ func (d *Dynamic) start() {
 	d.RouterDB.Start()
 	d.BatchRouterDB.Start()
 
+	d.MultiTenantStat.Start()
+
 	d.Processor.Start()
 	d.Router.Start()
 	d.serverStartTimeStat.SendTiming(time.Since(start))
@@ -129,17 +133,6 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 		return nil
 	}
 	switch d.currentMode {
-	//case servermode.UndefinedMode:
-	//	switch newMode {
-	//	case servermode.NormalMode:
-	//		d.logger.Info("Transiting the server from UndefinedMode to NormalMode")
-	//		d.start()
-	//	case servermode.DegradedMode:
-	//		d.logger.Info("Server is running in UndefinedMode, can not transit to DegradedMode.")
-	//	default:
-	//		d.logger.Errorf("Unsupported transition from UndefinedMode to %s \n", newMode)
-	//		return fmt.Errorf("unsupported transition from UndefinedMode to %s", newMode)
-	//	}
 	case servermode.NormalMode:
 		switch newMode {
 		case servermode.DegradedMode:
