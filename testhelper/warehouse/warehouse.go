@@ -1,13 +1,12 @@
 package warehouse_test
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
-	"database/sql"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"math/rand"
@@ -16,8 +15,7 @@ import (
 type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
-	DB             *sql.DB
-	BQClient       *bigquery.Client
+	Client         *client.Client
 	EventsCountMap EventsCountMap
 	WriteKey       string
 	UserId         string
