@@ -373,7 +373,7 @@ func run(m *testing.M) (int, error) {
 	defer wht.SetWHPostgresDestination(pool)()
 	defer wht.SetWHClickHouseDestination(pool)()
 	defer wht.SetWHClickHouseClusterDestination(pool)()
-	//defer wht.SetWHMssqlDestination(pool)()
+	defer wht.SetWHMssqlDestination(pool)()
 	defer wht.SetWHBigQueryDestination()()
 
 	AddWHSpecificSqlFunctionsToJobsDb()
@@ -406,28 +406,28 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                     webhookurl,
-			"disableDestinationwebhookUrl":   disableDestinationwebhookurl,
-			"writeKey":                       writeKey,
-			"workspaceId":                    workspaceID,
-			"postgresPort":                   PostgresContainer.Port,
-			"address":                        RedisContainer.RedisAddress,
-			"minioEndpoint":                  MINIOContainer.MinioEndpoint,
-			"minioBucketName":                MINIOContainer.MinioBucketName,
-			"kafkaPort":                      KafkaContainer.Port,
-			"postgresEventWriteKey":          wht.Test.PGTest.WriteKey,
-			"clickHouseEventWriteKey":        wht.Test.CHTest.WriteKey,
-			"clickHouseClusterEventWriteKey": wht.Test.CHClusterTest.WriteKey,
-			//"mssqlEventWriteKey":                   wht.Test.MSSQLTest.WriteKey,
+			"webhookUrl":                           webhookurl,
+			"disableDestinationwebhookUrl":         disableDestinationwebhookurl,
+			"writeKey":                             writeKey,
+			"workspaceId":                          workspaceID,
+			"postgresPort":                         PostgresContainer.Port,
+			"address":                              RedisContainer.RedisAddress,
+			"minioEndpoint":                        MINIOContainer.MinioEndpoint,
+			"minioBucketName":                      MINIOContainer.MinioBucketName,
+			"kafkaPort":                            KafkaContainer.Port,
+			"postgresEventWriteKey":                wht.Test.PGTest.WriteKey,
+			"clickHouseEventWriteKey":              wht.Test.CHTest.WriteKey,
+			"clickHouseClusterEventWriteKey":       wht.Test.CHClusterTest.WriteKey,
+			"mssqlEventWriteKey":                   wht.Test.MSSQLTest.WriteKey,
 			"bqEventWriteKey":                      wht.Test.BQTest.WriteKey,
 			"rwhPostgresDestinationPort":           wht.Test.PGTest.Credentials.Port,
 			"rwhClickHo nuseDestinationPort":       wht.Test.CHTest.Credentials.Port,
 			"rwhClickHouseClusterDestinationPxort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
-			//"rwhMSSqlDestinationPort":              wht.Test.MSSQLTest.Credentials.Port,
-			"rwhBQProject":     wht.Test.BQTest.Credentials.ProjectID,
-			"rwhBQLocation":    wht.Test.BQTest.Credentials.Location,
-			"rwhBQBucketName":  wht.Test.BQTest.Credentials.Bucket,
-			"rwhBQCredentials": wht.Test.BQTest.Credentials.CredentialsEscaped,
+			"rwhMSSqlDestinationPort":              wht.Test.MSSQLTest.Credentials.Port,
+			"rwhBQProject":                         wht.Test.BQTest.Credentials.ProjectID,
+			"rwhBQLocation":                        wht.Test.BQTest.Credentials.Location,
+			"rwhBQBucketName":                      wht.Test.BQTest.Credentials.Bucket,
+			"rwhBQCredentials":                     wht.Test.BQTest.Credentials.CredentialsEscaped,
 		},
 	)
 
