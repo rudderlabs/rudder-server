@@ -128,7 +128,7 @@ func connectWithTimeout(cred credentialsT, connectionTimeout int) (*sql.DB, erro
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
-	query.Add("dial timeout", string(connectionTimeout))
+	query.Add("dial timeout", fmt.Sprintf("%d", connectionTimeout))
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
