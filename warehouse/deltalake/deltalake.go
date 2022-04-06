@@ -232,8 +232,12 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 		return
 	}
 
-	cCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// Overriding connection timeout only in case if it is set to other than default.
+	cCtx := tCtx
+	if timeout != 0 {
+		cCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	dbClient := proto.NewDatabricksClient(conn)
 	connectionResponse, err := dbClient.Connect(cCtx, &proto.ConnectRequest{

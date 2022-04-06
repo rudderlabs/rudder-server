@@ -156,7 +156,10 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.mssql.connectTimeout")
+
+	// Default timeout overrides the values to what ever we pass in dsn
+	// Setting connectTimeout value as mssql driver default timeout
+	config.RegisterDurationConfigVariable(warehouseutils.TestConnectionTimeout, &connectTimeout, true, 1, "Warehouse.mssql.connectTimeout")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
