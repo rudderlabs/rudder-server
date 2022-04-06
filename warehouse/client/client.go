@@ -114,6 +114,41 @@ func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, 
 	}
 	return result, nil
 }
+func (cl *Client) dbQueryCount(statement string) (count int64, err error) {
+	response, err := cl.DBHandleT.Client.FetchTotalCountInTable(cl.DBHandleT.Context, &proto.FetchTotalCountInTableRequest{
+		Config:       cl.DBHandleT.CredConfig,
+		SqlStatement: statement,
+		Identifier:   cl.DBHandleT.CredIdentifier,
+	})
+	if err != nil {
+		return
+	}
+	return response.GetCount(), nil
+}
+
+func (cl *Client) sqlQueryCount(statement string) (count int64, err error) {
+	err = cl.SQL.QueryRow(statement).Scan(&count)
+	if err != nil {
+		return
+	}
+	return count, nil
+}
+func (cl *Client) bqQueryCount(statement string) (count int64, err error) {
+	context := context.Background()
+	it, err := cl.BQ.Query(statement).Read(context)
+	if err != nil {
+		return
+	}
+	var values []bigquery.Value
+	err = it.Next(&values)
+	if err == iterator.Done {
+		return 0, nil
+	}
+	if err != nil {
+		return
+	}
+	return values[0].(int64), nil
+}
 
 func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
@@ -123,6 +158,16 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
+	}
+}
+func (cl *Client) CountQueryCount(statement string) (count int64, err error) {
+	switch cl.Type {
+	case BQClient:
+		return cl.bqQueryCount(statement)
+	case DBClient:
+		return cl.dbQueryCount(statement)
+	default:
+		return cl.sqlQueryCount(statement)
 	}
 }
 

@@ -12,13 +12,14 @@ import (
 )
 
 type BiqQueryTest struct {
-	Credentials *BigQueryCredentials
-	DB          *bq.Client
-	Context     context.Context
-	EventsMap   EventsCountMap
-	WriteKey    string
-	Tables      []string
-	PrimaryKeys []string
+	Credentials            *BigQueryCredentials
+	DB                     *bq.Client
+	Context                context.Context
+	EventsMap              EventsCountMap
+	WriteKey               string
+	Tables                 []string
+	PrimaryKeys            []string
+	TableTestQueryFreqInMS time.Duration
 }
 type BigQueryCredentials struct {
 	ProjectID          string            `json:"projectID"`
@@ -66,9 +67,10 @@ func SetWHBigQueryDestination() (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
-		Context:     context.Background(),
-		Tables:      []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
-		PrimaryKeys: []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
+		Context:                context.Background(),
+		Tables:                 []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		PrimaryKeys:            []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
+		TableTestQueryFreqInMS: 5000,
 	}
 	bqTest := Test.BQTest
 

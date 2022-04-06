@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 type ClickHouseClusterResource struct {
@@ -32,11 +33,12 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 }
 
 type ClickHouseClusterTest struct {
-	Network   *dc.Network
-	Zookeeper *dockertest.Resource
-	Resources ClickHouseClusterResources
-	EventsMap EventsCountMap
-	WriteKey  string
+	Network                *dc.Network
+	Zookeeper              *dockertest.Resource
+	Resources              ClickHouseClusterResources
+	EventsMap              EventsCountMap
+	WriteKey               string
+	TableTestQueryFreqInMS time.Duration
 }
 
 // SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
@@ -113,6 +115,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 		},
+		TableTestQueryFreqInMS: 100,
 	}
 	chClusterTest := Test.CHClusterTest
 	cleanup = func() {}

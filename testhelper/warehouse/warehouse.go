@@ -10,20 +10,22 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"math/rand"
+	"time"
 )
 
 type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
-	Client         *client.Client
-	EventsCountMap EventsCountMap
-	WriteKey       string
-	UserId         string
-	Schema         string
-	BQContext      context.Context
-	Tables         []string
-	PrimaryKeys    []string
-	MessageId      string
+	Client                 *client.Client
+	EventsCountMap         EventsCountMap
+	WriteKey               string
+	UserId                 string
+	Schema                 string
+	BQContext              context.Context
+	Tables                 []string
+	PrimaryKeys            []string
+	MessageId              string
+	TableTestQueryFreqInMS time.Duration
 }
 
 type WareHouseTest struct {
