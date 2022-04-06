@@ -582,14 +582,21 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 }
 
 type BQCredentialsT struct {
-	projectID   string
-	credentials string
+	ProjectID   string
+	Credentials string
+}
+
+func Connect(cred *BQCredentialsT, context context.Context) (*bigquery.Client, error) {
+	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
+	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
+	return client, err
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
-	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
+	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
 	bq.BQContext = context.Background()
-	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
+
+	client, err := Connect(&cred, bq.BQContext)
 	return client, err
 }
 
@@ -639,8 +646,8 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -695,8 +702,8 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -734,8 +741,8 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.BQContext = context.Background()
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	return err
 }
@@ -743,8 +750,8 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	bq.Warehouse = warehouse
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -783,8 +790,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
@@ -1019,8 +1026,8 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return client.Client{}, err

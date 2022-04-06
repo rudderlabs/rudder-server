@@ -12,10 +12,12 @@ import (
 	"database/sql"
 	b64 "encoding/base64"
 	"encoding/json"
-	_ "encoding/json"
 	"flag"
 	"fmt"
-	"html/template"
+	redigo "github.com/gomodule/redigo/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"io"
 	"log"
 	"math/rand"
@@ -29,12 +31,12 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/joho/godotenv"
 
 	"github.com/gofrs/uuid"
-	redigo "github.com/gomodule/redigo/redis"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
@@ -66,6 +68,7 @@ var (
 	MINIOContainer               *destination.MINIOResource
 	EventID                      string
 	VersionID                    string
+	runBigQueryTest              bool
 )
 
 type WebhookRecorder struct {
@@ -288,6 +291,7 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
+	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
 	flag.Parse()
 
 	if !runIntegration {
@@ -370,6 +374,9 @@ func run(m *testing.M) (int, error) {
 	defer wht.SetWHClickHouseDestination(pool)()
 	defer wht.SetWHClickHouseClusterDestination(pool)()
 	defer wht.SetWHMssqlDestination(pool)()
+	if runBigQueryTest == true {
+		defer wht.SetWHBigQueryDestination()()
+	}
 
 	AddWHSpecificSqlFunctionsToJobsDb()
 
@@ -397,28 +404,41 @@ func run(m *testing.M) (int, error) {
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
-
+	mapWorkspaceConfig := map[string]string{
+		"webhookUrl":                          webhookurl,
+		"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
+		"writeKey":                            writeKey,
+		"workspaceId":                         workspaceID,
+		"postgresPort":                        PostgresContainer.Port,
+		"address":                             RedisContainer.RedisAddress,
+		"minioEndpoint":                       MINIOContainer.MinioEndpoint,
+		"minioBucketName":                     MINIOContainer.MinioBucketName,
+		"kafkaPort":                           KafkaContainer.Port,
+		"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
+		"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
+		"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
+		"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
+		"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
+		"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
+		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
+		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
+	}
+	var bqWorkspaceConfigMap map[string]string
+	if runBigQueryTest {
+		bqWorkspaceConfigMap = map[string]string{
+			"bqEventWriteKey":  wht.Test.BQTest.WriteKey,
+			"rwhBQProject":     wht.Test.BQTest.Credentials.ProjectID,
+			"rwhBQLocation":    wht.Test.BQTest.Credentials.Location,
+			"rwhBQBucketName":  wht.Test.BQTest.Credentials.Bucket,
+			"rwhBQCredentials": wht.Test.BQTest.Credentials.CredentialsEscaped,
+		}
+		for key, val := range bqWorkspaceConfigMap {
+			mapWorkspaceConfig[key] = val
+		}
+	}
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
-		map[string]string{
-			"webhookUrl":                          webhookurl,
-			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
-			"writeKey":                            writeKey,
-			"workspaceId":                         workspaceID,
-			"postgresPort":                        PostgresContainer.Port,
-			"address":                             RedisContainer.RedisAddress,
-			"minioEndpoint":                       MINIOContainer.MinioEndpoint,
-			"minioBucketName":                     MINIOContainer.MinioBucketName,
-			"kafkaPort":                           KafkaContainer.Port,
-			"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
-			"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
-			"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
-			"mssqlEventWriteKey":                  wht.Test.MSSQLTest.WriteKey,
-			"rwhPostgresDestinationPort":          wht.Test.PGTest.Credentials.Port,
-			"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
-			"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
-			"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
-		},
+		mapWorkspaceConfig,
 	)
 	defer func() {
 		err := os.Remove(workspaceConfigPath)
@@ -921,16 +941,20 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 	}
 }
 
-// Verify Event in WareHouse Postgres
+//Verify Event in WareHouse Postgres
 func TestWHPostgresDestination(t *testing.T) {
 	pgTest := wht.Test.PGTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             pgTest.DB,
-		EventsCountMap: pgTest.EventsMap,
-		WriteKey:       pgTest.WriteKey,
-		UserId:         "userId_postgres",
-		Schema:         "postgres_wh_integration",
+		Client: &client.Client{
+			SQL:  pgTest.DB,
+			Type: client.SQLClient,
+		},
+		EventsCountMap:         pgTest.EventsMap,
+		WriteKey:               pgTest.WriteKey,
+		UserId:                 "userId_postgres",
+		Schema:                 "postgres_wh_integration",
+		TableTestQueryFreqInMS: pgTest.TableTestQueryFreqInMS,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -940,16 +964,20 @@ func TestWHPostgresDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-// Verify Event in WareHouse ClickHouse
+//Verify Event in WareHouse ClickHouse
 func TestWHClickHouseDestination(t *testing.T) {
 	chTest := wht.Test.CHTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             chTest.DB,
-		EventsCountMap: chTest.EventsMap,
-		WriteKey:       chTest.WriteKey,
-		UserId:         "userId_clickhouse",
-		Schema:         "rudderdb",
+		Client: &client.Client{
+			SQL:  chTest.DB,
+			Type: client.SQLClient,
+		},
+		EventsCountMap:         chTest.EventsMap,
+		WriteKey:               chTest.WriteKey,
+		UserId:                 "userId_clickhouse",
+		Schema:                 "rudderdb",
+		TableTestQueryFreqInMS: chTest.TableTestQueryFreqInMS,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -959,16 +987,20 @@ func TestWHClickHouseDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-// Verify Event in WareHouse ClickHouse Cluster
+//Verify Event in WareHouse ClickHouse Cluster
 func TestWHClickHouseClusterDestination(t *testing.T) {
 	chClusterTest := wht.Test.CHClusterTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             chClusterTest.GetResource().DB,
-		EventsCountMap: chClusterTest.EventsMap,
-		WriteKey:       chClusterTest.WriteKey,
-		UserId:         "userId_clickhouse_cluster",
-		Schema:         "rudderdb",
+		Client: &client.Client{
+			SQL:  chClusterTest.GetResource().DB,
+			Type: client.SQLClient,
+		},
+		EventsCountMap:         chClusterTest.EventsMap,
+		WriteKey:               chClusterTest.WriteKey,
+		UserId:                 "userId_clickhouse_cluster",
+		Schema:                 "rudderdb",
+		TableTestQueryFreqInMS: chClusterTest.TableTestQueryFreqInMS,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -995,16 +1027,102 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-// Verify Event in WareHouse MSSQL
+func TestWHBiqQuery(t *testing.T) {
+	if runBigQueryTest == false {
+		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
+
+	}
+	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
+	bq.Init()
+	bqTest := wht.Test.BQTest
+	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+
+	whDestTest := &wht.WareHouseDestinationTest{
+		Client: &client.Client{
+			BQ:   bqTest.DB,
+			Type: client.BQClient,
+		},
+		EventsCountMap:         bqTest.EventsMap,
+		WriteKey:               bqTest.WriteKey,
+		UserId:                 fmt.Sprintf("userId_bq_%s", randomness),
+		Schema:                 "rudderstack_sample_http_source",
+		BQContext:              bqTest.Context,
+		Tables:                 bqTest.Tables,
+		PrimaryKeys:            bqTest.PrimaryKeys,
+		TableTestQueryFreqInMS: bqTest.TableTestQueryFreqInMS,
+	}
+
+	whDestTest.MessageId = uuid.Must(uuid.NewV4()).String()
+
+	whDestTest.EventsCountMap = wht.EventsCountMap{
+		"identifies": 2,
+		"tracks":     2,
+		"pages":      2,
+		"screens":    2,
+		"aliases":    2,
+		"groups":     2,
+	}
+	sendWHEvents(whDestTest)
+
+	whDestTest.EventsCountMap = wht.EventsCountMap{
+		"identifies":    2,
+		"users":         1,
+		"tracks":        2,
+		"product_track": 2,
+		"pages":         2,
+		"screens":       2,
+		"aliases":       2,
+		"_groups":       2,
+		"gateway":       12,
+		"batchRT":       16,
+	}
+
+	whDestinationTest(t, whDestTest)
+	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
+	bq.Init()
+
+	whDestTest.EventsCountMap = wht.EventsCountMap{
+		"identifies": 2,
+		"tracks":     2,
+		"pages":      2,
+		"screens":    2,
+		"aliases":    2,
+		"groups":     2,
+	}
+
+	sendWHEvents(whDestTest)
+
+	whDestTest.EventsCountMap = wht.EventsCountMap{
+		"identifies":    2,
+		"users":         1,
+		"tracks":        2,
+		"product_track": 2,
+		"pages":         2,
+		"screens":       2,
+		"aliases":       2,
+		"_groups":       2,
+		"gateway":       24,
+		"batchRT":       32,
+	}
+
+	whDestinationTest(t, whDestTest)
+
+}
+
+//Verify Event in WareHouse MSSQL
 func TestWHMssqlDestination(t *testing.T) {
 	MssqlTest := wht.Test.MSSQLTest
 
 	whDestTest := &wht.WareHouseDestinationTest{
-		DB:             MssqlTest.DB,
-		EventsCountMap: MssqlTest.EventsMap,
-		WriteKey:       MssqlTest.WriteKey,
-		UserId:         "userId_mssql",
-		Schema:         "mssql_wh_integration",
+		Client: &client.Client{
+			SQL:  MssqlTest.DB,
+			Type: client.SQLClient,
+		},
+		EventsCountMap:         MssqlTest.EventsMap,
+		WriteKey:               MssqlTest.WriteKey,
+		UserId:                 "userId_mssql",
+		Schema:                 "mssql_wh_integration",
+		TableTestQueryFreqInMS: MssqlTest.TableTestQueryFreqInMS,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1019,6 +1137,11 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending identify event
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		for i := 0; i < identify; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+
+			}
 			payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1030,7 +1153,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -1038,6 +1161,10 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending track event
 	if track, exists := wdt.EventsCountMap["tracks"]; exists {
 		for i := 0; i < track; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+			}
 			payloadTrack := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1049,7 +1176,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "rating" : 3.0,
 			  "review_body" : "Average product, expected much more."
 			}
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -1057,6 +1184,10 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending page event
 	if page, exists := wdt.EventsCountMap["pages"]; exists {
 		for i := 0; i < page; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+			}
 			payloadPage := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1066,7 +1197,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
 			}
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -1074,6 +1205,10 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending screen event
 	if screen, exists := wdt.EventsCountMap["screens"]; exists {
 		for i := 0; i < screen; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+			}
 			payloadScreen := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1082,7 +1217,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"properties": {
 			  "prop_key": "prop_value"
 			}
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -1090,12 +1225,16 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending alias event
 	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
 		for i := 0; i < alias; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+			}
 			payloadAlias := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com"
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -1103,6 +1242,10 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending group event
 	if group, exists := wdt.EventsCountMap["groups"]; exists {
 		for i := 0; i < group; i++ {
+			messageId := wdt.MessageId
+			if len(wdt.MessageId) == 0 {
+				messageId = uuid.Must(uuid.NewV4()).String()
+			}
 			payloadGroup := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1114,7 +1257,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "employees": 450,
 			  "plan": "basic"
 			}
-		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+		  }`, wdt.UserId, messageId))
 			SendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
@@ -1360,15 +1503,23 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
+
+	if len(wdt.Tables) != 0 {
+		tables = wdt.Tables
+	}
+	if len(wdt.PrimaryKeys) != 0 {
+		primaryKeys = wdt.PrimaryKeys
+	}
+
 	for idx, table := range tables {
 		require.Contains(t, wdt.EventsCountMap, table)
 		tableCount := wdt.EventsCountMap[table]
 		require.Eventually(t, func() bool {
 			var count int64
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKeys[idx], wdt.UserId)
-			_ = wdt.DB.QueryRow(sqlStatement).Scan(&count)
+			count, _ = wdt.Client.CountQueryCount(sqlStatement)
 			return count == int64(tableCount)
-		}, 2*time.Minute, 100*time.Millisecond)
+		}, 2*time.Minute, time.Duration(wdt.TableTestQueryFreqInMS)*time.Millisecond)
 	}
 }
 
