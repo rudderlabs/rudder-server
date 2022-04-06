@@ -513,8 +513,6 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	return connectWithTimeout(cred, connectTimeout)
 }
 
-// connectWithTimeout
-// https://github.com/lib/pq/blob/8446d16b8935fdf2b5c0fe333538ac395e3e1e4b/conn.go#L386
 func connectWithTimeout(cred RedshiftCredentialsT, timeout int) (*sql.DB, error) {
 	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
 		cred.username,
