@@ -1954,6 +1954,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		err = downloader.Download(context.TODO(), jsonFile, objKey)
 		if err != nil {
 			brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
 			continue
 		}
 
