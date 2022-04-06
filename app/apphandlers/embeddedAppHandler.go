@@ -268,8 +268,8 @@ func (embedded *EmbeddedApp) LegacyStart(ctx context.Context, options *app.Optio
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
+	var multitenantStats multitenant.MultiTenantI
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 

@@ -300,8 +300,8 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 
 	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
+	var multitenantStats multitenant.MultiTenantI
 
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
