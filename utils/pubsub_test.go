@@ -3,6 +3,7 @@ package utils
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestPubSub_single_slow_consumer(t *testing.T) {
@@ -75,12 +76,16 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 		t.Errorf("Expected normal consumer to have consumed 5, instead got %d.", v)
 	}
 
-	// slow consumer should consume 1 & 5
-	v = <-slow.out
-	if v != 1 {
-		t.Errorf("Expected slow consumer to have consumed 1, instead got %d.", v)
+	// slow consumer should consume 5 as the last value
+	timeout := time.NewTimer(time.Second)
+loop:
+	for {
+		select {
+		case v = <-slow.out:
+		case <-timeout.C:
+			break loop
+		}
 	}
-	v = <-slow.out
 	if v != 5 {
 		t.Errorf("Expected slow consumer to have consumed 5, instead got %d.", v)
 	}

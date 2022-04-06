@@ -81,45 +81,39 @@ type subPublisher struct {
 	// the last value waiting to be published to the channel
 	lastValue *DataEvent
 
-	startedLock sync.Mutex
-	// flag indicating whether the publisher's internal goroutine is started or not
-	started bool
+	startedOnce sync.Once
+	ping        chan struct{}
 }
 
 // publish sets the publisher's lastValue and starts the
 // internal goroutine if it is not already started
 func (r *subPublisher) publish(data *DataEvent) {
+	r.startedOnce.Do(func() {
+		r.ping = make(chan struct{}, 1)
+		go r.startLoop()
+	})
 
 	r.lastValueLock.Lock()
+	defer r.lastValueLock.Unlock()
+
 	// update last value
 	r.lastValue = data
-	r.lastValueLock.Unlock()
 
-	r.startedLock.Lock()
-	// start publish loop if not started
-	if !r.started {
-		go r.startLoop()
-		r.started = true
+	select {
+	case r.ping <- struct{}{}: // signals the startLoop that it has to read the value
+	default:
+		// do nothing - leaky bucket
 	}
-	r.startedLock.Unlock()
 }
 
 // startLoop publishes lastValues to the subscription's channel until there is no other lastValue to publish
 func (r *subPublisher) startLoop() {
-
-	for v := r.nextValue(); v != nil; v = r.nextValue() {
-		r.channel <- *v
+	for range r.ping {
+		r.lastValueLock.Lock()
+		v := r.lastValue
+		r.lastValueLock.Unlock()
+		if v != nil {
+			r.channel <- *v
+		}
 	}
-	r.startedLock.Lock()
-	r.started = false
-	r.startedLock.Unlock()
-}
-
-// nextValue removes lastValue in a goroutine-safe manner and returns it
-func (r *subPublisher) nextValue() *DataEvent {
-	r.lastValueLock.Lock()
-	defer r.lastValueLock.Unlock()
-	v := r.lastValue
-	r.lastValue = nil
-	return v
 }
