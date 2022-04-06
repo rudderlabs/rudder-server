@@ -2,15 +2,22 @@ package state
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+)
+
+var (
+	json = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 
 var (
@@ -22,12 +29,15 @@ var (
 	envConfigOnce    sync.Once
 )
 
+const (
+	modeRequestKeyPattern        = `/%s/server/%s/mode`       // /<releaseName>/server/<serverIndex>/mode
+	workspacesRequestsKeyPattern = `/%s/server/%s/workspaces` // /<releaseName>/server/<serverIndex>/workspaces
+)
+
 type ETCDConfig struct {
-	releaseName          string
-	serverIndex          string
-	workspaceWatchKey    string
-	workspaceFetchKey    string
-	etcdHosts            []string
+	ReleaseName          string
+	ServerIndex          string
+	Endpoints            []string
 	dialKeepAliveTime    time.Duration
 	dialKeepAliveTimeout time.Duration
 	etcdWatchTimeout     time.Duration
@@ -35,12 +45,32 @@ type ETCDConfig struct {
 	dialTimeout          time.Duration
 }
 
+type modeRequestValue struct {
+	Mode   servermode.Mode `json:"mode"`
+	AckKey string          `json:"ack_key"`
+}
+
+type modeAckValue struct {
+	Status servermode.Mode `json:"status"`
+}
+
+type workspacesRequestsValue struct {
+	Workspaces string `json:"workspaces"` // comma separated workspaces
+	AckKey     string `json:"ack_key"`
+}
+
+type workspacesAckValue struct {
+	Status string `json:"status"`
+}
+
 func EnvETCDConfig() *ETCDConfig {
-	etcdHosts := strings.Split(config.GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetEnv("RELEASE_NAME", `multitenantv1`)
 	serverIndex := config.GetInstanceID()
-	workspaceWatchKey := config.GetEnv("WORKSPACE_RELOAD_TRIGGER_KEY", "")
-	workspaceFetchKey := config.GetEnv("WORKSPACE_FETCH_KEY", "")
+
+	// TODO: do we need these:
+	// workspaceWatchKey := config.GetEnv("WORKSPACE_RELOAD_TRIGGER_KEY", "")
+	// workspaceFetchKey := config.GetEnv("WORKSPACE_FETCH_KEY", "")
 
 	envConfigOnce.Do(func() {
 		config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, true, time.Second, "etcd.getTimeout")
@@ -51,16 +81,14 @@ func EnvETCDConfig() *ETCDConfig {
 	})
 
 	return &ETCDConfig{
-		etcdHosts:            etcdHosts,
-		releaseName:          releaseName,
-		serverIndex:          serverIndex,
+		Endpoints:            endpoints,
+		ReleaseName:          releaseName,
+		ServerIndex:          serverIndex,
 		etcdWatchTimeout:     etcdWatchTimeout,
 		dialTimeout:          dialTimeout,
 		dialKeepAliveTime:    keepaliveTime,
 		dialKeepAliveTimeout: keepaliveTimeout,
 		etcdGetTimeout:       etcdGetTimeout,
-		workspaceWatchKey:    workspaceWatchKey,
-		workspaceFetchKey:    workspaceFetchKey,
 	}
 }
 
@@ -74,21 +102,29 @@ type ETCDManager struct {
 func (manager *ETCDManager) init() error {
 	manager.once.Do(func() {
 		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:            manager.Config.etcdHosts,
+			Endpoints:            manager.Config.Endpoints,
 			DialTimeout:          manager.Config.dialTimeout,
-			DialKeepAliveTime:    keepaliveTime,
-			DialKeepAliveTimeout: keepaliveTimeout,
+			DialKeepAliveTime:    manager.Config.dialKeepAliveTime,
+			DialKeepAliveTimeout: manager.Config.dialKeepAliveTimeout,
 			DialOptions: []grpc.DialOption{
 				grpc.WithBlock(), // block until the underlying connection is up
 			},
 		})
 		if err != nil {
-			manager.Client = cli
+			manager.initErr = err
+			return
 		}
-		manager.initErr = err
+		manager.Client = cli
 	})
 
 	return manager.initErr
+}
+
+func (manager *ETCDManager) Ping() error {
+	if err := manager.init(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (manager *ETCDManager) Put(ctx context.Context, key string, value string) error {
@@ -129,55 +165,74 @@ func (manager *ETCDManager) Get(ctx context.Context, key string) (string, error)
 	return result, nil
 }
 
-func (manager *ETCDManager) WatchForWorkspaces(ctx context.Context, key string) (chan string, error) {
-	if err := manager.init(); err != nil {
-		return nil, err
+func (manager *ETCDManager) prepareMode(raw []byte) servermode.ModeRequest {
+	var req modeRequestValue
+	err := json.Unmarshal(raw, &req)
+	if err != nil {
+		// TODO: fix me
+		return servermode.ModeRequest{}
 	}
 
-	resultChan := make(chan string, 1)
-	go func(returnChan chan string, ctx context.Context, key string) {
-		etcdWatchChan := manager.Client.Watch(ctx, key)
-		for watchResp := range etcdWatchChan {
-			for _, event := range watchResp.Events {
-				switch event.Type {
-				case mvccpb.PUT:
-					returnChan <- string(event.Kv.Value)
-				}
+	return servermode.NewModeRequest(
+		servermode.Mode(req.Mode),
+		func() error {
+			ackValue, err := json.MarshalToString(modeAckValue{
+				Status: servermode.Mode(req.Mode),
+			})
+			if err != nil {
+				return err
 			}
-		}
-		close(resultChan)
-	}(resultChan, ctx, key)
-
-	return resultChan, nil
+			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
+			return err
+		})
 }
 
-func (manager *ETCDManager) WorkspaceServed() (<-chan servermode.Ack, error) {
+func errCh(err error) <-chan servermode.ModeRequest {
+	ch := make(chan servermode.ModeRequest, 1)
+	ch <- servermode.ModeError(err)
+	close(ch)
+	return ch
+}
+
+func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.ModeRequest {
 	if err := manager.init(); err != nil {
-		return nil, err
+		return errCh(err)
 	}
 
-	resultChan := make(chan servermode.Ack, 1)
-	ctx, cancel := context.WithCancel(context.TODO())
-	defer cancel()
-	go func(returnChan chan servermode.Ack) {
-		etcdWatchChan := manager.Client.Watch(ctx, manager.Config.workspaceWatchKey)
+	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
+
+	resultChan := make(chan servermode.ModeRequest, 1)
+	resp, err := manager.Client.Get(ctx, modeRequestKey)
+	if err != nil {
+		return errCh(err)
+	}
+
+	if len(resp.Kvs) == 0 {
+		return errCh(errors.New("no workspace found"))
+	}
+
+	resultChan <- manager.prepareMode(resp.Kvs[0].Value)
+
+	go func(returnChan chan servermode.ModeRequest) {
+		etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
 		for watchResp := range etcdWatchChan {
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					returnChan <- servermode.WithACK("", string(event.Kv.Value), func() {})
+					resultChan <- manager.prepareMode(event.Kv.Value)
+				default:
+					// TODO: handle other events
 				}
 			}
 		}
 		close(resultChan)
 	}(resultChan)
 
-	return resultChan, nil
+	return resultChan
 }
 
 func (manager *ETCDManager) Close() {
 	if manager.Client != nil {
 		manager.Client.Close()
 	}
-	// TODO close channels
 }

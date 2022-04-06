@@ -23,8 +23,8 @@ func Init() {
 }
 
 type modeProvider interface {
-	ServerMode() <-chan servermode.Ack
-	WorkspaceServed() <-chan servermode.Ack
+	ServerMode(ctx context.Context) <-chan servermode.ModeRequest
+	WorkspaceServed() <-chan servermode.ModeRequest
 }
 
 type lifecycle interface {
@@ -70,8 +70,8 @@ func (d *Dynamic) Setup() {
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
-	serverModeChan := d.Provider.ServerMode()
-	workspacesChan := d.Provider.WorkspaceServed()
+	serverModeChan := d.Provider.ServerMode(ctx)
+	// workspacesChan := d.Provider.WorkspaceServed()
 	for {
 		select {
 		case <-ctx.Done():
@@ -79,22 +79,26 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				d.stop()
 			}
 			return nil
-		case newMode := <-serverModeChan:
-			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
-			err := d.handleModeChange(newMode.Mode())
+		case req := <-serverModeChan:
+			if req.Err() != nil {
+				return req.Err()
+			}
+
+			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			err := d.handleModeChange(req.Mode())
 			if err != nil {
 				d.logger.Error(err)
 				return err
 			}
 			d.logger.Debugf("Acknowledging the mode change.")
-			newMode.Ack()
-		case newWorkspaces := <-workspacesChan:
-			err := d.handleWorkspaceChange(newWorkspaces.Workspaces())
-			if err != nil {
-				d.logger.Error(err)
-				return err
-			}
-			newWorkspaces.Ack()
+			req.Ack()
+			// case newWorkspaces := <-workspacesChan:
+			// 	err := d.handleWorkspaceChange(newWorkspaces.Workspaces())
+			// 	if err != nil {
+			// 		d.logger.Error(err)
+			// 		return err
+			// 	}
+			// 	newWorkspaces.Ack()
 		}
 	}
 }

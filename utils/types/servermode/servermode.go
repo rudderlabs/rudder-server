@@ -7,28 +7,33 @@ const (
 	DegradedMode Mode = "DEGRADED"
 )
 
-type Ack struct {
-	ack        func()
-	mode       Mode
-	workspaces string
+type ModeRequest struct {
+	err  error
+	ack  func() error
+	mode Mode
 }
 
-func (m Ack) Ack() {
-	m.ack()
+func (m ModeRequest) Ack() error {
+	return m.ack()
 }
 
-func (m Ack) Mode() Mode {
+func (m ModeRequest) Mode() Mode {
 	return m.mode
 }
 
-func (m Ack) Workspaces() string {
-	return m.workspaces
+func (m ModeRequest) Err() error {
+	return m.err
 }
 
-func WithACK(mode Mode, workspaces string, ack func()) Ack {
-	return Ack{
-		mode:       mode,
-		ack:        ack,
-		workspaces: workspaces,
+func NewModeRequest(mode Mode, ack func() error) ModeRequest {
+	return ModeRequest{
+		mode: mode,
+		ack:  ack,
+	}
+}
+
+func ModeError(err error) ModeRequest {
+	return ModeRequest{
+		err: err,
 	}
 }

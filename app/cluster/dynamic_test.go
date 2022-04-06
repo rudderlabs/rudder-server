@@ -16,26 +16,28 @@ import (
 )
 
 type mockModeProvider struct {
-	ch chan servermode.Ack
+	ch chan servermode.ModeRequest
 }
 
-func (m *mockModeProvider) ServerMode() <-chan servermode.Ack {
+func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ModeRequest {
 	return m.ch
 }
 
-func (m *mockModeProvider) WorkspaceServed() <-chan servermode.Ack {
+func (m *mockModeProvider) WorkspaceServed() <-chan servermode.ModeRequest {
 	return m.ch
 }
 
-func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
+func (m *mockModeProvider) SendMode(newMode servermode.ModeRequest) {
 	m.ch <- newMode
 }
 
 type staticModeProvider servermode.Mode
 
-func (s *staticModeProvider) ServerMode() <-chan servermode.Ack {
-	ch := make(chan servermode.Ack, 1)
-	ch <- servermode.WithACK(servermode.Mode(*s), "", func() {})
+func (s *staticModeProvider) ServerMode(ctx context.Context) <-chan servermode.ModeRequest {
+	ch := make(chan servermode.ModeRequest, 1)
+	ch <- servermode.NewModeRequest(servermode.Mode(*s), func() error {
+		return nil
+	})
 	close(ch)
 	return ch
 }
@@ -66,7 +68,7 @@ func Init() {
 func TestDynamicCluster(t *testing.T) {
 	Init()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{ch: make(chan servermode.ModeRequest)}
 
 	callCount := uint64(0)
 
@@ -101,8 +103,9 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.NormalMode, "", func() {
+		provider.SendMode(servermode.NewModeRequest(servermode.NormalMode, func() error {
 			close(chACK)
+			return nil
 		}))
 
 		require.Eventually(t, func() bool {
@@ -133,8 +136,9 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.DegradedMode, "", func() {
+		provider.SendMode(servermode.NewModeRequest(servermode.DegradedMode, func() error {
 			close(chACK)
+			return nil
 		}))
 
 		require.Eventually(t, func() bool {

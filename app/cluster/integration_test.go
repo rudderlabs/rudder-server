@@ -212,7 +212,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).AnyTimes()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{ch: make(chan servermode.ModeRequest)}
 	dCM := &cluster.Dynamic{
 		GatewayDB:     gwDB,
 		RouterDB:      rtDB,
@@ -234,8 +234,9 @@ func TestDynamicClusterManager(t *testing.T) {
 	}()
 
 	chACK := make(chan bool)
-	provider.SendMode(servermode.WithACK(servermode.NormalMode, "", func() {
+	provider.SendMode(servermode.NewModeRequest(servermode.NormalMode, func() error {
 		close(chACK)
+		return nil
 	}))
 
 	require.Eventually(t, func() bool {
