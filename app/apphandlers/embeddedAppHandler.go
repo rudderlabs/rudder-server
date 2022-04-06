@@ -299,6 +299,12 @@ func (embedded *EmbeddedApp) LegacyStart(ctx context.Context, options *app.Optio
 				"rt":       tenantRouterDB,
 				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
 			})
+		} else {
+			tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
+			multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+			}))
 		}
 	}
 
