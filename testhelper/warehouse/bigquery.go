@@ -43,7 +43,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 
 	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
 	if cred == "" {
-		panic("")
+		panic("ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED not found ")
 	}
 	var bqCredentials BigQueryCredentials
 	var err error

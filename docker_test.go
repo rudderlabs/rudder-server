@@ -423,18 +423,13 @@ func run(m *testing.M) (int, error) {
 		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 	}
-	var bqWorkspaceConfigMap map[string]string
 	if runBigQueryTest {
-		bqWorkspaceConfigMap = map[string]string{
-			"bqEventWriteKey":  wht.Test.BQTest.WriteKey,
-			"rwhBQProject":     wht.Test.BQTest.Credentials.ProjectID,
-			"rwhBQLocation":    wht.Test.BQTest.Credentials.Location,
-			"rwhBQBucketName":  wht.Test.BQTest.Credentials.Bucket,
-			"rwhBQCredentials": wht.Test.BQTest.Credentials.CredentialsEscaped,
-		}
-		for key, val := range bqWorkspaceConfigMap {
-			mapWorkspaceConfig[key] = val
-		}
+
+		mapWorkspaceConfig["bqEventWriteKey"] = wht.Test.BQTest.WriteKey
+		mapWorkspaceConfig["rwhBQProject"] = wht.Test.BQTest.Credentials.ProjectID
+		mapWorkspaceConfig["rwhBQLocation"] = wht.Test.BQTest.Credentials.Location
+		mapWorkspaceConfig["rwhBQBucketName"] = wht.Test.BQTest.Credentials.Bucket
+		mapWorkspaceConfig["rwhBQCredentials"] = wht.Test.BQTest.Credentials.CredentialsEscaped
 	}
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
@@ -1132,16 +1127,18 @@ func TestWHMssqlDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
+func getMessagId(wdt *wht.WareHouseDestinationTest) string {
+	if len(wdt.MessageId) == 0 {
+		return uuid.Must(uuid.NewV4()).String()
+	}
+	return wdt.MessageId
+}
+
 // sendWHEvents Sending warehouse events
 func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending identify event
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		for i := 0; i < identify; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-
-			}
 			payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1153,7 +1150,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -1161,10 +1158,6 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending track event
 	if track, exists := wdt.EventsCountMap["tracks"]; exists {
 		for i := 0; i < track; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-			}
 			payloadTrack := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1176,7 +1169,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "rating" : 3.0,
 			  "review_body" : "Average product, expected much more."
 			}
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -1184,10 +1177,6 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending page event
 	if page, exists := wdt.EventsCountMap["pages"]; exists {
 		for i := 0; i < page; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-			}
 			payloadPage := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1197,7 +1186,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
 			}
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -1205,10 +1194,6 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending screen event
 	if screen, exists := wdt.EventsCountMap["screens"]; exists {
 		for i := 0; i < screen; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-			}
 			payloadScreen := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1217,7 +1202,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"properties": {
 			  "prop_key": "prop_value"
 			}
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -1225,16 +1210,12 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending alias event
 	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
 		for i := 0; i < alias; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-			}
 			payloadAlias := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com"
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -1242,10 +1223,6 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 	// Sending group event
 	if group, exists := wdt.EventsCountMap["groups"]; exists {
 		for i := 0; i < group; i++ {
-			messageId := wdt.MessageId
-			if len(wdt.MessageId) == 0 {
-				messageId = uuid.Must(uuid.NewV4()).String()
-			}
 			payloadGroup := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
@@ -1257,7 +1234,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "employees": 450,
 			  "plan": "basic"
 			}
-		  }`, wdt.UserId, messageId))
+		  }`, wdt.UserId, getMessagId(wdt)))
 			SendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
