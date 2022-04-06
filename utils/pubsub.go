@@ -92,12 +92,11 @@ func (r *subPublisher) publish(data *DataEvent) {
 
 	r.lastValueLock.Lock()
 	defer r.lastValueLock.Unlock()
-	r.startedLock.Lock()
-	defer r.startedLock.Unlock()
-
 	// update last value
 	r.lastValue = data
 
+	r.startedLock.Lock()
+	defer r.startedLock.Unlock()
 	// start publish loop if not started
 	if !r.started {
 		go r.startLoop()
@@ -108,14 +107,19 @@ func (r *subPublisher) publish(data *DataEvent) {
 // startLoop publishes lastValues to the subscription's channel until there is no other lastValue to publish
 func (r *subPublisher) startLoop() {
 
-	for r.lastValue != nil {
-		r.lastValueLock.Lock()
-		v := *r.lastValue
-		r.lastValue = nil
-		r.lastValueLock.Unlock()
-		r.channel <- v
+	for v := r.nextValue(); v != nil; v = r.nextValue() {
+		r.channel <- *v
 	}
 	r.startedLock.Lock()
 	r.started = false
 	r.startedLock.Unlock()
+}
+
+// nextValue removes lastValue in a goroutine-safe manner and returns it
+func (r *subPublisher) nextValue() *DataEvent {
+	r.lastValueLock.Lock()
+	defer r.lastValueLock.Unlock()
+	v := r.lastValue
+	r.lastValue = nil
+	return v
 }
