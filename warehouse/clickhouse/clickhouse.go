@@ -37,7 +37,7 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
-	connectTimeout              int
+	connectTimeout              time.Duration
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -200,7 +200,7 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 }
 
 // Connect connects to warehouse with provided credentials
-func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout int) (*sql.DB, error) {
+func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
@@ -245,7 +245,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -847,20 +847,19 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	timeOut := 15 * time.Second
 	ch.Warehouse = warehouse
-	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, int(timeOut/time.Second))
+	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, warehouseutils.TestConnectionTimeout)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	err = ch.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
 	}
 	if err != nil {
 		return err

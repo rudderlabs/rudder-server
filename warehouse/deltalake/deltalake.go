@@ -48,7 +48,7 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
-	connectTimeout     int
+	connectTimeout     time.Duration
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -121,7 +121,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(time.Duration(15), &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.deltalake.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.deltalake.connectTimeout")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -173,7 +173,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT, connectionTimeout int) (dbHandleT *databricks.DBHandleT, err error) {
+func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
@@ -232,7 +232,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, connectionTimeout int)
 		return
 	}
 
-	cCtx, cancel := context.WithTimeout(ctx, time.Duration(connectionTimeout)*time.Second)
+	cCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	dbClient := proto.NewDatabricksClient(conn)
@@ -676,7 +676,7 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 	return dl.connectToWarehouseWithTimeout(connectTimeout)
 }
 
-func (dl *HandleT) connectToWarehouseWithTimeout(connectionTimeout int) (*databricks.DBHandleT, error) {
+func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -690,7 +690,7 @@ func (dl *HandleT) connectToWarehouseWithTimeout(connectionTimeout int) (*databr
 		SSL:             ssl,
 		UserAgentEntry:  userAgent,
 	}
-	return dl.connect(credT, connectionTimeout)
+	return dl.connect(credT, timeout)
 }
 
 // CreateTable creates tables with table name and columns
@@ -815,9 +815,8 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	timeOut := 15 * time.Second
 	dl.Warehouse = warehouse
-	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(int(timeOut / time.Millisecond))
+	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(warehouseutils.TestConnectionTimeout)
 	return
 }
 

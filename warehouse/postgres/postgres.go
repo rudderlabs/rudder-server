@@ -26,7 +26,7 @@ var (
 	stagingTablePrefix            string
 	pkgLogger                     logger.LoggerI
 	skipComputingUserLatestTraits bool
-	connectTimeout                int
+	connectTimeout                time.Duration
 )
 
 const (
@@ -103,7 +103,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 
 // connectWithTimeout
 // https://github.com/lib/pq/blob/8446d16b8935fdf2b5c0fe333538ac395e3e1e4b/conn.go#L386
-func connectWithTimeout(cred CredentialsT, timeout int) (*sql.DB, error) {
+func connectWithTimeout(cred CredentialsT, timeout time.Duration) (*sql.DB, error) {
 	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v connect_timeout=%d",
 		cred.User,
 		cred.Password,
@@ -111,7 +111,7 @@ func connectWithTimeout(cred CredentialsT, timeout int) (*sql.DB, error) {
 		cred.Port,
 		cred.DBName,
 		cred.SSLMode,
-		timeout,
+		timeout/time.Second,
 	)
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
@@ -132,7 +132,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.postgres.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.postgres.connectTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -575,20 +575,19 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		}
 	}
 
-	timeOut := 15 * time.Second
 	pg.Warehouse = warehouse
-	pg.Db, err = connectWithTimeout(pg.getConnectionCredentials(), int(timeOut/time.Second))
+	pg.Db, err = connectWithTimeout(pg.getConnectionCredentials(), warehouseutils.TestConnectionTimeout)
 	if err != nil {
 		return
 	}
 	defer pg.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	err = pg.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
 	}
 	if err != nil {
 		return err

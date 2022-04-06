@@ -23,13 +23,13 @@ import (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	connectTimeout     int
+	connectTimeout     time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.snowflake.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
@@ -567,7 +567,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	return connectWithTimeout(cred, connectTimeout)
 }
 
-func connectWithTimeout(cred SnowflakeCredentialsT, timeout int) (*sql.DB, error) {
+func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
 		Account:      cred.account,
 		User:         cred.username,
@@ -575,7 +575,7 @@ func connectWithTimeout(cred SnowflakeCredentialsT, timeout int) (*sql.DB, error
 		Database:     cred.dbName,
 		Schema:       cred.schemaName,
 		Warehouse:    cred.whName,
-		LoginTimeout: time.Duration(timeout) * time.Second,
+		LoginTimeout: timeout / time.Second,
 		Application:  "Rudderstack",
 	}
 
@@ -805,20 +805,19 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	timeOut := 15 * time.Second
 	sf.Warehouse = warehouse
-	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), int(timeOut/time.Second))
+	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), warehouseutils.TestConnectionTimeout)
 	if err != nil {
 		return
 	}
 	defer sf.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	err = sf.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
 	}
 	if err != nil {
 		return err

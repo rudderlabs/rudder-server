@@ -31,7 +31,7 @@ var (
 	setVarCharMax      bool
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	connectTimeout     int
+	connectTimeout     time.Duration
 )
 
 func Init() {
@@ -42,7 +42,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {
@@ -513,14 +513,14 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	return connectWithTimeout(cred, connectTimeout)
 }
 
-func connectWithTimeout(cred RedshiftCredentialsT, timeout int) (*sql.DB, error) {
+func connectWithTimeout(cred RedshiftCredentialsT, timeout time.Duration) (*sql.DB, error) {
 	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
 		cred.username,
 		cred.password,
 		cred.host,
 		cred.port,
 		cred.dbName,
-		timeout,
+		timeout/time.Second,
 	)
 
 	var err error
@@ -661,7 +661,6 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	timeOut := 15 * time.Second
 	rs.Warehouse = warehouse
 	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
@@ -669,18 +668,18 @@ func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	}, int(timeOut/time.Second))
+	}, warehouseutils.TestConnectionTimeout)
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	err = rs.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
 	}
 	if err != nil {
 		return err

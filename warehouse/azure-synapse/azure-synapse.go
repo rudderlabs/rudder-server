@@ -30,7 +30,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
-	connectTimeout       int
+	connectTimeout       time.Duration
 )
 
 const (
@@ -117,7 +117,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	return connectWithTimeout(cred, connectTimeout)
 }
 
-func connectWithTimeout(cred credentialsT, connectionTimeout int) (*sql.DB, error) {
+func connectWithTimeout(cred credentialsT, timeout time.Duration) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -128,7 +128,7 @@ func connectWithTimeout(cred credentialsT, connectionTimeout int) (*sql.DB, erro
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
-	query.Add("dial timeout", fmt.Sprintf("%d", connectionTimeout))
+	query.Add("dial timeout", fmt.Sprintf("%d", timeout/time.Second))
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
@@ -156,7 +156,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.azure_synapse.connectTimeout")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.azure_synapse.connectTimeout")
 }
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
@@ -667,20 +667,19 @@ func (as *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	timeOut := 15 * time.Second
 	as.Warehouse = warehouse
-	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), int(timeOut/time.Second))
+	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), warehouseutils.TestConnectionTimeout)
 	if err != nil {
 		return
 	}
 	defer as.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	err = as.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
 	}
 	if err != nil {
 		return err
