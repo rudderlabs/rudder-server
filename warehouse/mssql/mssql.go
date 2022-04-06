@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"io"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
+	connectTimeout       int
 )
 
 const (
@@ -112,6 +114,10 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
+	return connectWithTImeout(cred, connectTimeout)
+}
+
+func connectWithTImeout(cred CredentialsT, connectionTimeout int) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -122,6 +128,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.DBName)
 	query.Add("encrypt", cred.SSLMode)
+	query.Add("dial timeout", string(connectionTimeout))
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
@@ -149,6 +156,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.mssql.connectTimeout")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -652,6 +660,7 @@ func (ms *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	timeOut := 15 * time.Second
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -660,13 +669,11 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
 
-	ms.Db, err = Connect(ms.getConnectionCredentials())
+	ms.Db, err = connectWithTImeout(ms.getConnectionCredentials(), int(timeOut/time.Second))
 	if err != nil {
 		return
 	}
 	defer ms.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()

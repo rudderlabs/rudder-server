@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"reflect"
 	"sort"
 	"strings"
@@ -22,11 +23,13 @@ import (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	connectTimeout     int
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
+	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
@@ -561,14 +564,19 @@ type SnowflakeCredentialsT struct {
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred SnowflakeCredentialsT, timeout int) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:     cred.account,
-		User:        cred.username,
-		Password:    cred.password,
-		Database:    cred.dbName,
-		Schema:      cred.schemaName,
-		Warehouse:   cred.whName,
-		Application: "Rudderstack",
+		Account:      cred.account,
+		User:         cred.username,
+		Password:     cred.password,
+		Database:     cred.dbName,
+		Schema:       cred.schemaName,
+		Warehouse:    cred.whName,
+		LoginTimeout: time.Duration(timeout) * time.Second,
+		Application:  "Rudderstack",
 	}
 
 	var err error
@@ -797,13 +805,13 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	timeOut := 15 * time.Second
 	sf.Warehouse = warehouse
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), int(timeOut/time.Second))
 	if err != nil {
 		return
 	}
 	defer sf.Db.Close()
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()

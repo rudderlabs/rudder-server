@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"io"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
+	connectTimeout       int
 )
 
 const (
@@ -112,6 +114,10 @@ var partitionKeyMap = map[string]string{
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred credentialsT, connectionTimeout int) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -122,6 +128,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
+	query.Add("dial timeout", string(connectionTimeout))
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
@@ -149,6 +156,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.azure_synapse.connectTimeout")
 }
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
@@ -659,14 +667,13 @@ func (as *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	timeOut := 15 * time.Second
 	as.Warehouse = warehouse
-	as.Db, err = connect(as.getConnectionCredentials())
+	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), int(timeOut/time.Second))
 	if err != nil {
 		return
 	}
 	defer as.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()

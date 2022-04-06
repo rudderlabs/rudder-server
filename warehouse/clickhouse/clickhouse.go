@@ -37,6 +37,7 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
+	connectTimeout              int
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -194,14 +195,18 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
-// Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
+	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
+}
+
+// Connect connects to warehouse with provided credentials
+func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout int) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t&timeout=%d",
 		cred.Host,
 		cred.Port,
 		cred.User,
@@ -216,6 +221,7 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		readTimeout,
 		writeTimeout,
 		compress,
+		timeout,
 	)
 
 	var err error
@@ -239,6 +245,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -840,14 +847,13 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	timeOut := 15 * time.Second
 	ch.Warehouse = warehouse
-	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
+	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, int(timeOut/time.Second))
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()

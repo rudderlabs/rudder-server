@@ -31,6 +31,7 @@ var (
 	setVarCharMax      bool
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	connectTimeout     int
 )
 
 func Init() {
@@ -41,6 +42,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+	config.RegisterIntConfigVariable(900, &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {
@@ -508,12 +510,20 @@ type RedshiftCredentialsT struct {
 }
 
 func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+// connectWithTimeout
+// https://github.com/lib/pq/blob/8446d16b8935fdf2b5c0fe333538ac395e3e1e4b/conn.go#L386
+func connectWithTimeout(cred RedshiftCredentialsT, timeout int) (*sql.DB, error) {
+	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
 		cred.username,
 		cred.password,
 		cred.host,
 		cred.port,
-		cred.dbName)
+		cred.dbName,
+		timeout,
+	)
 
 	var err error
 	var db *sql.DB
@@ -529,7 +539,6 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
@@ -654,19 +663,19 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	timeOut := 15 * time.Second
 	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
+	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	}, int(timeOut/time.Second))
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
