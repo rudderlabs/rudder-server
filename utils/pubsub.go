@@ -91,17 +91,17 @@ type subPublisher struct {
 func (r *subPublisher) publish(data *DataEvent) {
 
 	r.lastValueLock.Lock()
-	defer r.lastValueLock.Unlock()
 	// update last value
 	r.lastValue = data
+	r.lastValueLock.Unlock()
 
 	r.startedLock.Lock()
-	defer r.startedLock.Unlock()
 	// start publish loop if not started
 	if !r.started {
 		go r.startLoop()
 		r.started = true
 	}
+	r.startedLock.Unlock()
 }
 
 // startLoop publishes lastValues to the subscription's channel until there is no other lastValue to publish
