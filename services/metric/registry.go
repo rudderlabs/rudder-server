@@ -71,6 +71,12 @@ type Registry interface {
 	GetMetricsByName(name string) []TagsWithValue
 }
 
+// mutexWithMap bundles a lock along with the map it is protecting
+type mutexWithMap struct {
+	lock  *sync.RWMutex
+	value map[Measurement]TagsWithValue
+}
+
 func NewRegistry() Registry {
 	counterGenerator := func() interface{} {
 		return NewCounter()
@@ -85,7 +91,9 @@ func NewRegistry() Registry {
 		return &SimpleEWMA{}
 	}
 	indexGenerator := func() interface{} {
-		return map[Measurement]TagsWithValue{}
+		var lock sync.RWMutex
+		v := &mutexWithMap{&lock, map[Measurement]TagsWithValue{}}
+		return v
 	}
 	return &registry{
 		counters:    sync.Pool{New: counterGenerator},
@@ -199,9 +207,13 @@ func (r *registry) GetMetricsByName(name string) []TagsWithValue {
 		return []TagsWithValue{}
 	}
 	values := []TagsWithValue{}
-	for _, value := range metricsSet.(map[Measurement]TagsWithValue) {
+
+	lock := metricsSet.(*mutexWithMap).lock
+	lock.RLock()
+	for _, value := range metricsSet.(*mutexWithMap).value {
 		values = append(values, value)
 	}
+	lock.RUnlock()
 	return values
 }
 
@@ -213,7 +225,10 @@ func (r *registry) updateIndex(m Measurement, metric interface{}) {
 		r.sets.Put(newSet)
 	}
 
-	res.(map[Measurement]TagsWithValue)[m] = TagsWithValue{m.GetTags(), metric}
+	lock := res.(*mutexWithMap).lock
+	lock.Lock()
+	res.(*mutexWithMap).value[m] = TagsWithValue{m.GetTags(), metric}
+	lock.Unlock()
 }
 
 func (r *registry) get(m Measurement, pool *sync.Pool) interface{} {

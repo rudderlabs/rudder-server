@@ -27,7 +27,9 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 		return nil, fmt.Errorf("Could not create docker network: %w", err)
 	}
 	d.Defer(func() error {
-		// TODO delete network
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			return fmt.Errorf("Could not remove kafka network: %w \n", err)
+		}
 		return nil
 	})
 

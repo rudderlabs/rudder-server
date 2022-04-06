@@ -63,7 +63,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
@@ -90,11 +90,17 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 		if config.GetBool("EnableMultitenancy", false) {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
+			multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+			})
+		} else {
+			tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
+			multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+			}))
 		}
-		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-		})
 	}
 
 	enableGateway := true
