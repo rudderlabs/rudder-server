@@ -110,8 +110,11 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 		if config.GetBool("EnableMultitenancy", false) {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
-			multitenantStats = multitenant.NewStats(tenantRouterDB)
 		}
+		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+		})
 	}
 
 	reportingI := processor.App.Features().Reporting.GetReportingInstance()

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -123,6 +124,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 			UUID:         uuid.Must(uuid.NewV4()),
 			CustomVal:    customVal,
 			EventCount:   eventsPerJob,
+			WorkspaceId:  "workspaceID",
 		}
 	}
 	return js
@@ -286,7 +288,7 @@ func TestJobsDB(t *testing.T) {
 	t.Run("DSoverflow", func(t *testing.T) {
 		customVal := "MOCKDS"
 
-		triggerAddNewDS := make(chan time.Time, 0)
+		triggerAddNewDS := make(chan time.Time)
 
 		maxDSSize := 9
 		jobDB := jobsdb.HandleT{
@@ -375,6 +377,54 @@ func requireSequential(t *testing.T, jobs []*jobsdb.JobT) {
 	}
 }
 
+func TestJobsDB_IncompatiblePayload(t *testing.T) {
+	initJobsDB()
+	stats.Setup()
+
+	dbRetention := time.Minute * 5
+	migrationMode := ""
+
+	triggerAddNewDS := make(chan time.Time, 0)
+	maxDSSize := 10
+	jobDB := jobsdb.HandleT{
+		MaxDSSize: &maxDSSize,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	queryFilters := jobsdb.QueryFiltersT{
+		CustomVal: true,
+	}
+
+	jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+	defer jobDB.TearDown()
+	customVal := "MOCKDS"
+	var sampleTestJob = jobsdb.JobT{
+		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  "workspaceID",
+		EventCount:   1,
+	}
+	err := jobDB.StoreWithRetryEach([]*jobsdb.JobT{&sampleTestJob})
+	for _, val := range err {
+		require.Equal(t, "", val)
+	}
+	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{customVal},
+		JobCount:         1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
+	})
+	require.Equal(t, 1, len(unprocessedList))
+
+	t.Run("validate fetched event", func(t *testing.T) {
+		require.Equal(t, "MOCKDS", unprocessedList[0].CustomVal)
+		require.Equal(t, "workspaceID", unprocessedList[0].WorkspaceId)
+	})
+}
+
 func BenchmarkJobsdb(b *testing.B) {
 	initJobsDB()
 	stats.Setup()
@@ -405,8 +455,8 @@ func BenchmarkJobsdb(b *testing.B) {
 
 		g, _ := errgroup.WithContext(context.Background())
 		g.Go(func() error {
-			for _, j := range expectedJobs {
-				err := jobDB.Store([]*jobsdb.JobT{&j})
+			for i := range expectedJobs {
+				err := jobDB.Store([]*jobsdb.JobT{&expectedJobs[i]})
 				if err != nil {
 					return err
 				}
@@ -458,13 +508,79 @@ func BenchmarkJobsdb(b *testing.B) {
 		err := g.Wait()
 		require.NoError(b, err)
 		require.Len(b, consumedJobs, len(expectedJobs))
-		for i, actualJob := range consumedJobs {
+		for i := range consumedJobs {
 			expectedJob := expectedJobs[i]
-			require.Equal(b, expectedJob.UUID, actualJob.UUID)
-			require.Equal(b, expectedJob.UserID, actualJob.UserID)
-			require.Equal(b, expectedJob.CustomVal, actualJob.CustomVal)
-			require.JSONEq(b, string(expectedJob.Parameters), string(actualJob.Parameters))
-			require.JSONEq(b, string(expectedJob.EventPayload), string(actualJob.EventPayload))
+			require.Equal(b, expectedJob.UUID, consumedJobs[i].UUID)
+			require.Equal(b, expectedJob.UserID, consumedJobs[i].UserID)
+			require.Equal(b, expectedJob.CustomVal, consumedJobs[i].CustomVal)
+			require.JSONEq(b, string(expectedJob.Parameters), string(consumedJobs[i].Parameters))
+			require.JSONEq(b, string(expectedJob.EventPayload), string(consumedJobs[i].EventPayload))
 		}
 	})
+}
+
+func BenchmarkLifecycle(b *testing.B) {
+	initJobsDB()
+	stats.Setup()
+
+	jobDB := jobsdb.NewForReadWrite("test")
+	defer jobDB.Close()
+
+	const writeConcurrency = 10
+	const newJobs = 100
+
+	dsSize := writeConcurrency * newJobs
+	triggerAddNewDS := make(chan time.Time)
+
+	jobDB.MaxDSSize = &dsSize
+	jobDB.TriggerAddNewDS = func() <-chan time.Time {
+		return triggerAddNewDS
+	}
+
+	b.Run("Start, Work, Stop, Repeat", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			jobDB.Start()
+			b.StopTimer()
+
+			wg := sync.WaitGroup{}
+			wg.Add(writeConcurrency)
+			for j := 0; j < writeConcurrency; j++ {
+				go func() {
+					jobDB.Store(genJobs("", newJobs, 10))
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			triggerAddNewDS <- time.Now()
+			consume(b, jobDB, newJobs*writeConcurrency)
+			b.StartTimer()
+			jobDB.Stop()
+		}
+	})
+}
+
+func consume(t testing.TB, db *jobsdb.HandleT, count int) {
+	t.Helper()
+
+	unprocessedList := db.GetUnprocessed(jobsdb.GetQueryParamsT{
+		JobCount: count,
+	})
+
+	status := make([]*jobsdb.JobStatusT, len(unprocessedList))
+	for i, j := range unprocessedList {
+		status[i] = &jobsdb.JobStatusT{
+			JobID:         j.JobID,
+			JobState:      "succeeded",
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "202",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   "testWorkspace",
+		}
+	}
+
+	err := db.UpdateJobStatus(status, []string{}, []jobsdb.ParameterFilterT{})
+	require.NoError(t, err)
 }

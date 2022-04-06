@@ -44,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -319,6 +320,7 @@ jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
 	dbHandle                      *sql.DB
+	ownerType                     OwnerType
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
@@ -341,11 +343,12 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	ownerType                     OwnerType
 	writeChannel                  chan writeJob
 	readChannel                   chan readJob
+	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	clearAll                      bool
 	maxReaders                    int
 	maxWriters                    int
 	MaxDSSize                     *int
@@ -458,6 +461,26 @@ func (jd *HandleT) Status() interface{} {
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 		statusObj["migration-state"] = jd.migrationState
 	}
+	pendingEventMetrics := metric.GetManager().
+		GetRegistry(metric.PUBLISHED_METRICS).
+		GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
+
+	if len(pendingEventMetrics) == 0 {
+		return statusObj
+	}
+
+	pendingEvents := []map[string]interface{}{}
+	for _, pendingEvent := range pendingEventMetrics {
+		count := pendingEvent.Value.(metric.Gauge).IntValue()
+		if count > 0 {
+			pendingEvents = append(pendingEvents, map[string]interface{}{
+				"tags":  pendingEvent.Tags,
+				"count": count,
+			})
+		}
+	}
+	statusObj["pending-events"] = pendingEvents
+
 	return statusObj
 }
 
@@ -533,8 +556,8 @@ func getValidNonTerminalStates() (validNonTerminalStates []string) {
 }
 
 var (
-	host, user, password, dbname, sslmode string
-	port                                  int
+	host, user, password, dbname, sslmode, appName string
+	port                                           int
 )
 
 var (
@@ -552,13 +575,6 @@ var (
 	useNewCacheBurst                             bool
 )
 
-//Different scenarios for addNewDS
-const (
-	appendToDsList     = "appendToDsList"
-	insertForMigration = "insertForMigration"
-	insertForImport    = "insertForImport"
-)
-
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -567,6 +583,9 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
+	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
+	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -604,9 +623,74 @@ func Init2() {
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+		"password=%s dbname=%s sslmode=%s application_name=%s",
+		host, port, user, password, dbname, sslmode, appName)
 
+}
+
+type OptsFunc func(jd *HandleT)
+
+// WithClearDB, if set to true it will remove all existing tables
+func WithClearDB(clearDB bool) OptsFunc {
+	return func(jd *HandleT) {
+		jd.clearAll = clearDB
+	}
+}
+
+func WithRetention(period time.Duration) OptsFunc {
+	return func(jd *HandleT) {
+		jd.dsRetentionPeriod = period
+	}
+}
+
+func WithQueryFilterKeys(filters QueryFiltersT) OptsFunc {
+	return func(jd *HandleT) {
+		jd.queryFilterKeys = filters
+	}
+}
+
+func WithMigrationMode(mode string) OptsFunc {
+	return func(jd *HandleT) {
+		jd.migrationState.migrationMode = mode
+	}
+}
+
+func WithStatusHandler() OptsFunc {
+	return func(jd *HandleT) {
+		jd.registerStatusHandler = true
+	}
+}
+
+func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Read, tablePrefix, opts...)
+}
+
+func NewForWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Write, tablePrefix, opts...)
+}
+
+func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(ReadWrite, tablePrefix, opts...)
+}
+
+func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
+	j := &HandleT{
+		ownerType:   ownerType,
+		tablePrefix: tablePrefix,
+		// default values:
+		migrationState: MigrationState{
+			migrationMode: "",
+		},
+		dsRetentionPeriod: 0,
+	}
+
+	for _, fn := range opts {
+		fn(j)
+	}
+
+	j.init()
+
+	return j
 }
 
 /*
@@ -618,6 +702,19 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.ownerType = ownerType
+	jd.clearAll = clearAll
+	jd.tablePrefix = tablePrefix
+	jd.dsRetentionPeriod = retentionPeriod
+	jd.migrationState.migrationMode = migrationMode
+	jd.registerStatusHandler = registerStatusHandler
+	jd.queryFilterKeys = queryFilterKeys
+
+	jd.init()
+	jd.Start()
+}
+
+func (jd *HandleT) init() {
 	jd.initGlobalDBHandle()
 
 	if jd.MaxDSSize == nil {
@@ -638,51 +735,29 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		db, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
+		// TODO: db.SetMaxOpenConns(20)
+
 		err = db.Ping()
 		jd.assertError(err)
 
 		jd.dbHandle = db
 	}
 
-	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
-	jd.backgroundCancel = cancel
-	jd.backgroundGroup = g
-
-	g.Go(func() error {
-		jd.initDBWriters(ctx)
-		return nil
-	})
-	g.Go(func() error {
-		jd.initDBReaders(ctx)
-		return nil
-	})
-
-	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, ownerType, clearAll)
-	}
+	jd.workersAndAuxSetup()
 }
 
-func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
+func (jd *HandleT) workersAndAuxSetup() {
+	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.ownerType = ownerType
-	jd.logger = pkgLogger.Child(tablePrefix)
-	jd.migrationState.migrationMode = migrationMode
-	jd.assert(tablePrefix != "", "tablePrefix received is empty")
-	jd.tablePrefix = tablePrefix
-	jd.dsRetentionPeriod = retentionPeriod
+	jd.logger = pkgLogger.Child(jd.tablePrefix)
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-	if registerStatusHandler {
-		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
+	if jd.registerStatusHandler {
+		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	jd.logger.Infof("Connected to %s DB", tablePrefix)
+	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
@@ -702,13 +777,39 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
-	jd.writeChannel = make(chan writeJob)
-	jd.readChannel = make(chan readJob)
-
 	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
 	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
+}
+
+// Start starts the jobsdb worker and housekeeping (migration, archive) threads.
+// Start should be called before any other jobsdb methods are called.
+func (jd *HandleT) Start() {
+	jd.writeChannel = make(chan writeJob)
+	jd.readChannel = make(chan readJob)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	jd.backgroundCancel = cancel
+	jd.backgroundGroup = g
+
+	g.Go(func() error {
+		jd.initDBWriters(ctx)
+		return nil
+	})
+	g.Go(func() error {
+		jd.initDBReaders(ctx)
+		return nil
+	})
+
+	if !jd.skipSetupDBSetup {
+		jd.setUpForOwnerType(ctx, jd.ownerType, jd.clearAll)
+
+		// Avoid clearing the database, if .Start() is called again.
+		jd.clearAll = false
+	}
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
@@ -786,7 +887,7 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.addNewDS(appendToDsList, dataSetT{})
+		jd.addNewDS(newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend()))
 	}
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
@@ -886,14 +987,26 @@ func (jd *HandleT) dbReader(ctx context.Context) {
 	}
 }
 
-/*
-TearDown releases all the resources
-*/
-func (jd *HandleT) TearDown() {
+// Stop stops the background goroutines and waits until they finish.
+// Stop should be called once only after Start.
+// Only Start and Close can be called after Stop.
+func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
 	close(jd.readChannel)
 	close(jd.writeChannel)
 	jd.backgroundGroup.Wait()
+}
+
+// TearDown stops the background goroutines,
+//	waits until they finish and closes the database.
+func (jd *HandleT) TearDown() {
+	jd.Stop()
+	jd.Close()
+}
+
+// Close closes the database connection.
+// 	Stop should be called before Close.
+func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
 
@@ -1141,47 +1254,36 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	return len(levelVals), levelVals, nil
 }
 
-func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
-	jobTable := fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, dsIdx)
-	jobStatusTable := fmt.Sprintf("%s_job_status_%s", jd.tablePrefix, dsIdx)
-	return jobTable, jobStatusTable
+func newDataSet(tablePrefix string, dsIdx string) dataSetT {
+	jobTable := fmt.Sprintf("%s_jobs_%s", tablePrefix, dsIdx)
+	jobStatusTable := fmt.Sprintf("%s_job_status_%s", tablePrefix, dsIdx)
+	return dataSetT{
+		JobTable:       jobTable,
+		JobStatusTable: jobStatusTable,
+		Index:          dsIdx,
+	}
 }
 
-func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
-	jd.logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
-	var newDSIdx string
-	appendLast := newDSType == appendToDsList
-
+func (jd *HandleT) addNewDS(ds dataSetT) {
+	jd.logger.Infof("Creating new DS %+v", ds)
 	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-
 	queryStat.Start()
 	defer queryStat.End()
-
-	switch newDSType {
-	case appendToDsList:
-		newDSIdx = jd.computeNewIdxForAppend()
-	case insertForMigration:
-		newDSIdx = jd.computeNewIdxForIntraNodeMigration(insertBeforeDS)
-	case insertForImport:
-		newDSIdx = jd.computeNewIdxForInterNodeMigration(insertBeforeDS)
-	default:
-		panic("Unknown usage for newDSType : " + newDSType)
-
+	jd.createDS(ds, true)
+	// Tracking time interval between new ds creations. Hence calling end before start
+	if jd.isStatNewDSPeriodInitialized {
+		jd.statNewDSPeriod.End()
 	}
-	jd.assert(newDSIdx != "", "newDSIdx is empty")
+	jd.statNewDSPeriod.Start()
+	jd.isStatNewDSPeriodInitialized = true
+}
 
-	defer func() {
-		if appendLast {
-			// Tracking time interval between new ds creations. Hence calling end before start
-			if jd.isStatNewDSPeriodInitialized {
-				jd.statNewDSPeriod.End()
-			}
-			jd.statNewDSPeriod.Start()
-			jd.isStatNewDSPeriodInitialized = true
-		}
-	}()
-
-	return jd.createDS(appendLast, newDSIdx)
+func (jd *HandleT) addDS(ds dataSetT) {
+	jd.logger.Infof("Creating DS %+v", ds)
+	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+	jd.createDS(ds, false)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -1272,6 +1374,12 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
 func computeInsertVals(before, after []string) ([]string, error) {
 	for {
+		//Safe check: In the current jobsdb implementation, indices don't go more
+		//than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
+		if len(before) > 4 {
+			return before, fmt.Errorf("can't compute insert index due to bad inputs. before: %v, after: %v", before, after)
+		}
+
 		calculatedVals := make([]string, len(before))
 		copy(calculatedVals, before)
 		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
@@ -1292,25 +1400,27 @@ func computeInsertVals(before, after []string) ([]string, error) {
 			}
 		}
 
-		var comparison bool
 		if !equals {
-			comparison, err = dsComparitor(calculatedVals, after)
+			comparison, err := dsComparitor(calculatedVals, after)
 			if err != nil {
 				return calculatedVals, err
 			}
-		} else {
-			comparison = false
+			if !comparison {
+				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
+			}
 		}
 
-		//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
-		if comparison {
-			//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
-			//In all other cases, we allow only two levels
-			if (before[0] == "0" && len(calculatedVals) == 3) ||
-				(before[0] != "0" && len(calculatedVals) == 2) {
+		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+		//In all other cases, we allow only two levels
+		if (before[0] == "0" && len(calculatedVals) == 3) ||
+			(before[0] != "0" && len(calculatedVals) == 2) {
+			if equals {
+				return calculatedVals, fmt.Errorf("calculatedVals and after are same. computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
+			} else {
 				return calculatedVals, nil
 			}
 		}
+
 		before = append(before, "0")
 	}
 }
@@ -1322,6 +1432,12 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	}
 	if !comparison {
 		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
+	}
+
+	// No dataset should have 0 as the index.
+	// 0_1, 0_2 are allowed.
+	if beforeIndex == "0" {
+		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
 	}
 
 	beforeVals := strings.Split(beforeIndex, "_")
@@ -1364,10 +1480,7 @@ type transactionHandler interface {
 	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
-	var newDS dataSetT
-	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
-	newDS.Index = newDSIdx
+func (jd *HandleT) createDS(newDS dataSetT, refreshList bool) {
 
 	//Mark the start of operation. If we crash somewhere here, we delete the
 	//DS being added
@@ -1393,7 +1506,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 
 	//TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDSIdx, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1412,16 +1525,12 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	if appendLast {
-		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
-		jd.JournalMarkDone(opID)
-		return newDSWithSeqNumber
-	}
-
-	//This is the migration case. We don't yet update the in-memory list till
+	//In case of a migration, we don't yet update the in-memory list till
 	//we finish the migration
+	if refreshList {
+		jd.setSequenceNumber(newDS.Index)
+	}
 	jd.JournalMarkDone(opID)
-	return newDS
 }
 
 func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
@@ -1780,7 +1889,7 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	if err == nil {
 		return
 	}
-
+	jd.logger.Errorf("Copy In command failed with error %v", err)
 	errorMessagesMap = make(map[uuid.UUID]string)
 
 	for _, job := range jobList {
@@ -1930,12 +2039,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload)
-	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
+	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json , $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
+	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
 		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
@@ -2476,7 +2585,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			//take the list lock
 			jd.dsListLock.Lock()
 			jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-			jd.addNewDS(appendToDsList, dataSetT{})
+			jd.addNewDS(newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend()))
 			jd.dsListLock.Unlock()
 		}
 	}
@@ -2529,9 +2638,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 		for idx, ds := range dsList {
 
-			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
-
 			var idxCheck bool
 			if jd.ownerType == Read {
 				//if jobsdb owner is read, expempting the last two datasets from migration.
@@ -2544,6 +2650,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
+
+			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
+			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
@@ -2567,9 +2676,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
-				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
-				jd.inProgressMigrationTargetDS = &migrateTo
-				jd.dsListLock.Unlock()
+
+				migrateTo := newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(insertBeforeDS))
 
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
@@ -2577,10 +2685,13 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
-
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
 				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
+
+				jd.addDS(migrateTo)
+				jd.inProgressMigrationTargetDS = &migrateTo
+				jd.dsListLock.Unlock()
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {

@@ -7,7 +7,7 @@ type eventReader interface {
 }
 
 func NewEventReader(r io.Reader, provider string) eventReader {
-	if provider == "BQ" {
+	if provider == BQ {
 		return NewJSONReader(r)
 	}
 	return NewCsvReader(r)
