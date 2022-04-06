@@ -25,14 +25,14 @@ type EventBus struct {
 	// lastEvent holds the last event for each topic so that we can send it to new subscribers
 	lastEvent map[string]*DataEvent
 
-	subscribersMutex sync.RWMutex
-	// subscribers keep the list of subscription publishers per topic
-	subscribers map[string]publisherSlice
+	subscriptionsMutex sync.RWMutex
+	// subscriptions keep the list of subscription publishers per topic
+	subscriptions map[string]subPublishers
 }
 
 func (eb *EventBus) Publish(topic string, data interface{}) {
-	eb.subscribersMutex.RLock()
-	defer eb.subscribersMutex.RUnlock()
+	eb.subscriptionsMutex.RLock()
+	defer eb.subscriptionsMutex.RUnlock()
 	eb.lastEventMutex.Lock()
 	defer eb.lastEventMutex.Unlock()
 
@@ -42,40 +42,39 @@ func (eb *EventBus) Publish(topic string, data interface{}) {
 	}
 	eb.lastEvent[topic] = evt
 
-	if publishers, found := eb.subscribers[topic]; found {
-		for _, publisher := range publishers {
-			publisher.publish(evt)
+	if subPublishers, found := eb.subscriptions[topic]; found {
+		for _, subPublisher := range subPublishers {
+			subPublisher.publish(evt)
 		}
 	}
-
 }
 
 func (eb *EventBus) Subscribe(topic string, ch DataChannel) {
-	eb.subscribersMutex.Lock()
-	defer eb.subscribersMutex.Unlock()
+	eb.subscriptionsMutex.Lock()
+	defer eb.subscriptionsMutex.Unlock()
 	eb.lastEventMutex.RLock()
 	defer eb.lastEventMutex.RUnlock()
 
-	p := &publisher{channel: ch}
-	if prev, found := eb.subscribers[topic]; found {
-		eb.subscribers[topic] = append(prev, p)
+	newSubPublisher := &subPublisher{channel: ch}
+	if prev, found := eb.subscriptions[topic]; found {
+		eb.subscriptions[topic] = append(prev, newSubPublisher)
 	} else {
-		if eb.subscribers == nil {
-			eb.subscribers = map[string]publisherSlice{}
+		if eb.subscriptions == nil {
+			eb.subscriptions = map[string]subPublishers{}
 		}
-		eb.subscribers[topic] = publisherSlice{p}
+		eb.subscriptions[topic] = subPublishers{newSubPublisher}
 	}
 	if eb.lastEvent[topic] != nil {
-		p.publish(eb.lastEvent[topic])
+		newSubPublisher.publish(eb.lastEvent[topic])
 	}
 }
 
-// publisherSlice is a slice of publisher pointers
-type publisherSlice []*publisher
+// subPublishers is a slice of subPublisher pointers
+type subPublishers []*subPublisher
 
-// publisher is responsible to publish an event to a single subscriber (channel).
-type publisher struct {
-	// the channel where events are published
+// subPublisher is responsible to publish events to a single subscription (channel).
+type subPublisher struct {
+	// the channel of the subscription where events are published
 	channel chan DataEvent
 
 	lastValueLock sync.Mutex
@@ -89,7 +88,7 @@ type publisher struct {
 
 // publish sets the publisher's lastValue and starts the
 // internal goroutine if it is not already started
-func (r *publisher) publish(data *DataEvent) {
+func (r *subPublisher) publish(data *DataEvent) {
 
 	r.lastValueLock.Lock()
 	defer r.lastValueLock.Unlock()
@@ -106,8 +105,8 @@ func (r *publisher) publish(data *DataEvent) {
 	}
 }
 
-// startLoop publishes lastValues to the subscriber's channel until there is no other lastValue to publish
-func (r *publisher) startLoop() {
+// startLoop publishes lastValues to the subscription's channel until there is no other lastValue to publish
+func (r *subPublisher) startLoop() {
 
 	for r.lastValue != nil {
 		r.lastValueLock.Lock()
