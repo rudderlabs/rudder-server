@@ -1476,6 +1476,14 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	}, 2*time.Minute, 100*time.Millisecond)
 }
 
+func getQueryCount(cl *client.Client, statement string) (int64, error) {
+	result, err := cl.Query(statement, client.Read)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(result.Values[0][0], 10, 64)
+}
+
 // whTablesTest Checking warehouse
 func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
@@ -1494,7 +1502,7 @@ func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		require.Eventually(t, func() bool {
 			var count int64
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKeys[idx], wdt.UserId)
-			count, _ = wdt.Client.CountQueryCount(sqlStatement)
+			count, _ = getQueryCount(wdt.Client, sqlStatement)
 			return count == int64(tableCount)
 		}, 2*time.Minute, time.Duration(wdt.TableTestQueryFreqInMS)*time.Millisecond)
 	}
