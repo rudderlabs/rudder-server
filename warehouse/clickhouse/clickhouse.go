@@ -1030,11 +1030,7 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		return
 	}
 
-	var recordInterface []interface{}
-	for _, value := range payloadMap {
-		recordInterface = append(recordInterface, value)
-	}
-	if _, err = stmt.Exec(recordInterface...); err != nil {
+	if _, err = stmt.Exec([]interface{}{payloadMap["id"], payloadMap["val"]}...); err != nil {
 		return
 	}
 
