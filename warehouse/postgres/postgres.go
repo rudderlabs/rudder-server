@@ -760,6 +760,7 @@ func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
+	pkgLogger.Infof("[DCT]  Insert query with sqlStatement: %s", sqlStatement)
 	_, err = client.SQL.Exec(sqlStatement)
 	return
 }
