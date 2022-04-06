@@ -27,9 +27,19 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 		return nil, fmt.Errorf("Could not create docker network: %w", err)
 	}
 	d.Defer(func() error {
-		// TODO delete network
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			return fmt.Errorf("Could not remove kafka network: %w \n", err)
+		}
 		return nil
 	})
+
+	networkInfo, err := pool.Client.NetworkInfo(network.ID)
+	if err != nil {
+		return nil, fmt.Errorf("Could not get docker network info: %w", err)
+	}
+	for _, ipamConfig := range networkInfo.IPAM.Config {
+		log.Println("kafka network subnet:", ipamConfig.Subnet)
+	}
 
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
