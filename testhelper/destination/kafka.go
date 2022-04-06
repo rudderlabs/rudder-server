@@ -33,14 +33,6 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 		return nil
 	})
 
-	networkInfo, err := pool.Client.NetworkInfo(network.ID)
-	if err != nil {
-		return nil, fmt.Errorf("Could not get docker network info: %w", err)
-	}
-	for _, ipamConfig := range networkInfo.IPAM.Config {
-		log.Println("kafka network subnet:", ipamConfig.Subnet)
-	}
-
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		return nil, err
