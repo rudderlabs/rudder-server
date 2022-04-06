@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 )
@@ -133,7 +132,6 @@ func (r *testConsumer) subscribe(topic string, bus *EventBus) {
 			case v := <-r.ch:
 				r.markStart.Do(func() {
 					r.started <- true
-					fmt.Printf("started\n")
 				})
 				res := v.Data.(int)
 				r.out <- res
