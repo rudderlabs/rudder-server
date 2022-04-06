@@ -26,6 +26,7 @@ var (
 	stagingTablePrefix            string
 	pkgLogger                     logger.LoggerI
 	skipComputingUserLatestTraits bool
+	txnRollbackTimeout            time.Duration
 )
 
 const (
@@ -125,6 +126,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
+	config.RegisterDurationConfigVariable(time.Duration(30), &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -207,6 +209,24 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
+func runRollbackWithTimeout(f func() error, onTimeout func(), d time.Duration) {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		err := f()
+		if err != nil {
+			pkgLogger.Errorf("PG: Error in rolling back transaction : %v", err)
+		}
+	}()
+
+	select {
+	case <-c:
+	case <-time.After(d):
+		pkgLogger.Errorf("PG: Timed out rolling back transaction after %v", d)
+		onTimeout()
+	}
+}
+
 func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -238,7 +258,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		return
 	}
 	if !skipTempTableDelete {
@@ -248,7 +268,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -256,7 +276,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			txn.Rollback()
+			runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 			return
 		}
 
@@ -265,7 +285,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if err != nil {
 			pkgLogger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
-			txn.Rollback()
+			runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 			return
 		}
 		csvReader := csv.NewReader(gzipReader)
@@ -279,14 +299,14 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					break
 				} else {
 					pkgLogger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-					txn.Rollback()
+					runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
-				txn.Rollback()
+				runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 				return
 			}
 			var recordInterface []interface{}
@@ -300,7 +320,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				pkgLogger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				txn.Rollback()
+				runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 				return
 			}
 			csvRowsProcessedCount++
@@ -311,7 +331,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	_, err = stmt.Exec()
 	if err != nil {
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		pkgLogger.Errorf("PG: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
@@ -334,7 +354,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		return
 	}
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
@@ -343,13 +363,13 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into original table: %v\n", err)
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		txn.Rollback()
+		runRollbackWithTimeout(txn.Rollback, func() {}, txnRollbackTimeout)
 		return
 	}
 
@@ -459,7 +479,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
+		runRollbackWithTimeout(tx.Rollback, func() {}, txnRollbackTimeout)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -470,7 +490,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
+		runRollbackWithTimeout(tx.Rollback, func() {}, txnRollbackTimeout)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -478,7 +498,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	err = tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		runRollbackWithTimeout(tx.Rollback, func() {}, txnRollbackTimeout)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
