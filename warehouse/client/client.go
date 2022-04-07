@@ -34,12 +34,7 @@ type Client struct {
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	_, err = cl.SQL.Exec(statement)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-	if err == sql.ErrNoRows {
-		return result, nil
-	}
+	return
 	//defer rows.Close()
 	//
 	//result.Columns, err = rows.Columns()
