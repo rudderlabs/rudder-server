@@ -147,14 +147,7 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 //TXTResponseHandler -- start
 
 //IsSuccessStatus - returns the status code based on the response code and body
-func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			returnCode = respCode
-		}
-	}()
-
+func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
 	returnCode = respCode
-	return returnCode
+	return
 }
