@@ -186,13 +186,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	//mtStat := &multitenant.MultitenantStatsT{
-	//	RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-	//		"rt":       tenantRouterDB,
-	//		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-	//	},
-	//}
-
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
 
 	rtFactory := &router.Factory{

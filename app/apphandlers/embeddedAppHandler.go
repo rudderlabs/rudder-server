@@ -113,28 +113,18 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
-	// multitenantStatLifecycle will be used by the cluster manager so this is supposed to be a type which implements
-	//the lifecycle interface hence we can not use the  multitenantStats (which is MultiTenantI interface)
-	var multitenantStatLifecycle multitenant.MultitenantStatsT
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		})
-		multitenantStatLifecycle = multitenant.MultitenantStatsT{
-			RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-				"rt":       tenantRouterDB,
-				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-			},
-		}
 	} else {
 		tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
 		multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
-		multitenantStatLifecycle = multitenant.MultitenantStatsT{RouterDBs: map[string]jobsdb.MultiTenantJobsDB{}}
 	}
 
 	enableGateway := true
@@ -205,7 +195,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		ErrorDB:       errDB,
 		Processor:     proc,
 		Router:        rt,
-		MultiTenantStat: &multitenantStatLifecycle,
+		MultiTenantStat: multitenantStats,
 	}
 
 	if enableReplay && embedded.App.Features().Replay != nil {
