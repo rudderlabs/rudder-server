@@ -6,11 +6,9 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,18 +20,11 @@ var (
 )
 
 type LifecycleManager struct {
-	rt               *router.Factory
-	brt              *batchrouter.Factory
-	mainCtx          context.Context
-	currentCancel    context.CancelFunc
-	waitGroup        *errgroup.Group
-	gatewayDB        *jobsdb.HandleT
-	batchRouterDB    *jobsdb.HandleT
-	errDB            *jobsdb.HandleT
-	tenantRouterDB   *jobsdb.MultiTenantHandleT
-	MultitenantStats multitenant.MultiTenantI
-	ReportingI       types.ReportingI
-	BackendConfig    backendconfig.BackendConfig
+	rt            *router.Factory
+	brt           *batchrouter.Factory
+	BackendConfig backendconfig.BackendConfig
+	currentCancel context.CancelFunc
+	waitGroup     *errgroup.Group
 }
 
 func (r *LifecycleManager) Run(ctx context.Context) error {
@@ -44,21 +35,6 @@ func (r *LifecycleManager) Run(ctx context.Context) error {
 //If the router is not completely started and the data started coming then also it will not be problematic as we
 //are assuming that the DBs will be up.
 func (r *LifecycleManager) Start() {
-	r.rt = &router.Factory{
-		Reporting:     r.ReportingI,
-		Multitenant:   r.MultitenantStats,
-		BackendConfig: r.BackendConfig,
-		RouterDB:      r.tenantRouterDB,
-		ProcErrorDB:   r.errDB,
-	}
-	r.brt = &batchrouter.Factory{
-		Reporting:     r.ReportingI,
-		Multitenant:   r.MultitenantStats,
-		BackendConfig: r.BackendConfig,
-		RouterDB:      r.batchRouterDB,
-		ProcErrorDB:   r.errDB,
-	}
-
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
 	g, _ := errgroup.WithContext(context.Background())
@@ -76,19 +52,15 @@ func (r *LifecycleManager) Stop() {
 }
 
 // New creates a new Router instance
-func New(ctx context.Context, brtDb, errDb *jobsdb.HandleT,
-	tenantRouterDB *jobsdb.MultiTenantHandleT) *LifecycleManager {
+func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
+	backendConfig backendconfig.BackendConfig) *LifecycleManager {
 	router.RoutersManagerSetup()
 	batchrouter.BatchRoutersManagerSetup()
 
 	return &LifecycleManager{
-		rt:             &router.Factory{},
-		brt:            &batchrouter.Factory{},
-		mainCtx:        ctx,
-		tenantRouterDB: tenantRouterDB,
-		batchRouterDB:  brtDb,
-		errDB:          errDb,
-		BackendConfig:  backendconfig.DefaultBackendConfig,
+		rt:            rtFactory,
+		brt:           brtFactory,
+		BackendConfig: backendConfig,
 	}
 }
 
