@@ -336,7 +336,9 @@ func (ct *CTHandleT) createTable() (err error) {
 				}
 			}
 		}
-		pkgLogger.Infof("Error: %s", err.Error())
+		if err != nil {
+			pkgLogger.Infof("Error: %s", err.Error())
+		}
 		pkgLogger.Infof("End")
 	}
 	return
