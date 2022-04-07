@@ -693,7 +693,16 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
+
+	startTime := time.Now()
 	uploadOutput, err := uploader.Upload(context.TODO(), outputFile, keyPrefixes...)
+	uploadSuccess := err == nil
+	brtUploadTimeStat := stats.NewTaggedStat("brt_upload_time", stats.TimerType, map[string]string{
+		"success":     strconv.FormatBool(uploadSuccess),
+		"destType":    brt.destType,
+		"destination": batchJobs.BatchDestination.Destination.ID,
+	})
+	brtUploadTimeStat.Since(startTime)
 
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
