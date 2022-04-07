@@ -32,7 +32,6 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -43,16 +42,16 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/spf13/viper"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/spf13/viper"
 )
 
 // PackageStatusHandler to be implemented by the package objects that are registered as status handlers
-// output of Status() is expected to be json encodeable by default
+// output of Status() is expected to be json encodable by default
 type PackageStatusHandler interface {
 	Status() interface{}
 }
@@ -90,7 +89,7 @@ func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	statusObj := make(map[string]interface{})
@@ -109,7 +108,7 @@ func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	byteArr := make([]byte, 2048*1024)
@@ -123,7 +122,7 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
@@ -141,7 +140,7 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
@@ -164,7 +163,7 @@ func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	pkgLogger.Info("Stopping cpu profile")
@@ -178,7 +177,7 @@ func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 
@@ -200,7 +199,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	err = logger.SetModuleLevel(l.Module, l.Level)
@@ -215,7 +214,7 @@ func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	loggingConfigMap := logger.GetLoggingConfig()
