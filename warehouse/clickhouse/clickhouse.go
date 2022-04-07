@@ -1013,7 +1013,14 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 }
 
 func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
-	columns := []string{`"id"`, `"val"`}
+	var columns []string
+	var recordInterface []interface{}
+
+	for key, value := range payloadMap {
+		recordInterface = append(recordInterface, value)
+		columns = append(columns, key)
+	}
+
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
 		stagingTableName,
@@ -1031,7 +1038,7 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		return
 	}
 
-	if _, err = stmt.Exec([]interface{}{payloadMap["id"], payloadMap["val"]}...); err != nil {
+	if _, err = stmt.Exec(recordInterface...); err != nil {
 		return
 	}
 
