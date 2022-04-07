@@ -81,6 +81,8 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 		return
 	}
 
+	defer misc.RemoveFilePaths(tempPath)
+
 	// uploading load file to object storage
 	uploadOutput, err := ct.uploadLoadFile(tempPath)
 	if err != nil {
@@ -156,6 +158,8 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	if err != nil {
 		return
 	}
+
+	defer misc.RemoveFilePaths(tempPath)
 
 	// uploading load file
 	uploadOutput, err := ct.uploadLoadFile(tempPath)
