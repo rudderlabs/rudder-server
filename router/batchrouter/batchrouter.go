@@ -37,9 +37,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -166,7 +166,7 @@ type JobParametersT struct {
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	brt.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
