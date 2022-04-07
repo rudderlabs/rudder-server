@@ -130,9 +130,20 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
+	var multitenantStats multitenant.MultiTenantI
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+		})
+	} else {
+		tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+		multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+		}))
 	}
 
 	if processor.App.Features().Migrator != nil {
@@ -175,25 +186,25 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	mtStat := &multitenant.MultitenantStatsT{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-		},
-	}
+	//mtStat := &multitenant.MultitenantStatsT{
+	//	RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+	//		"rt":       tenantRouterDB,
+	//		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+	//	},
+	//}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, mtStat)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
 
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
-		Multitenant:   mtStat,
+		Multitenant:   multitenantStats,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      tenantRouterDB,
 		ProcErrorDB:   errDB,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:     reportingI,
-		Multitenant:   mtStat,
+		Multitenant:   multitenantStats,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      batchRouterDB,
 		ProcErrorDB:   errDB,
@@ -208,7 +219,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		ErrorDB:       errDB,
 		Processor:     p,
 		Router:        rt,
-		MultiTenantStat: mtStat,
+		MultiTenantStat: multitenantStats,
 	}
 
 	g.Go(func() error {

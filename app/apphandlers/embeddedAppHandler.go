@@ -111,9 +111,30 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
+	var multitenantStats multitenant.MultiTenantI
+	// multitenantStatLifecycle will be used by the cluster manager so this is supposed to be a type which implements
+	//the lifecycle interface hence we can not use the  multitenantStats (which is MultiTenantI interface)
+	var multitenantStatLifecycle multitenant.MultitenantStatsT
 	if config.GetBool("EnableMultitenancy", false) {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+		})
+		multitenantStatLifecycle = multitenant.MultitenantStatsT{
+			RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+			},
+		}
+	} else {
+		tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+		multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       tenantRouterDB,
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+		}))
+		multitenantStatLifecycle = multitenant.MultitenantStatsT{RouterDBs: map[string]jobsdb.MultiTenantJobsDB{}}
 	}
 
 	enableGateway := true
@@ -159,24 +180,17 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	mtStat := &multitenant.MultitenantStatsT{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-		},
-	}
-
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, mtStat)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
-		Multitenant:   mtStat,
+		Multitenant:   multitenantStats,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      tenantRouterDB,
 		ProcErrorDB:   errDB,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:     reportingI,
-		Multitenant:   mtStat,
+		Multitenant:   multitenantStats,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB:      batchRouterDB,
 		ProcErrorDB:   errDB,
@@ -191,7 +205,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		ErrorDB:       errDB,
 		Processor:     proc,
 		Router:        rt,
-		MultiTenantStat: mtStat,
+		MultiTenantStat: &multitenantStatLifecycle,
 	}
 
 	g.Go(func() error {

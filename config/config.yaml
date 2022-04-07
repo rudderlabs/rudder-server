@@ -244,5 +244,5 @@ PgNotifier:
   retriggerCount: 500
   trackBatchInterval: 2s
   maxAttempt: 3
-EnableMultitenancy: true
-LegacyAppHandler: false
+EnableMultitenancy: false
+LegacyAppHandler: true

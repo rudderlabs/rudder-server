@@ -40,6 +40,12 @@ type MultiTenantI interface {
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
+	lifecycle
+}
+
+type lifecycle interface {
+	Start()
+	Stop()
 }
 
 func (multitenantStat *MultitenantStatsT) Stop() {
