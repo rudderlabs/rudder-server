@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"math/rand"
@@ -36,17 +37,15 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/gofrs/uuid"
-	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
-	"github.com/tidwall/gjson"
-
 	"github.com/Shopify/sarama"
+	"github.com/gofrs/uuid"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	"github.com/stretchr/testify/require"
 )
 
@@ -423,7 +422,7 @@ func run(m *testing.M) (int, error) {
 		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 	}
-	if runBigQueryTest {
+	if runBigQueryTest && wht.Test.BQTest != nil {
 
 		mapWorkspaceConfig["bqEventWriteKey"] = wht.Test.BQTest.WriteKey
 		mapWorkspaceConfig["rwhBQProject"] = wht.Test.BQTest.Credentials.ProjectID
@@ -651,7 +650,7 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, 0, len(disableDestinationwebhook.Requests()))
 }
 
-// Verify Event in POSTGRES
+//Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 
 	var myEvent Event
@@ -809,7 +808,7 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-// Verify Event Models EndPoint
+//Verify Event Models EndPoint
 func TestEventModels(t *testing.T) {
 	// GET /schemas/event-models
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
@@ -1022,10 +1021,14 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-func TestWHBiqQuery(t *testing.T) {
+func TestWHBigQuery(t *testing.T) {
 	if runBigQueryTest == false {
 		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
 
+	}
+	if wht.Test.BQTest == nil {
+		fmt.Println("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
+		t.FailNow()
 	}
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bq.Init()

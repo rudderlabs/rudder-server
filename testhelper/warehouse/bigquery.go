@@ -29,13 +29,13 @@ type BigQueryCredentials struct {
 	CredentialsEscaped string
 }
 
-func jsonEscape(i string) string {
+func jsonEscape(i string) (string, error) {
 	b, err := json.Marshal(i)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("could not escape big query JSON credentials for workspace config with error: %s", err.Error())
 	}
 	// Trim the beginning and trailing " character
-	return string(b[1 : len(b)-1])
+	return string(b[1 : len(b)-1]), nil
 }
 
 // SetWHBigQueryDestination setup warehouse Big query destination
@@ -43,13 +43,15 @@ func SetWHBigQueryDestination() (cleanup func()) {
 
 	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
 	if cred == "" {
-		panic("ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED not found ")
+		fmt.Println("ERROR: ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED not found ")
+		return
 	}
 	var bqCredentials BigQueryCredentials
 	var err error
 	err = json.Unmarshal([]byte(cred), &bqCredentials)
 	if err != nil {
-		panic("")
+		fmt.Printf("Could not unmarshal  BIGQUERY_INTEGRATION_TEST_USER_CRED.credentials with error: %s", err.Error())
+		return
 	}
 	Test.BQTest = &BiqQueryTest{
 		WriteKey:    randString(27),
@@ -76,7 +78,6 @@ func SetWHBigQueryDestination() (cleanup func()) {
 
 	//Convert Map to Bytes(which can  easily be converted to JSON string)
 	credentials, _ := json.Marshal(bqTest.Credentials.Credentials)
-	cleanup = func() {}
 	operation := func() error {
 		var err error
 		bqTest.DB, err = bigquery.Connect(&bigquery.BQCredentialsT{
@@ -85,13 +86,16 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		}, bqTest.Context)
 		return err
 	}
-	bqTest.Credentials.CredentialsEscaped = jsonEscape(string(credentials))
-
+	bqTest.Credentials.CredentialsEscaped, err = jsonEscape(string(credentials))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(5))
 	err = backoff.Retry(operation, backoffWithMaxRetry)
 
 	if err = backoff.Retry(operation, backoffWithMaxRetry); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error()))
+		fmt.Println(fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error()))
 	}
 	return
 }
