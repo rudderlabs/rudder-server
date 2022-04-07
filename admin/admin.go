@@ -59,7 +59,7 @@ type PackageStatusHandler interface {
 // RegisterAdminHandler is used by other packages to
 // expose admin functions over the unix socket based rpc interface
 func RegisterAdminHandler(name string, handler interface{}) {
-	instance.rpcServer.RegisterName(name, handler)
+	_ = instance.rpcServer.RegisterName(name, handler) // @TODO fix ignored error
 }
 
 // RegisterStatusHandler expects object implementing PackageStatusHandler interface
@@ -80,12 +80,12 @@ func Init() {
 		statushandlers: make(map[string]PackageStatusHandler),
 		rpcServer:      rpc.NewServer(),
 	}
-	instance.rpcServer.Register(instance)
+	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
 	pkgLogger = logger.NewLogger().Child("admin")
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
-func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
+func (a Admin) Status(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -104,7 +104,7 @@ func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
+func (a Admin) PrintStack(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -129,8 +129,8 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	pprof.Lookup("heap").WriteTo(f, 1)
+	defer func() { _ = f.Close() }()
+	_ = pprof.Lookup("heap").WriteTo(f, 1)
 	*reply = "Heap profile written to " + *path
 	return nil
 }
@@ -159,7 +159,7 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 }
 
 // StopCpuProfile stops writing already cpu profile
-func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
+func (a Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -173,7 +173,7 @@ func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
+func (a Admin) ServerConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -181,11 +181,11 @@ func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
 		}
 	}()
 
-	config := make(map[string]interface{})
+	conf := make(map[string]interface{})
 	for _, key := range viper.AllKeys() {
-		config[key] = viper.Get(key)
+		conf[key] = viper.Get(key)
 	}
-	formattedOutput, err := json.MarshalIndent(config, "", "  ")
+	formattedOutput, err := json.MarshalIndent(conf, "", "  ")
 	*reply = string(formattedOutput)
 	return err
 }
@@ -210,7 +210,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 }
 
 //GetLoggingConfig returns the logging configuration
-func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
+func (a Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -229,7 +229,7 @@ func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
 	return nil
 }
 
-// StartServer starts an http server listening on unix socket and serving rpc communication
+// StartServer starts an HTTP server listening on unix socket and serving rpc communication
 func StartServer(ctx context.Context) error {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -237,7 +237,7 @@ func StartServer(ctx context.Context) error {
 	}
 	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
-		pkgLogger.Fatal(err)
+		pkgLogger.Fatal(err) // @TODO return?
 	}
 	defer func() {
 		if err := os.RemoveAll(sockAddr); err != nil {
@@ -247,7 +247,7 @@ func StartServer(ctx context.Context) error {
 
 	l, e := net.Listen("unix", sockAddr)
 	if e != nil {
-		pkgLogger.Fatal("listen error:", e)
+		pkgLogger.Fatal("listen error:", e) // @TODO return?
 	}
 	defer func() {
 		if err := l.Close(); err != nil {
@@ -262,7 +262,7 @@ func StartServer(ctx context.Context) error {
 	srv := &http.Server{Handler: srvMux}
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown
 	}()
 
 	return srv.Serve(l)
