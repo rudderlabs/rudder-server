@@ -222,10 +222,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		MultiTenantStat: multitenantStats,
 	}
 
-	g.Go(func() error {
-		return dm.Run(ctx)
-	})
-
 	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
@@ -236,10 +232,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	g.Go(func() error {
 		return startHealthWebHandler(ctx)
 	})
-	err := g.Wait()
 
-	return err
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	g.Go(func() error {
+		return dm.Run(ctx)
+	})
+
+	return g.Wait()
 }
 
 func (processor *ProcessorApp) HandleRecovery(options *app.Options) {

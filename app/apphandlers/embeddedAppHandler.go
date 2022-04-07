@@ -208,10 +208,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		MultiTenantStat: &multitenantStatLifecycle,
 	}
 
-	g.Go(func() error {
-		return dm.Run(ctx)
-	})
-
 	if enableReplay && embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
@@ -249,6 +245,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			return gw.StartWebHandler(ctx)
 		})
 	}
+
+	g.Go(func() error {
+		return dm.Run(ctx)
+	})
 
 	return g.Wait()
 }
