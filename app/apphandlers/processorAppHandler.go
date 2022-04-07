@@ -227,6 +227,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	})
 
 	g.Go(func() error {
+		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
+		//because if this start before that then there might be a case when ReadDB will try to read the owner table
+		//which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
 	})
 
