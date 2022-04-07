@@ -160,6 +160,9 @@ func Setup() {
 				taggedClientsMapLock.Unlock()
 			}
 		}
+		taggedClientsMapLock.Lock()
+		connEstablished = true
+		taggedClientsMapLock.Unlock()
 
 		collectPeriodicStats(client)
 	})
@@ -361,7 +364,9 @@ func collectPeriodicStats(client *statsd.Client) {
 
 // StopPeriodicStats stops periodic collection of stats.
 func StopPeriodicStats() {
-	if !statsEnabled {
+	taggedClientsMapLock.RLock()
+	defer taggedClientsMapLock.RUnlock()
+	if !statsEnabled || !connEstablished {
 		return
 	}
 
