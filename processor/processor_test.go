@@ -1481,15 +1481,6 @@ var _ = Describe("Static Function Tests", func() {
 						Metadata: transformer.MetadataT{
 							MessageID: "message-2",
 						},
-					},
-					{
-						Output: map[string]interface{}{
-							"some-key-2": "some-value-2",
-						},
-						StatusCode: 400,
-						Metadata: transformer.MetadataT{
-							MessageID: "message-2",
-						},
 						Error: "Invalid message type. Type assertion failed",
 					},
 				},
@@ -1501,7 +1492,6 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response.FailedEvents[0].StatusCode).To(Equal(expectedResponses.FailedEvents[0].StatusCode))
 			Expect(response.FailedEvents[0].Metadata.MessageID).To(Equal(expectedResponses.FailedEvents[0].Metadata.MessageID))
 			Expect(response.FailedEvents[0].Output["some-key-2"]).To(Equal(expectedResponses.FailedEvents[0].Output["some-key-2"]))
-			Expect(response.FailedEvents[1].Error).To(Equal(expectedResponses.FailedEvents[1].Error))
 		})
 	})
 })

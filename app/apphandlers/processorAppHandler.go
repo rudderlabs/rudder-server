@@ -94,8 +94,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB} //FIXME copy locks ?
-	var multitenantStats multitenant.MultiTenantI = multitenant.NOOP
+	var tenantRouterDB jobsdb.MultiTenantJobsDB
+	var multitenantStats multitenant.MultiTenantI
 
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
@@ -110,11 +110,17 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 		if config.GetBool("EnableMultitenancy", false) {
 			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
+			multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+			})
+		} else {
+			tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
+			multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+				"rt":       tenantRouterDB,
+				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
+			}))
 		}
-		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-		})
 	}
 
 	reportingI := processor.App.Features().Reporting.GetReportingInstance()

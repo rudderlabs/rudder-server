@@ -3,13 +3,14 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
+	"strconv"
+
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/phayes/freeport"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"log"
-	"os"
-	"strconv"
 )
 
 type ClickHouseClusterResource struct {
@@ -59,7 +60,6 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			{
 				Name:      "clickhouse01",
 				HostName:  "clickhouse01",
-				IPAddress: "172.23.0.11",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -73,7 +73,6 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			{
 				Name:      "clickhouse02",
 				HostName:  "clickhouse02",
-				IPAddress: "172.23.0.12",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -87,7 +86,6 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			{
 				Name:      "clickhouse03",
 				HostName:  "clickhouse03",
-				IPAddress: "172.23.0.13",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -101,7 +99,6 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			{
 				Name:      "clickhouse04",
 				HostName:  "clickhouse04",
-				IPAddress: "172.23.0.14",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -132,15 +129,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var chSetupError error
 	if chClusterTest.Network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-network",
-		IPAM: &dc.IPAMOptions{
-			Config: []dc.IPAMConfig{
-				{
-					Subnet: "172.23.0.0/24",
-				},
-			},
-		},
-	}); err != nil {
+		Name: "clickhouse-network"}); err != nil {
 		chSetupError = err
 		log.Println(fmt.Errorf("could not create clickhouse cluster network: %s", err.Error()))
 	}
@@ -177,9 +166,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		if chClusterTest.Zookeeper != nil {
 			if err = pool.Client.ConnectNetwork(chClusterTest.Network.ID, dc.NetworkConnectionOptions{
 				Container: chClusterTest.Zookeeper.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.10",
-				},
+				EndpointConfig: &dc.EndpointConfig{},
 			}); err != nil {
 				chSetupError = err
 				log.Println(fmt.Errorf("could not configure clickhouse clutser zookeeper network: %s", err.Error()))
