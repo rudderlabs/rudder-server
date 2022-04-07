@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
+func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, role string, step string) (json.RawMessage, error) {
 	ct.infoRequest = &infoRequest{}
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 
 		// get validation step
 		var v *validationStep
-		for _, s := range ct.validationSteps() {
+		for _, s := range ct.validationSteps(role) {
 			if s.ID == stepI {
 				v = s
 				break
@@ -48,7 +48,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 
 		resp.Steps = append(resp.Steps, v)
 	} else {
-		resp.Steps = ct.validationSteps()
+		resp.Steps = ct.validationSteps(role)
 	}
 
 	// Iterate over all selected steps and validate

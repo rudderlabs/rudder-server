@@ -9,7 +9,7 @@ import (
 
 type validationFunc struct {
 	Path string
-	Func func(json.RawMessage, string) (json.RawMessage, error)
+	Func func(json.RawMessage, string, string) (json.RawMessage, error)
 }
 
 type infoRequest struct {
