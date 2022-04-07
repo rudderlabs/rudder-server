@@ -838,7 +838,7 @@ func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (as *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (as *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		as.Namespace,
 		stagingTableName,

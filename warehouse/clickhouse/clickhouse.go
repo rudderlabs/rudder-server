@@ -1012,11 +1012,12 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	columns := []string{`"id"`, "val"}
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
 		stagingTableName,
-		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
 		generateArgumentString("?", len(columns)),
 	)
 	pkgLogger.Infof("[DCT]  Insert query with sqlStatement: %s", sqlStatement)

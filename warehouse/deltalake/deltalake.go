@@ -990,7 +990,7 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {

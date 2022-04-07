@@ -765,7 +765,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
