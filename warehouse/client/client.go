@@ -33,45 +33,45 @@ type Client struct {
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	rows, err := cl.SQL.Query(statement)
+	_, err = cl.SQL.Exec(statement)
 	if err != nil && err != sql.ErrNoRows {
 		return result, err
 	}
 	if err == sql.ErrNoRows {
 		return result, nil
 	}
-	defer rows.Close()
-
-	result.Columns, err = rows.Columns()
-	if err != nil {
-		return result, err
-	}
-
-	colCount := len(result.Columns)
-	values := make([]interface{}, colCount)
-	valuePtrs := make([]interface{}, colCount)
-
-	for rows.Next() {
-		for i := 0; i < colCount; i++ {
-			valuePtrs[i] = &values[i]
-		}
-
-		err = rows.Scan(valuePtrs...)
-		for i := 0; i < colCount; i++ {
-			switch t := values[i].(type) {
-			case []uint8:
-				values[i] = string(t)
-			}
-		}
-		if err != nil {
-			return result, err
-		}
-		var stringRow []string
-		for i := 0; i < colCount; i++ {
-			stringRow = append(stringRow, fmt.Sprintf("%+v", values[i]))
-		}
-		result.Values = append(result.Values, stringRow)
-	}
+	//defer rows.Close()
+	//
+	//result.Columns, err = rows.Columns()
+	//if err != nil {
+	//	return result, err
+	//}
+	//
+	//colCount := len(result.Columns)
+	//values := make([]interface{}, colCount)
+	//valuePtrs := make([]interface{}, colCount)
+	//
+	//for rows.Next() {
+	//	for i := 0; i < colCount; i++ {
+	//		valuePtrs[i] = &values[i]
+	//	}
+	//
+	//	err = rows.Scan(valuePtrs...)
+	//	for i := 0; i < colCount; i++ {
+	//		switch t := values[i].(type) {
+	//		case []uint8:
+	//			values[i] = string(t)
+	//		}
+	//	}
+	//	if err != nil {
+	//		return result, err
+	//	}
+	//	var stringRow []string
+	//	for i := 0; i < colCount; i++ {
+	//		stringRow = append(stringRow, fmt.Sprintf("%+v", values[i]))
+	//	}
+	//	result.Values = append(result.Values, stringRow)
+	//}
 	return result, err
 }
 
