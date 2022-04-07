@@ -1027,7 +1027,6 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
 		generateArgumentString("?", len(columns)),
 	)
-	pkgLogger.Infof("[DCT]  Insert query with sqlStatement: %s", sqlStatement)
 	txn, err := client.SQL.Begin()
 	if err != nil {
 		return

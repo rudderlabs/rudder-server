@@ -32,41 +32,46 @@ type Client struct {
 	Type      string
 }
 
-func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) sqlWriteQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	_, err = cl.SQL.Exec(statement)
 	return
-	//defer rows.Close()
-	//
-	//result.Columns, err = rows.Columns()
-	//if err != nil {
-	//	return result, err
-	//}
-	//
-	//colCount := len(result.Columns)
-	//values := make([]interface{}, colCount)
-	//valuePtrs := make([]interface{}, colCount)
-	//
-	//for rows.Next() {
-	//	for i := 0; i < colCount; i++ {
-	//		valuePtrs[i] = &values[i]
-	//	}
-	//
-	//	err = rows.Scan(valuePtrs...)
-	//	for i := 0; i < colCount; i++ {
-	//		switch t := values[i].(type) {
-	//		case []uint8:
-	//			values[i] = string(t)
-	//		}
-	//	}
-	//	if err != nil {
-	//		return result, err
-	//	}
-	//	var stringRow []string
-	//	for i := 0; i < colCount; i++ {
-	//		stringRow = append(stringRow, fmt.Sprintf("%+v", values[i]))
-	//	}
-	//	result.Values = append(result.Values, stringRow)
-	//}
+}
+
+func (cl *Client) sqlReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
+	rows, err := cl.SQL.Query(statement)
+	defer rows.Close()
+
+	result.Columns, err = rows.Columns()
+	if err != nil {
+		return result, err
+	}
+
+	colCount := len(result.Columns)
+	values := make([]interface{}, colCount)
+	valuePtrs := make([]interface{}, colCount)
+
+	for rows.Next() {
+		for i := 0; i < colCount; i++ {
+			valuePtrs[i] = &values[i]
+		}
+
+		err = rows.Scan(valuePtrs...)
+		for i := 0; i < colCount; i++ {
+			switch t := values[i].(type) {
+			case []uint8:
+				values[i] = string(t)
+			}
+		}
+		if err != nil {
+			return result, err
+		}
+		var stringRow []string
+		for i := 0; i < colCount; i++ {
+			stringRow = append(stringRow, fmt.Sprintf("%+v", values[i]))
+		}
+		result.Values = append(result.Values, stringRow)
+	}
+	return
 }
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -147,7 +152,11 @@ func (cl *Client) Query(statement string, queryType QueryType) (result warehouse
 			return cl.dbReadQuery(statement)
 		}
 	default:
-		return cl.sqlQuery(statement)
+		if queryType == Write {
+			return cl.sqlWriteQuery(statement)
+		} else {
+			return cl.sqlReadQuery(statement)
+		}
 	}
 }
 

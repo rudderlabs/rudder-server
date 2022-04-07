@@ -48,7 +48,6 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
-	connectTimeout     time.Duration
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -121,7 +120,6 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(time.Duration(15), &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.deltalake.connectTimeout")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -232,15 +230,8 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 		return
 	}
 
-	// Overriding connection timeout only in case if it is set to other than default.
-	cCtx := tCtx
-	if timeout != 0 {
-		cCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-
 	dbClient := proto.NewDatabricksClient(conn)
-	connectionResponse, err := dbClient.Connect(cCtx, &proto.ConnectRequest{
+	connectionResponse, err := dbClient.Connect(tCtx, &proto.ConnectRequest{
 		Config:     connConfig,
 		Identifier: identifier,
 	})
@@ -677,7 +668,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
-	return dl.connectToWarehouseWithTimeout(connectTimeout)
+	return dl.connectToWarehouseWithTimeout(grpcTimeout)
 }
 
 func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
