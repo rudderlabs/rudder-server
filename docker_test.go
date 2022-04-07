@@ -1030,6 +1030,7 @@ func TestWHBigQuery(t *testing.T) {
 		fmt.Println("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
 		t.FailNow()
 	}
+	//Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bq.Init()
 	bqTest := wht.Test.BQTest
@@ -1076,6 +1077,7 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	whDestinationTest(t, whDestTest)
+	//Enabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
 	bq.Init()
 
