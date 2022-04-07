@@ -32,7 +32,7 @@ func (ct *CTHandleT) Validating(req *proto.WHValidationRequest) (response *proto
 		return
 	}
 
-	result, requestError := f.Func(json.RawMessage(req.Body), req.Role, req.Step)
+	result, requestError := f.Func(json.RawMessage(req.Body), req.Step)
 	response = &proto.WHValidationResponse{
 		Data: string(result),
 	}
