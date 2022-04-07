@@ -317,6 +317,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 }
 
 func (ct *CTHandleT) createTable() (err error) {
+	pkgLogger.Infof("[DCT] Running create table query")
 	// Set staging table name
 	ct.stagingTableName = fmt.Sprintf(`%s%s`,
 		StagingTablePrefix,
@@ -327,8 +328,16 @@ func (ct *CTHandleT) createTable() (err error) {
 		bqHandle := bigquery.HandleT{}
 		err = bqHandle.CreateTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
 	} else {
-		_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
+		rows, err := ct.client.Query(ct.CreateTableQuery(), client.Write)
+		var errorString string
+		for _, row := range rows.Values {
+			for _, val := range row {
+				errorString += val
+			}
+		}
+		pkgLogger.Infof("[DCT] error: %v and errorString: %v", err.Error(), errorString)
 	}
+	pkgLogger.Infof("[DCT] Completed create table query")
 	return
 }
 
