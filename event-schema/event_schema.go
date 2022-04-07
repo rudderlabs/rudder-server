@@ -619,9 +619,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 	var flushDBHandle *sql.DB
 	defer func() {
 		if r := recover(); r != nil {
-			// If some of the panicking happens while doing the flushing of events, then we need to close the connection.
+			// if the panic happens while flushing events, we need to close the connection
 			if flushDBHandle != nil {
-				flushDBHandle.Close()
+				_ = flushDBHandle.Close()
 			}
 		}
 	}()
