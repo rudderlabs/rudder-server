@@ -195,11 +195,11 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
+// Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
 }
 
-// Connect connects to warehouse with provided credentials
 func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
