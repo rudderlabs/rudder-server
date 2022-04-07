@@ -67,7 +67,6 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 	//	}
 	//	result.Values = append(result.Values, stringRow)
 	//}
-	return result, err
 }
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
