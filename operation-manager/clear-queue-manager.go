@@ -11,6 +11,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 )
 
+type processorManager interface {
+	Pause()
+	Resume()
+}
+
 type ClearOperationHandlerT struct {
 	gatewayDB     jobsdb.JobsDB
 	routerDB      jobsdb.JobsDB
@@ -80,7 +85,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 		)
 	}
 
-	var pm processor.Manager
+	var pm processorManager
 	for {
 		pm, err = processor.GetProcessorManager()
 		if err == nil {

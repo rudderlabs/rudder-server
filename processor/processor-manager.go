@@ -3,13 +3,8 @@ package processor
 import "fmt"
 
 var (
-	globalManager Manager
+	globalManager *managerImpl
 )
-
-type Manager interface {
-	Pause()
-	Resume()
-}
 
 type managerImpl struct {
 	Processor *HandleT
@@ -23,7 +18,7 @@ func ManagerSetup(processor *HandleT) {
 	pm.Processor = processor
 }
 
-func GetProcessorManager() (Manager, error) {
+func GetProcessorManager() (*managerImpl, error) {
 	if globalManager == nil {
 		return nil, fmt.Errorf("processorManager is not initialized. Retry after sometime")
 	}
