@@ -164,7 +164,7 @@ func backendConfigSubscriber() {
 func UploadTransformationStatus(tStatus *TransformationStatusT) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error("Error occured while uploading transformation statuses to config backend")
+			pkgLogger.Error("Error occurred while uploading transformation statuses to config backend")
 			pkgLogger.Error(r)
 		}
 	}()

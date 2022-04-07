@@ -1679,7 +1679,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
-		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
 			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
