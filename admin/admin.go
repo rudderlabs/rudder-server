@@ -64,11 +64,11 @@ func RegisterAdminHandler(name string, handler interface{}) {
 
 // RegisterStatusHandler expects object implementing PackageStatusHandler interface
 func RegisterStatusHandler(name string, handler PackageStatusHandler) {
-	instance.statushandlers[strings.ToLower(name)] = handler
+	instance.statusHandlers[strings.ToLower(name)] = handler
 }
 
 type Admin struct {
-	statushandlers map[string]PackageStatusHandler
+	statusHandlers map[string]PackageStatusHandler
 	rpcServer      *rpc.Server
 }
 
@@ -77,7 +77,7 @@ var pkgLogger logger.LoggerI
 
 func Init() {
 	instance = Admin{
-		statushandlers: make(map[string]PackageStatusHandler),
+		statusHandlers: make(map[string]PackageStatusHandler),
 		rpcServer:      rpc.NewServer(),
 	}
 	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
@@ -95,7 +95,7 @@ func (a Admin) Status(_ struct{}, reply *string) (err error) {
 	statusObj := make(map[string]interface{})
 	statusObj["server-mode"] = db.CurrentMode
 
-	for moduleName, handler := range a.statushandlers {
+	for moduleName, handler := range a.statusHandlers {
 		statusObj[moduleName] = handler.Status()
 	}
 	formattedOutput, err := json.MarshalIndent(statusObj, "", "  ")
