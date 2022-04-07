@@ -221,7 +221,7 @@ func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Du
 		readTimeout,
 		writeTimeout,
 		compress,
-		timeout,
+		timeout/time.Second,
 	)
 
 	var err error
