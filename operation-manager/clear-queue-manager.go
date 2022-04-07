@@ -80,7 +80,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 		)
 	}
 
-	var pm processor.ProcessorManagerI
+	var pm processor.Manager
 	for {
 		pm, err = processor.GetProcessorManager()
 		if err == nil {

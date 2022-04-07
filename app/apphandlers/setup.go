@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -23,9 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-server/utils/types"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -125,7 +124,7 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processor.ProcessorManagerSetup(processorInstance)
+	processor.ManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
