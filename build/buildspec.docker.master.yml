@@ -27,7 +27,7 @@ phases:
       - docker pull postgres:11-alpine
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull yandex/clickhouse-server:21-alpine
-      - docker pull mcr.microsoft.com/mssql/server:2019-CU10-ubuntu-20.04
+      - docker pull mcr.microsoft.com/azure-sql-edge:1.0.5
       - docker pull zookeeper:3.5
       - docker pull minio/minio:latest
       - docker pull mcr.microsoft.com/azure-storage/azurite:latest

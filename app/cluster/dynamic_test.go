@@ -7,39 +7,36 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 	"github.com/stretchr/testify/require"
 )
 
 type mockModeProvider struct {
-	ch chan servermode.ModeRequest
+	modeCh      chan servermode.ModeRequest
+	workspaceCh chan workspace.WorkspacesRequest
 }
 
 func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ModeRequest {
-	return m.ch
+	return m.modeCh
 }
 
-func (m *mockModeProvider) WorkspaceServed() <-chan servermode.ModeRequest {
-	return m.ch
+func (m *mockModeProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.WorkspacesRequest {
+	return m.workspaceCh
 }
 
 func (m *mockModeProvider) SendMode(newMode servermode.ModeRequest) {
-	m.ch <- newMode
+	m.modeCh <- newMode
 }
 
-type staticModeProvider servermode.Mode
-
-func (s *staticModeProvider) ServerMode(ctx context.Context) <-chan servermode.ModeRequest {
-	ch := make(chan servermode.ModeRequest, 1)
-	ch <- servermode.NewModeRequest(servermode.Mode(*s), func() error {
-		return nil
-	})
-	close(ch)
-	return ch
+func (m *mockModeProvider) SendWorkspaceIDs(ws workspace.WorkspacesRequest) {
+	m.workspaceCh <- ws
 }
 
 type mockLifecycle struct {
@@ -62,13 +59,15 @@ func Init() {
 	config.Load()
 	stats.Setup()
 	logger.Init()
-	cluster.Init()
 }
 
 func TestDynamicCluster(t *testing.T) {
 	Init()
 
-	provider := &mockModeProvider{ch: make(chan servermode.ModeRequest)}
+	provider := &mockModeProvider{
+		modeCh:      make(chan servermode.ModeRequest),
+		workspaceCh: make(chan workspace.WorkspacesRequest),
+	}
 
 	callCount := uint64(0)
 
@@ -80,6 +79,9 @@ func TestDynamicCluster(t *testing.T) {
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
 
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
+	}
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -90,8 +92,9 @@ func TestDynamicCluster(t *testing.T) {
 
 		Processor: processor,
 		Router:    router,
+
+		MultiTenantStat: mtStat,
 	}
-	dc.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 

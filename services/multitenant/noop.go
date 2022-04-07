@@ -37,3 +37,11 @@ func (*noop) UpdateWorkspaceLatencyMap(destType string, workspaceID string, val 
 func (*noop) Status() map[string]map[string]map[string]int {
 	return map[string]map[string]map[string]int{}
 }
+
+func (*noop) Start()  {
+
+}
+
+func (*noop) Stop()  {
+
+}

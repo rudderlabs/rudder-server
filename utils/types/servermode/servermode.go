@@ -37,3 +37,10 @@ func ModeError(err error) ModeRequest {
 		err: err,
 	}
 }
+
+func (mode Mode) Valid() bool {
+	if mode == NormalMode || mode == DegradedMode {
+		return true
+	}
+	return false
+}

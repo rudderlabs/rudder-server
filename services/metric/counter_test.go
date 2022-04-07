@@ -1,6 +1,7 @@
 package metric
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -47,7 +48,7 @@ func TestCounterAddConcurrently(t *testing.T) {
 func decreaseCounter(c Counter) (err error) {
 	defer func() {
 		if e := recover(); e != nil {
-			err = e.(error)
+			err = fmt.Errorf("%v", e)
 		}
 	}()
 	c.Add(-1)

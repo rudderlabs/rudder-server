@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -10,21 +11,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
 var (
-	pkgLogger      logger.LoggerI
 	controller     string = "ETCD"
 	controllertype string = "Dynamic"
 )
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("cluster")
-}
-
-type modeProvider interface {
+type ModeProvider interface {
 	ServerMode(ctx context.Context) <-chan servermode.ModeRequest
-	WorkspaceServed() <-chan servermode.ModeRequest
+	WorkspaceIDs(ctx context.Context) <-chan workspace.WorkspacesRequest
 }
 
 type lifecycle interface {
@@ -33,7 +30,7 @@ type lifecycle interface {
 }
 
 type Dynamic struct {
-	Provider modeProvider
+	Provider ModeProvider
 
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
@@ -42,6 +39,8 @@ type Dynamic struct {
 
 	Processor lifecycle
 	Router    lifecycle
+
+	MultiTenantStat lifecycle
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
@@ -53,11 +52,13 @@ type Dynamic struct {
 	backendConfig        backendconfig.BackendConfig
 
 	logger logger.LoggerI
+
+	once sync.Once
 }
 
-func (d *Dynamic) Setup() {
+func (d *Dynamic) init() {
 	d.currentMode = servermode.DegradedMode
-	d.logger = pkgLogger
+	d.logger = logger.NewLogger().Child("cluster")
 	tag := stats.Tags{
 		"controlled_by":   controller,
 		"controller_type": controllertype,
@@ -70,8 +71,10 @@ func (d *Dynamic) Setup() {
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
-	serverModeChan := d.Provider.ServerMode(ctx)
 	// workspacesChan := d.Provider.WorkspaceServed()
+	d.once.Do(d.init)
+
+	serverModeChan := d.Provider.ServerMode(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -111,6 +114,8 @@ func (d *Dynamic) start() {
 	d.RouterDB.Start()
 	d.BatchRouterDB.Start()
 
+	d.MultiTenantStat.Start()
+
 	d.Processor.Start()
 	d.Router.Start()
 	d.serverStartTimeStat.SendTiming(time.Since(start))
@@ -123,6 +128,7 @@ func (d *Dynamic) stop() {
 	d.serverStopTimeStat.Start()
 	d.Processor.Stop()
 	d.Router.Stop()
+	d.MultiTenantStat.Stop()
 
 	d.RouterDB.Stop()
 	d.BatchRouterDB.Stop()
@@ -142,22 +148,14 @@ func (d *Dynamic) handleWorkspaceChange(workspaces string) error {
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
+	if !newMode.Valid() {
+		return fmt.Errorf("unsupported mode: %s", newMode)
+	}
 	if d.currentMode == newMode {
 		// TODO add logging
 		return nil
 	}
 	switch d.currentMode {
-	//case servermode.UndefinedMode:
-	//	switch newMode {
-	//	case servermode.NormalMode:
-	//		d.logger.Info("Transiting the server from UndefinedMode to NormalMode")
-	//		d.start()
-	//	case servermode.DegradedMode:
-	//		d.logger.Info("Server is running in UndefinedMode, can not transit to DegradedMode.")
-	//	default:
-	//		d.logger.Errorf("Unsupported transition from UndefinedMode to %s \n", newMode)
-	//		return fmt.Errorf("unsupported transition from UndefinedMode to %s", newMode)
-	//	}
 	case servermode.NormalMode:
 		switch newMode {
 		case servermode.DegradedMode:

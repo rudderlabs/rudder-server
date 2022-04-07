@@ -280,12 +280,12 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	// Get the file information
 	info, err := fileToZip.Stat()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	header, err := zip.FileInfoHeader(info)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
@@ -299,31 +299,12 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
 
-// UnZipSingleFile unzips zip containing single file into ouputfile path passed
-func UnZipSingleFile(outputfile string, filename string) {
-	r, err := zip.OpenReader(filename)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Close()
-	inputfile := r.File[0]
-	// Make File
-	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
-	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	if err != nil {
-		panic(err)
-	}
-	rc, _ := inputfile.Open()
-	io.Copy(outFile, rc)
-	outFile.Close()
-	rc.Close()
-}
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
 func RemoveFilePaths(filePaths ...string) {
