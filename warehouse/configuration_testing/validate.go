@@ -323,15 +323,15 @@ func (ct *CTHandleT) createTable() (err error) {
 		bqHandle := bigquery.HandleT{}
 		err = bqHandle.CreateTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
 	} else {
-		result, err := ct.client.Query(ct.CreateTableQuery(), client.Write)
+		_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
 		pkgLogger.Infof("Start")
-		if result.Values != nil {
-			for _, row := range result.Values {
-				for _, column := range row {
-					pkgLogger.Infof(column)
-				}
-			}
-		}
+		//if result.Values != nil {
+		//	for _, row := range result.Values {
+		//		for _, column := range row {
+		//			pkgLogger.Infof(column)
+		//		}
+		//	}
+		//}
 		if err != nil {
 			pkgLogger.Infof("Error: %s", err.Error())
 		}
