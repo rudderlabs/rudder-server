@@ -1995,11 +1995,6 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 					responses = append(responses, resp)
-				} else {
-					// add to FailedEvents
-					errMessage = "Message type " + messageType + " not supported"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
 				}
 			} else {
 				// allow event
