@@ -106,7 +106,7 @@ func Test_Ping(t *testing.T) {
 	etcd.Close()
 }
 
-func Test_WorkspaceServed(t *testing.T) {
+func Test_ServerMode(t *testing.T) {
 	provider := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints:   etcdHosts,
@@ -150,6 +150,61 @@ func Test_WorkspaceServed(t *testing.T) {
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
 		require.JSONEq(t, `{"status":"NORMAL"}`, string(resp.Kvs[0].Value))
+	}
+
+	t.Log("channel should close after context cancelation")
+	cancel()
+	{
+		_, ok := <-ch
+		require.False(t, ok)
+	}
+
+}
+
+func Test_Workspaces(t *testing.T) {
+	provider := state.ETCDManager{
+		Config: &state.ETCDConfig{
+			Endpoints:   etcdHosts,
+			ReleaseName: "test",
+			ServerIndex: "0",
+		},
+	}
+	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.ReleaseName, provider.Config.ServerIndex)
+	defer provider.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+
+	ch := provider.WorkspaceIDs(ctx)
+
+	t.Log("Should get initial state")
+	{
+		m, ok := <-ch
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
+		m.Ack()
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+	}
+
+	t.Log("update should be received")
+	{
+		etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2,5", "ack_key": "test-ack/2"}`)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, []string{"1", "2", "5"}, m.WorkspaceIDs())
+		m.Ack()
+
+		resp, err := etcdClient.Get(ctx, "test-ack/2")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("channel should close after context cancelation")

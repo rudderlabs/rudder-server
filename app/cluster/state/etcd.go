@@ -11,6 +11,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
@@ -187,7 +188,7 @@ func (manager *ETCDManager) prepareMode(raw []byte) servermode.ModeRequest {
 		})
 }
 
-func errCh(err error) <-chan servermode.ModeRequest {
+func errChModeRequest(err error) <-chan servermode.ModeRequest {
 	ch := make(chan servermode.ModeRequest, 1)
 	ch <- servermode.ModeError(err)
 	close(ch)
@@ -196,7 +197,7 @@ func errCh(err error) <-chan servermode.ModeRequest {
 
 func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.ModeRequest {
 	if err := manager.init(); err != nil {
-		return errCh(err)
+		return errChModeRequest(err)
 	}
 
 	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
@@ -204,11 +205,11 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Mo
 	resultChan := make(chan servermode.ModeRequest, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)
 	if err != nil {
-		return errCh(err)
+		return errChModeRequest(err)
 	}
 
 	if len(resp.Kvs) == 0 {
-		return errCh(errors.New("no workspace found"))
+		return errChModeRequest(errors.New("no workspace found"))
 	}
 
 	resultChan <- manager.prepareMode(resp.Kvs[0].Value)
@@ -220,6 +221,71 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Mo
 				switch event.Type {
 				case mvccpb.PUT:
 					resultChan <- manager.prepareMode(event.Kv.Value)
+				default:
+					// TODO: handle other events
+				}
+			}
+		}
+		close(resultChan)
+	}(resultChan)
+
+	return resultChan
+}
+
+func errChWorkspacesRequest(err error) <-chan workspace.WorkspacesRequest {
+	ch := make(chan workspace.WorkspacesRequest, 1)
+	ch <- workspace.WorkspacesError(err)
+	close(ch)
+	return ch
+}
+
+func (manager *ETCDManager) prepareWorkspace(raw []byte) workspace.WorkspacesRequest {
+	var req workspacesRequestsValue
+	err := json.Unmarshal(raw, &req)
+	if err != nil {
+		return workspace.WorkspacesError(err)
+	}
+
+	return workspace.NewWorkspacesRequest(
+		strings.Split(req.Workspaces, ","),
+		func() error {
+			ackValue, err := json.MarshalToString(workspacesAckValue{
+				Status: "RELOADED",
+			})
+			if err != nil {
+				return err
+			}
+			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
+			return err
+		})
+}
+
+func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.WorkspacesRequest {
+	if err := manager.init(); err != nil {
+		return errChWorkspacesRequest(err)
+	}
+
+	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
+
+	resultChan := make(chan workspace.WorkspacesRequest, 1)
+	resp, err := manager.Client.Get(ctx, modeRequestKey)
+	if err != nil {
+		return errChWorkspacesRequest(err)
+	}
+
+	if len(resp.Kvs) == 0 {
+		return errChWorkspacesRequest(errors.New("no workspace found"))
+	}
+
+	resultChan <- manager.prepareWorkspace(resp.Kvs[0].Value)
+
+	go func(returnChan chan workspace.WorkspacesRequest) {
+		etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+		for watchResp := range etcdWatchChan {
+			for _, event := range watchResp.Events {
+				switch event.Type {
+				case mvccpb.PUT:
+					resultChan <- manager.prepareWorkspace(event.Kv.Value)
 				default:
 					// TODO: handle other events
 				}
