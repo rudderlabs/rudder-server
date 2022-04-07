@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"net/http"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -18,9 +19,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/validators"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"golang.org/x/sync/errgroup"
 
@@ -165,7 +166,7 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTe
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batchrouterFactory batchrouter.Factory) {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)

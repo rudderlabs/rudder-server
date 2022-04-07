@@ -32,8 +32,8 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
@@ -223,9 +223,9 @@ func TestDynamicClusterManager(t *testing.T) {
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		channel chan utils.DataEvent, topic backendConfig.Topic) {
+		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
