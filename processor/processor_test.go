@@ -24,9 +24,9 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -66,15 +66,15 @@ func (c *testContext) Setup() {
 
 	c.configInitialised = false
 	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() {
-				channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+				channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 				c.configInitialised = true
 			}()
 		})
 	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
+	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.dbReadBatchSize = 10000

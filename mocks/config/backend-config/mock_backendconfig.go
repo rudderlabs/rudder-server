@@ -10,7 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	utils "github.com/rudderlabs/rudder-server/utils"
+	pubsub "github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 // MockBackendConfig is a mock of BackendConfig interface.
@@ -130,7 +130,7 @@ func (mr *MockBackendConfigMockRecorder) StopPolling() *gomock.Call {
 }
 
 // Subscribe mocks base method.
-func (m *MockBackendConfig) Subscribe(arg0 chan utils.DataEvent, arg1 backendconfig.Topic) {
+func (m *MockBackendConfig) Subscribe(arg0 chan pubsub.DataEvent, arg1 backendconfig.Topic) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Subscribe", arg0, arg1)
 }

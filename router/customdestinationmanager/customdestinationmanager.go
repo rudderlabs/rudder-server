@@ -12,9 +12,9 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 const (
@@ -267,7 +267,7 @@ func New(destType string, o Opts) DestinationManager {
 }
 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch

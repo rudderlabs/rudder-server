@@ -40,9 +40,9 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -1492,7 +1492,7 @@ func headerMiddleware(next http.Handler) http.Handler {
 
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch

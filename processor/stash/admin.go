@@ -14,6 +14,7 @@ type StashRpcHandler struct {
 
 var prefix = "proc_error_jobs_"
 
+// GetDSStats
 /*
 ProcErrorsByDestinationCount
 ================================================================================
@@ -27,7 +28,7 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	jobTableName := prefix + dsName
@@ -51,15 +52,15 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 	return marshalErr
 }
 
-func (s *StashRpcHandler) GetDSList(dsName string, result *string) (err error) {
+func (s *StashRpcHandler) GetDSList(_ string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetDSListString()
-	*result = string(response)
+	*result = response
 	return nil
 }
 
@@ -67,11 +68,11 @@ func (s *StashRpcHandler) GetDSFailedJobs(arg string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
-	*result = string(response)
+	*result = response
 	return err
 }
 
@@ -79,11 +80,11 @@ func (s *StashRpcHandler) GetJobByID(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobByID(arg, prefix)
-	*result = string(response)
+	*result = response
 	return err
 }
 
@@ -91,11 +92,11 @@ func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobIDStatus(arg, prefix)
-	*result = string(response)
+	*result = response
 	return err
 }
 
@@ -114,7 +115,7 @@ func (s *StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName str
 	if err != nil {
 		return results, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	singleResult := DestinationCountResult{}
 	for rows.Next() {
 		err = rows.Scan(&singleResult.Count, &singleResult.DestName, &singleResult.Error)
@@ -139,10 +140,10 @@ func (s *StashRpcHandler) GetDSJobCount(arg string, result *string) (err error) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r.(error))
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	response, err := s.ReadOnlyJobsDB.GetJobSummaryCount(arg, prefix)
-	*result = string(response)
+	*result = response
 	return nil
 }
