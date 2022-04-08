@@ -230,7 +230,10 @@ loop:
 	for _, f := range cleanup {
 		f := f
 		wg.Add(1)
-		go f()
+		go func() {
+			defer wg.Done()
+			f()
+		}()
 	}
 	wg.Wait()
 }
