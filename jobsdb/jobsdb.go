@@ -2989,10 +2989,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	jd.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
-	// get a file uploader
-	fileUploader, errored := jd.getFileUploader()
-	jd.assertError(errored)
-	output, err = jd.backupUploadWithExponentialBackoff(ctx, fileUploader.Upload, file, pathPrefixes...)
+	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, pathPrefixes...)
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
@@ -3006,7 +3003,11 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	return true, nil
 }
 
-func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, fu func(context.Context, *os.File, ...string) (filemanager.UploadOutput, error), file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
+func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
+	// get a file uploader
+	fileUploader, errored := jd.getFileUploader()
+	jd.assertError(errored)
+
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = jd.maxBackupRetryTime
@@ -3015,19 +3016,12 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, fu fu
 	var err error
 	var output filemanager.UploadOutput
 	backup := func() error {
-		output, err = fu(ctx, file, pathPrefixes...)
-		if err != nil {
-			return err
-		}
-		return nil
+		output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
+		return err
 	}
 
-	if err = backoff.Retry(backup, boCtx); err != nil {
-		if bo.NextBackOff() == backoff.Stop {
-			return output, err
-		}
-	}
-	return output, nil
+	err = backoff.Retry(backup, boCtx)
+	return output, err
 }
 
 func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
