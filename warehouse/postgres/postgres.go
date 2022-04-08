@@ -26,6 +26,7 @@ var (
 	stagingTablePrefix            string
 	pkgLogger                     logger.LoggerI
 	skipComputingUserLatestTraits bool
+	connectTimeout                time.Duration
 )
 
 const (
@@ -97,13 +98,19 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred CredentialsT, timeout time.Duration) (*sql.DB, error) {
+	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v connect_timeout=%d",
 		cred.User,
 		cred.Password,
 		cred.Host,
 		cred.Port,
 		cred.DBName,
-		cred.SSLMode)
+		cred.SSLMode,
+		timeout/time.Second,
+	)
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
@@ -123,6 +130,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.postgres.connectTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -565,13 +573,12 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		}
 	}
 	pg.Warehouse = warehouse
-	pg.Db, err = Connect(pg.getConnectionCredentials())
+	timeOut := warehouseutils.TestConnectionTimeout
+	pg.Db, err = connectWithTimeout(pg.getConnectionCredentials(), timeOut)
 	if err != nil {
 		return
 	}
 	defer pg.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -744,7 +751,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		pg.Namespace,
 		stagingTableName,

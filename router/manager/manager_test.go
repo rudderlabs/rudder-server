@@ -5,6 +5,14 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
@@ -20,17 +28,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"log"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
 )
 
 var (
@@ -136,10 +137,10 @@ var (
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID,
 					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
@@ -185,9 +186,9 @@ func TestRouterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
-		channel chan utils.DataEvent, topic backendConfig.Topic) {
+		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),

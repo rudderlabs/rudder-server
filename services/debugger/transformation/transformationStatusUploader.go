@@ -12,9 +12,9 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -153,7 +153,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber() {
-	configChannel := make(chan utils.DataEvent)
+	configChannel := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel

@@ -2,13 +2,14 @@ package manager
 
 import (
 	"context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -67,7 +68,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 // Gets the config from config backend and extracts enabled writekeys
 func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory) {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	r.BackendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)

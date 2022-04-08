@@ -29,9 +29,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -234,7 +234,7 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
@@ -1060,7 +1060,7 @@ func (wh *HandleT) resetInProgressJobs() {
 }
 
 func minimalConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
@@ -1106,7 +1106,7 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context) {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
@@ -1132,7 +1132,7 @@ loop:
 
 }
 
-func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
+func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
 	pkgLogger.Debug("Got config from config-backend", config)
 	sources := config.Data.(backendconfig.ConfigT)
 	enabledDestinations := make(map[string]bool)
