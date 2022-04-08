@@ -255,13 +255,6 @@ func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destinatio
 	}
 }
 
-//Print the internal structure
-func (proc *HandleT) Print() {
-	if !proc.logger.IsDebugLevel() {
-		return
-	}
-}
-
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
