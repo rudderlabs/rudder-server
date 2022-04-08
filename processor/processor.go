@@ -290,7 +290,11 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func (proc *HandleT) Setup(
+	backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB,
+	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	multiTenantStat multitenant.MultiTenantI,
+) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	//TODO : Remove this
@@ -303,12 +307,13 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.maxLoopSleep = maxLoopSleep
 	proc.storeTimeout = storeTimeout
 
-	proc.multitenantI = multitenantStat
+	proc.multitenantI = multiTenantStat
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
 
+	// Stats
 	proc.statsFactory = stats.DefaultStats
 	proc.stats.pStatsJobs = &misc.PerfStats{}
 	proc.stats.pStatsDBR = &misc.PerfStats{}
@@ -512,8 +517,12 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 
 			retry := proc.makeFeaturesFetchCall()
 			if retry {
-				time.Sleep(200 * time.Millisecond)
-				continue
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(200 * time.Millisecond):
+					continue
+				}
 			}
 		}
 
