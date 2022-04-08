@@ -1707,7 +1707,7 @@ func (proc *HandleT) transformSrcDest(
 
 	//REPORTING - START
 	if proc.isReportingEnabled() {
-		//Grouping events by sourceid + destinationid + sourcebatchid + eventName + eventType batch id to find the count
+		//Grouping events by sourceid + destinationid + sourcebatchid + eventName + eventType to find the count
 		inCountMap = make(map[string]int64)
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
