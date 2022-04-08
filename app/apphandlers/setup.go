@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -173,7 +172,7 @@ func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batch
 
 	//Crash recover routerDB, batchRouterDB
 	//Note: The following cleanups can take time if there are too many
-	//rt / batch_rt tables and there would be a delay readin from channel `ch`
+	//rt / batch_rt tables and there would be a delay reading from channel `ch`
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
@@ -187,11 +186,15 @@ loop:
 		case config := <-ch:
 			sources := config.Data.(backendconfig.ConfigT)
 			enabledDestinations := make(map[string]bool)
-			for _, source := range sources.Sources {
-				for _, destination := range source.Destinations {
+			for i := range sources.Sources {
+				source := &sources.Sources[i] // Copy of large value inside loop: CRT-P0006
+				for k := range source.Destinations {
+					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					//For batch router destinations
-					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+						misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
+						misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
@@ -225,13 +228,11 @@ loop:
 		}
 	}
 
-	g, _ := errgroup.WithContext(context.Background())
+	var wg sync.WaitGroup
 	for _, f := range cleanup {
 		f := f
-		g.Go(func() error {
-			f()
-			return nil
-		})
+		wg.Add(1)
+		go f()
 	}
-	g.Wait()
+	wg.Wait()
 }
