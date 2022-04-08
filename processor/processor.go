@@ -267,7 +267,7 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor")
 }
 
-// NewProcessor creates a new Processor intanstace
+// NewProcessor creates a new Processor instance
 func NewProcessor() *HandleT {
 	return &HandleT{
 		transformer: transformer.NewTransformer(),
