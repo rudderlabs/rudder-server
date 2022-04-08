@@ -553,7 +553,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return true
