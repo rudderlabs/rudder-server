@@ -113,13 +113,9 @@ func rudderCoreBaseSetup() {
 
 //StartProcessor atomically starts processor process if not already started
 func StartProcessor(
-	ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB,
+	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 ) {
-	if !enableProcessor {
-		return
-	}
-
 	if !processorLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
 		return
@@ -134,13 +130,9 @@ func StartProcessor(
 
 //StartRouter atomically starts router process if not already started
 func StartRouter(
-	ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
+	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 ) {
-	if !enableRouter {
-		return
-	}
-
 	if !routerLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
 		return

@@ -322,20 +322,24 @@ func (embedded *EmbeddedApp) LegacyStart(ctx context.Context, options *app.Optio
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDB := false
-				g.Go(misc.WithBugsnag(func() error {
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-					return nil
-				}))
+				if enableProcessor {
+					g.Go(misc.WithBugsnag(func() error {
+						StartProcessor(ctx, &clearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					}))
+				}
 			}
 			startRouterFunc := func() {
-				g.Go(misc.WithBugsnag(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-					return nil
-				}))
+				if enableRouter {
+					g.Go(misc.WithBugsnag(func() error {
+						StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					}))
+				}
 			}
 			enableRouter = false
 			enableProcessor = false
-			enableGateway = (migrationMode != db.EXPORT)
+			enableGateway = migrationMode != db.EXPORT
 
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 
@@ -352,14 +356,18 @@ func (embedded *EmbeddedApp) LegacyStart(ctx context.Context, options *app.Optio
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
-	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
-	g.Go(func() error {
-		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
+	if enableProcessor {
+		g.Go(func() error {
+			StartProcessor(ctx, &options.ClearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
+	if enableRouter {
+		g.Go(func() error {
+			StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
 
 	if enableReplay && embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT

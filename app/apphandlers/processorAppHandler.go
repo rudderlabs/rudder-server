@@ -339,18 +339,21 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				g.Go(func() error {
-					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-
-					return nil
-				})
+				clearDB := false
+				if enableProcessor {
+					g.Go(func() error {
+						StartProcessor(ctx, &clearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					})
+				}
 			}
 			startRouterFunc := func() {
-				g.Go(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-					return nil
-				})
+				if enableRouter {
+					g.Go(func() error {
+						StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					})
+				}
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -369,14 +372,18 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
-	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
-	g.Go(func() error {
-		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
+	if enableProcessor {
+		g.Go(func() error {
+			StartProcessor(ctx, &options.ClearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
+	if enableRouter {
+		g.Go(func() error {
+			StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
 
 	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
