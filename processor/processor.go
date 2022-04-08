@@ -560,7 +560,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 	}
 
 	if res.StatusCode == 200 {
-		proc.transformerFeatures = json.RawMessage(body)
+		proc.transformerFeatures = body
 	} else if res.StatusCode == 404 {
 		proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 	}
