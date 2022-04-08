@@ -112,7 +112,10 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func StartProcessor(
+	ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB,
+	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+) {
 	if !enableProcessor {
 		return
 	}
@@ -130,7 +133,10 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func StartRouter(
+	ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
+	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+) {
 	if !enableRouter {
 		return
 	}
@@ -151,7 +157,7 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTe
 		ProcErrorDB:   procErrorDB,
 	}
 
-	batchrouterFactory := batchrouter.Factory{
+	batchRouterFactory := batchrouter.Factory{
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		Reporting:     reporting,
 		Multitenant:   multitenantStat,
@@ -159,11 +165,11 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB jobsdb.MultiTe
 		RouterDB:      batchRouterDB,
 	}
 
-	monitorDestRouters(ctx, routerFactory, batchrouterFactory)
+	monitorDestRouters(ctx, &routerFactory, &batchRouterFactory)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batchrouterFactory batchrouter.Factory) {
+func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batchRouterFactory *batchrouter.Factory) {
 	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
@@ -176,7 +182,7 @@ func monitorDestRouters(ctx context.Context, routerFactory router.Factory, batch
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
-	batchrouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	batchRouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
 
 loop:
 	for {
@@ -198,7 +204,7 @@ loop:
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
+							brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
 							brt.Start()
 							cleanup = append(cleanup, brt.Shutdown)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
