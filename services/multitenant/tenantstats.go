@@ -87,6 +87,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]metric.MovingAverage)
+	multitenantStat.RouterDBs = routerDBs
 	for dbPrefix := range routerDBs {
 		multitenantStat.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 		pileUpStatMap := make(map[string]map[string]int)
