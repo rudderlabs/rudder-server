@@ -1164,10 +1164,12 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	inCountMap := make(map[string]int64)
-	outCountMap := make(map[string]int64) // destinations enabled
 	inCountMetadataMap := make(map[string]MetricMetadata)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
+
+	outCountMap := make(map[string]int64) // destinations enabled
+	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
 
 	for idx, batchEvent := range jobList {
 
@@ -1195,7 +1197,6 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 			//Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
-				var key string
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
 				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
@@ -1219,8 +1220,6 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					continue
 				}
 
-				eventType := misc.GetStringifiedData(singularEvent["type"])
-				eventName := misc.GetStringifiedData(singularEvent["event"])
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
 					singularEvent,
 					batchEvent,
@@ -1229,62 +1228,11 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				)
 
 				//REPORTING - GATEWAY metrics - START
+				// dummy event for metrics purposes only
+				event := transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
-					key = strings.Join([]string{
-						commonMetadataFromSingularEvent.SourceID,
-						"",
-						commonMetadataFromSingularEvent.SourceBatchID,
-						eventName,
-						eventType,
-					}, METRICKEYDELIMITER)
-
-					if _, ok := inCountMap[key]; !ok {
-						inCountMap[key] = 0
-					}
-					inCountMap[key] = inCountMap[key] + 1
-
-					if _, ok := inCountMetadataMap[key]; !ok {
-						inCountMetadataMap[key] = MetricMetadata{
-							sourceID:           commonMetadataFromSingularEvent.SourceID,
-							sourceBatchID:      commonMetadataFromSingularEvent.SourceBatchID,
-							sourceTaskID:       commonMetadataFromSingularEvent.SourceTaskID,
-							sourceTaskRunID:    commonMetadataFromSingularEvent.SourceTaskRunID,
-							sourceJobID:        commonMetadataFromSingularEvent.SourceJobID,
-							sourceJobRunID:     commonMetadataFromSingularEvent.SourceJobRunID,
-							sourceDefinitionID: commonMetadataFromSingularEvent.SourceDefinitionID,
-						}
-					}
-
-					_, ok := connectionDetailsMap[key]
-					if !ok {
-						cd := types.CreateConnectionDetail(
-							commonMetadataFromSingularEvent.SourceID,
-							"",
-							commonMetadataFromSingularEvent.SourceBatchID,
-							commonMetadataFromSingularEvent.SourceTaskID,
-							commonMetadataFromSingularEvent.SourceTaskRunID,
-							commonMetadataFromSingularEvent.SourceJobID,
-							commonMetadataFromSingularEvent.SourceJobRunID,
-							commonMetadataFromSingularEvent.SourceDefinitionID,
-							commonMetadataFromSingularEvent.DestinationDefinitionID,
-							commonMetadataFromSingularEvent.SourceCategory,
-						)
-						connectionDetailsMap[key] = cd
-					}
-					sd, ok := statusDetailsMap[key]
-					if !ok {
-						sd = types.CreateStatusDetail(
-							jobsdb.Succeeded.State,
-							0,
-							200,
-							"",
-							[]byte(`{}`),
-							eventName,
-							eventType,
-						)
-						statusDetailsMap[key] = sd
-					}
-					sd.Count++
+					event.Metadata = *commonMetadataFromSingularEvent
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, []byte(`{}`))
 				}
 				//REPORTING - GATEWAY metrics - END
 
@@ -1315,16 +1263,13 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 					shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 					shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
+					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 				}
 
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
 				if proc.isReportingEnabled() {
-					if _, ok := outCountMap[key]; !ok {
-						outCountMap[key] = 0
-					}
-					outCountMap[key] = outCountMap[key] + 1
+					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, []byte(`{}`))
 				}
 			}
 		}
@@ -1354,6 +1299,15 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				StatusDetail:      statusDetailsMap[k],
 			}
 			reportMetrics = append(reportMetrics, m)
+
+			if _, ok := destFilterStatusDetailMap[k]; ok {
+				destFilterMetric := &types.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.DESTINATION_FILTER, false, false),
+					StatusDetail:      destFilterStatusDetailMap[k],
+				}
+				reportMetrics = append(reportMetrics, destFilterMetric)
+			}
 		}
 		// empty failedCountMap because no failures,
 		// events are just dropped at this point if no destination is found to route the events
