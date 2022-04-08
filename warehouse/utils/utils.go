@@ -138,12 +138,13 @@ var (
 	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
+	TestConnectionTimeout  time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
-
+	TestConnectionTimeout = time.Duration(15) * time.Second
 }
 
 func loadConfig() {

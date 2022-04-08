@@ -3,13 +3,13 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -31,6 +31,66 @@ func (gatewayApp *GatewayApp) GetAppType() string {
 }
 
 func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	pkgLogger.Info("Gateway starting")
+
+	rudderCoreDBValidator()
+	rudderCoreWorkSpaceTableSetup()
+	rudderCoreBaseSetup()
+
+	pkgLogger.Info("Clearing DB ", options.ClearDB)
+
+	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
+
+	migrationMode := gatewayApp.App.Options().MigrationMode
+
+	gatewayDB := jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithRetention(gwDBRetention),
+		jobsdb.WithMigrationMode(migrationMode),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+	)
+	defer gatewayDB.Close()
+	gatewayDB.Start()
+	defer gatewayDB.Stop()
+
+	enableGateway := true
+	if gatewayApp.App.Features().Migrator != nil {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
+			enableGateway = (migrationMode != db.EXPORT)
+
+			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
+		}
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	if enableGateway {
+		var gw gateway.HandleT
+		var rateLimiter ratelimiter.HandleT
+
+		rateLimiter.SetUp()
+		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
+		defer gw.Shutdown()
+
+		g.Go(func() error {
+			return gw.StartAdminHandler(ctx)
+		})
+		g.Go(func() error {
+			return gw.StartWebHandler(ctx)
+		})
+	}
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	return g.Wait()
+}
+
+func (gateway *GatewayApp) HandleRecovery(options *app.Options) {
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
+}
+
+func (gatewayApp *GatewayApp) LegacyStart(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Gateway starting")
 
 	rudderCoreDBValidator()
@@ -61,25 +121,22 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	g, ctx := errgroup.WithContext(ctx)
 
 	if enableGateway {
-		var gateway gateway.HandleT
-		var rateLimiter ratelimiter.HandleT
-
+		rateLimiter := ratelimiter.HandleT{}
 		rateLimiter.SetUp()
-		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
-		defer gateway.Shutdown()
+
+		gw := gateway.HandleT{}
+		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter,
+			gatewayApp.VersionHandler)
+		defer gw.Shutdown()
 
 		g.Go(func() error {
-			return gateway.StartAdminHandler(ctx)
+			return gw.StartAdminHandler(ctx)
 		})
 		g.Go(func() error {
-			return gateway.StartWebHandler(ctx)
+			return gw.StartWebHandler(ctx)
 		})
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 	return g.Wait()
-}
-
-func (gateway *GatewayApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
 }

@@ -1069,7 +1069,7 @@ func (bq *HandleT) DeleteTestTable(client *client.Client, warehouse warehouseuti
 	return
 }
 
-func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON

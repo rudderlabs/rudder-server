@@ -171,7 +171,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
@@ -213,7 +213,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	}
 
 	// Getting timeout context
-	tCtx, cancel := context.WithTimeout(ctx, grpcTimeout)
+	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Creating grpc connection using timeout context
@@ -668,6 +668,10 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
+	return dl.connectToWarehouseWithTimeout(grpcTimeout)
+}
+
+func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -681,7 +685,7 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 		SSL:             ssl,
 		UserAgentEntry:  userAgent,
 	}
-	return dl.connect(credT)
+	return dl.connect(credT, timeout)
 }
 
 // CreateTable creates tables with table name and columns
@@ -807,7 +811,8 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
-	dl.dbHandleT, err = dl.connectToWarehouse()
+	timeout := warehouseutils.TestConnectionTimeout
+	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
 	return
 }
 
@@ -977,7 +982,7 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {

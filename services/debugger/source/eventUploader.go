@@ -10,9 +10,9 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 //GatewayEventBatchT is a structure to hold batch of events
@@ -39,8 +39,8 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger      logger.LoggerI
-	eventsCacheMap debugger.Cache
+	pkgLogger           logger.LoggerI
+	eventsCacheMap      debugger.Cache
 )
 
 func Init() {
@@ -172,7 +172,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := make(chan utils.DataEvent)
+	configChannel := make(chan pubsub.DataEvent)
 	backendConfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel

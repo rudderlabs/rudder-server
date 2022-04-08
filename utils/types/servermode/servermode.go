@@ -3,8 +3,8 @@ package servermode
 type Mode string
 
 const (
-	NormalMode    Mode = "NORMAL"
-	DegradedMode  Mode = "DEGRADED"
+	NormalMode   Mode = "NORMAL"
+	DegradedMode Mode = "DEGRADED"
 )
 
 type Ack struct {
@@ -25,4 +25,11 @@ func WithACK(mode Mode, ack func()) Ack {
 		mode: mode,
 		ack:  ack,
 	}
+}
+
+func (mode Mode) Valid() bool {
+	if mode == NormalMode || mode == DegradedMode {
+		return true
+	}
+	return false
 }
