@@ -5,7 +5,6 @@ env:
     ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
     CODECOV_TOKEN: "/codebuild/codecov-token"
-    BIGQUERY_INTEGRATION_TEST_USER_CRED: "/codebuild/integration/tests/bigquery"
 
 phases:
   install:
