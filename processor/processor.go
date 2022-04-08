@@ -664,8 +664,8 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 
 	// use existing timestamp if it exists in the event, add new timestamp otherwise
 	if timestamp, ok = misc.GetParsedTimestamp(event.Message["timestamp"]); !ok {
-		// calculate new timestamp using using the formula
-		// timestamp = receivedAt - (sentAt - originalTimestamp)
+		// calculate new timestamp using the formula
+		// timestamp = receivedAt - (sentAt - originalTimestamp)
 		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
 	}
 
