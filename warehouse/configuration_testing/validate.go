@@ -200,9 +200,8 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 
 	// creating event loader to add columns to temporary file
 	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, warehouseutils.GetLoadFileType(destination.DestinationDefinition.Name), writer)
-	for columnName, columnValue := range TestPayloadMap {
-		eventLoader.AddColumn(columnName, TestTableSchemaMap[columnName], columnValue)
-	}
+	eventLoader.AddColumn("id", TestTableSchemaMap["id"], 1)
+	eventLoader.AddColumn("val", TestTableSchemaMap["val"], "RudderStack")
 
 	// writing to file
 	err = eventLoader.Write()
@@ -309,7 +308,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	}
 
 	// loading test table from staging file
-	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestTableSchemaMap, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
+	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
 	return
 }
 

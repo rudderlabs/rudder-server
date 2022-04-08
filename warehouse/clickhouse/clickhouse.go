@@ -37,6 +37,7 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
+	connectTimeout              time.Duration
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -196,12 +197,16 @@ func Init() {
 
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
+	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
+}
+
+func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t&timeout=%d",
 		cred.Host,
 		cred.Port,
 		cred.User,
@@ -216,6 +221,7 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		readTimeout,
 		writeTimeout,
 		compress,
+		timeout/time.Second,
 	)
 
 	var err error
@@ -239,6 +245,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+
+	// Default timeout overrides the values to what ever we pass in dsn
+	// Setting connectTimeout value as clickhouse driver default timeout
+	config.RegisterDurationConfigVariable(clickhouse.DefaultConnTimeout, &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -841,13 +851,12 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
+	timeOut := warehouseutils.TestConnectionTimeout
+	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, timeOut)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -1004,11 +1013,19 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	var columns []string
+	var recordInterface []interface{}
+
+	for key, value := range payloadMap {
+		recordInterface = append(recordInterface, value)
+		columns = append(columns, key)
+	}
+
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
 		stagingTableName,
-		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
 		generateArgumentString("?", len(columns)),
 	)
 	txn, err := client.SQL.Begin()
@@ -1021,10 +1038,6 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		return
 	}
 
-	var recordInterface []interface{}
-	for _, value := range payloadMap {
-		recordInterface = append(recordInterface, value)
-	}
 	if _, err = stmt.Exec(recordInterface...); err != nil {
 		return
 	}

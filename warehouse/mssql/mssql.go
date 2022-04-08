@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"io"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
+	connectTimeout       time.Duration
 )
 
 const (
@@ -112,6 +114,10 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred CredentialsT, timeout time.Duration) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -122,6 +128,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.DBName)
 	query.Add("encrypt", cred.SSLMode)
+	query.Add("dial timeout", fmt.Sprintf("%d", timeout/time.Second))
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
@@ -149,6 +156,10 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+
+	// Default timeout overrides the values to what ever we pass in dsn
+	// Setting connectTimeout value as mssql driver default timeout
+	config.RegisterDurationConfigVariable(warehouseutils.TestConnectionTimeout, &connectTimeout, true, 1, "Warehouse.mssql.connectTimeout")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -659,14 +670,12 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-
-	ms.Db, err = Connect(ms.getConnectionCredentials())
+	timeOut := warehouseutils.TestConnectionTimeout
+	ms.Db, err = connectWithTimeout(ms.getConnectionCredentials(), timeOut)
 	if err != nil {
 		return
 	}
 	defer ms.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -833,7 +842,7 @@ func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (ms *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (ms *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ms.Namespace,
 		stagingTableName,
