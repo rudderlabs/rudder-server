@@ -373,9 +373,7 @@ func run(m *testing.M) (int, error) {
 	defer wht.SetWHClickHouseDestination(pool)()
 	defer wht.SetWHClickHouseClusterDestination(pool)()
 	defer wht.SetWHMssqlDestination(pool)()
-	if runBigQueryTest == true {
-		defer wht.SetWHBigQueryDestination()()
-	}
+	defer wht.SetWHBigQueryDestination()()
 
 	AddWHSpecificSqlFunctionsToJobsDb()
 

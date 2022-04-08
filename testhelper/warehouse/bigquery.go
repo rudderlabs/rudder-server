@@ -74,6 +74,8 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		PrimaryKeys:            []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
 		TableTestQueryFreqInMS: 5000,
 	}
+	cleanup = func() {
+	}
 	bqTest := Test.BQTest
 
 	//Convert Map to Bytes(which can  easily be converted to JSON string)
