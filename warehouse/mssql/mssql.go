@@ -670,19 +670,19 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-
-	ms.Db, err = connectWithTimeout(ms.getConnectionCredentials(), warehouseutils.TestConnectionTimeout)
+	timeOut := warehouseutils.TestConnectionTimeout
+	ms.Db, err = connectWithTimeout(ms.getConnectionCredentials(), timeOut)
 	if err != nil {
 		return
 	}
 	defer ms.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
 
 	err = ms.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
 	if err != nil {
 		return err

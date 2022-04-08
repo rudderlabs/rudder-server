@@ -71,7 +71,7 @@ func (cl *Client) sqlReadQuery(statement string) (result warehouseutils.QueryRes
 		}
 		result.Values = append(result.Values, stringRow)
 	}
-	return
+	return result, err
 }
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {

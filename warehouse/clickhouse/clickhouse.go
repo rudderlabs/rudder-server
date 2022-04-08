@@ -851,18 +851,19 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, warehouseutils.TestConnectionTimeout)
+	timeOut := warehouseutils.TestConnectionTimeout
+	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, timeOut)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
 
 	err = ch.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
 	if err != nil {
 		return err

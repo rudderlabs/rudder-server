@@ -671,18 +671,19 @@ func (as *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	as.Warehouse = warehouse
-	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), warehouseutils.TestConnectionTimeout)
+	timeOut := warehouseutils.TestConnectionTimeout
+	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), timeOut)
 	if err != nil {
 		return
 	}
 	defer as.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
 
 	err = as.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
 	if err != nil {
 		return err

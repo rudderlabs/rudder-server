@@ -662,24 +662,25 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
+	timeOut := warehouseutils.TestConnectionTimeout
 	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	}, warehouseutils.TestConnectionTimeout)
+	}, timeOut)
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
 
 	err = rs.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", warehouseutils.TestConnectionTimeout/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
 	if err != nil {
 		return err
