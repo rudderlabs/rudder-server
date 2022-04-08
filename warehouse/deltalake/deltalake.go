@@ -213,7 +213,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 	}
 
 	// Getting timeout context
-	tCtx, cancel := context.WithTimeout(ctx, grpcTimeout)
+	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Creating grpc connection using timeout context
@@ -231,7 +231,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 	}
 
 	dbClient := proto.NewDatabricksClient(conn)
-	connectionResponse, err := dbClient.Connect(tCtx, &proto.ConnectRequest{
+	connectionResponse, err := dbClient.Connect(ctx, &proto.ConnectRequest{
 		Config:     connConfig,
 		Identifier: identifier,
 	})
@@ -811,7 +811,8 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
-	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(warehouseutils.TestConnectionTimeout)
+	timeout := warehouseutils.TestConnectionTimeout
+	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
 	return
 }
 
