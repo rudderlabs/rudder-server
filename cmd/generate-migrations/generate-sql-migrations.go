@@ -13,6 +13,7 @@ func main() {
 		VariableName:    "MigrationAssets",
 		VariableComment: "MigrationAssets contains SQL migration scripts and templates",
 	})
+
 	if err != nil {
 		panic(err)
 	}
