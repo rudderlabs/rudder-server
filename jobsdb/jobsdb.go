@@ -472,10 +472,12 @@ func (jd *HandleT) Status() interface{} {
 	pendingEvents := []map[string]interface{}{}
 	for _, pendingEvent := range pendingEventMetrics {
 		count := pendingEvent.Value.(metric.Gauge).IntValue()
-		pendingEvents = append(pendingEvents, map[string]interface{}{
-			"tags":  pendingEvent.Tags,
-			"count": count,
-		})
+		if count != 0 {
+			pendingEvents = append(pendingEvents, map[string]interface{}{
+				"tags":  pendingEvent.Tags,
+				"count": count,
+			})
+		}
 	}
 	statusObj["pending-events"] = pendingEvents
 
