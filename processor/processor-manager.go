@@ -18,7 +18,7 @@ func ManagerSetup(processor *HandleT) {
 	pm.Processor = processor
 }
 
-func GetProcessorManager() (*managerImpl, error) {
+func GetProcessorManager() (*managerImpl, error) { // skipcq: RVV-B0011
 	if globalManager == nil {
 		return nil, fmt.Errorf("processorManager is not initialized. Retry after sometime")
 	}
