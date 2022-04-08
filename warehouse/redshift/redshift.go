@@ -537,6 +537,7 @@ func connectWithTimeout(cred RedshiftCredentialsT, timeout time.Duration) (*sql.
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
+
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
