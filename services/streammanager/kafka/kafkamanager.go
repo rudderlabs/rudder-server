@@ -90,7 +90,6 @@ func loadCertificate() {
 
 func getDefaultConfiguration() *sarama.Config {
 	config := sarama.NewConfig()
-	config.Producer.Idempotent = true
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Net.DialTimeout = kafkaDialTimeout
 	config.Net.WriteTimeout = kafkaWriteTimeout
