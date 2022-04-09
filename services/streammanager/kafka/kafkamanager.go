@@ -90,6 +90,8 @@ func loadCertificate() {
 
 func getDefaultConfiguration() *sarama.Config {
 	config := sarama.NewConfig()
+	config.Producer.Idempotent = true
+	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Net.DialTimeout = kafkaDialTimeout
 	config.Net.WriteTimeout = kafkaWriteTimeout
 	config.Net.ReadTimeout = kafkaWriteTimeout
@@ -137,7 +139,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config :: %w", err)
 	}
-    hosts := make([]string, 0)
+	hosts := make([]string, 0)
 	hostNames := strings.Split(destConfig.HostName, ",")
 	for _, hostName := range hostNames {
 		hosts = append(hosts, hostName+":"+destConfig.Port)
