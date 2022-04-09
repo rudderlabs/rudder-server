@@ -672,12 +672,6 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
-
-	eventBytes, err := jsonfast.Marshal(singularEvent)
-	if err != nil {
-		//Marshalling should never fail. But still panicking.
-		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v", singularEvent))
-	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
@@ -686,17 +680,20 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
-	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
-	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
-	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
-	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
-	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
-	commonMetadata.RecordID = gjson.GetBytes(eventBytes, "recordId").Value()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
-	commonMetadata.EventName = misc.GetStringifiedData(singularEvent["event"])
-	commonMetadata.EventType = misc.GetStringifiedData(singularEvent["type"])
+
+	commonMetadata.SourceBatchID, _ = misc.MapLookup(singularEvent, "context", "sources", "batch_id").(string)
+	commonMetadata.SourceTaskID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_id").(string)
+	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
+	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
+	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
+	commonMetadata.RecordID = misc.MapLookup(singularEvent, "context", "record_id")
+
+	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
+	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
+
 	return &commonMetadata
 }
 
