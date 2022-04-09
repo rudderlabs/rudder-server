@@ -40,11 +40,11 @@ var (
 
 type reportingNOOP struct{}
 
-func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
 }
-func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
+func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
 }
-func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
+func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
 }
 
 func TestMain(m *testing.M) {
