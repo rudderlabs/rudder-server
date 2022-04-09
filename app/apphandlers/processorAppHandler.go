@@ -3,10 +3,11 @@ package apphandlers
 import (
 	"context"
 	"fmt"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"net/http"
 	"strconv"
 	"time"
+
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
@@ -186,7 +187,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
 
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
@@ -205,13 +206,13 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
-		Provider:      &modeProvider,
-		GatewayDB:     gwDBForProcessor,
-		RouterDB:      routerDB,
-		BatchRouterDB: batchRouterDB,
-		ErrorDB:       errDB,
-		Processor:     p,
-		Router:        rt,
+		Provider:        &modeProvider,
+		GatewayDB:       gwDBForProcessor,
+		RouterDB:        routerDB,
+		BatchRouterDB:   batchRouterDB,
+		ErrorDB:         errDB,
+		Processor:       p,
+		Router:          rt,
 		MultiTenantStat: multitenantStats,
 	}
 

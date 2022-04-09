@@ -3,6 +3,8 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
@@ -12,7 +14,6 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
@@ -170,7 +171,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
 		Multitenant:   multitenantStats,
@@ -188,13 +189,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
-		Provider:      &modeProvider,
-		GatewayDB:     gwDBForProcessor,
-		RouterDB:      routerDB,
-		BatchRouterDB: batchRouterDB,
-		ErrorDB:       errDB,
-		Processor:     proc,
-		Router:        rt,
+		Provider:        &modeProvider,
+		GatewayDB:       gwDBForProcessor,
+		RouterDB:        routerDB,
+		BatchRouterDB:   batchRouterDB,
+		ErrorDB:         errDB,
+		Processor:       proc,
+		Router:          rt,
 		MultiTenantStat: multitenantStats,
 	}
 
