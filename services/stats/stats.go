@@ -137,6 +137,11 @@ func Setup() {
 	var err error
 	//NOTE: this is to get atleast a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+	if err == nil {
+		taggedClientsMapLock.Lock()
+		connEstablished = true
+		taggedClientsMapLock.Unlock()
+	}
 	rruntime.Go(func() {
 		if err != nil {
 			connEstablished = false
@@ -361,7 +366,9 @@ func collectPeriodicStats(client *statsd.Client) {
 
 // StopPeriodicStats stops periodic collection of stats.
 func StopPeriodicStats() {
-	if !statsEnabled {
+	taggedClientsMapLock.RLock()
+	defer taggedClientsMapLock.RUnlock()
+	if !statsEnabled || !connEstablished {
 		return
 	}
 

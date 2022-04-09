@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	proc "github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -28,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"golang.org/x/sync/errgroup"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -152,17 +152,22 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			startProcessorFunc := func() {
 				g.Go(func() error {
 					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-						reportingI, multitenant.NOOP)
-
+					if enableProcessor {
+						StartProcessor(
+							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
+							reportingI, multitenant.NOOP,
+						)
+					}
 					return nil
 				})
 			}
 			startRouterFunc := func() {
-				g.Go(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP)
-					return nil
-				})
+				if enableRouter {
+					g.Go(func() error {
+						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP)
+						return nil
+					})
+				}
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -340,18 +345,21 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				g.Go(func() error {
-					clearDB := false
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-
-					return nil
-				})
+				clearDB := false
+				if enableProcessor {
+					g.Go(func() error {
+						StartProcessor(ctx, &clearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					})
+				}
 			}
 			startRouterFunc := func() {
-				g.Go(func() error {
-					StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-					return nil
-				})
+				if enableRouter {
+					g.Go(func() error {
+						StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+						return nil
+					})
+				}
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -370,14 +378,18 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))
 
-	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
-	g.Go(func() error {
-		StartRouter(ctx, enableRouter, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-		return nil
-	})
+	if enableProcessor {
+		g.Go(func() error {
+			StartProcessor(ctx, &options.ClearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
+	if enableRouter {
+		g.Go(func() error {
+			StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
+			return nil
+		})
+	}
 
 	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
@@ -389,6 +401,5 @@ func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Opt
 	g.Go(func() error {
 		return startHealthWebHandler(ctx)
 	})
-	err := g.Wait()
-	return err
+	return g.Wait()
 }
