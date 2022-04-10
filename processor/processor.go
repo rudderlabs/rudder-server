@@ -840,11 +840,11 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 			pu = types.USER_TRANSFORMER
 		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.GATEWAY
+			inPU = types.DESTINATION_FILTER
 			pu = types.TRACKINGPLAN_VALIDATOR
 		} else if stage == transformer.EventFilterStage {
 			if userTransformationEnabled {
@@ -853,7 +853,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 				if trackingPlanEnabled {
 					inPU = types.TRACKINGPLAN_VALIDATOR
 				} else {
-					inPU = types.GATEWAY
+					inPU = types.DESTINATION_FILTER
 				}
 			}
 			pu = types.EVENT_FILTER
@@ -879,21 +879,59 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		var eventType string
 		eventName = event.Metadata.EventName
 		eventType = event.Metadata.EventType
-		countKey := strings.Join([]string{event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, eventName, eventType}, METRICKEYDELIMITER)
+
+		countKey := strings.Join([]string{
+			event.Metadata.SourceID,
+			event.Metadata.DestinationID,
+			event.Metadata.SourceBatchID,
+			eventName,
+			eventType,
+		}, METRICKEYDELIMITER)
+
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
 		}
 		countMap[countKey] = countMap[countKey] + 1
+
 		if countMetadataMap != nil {
 			if _, ok := countMetadataMap[countKey]; !ok {
-				countMetadataMap[countKey] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				countMetadataMap[countKey] = MetricMetadata{
+					sourceID:                event.Metadata.SourceID,
+					destinationID:           event.Metadata.DestinationID,
+					sourceBatchID:           event.Metadata.SourceBatchID,
+					sourceTaskID:            event.Metadata.SourceTaskID,
+					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
+					sourceJobID:             event.Metadata.SourceJobID,
+					sourceJobRunID:          event.Metadata.SourceJobRunID,
+					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
+					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
+					sourceCategory:          event.Metadata.SourceCategory,
+				}
 			}
 		}
 
-		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode, eventName, eventType)
+		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s",
+			event.Metadata.SourceID,
+			event.Metadata.DestinationID,
+			event.Metadata.SourceBatchID,
+			status, event.StatusCode,
+			eventName, eventType,
+		)
+
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID, event.Metadata.SourceDefinitionID, event.Metadata.DestinationDefinitionID, event.Metadata.SourceCategory)
+			cd := types.CreateConnectionDetail(
+				event.Metadata.SourceID,
+				event.Metadata.DestinationID,
+				event.Metadata.SourceBatchID,
+				event.Metadata.SourceTaskID,
+				event.Metadata.SourceTaskRunID,
+				event.Metadata.SourceJobID,
+				event.Metadata.SourceJobRunID,
+				event.Metadata.SourceDefinitionID,
+				event.Metadata.DestinationDefinitionID,
+				event.Metadata.SourceCategory,
+			)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]
@@ -991,7 +1029,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 				if trackingPlanEnabled {
 					inPU = types.TRACKINGPLAN_VALIDATOR
 				} else {
-					inPU = types.GATEWAY
+					inPU = types.DESTINATION_FILTER
 				}
 			}
 			pu = types.EVENT_FILTER
@@ -1002,11 +1040,11 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 			pu = types.USER_TRANSFORMER
 		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.GATEWAY
+			inPU = types.DESTINATION_FILTER
 			pu = types.TRACKINGPLAN_VALIDATOR
 		}
 		for k, cd := range connectionDetailsMap {
@@ -1130,6 +1168,9 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 
+	outCountMap := make(map[string]int64) // destinations enabled
+	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -1168,24 +1209,41 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
+					SingularEvent: singularEvent,
+					ReceivedAt:    receivedAt,
+				}
 
-				//Getting all the destinations which are enabled for this
-				//event
-				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
-				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
 					continue
 				}
 
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+					singularEvent,
+					batchEvent,
+					receivedAt,
+					sourceForSingularEvent,
+				)
+
+				//REPORTING - GATEWAY metrics - START
+				// dummy event for metrics purposes only
+				event := transformer.TransformerResponseT{}
+				if proc.isReportingEnabled() {
+					event.Metadata = *commonMetadataFromSingularEvent
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, []byte(`{}`))
+				}
+				//REPORTING - GATEWAY metrics - END
+
+				//Getting all the destinations which are enabled for this
+				//event
+				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
+				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
 				}
-
-				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 
 				_, ok = groupedEventsByWriteKey[WriteKeyT(writeKey)]
 				if !ok {
@@ -1197,9 +1255,6 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
-				eventType := misc.GetStringifiedData(singularEvent["type"])
-				eventName := misc.GetStringifiedData(singularEvent["event"])
-
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
 					proc.logger.Error("Source not found for writeKey : ", writeKey)
@@ -1208,36 +1263,14 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 					shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 					shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
+					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 				}
 
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
-				//REPORTING - GATEWAY metrics - START
 				if proc.isReportingEnabled() {
-					//Grouping events by sourceid + destinationid + source batch id to find the count
-					key := fmt.Sprintf("%s:%s:%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID, eventName, eventType)
-					if _, ok := inCountMap[key]; !ok {
-						inCountMap[key] = 0
-					}
-					inCountMap[key] = inCountMap[key] + 1
-					if _, ok := inCountMetadataMap[key]; !ok {
-						inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceTaskRunID: commonMetadataFromSingularEvent.SourceTaskRunID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID, sourceJobRunID: commonMetadataFromSingularEvent.SourceJobRunID}
-					}
-
-					_, ok := connectionDetailsMap[key]
-					if !ok {
-						cd := types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID, commonMetadataFromSingularEvent.SourceDefinitionID, commonMetadataFromSingularEvent.DestinationDefinitionID, commonMetadataFromSingularEvent.SourceCategory)
-						connectionDetailsMap[key] = cd
-					}
-					sd, ok := statusDetailsMap[key]
-					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), eventName, eventType)
-						statusDetailsMap[key] = sd
-					}
-					sd.Count++
+					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, []byte(`{}`))
 				}
-				//REPORTING - GATEWAY metrics - END
 			}
 		}
 
@@ -1266,7 +1299,27 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				StatusDetail:      statusDetailsMap[k],
 			}
 			reportMetrics = append(reportMetrics, m)
+
+			if _, ok := destFilterStatusDetailMap[k]; ok {
+				destFilterMetric := &types.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.DESTINATION_FILTER, false, false),
+					StatusDetail:      destFilterStatusDetailMap[k],
+				}
+				reportMetrics = append(reportMetrics, destFilterMetric)
+			}
 		}
+		// empty failedCountMap because no failures,
+		// events are just dropped at this point if no destination is found to route the events
+		diffMetrics := getDiffMetrics(
+			types.GATEWAY,
+			types.DESTINATION_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			outCountMap,
+			map[string]int64{},
+		)
+		reportMetrics = append(reportMetrics, diffMetrics...)
 	}
 	//REPORTING - GATEWAY metrics - END
 
@@ -1654,12 +1707,18 @@ func (proc *HandleT) transformSrcDest(
 
 	//REPORTING - START
 	if proc.isReportingEnabled() {
-		//Grouping events by sourceid + destinationid + source batch id to find the count
+		//Grouping events by sourceid + destinationid + sourcebatchid + eventName + eventType to find the count
 		inCountMap = make(map[string]int64)
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
-			key := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, event.Metadata.EventName, METRICKEYDELIMITER, event.Metadata.EventType)
+			key := strings.Join([]string{
+				event.Metadata.SourceID,
+				event.Metadata.DestinationID,
+				event.Metadata.SourceBatchID,
+				event.Metadata.EventName,
+				event.Metadata.EventType,
+			}, METRICKEYDELIMITER)
 			if _, ok := inCountMap[key]; !ok {
 				inCountMap[key] = 0
 			}
@@ -1711,7 +1770,14 @@ func (proc *HandleT) transformSrcDest(
 
 			//REPORTING - START
 			if proc.isReportingEnabled() {
-				diffMetrics := getDiffMetrics(types.GATEWAY, types.USER_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+				diffMetrics := getDiffMetrics(
+					types.DESTINATION_FILTER,
+					types.USER_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					failedCountMap,
+				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, failedMetrics...)
 				reportMetrics = append(reportMetrics, diffMetrics...)
@@ -1768,7 +1834,7 @@ func (proc *HandleT) transformSrcDest(
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 		}
 
