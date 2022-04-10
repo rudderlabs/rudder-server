@@ -1164,7 +1164,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
 				worker.failedJobIDMutex.RUnlock()
 				if !isPrevFailedUser && destinationJobMetadata.UserID != "" {
-					worker.rt.logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
+					worker.rt.logger.Debugf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
 					worker.failedJobIDMutex.Lock()
 					worker.failedJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 					worker.failedJobIDMutex.Unlock()

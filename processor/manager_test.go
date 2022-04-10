@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -27,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +37,15 @@ var (
 	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
 	db     *sql.DB
 )
+
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
+}
+func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
+}
+func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
+}
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
@@ -137,7 +148,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 
 func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
-	defer func() {isUnLocked = temp}()
+	defer func() { isUnLocked = temp }()
 	initJobsDB()
 	stats.Setup()
 	mockCtrl := gomock.NewController(t)
@@ -191,11 +202,11 @@ func TestProcessorManager(t *testing.T) {
 	ctx := context.Background()
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt": &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{})
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()
@@ -247,11 +258,13 @@ func TestProcessorManager(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		Eventually(func() int {return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{customVal},
-			JobCount:         20,
-			ParameterFilters: []jobsdb.ParameterFilterT{},
-		}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		Eventually(func() int {
+			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         20,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			}))
+		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})
 }

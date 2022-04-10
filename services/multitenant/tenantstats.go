@@ -245,7 +245,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - workspacePickUpCount[workspaceKey]
 				usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value())
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRate : %v ,DestType : %v,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value(), destType)
 			}
 		}
 	}
@@ -275,7 +275,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 		runningJobCount = runningJobCount - pickUpCount
 		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
 
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), pendingEvents)
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,DestType : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), pendingEvents, destType)
 	}
 
 	return workspacePickUpCount, usedLatencies

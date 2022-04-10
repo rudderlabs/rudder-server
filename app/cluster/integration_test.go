@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -194,12 +195,12 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt": &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI)
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{})
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -238,9 +239,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		BatchRouterDB: brtDB,
 		ErrorDB:       errDB,
 
-		Processor: processor,
-		Router:    router,
-		Provider:  provider,
+		Processor:       processor,
+		Router:          router,
+		Provider:        provider,
 		MultiTenantStat: mtStat,
 	}
 

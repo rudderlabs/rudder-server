@@ -192,7 +192,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
 
 	rtFactory := &router.Factory{
 		Reporting:     reportingI,
