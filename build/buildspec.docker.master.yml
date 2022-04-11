@@ -8,8 +8,11 @@ env:
 
 phases:
   install:
-    runtime-versions:
-      golang: 1.16
+    commands:
+      # Make sure goenv is up to date
+      - cd $HOME/.goenv && git pull --ff-only && cd -
+      # Install Go 1.17
+      - goenv install 1.17.8 && goenv global 1.17.8
   pre_build:
     commands:
       - docker login --username rudderlabs --password $dockerhub_passwd
