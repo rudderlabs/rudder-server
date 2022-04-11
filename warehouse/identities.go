@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -296,11 +297,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 
 		job := UploadJobT{
-			upload:     &upload,
-			warehouse:  warehouse,
-			whManager:  whManager,
-			dbHandle:   wh.dbHandle,
-			pgNotifier: &wh.notifier,
+			upload:               &upload,
+			warehouse:            warehouse,
+			whManager:            whManager,
+			dbHandle:             wh.dbHandle,
+			pgNotifier:           &wh.notifier,
+			destinationValidator: configuration_testing.NewDestinationValidator(),
 		}
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
