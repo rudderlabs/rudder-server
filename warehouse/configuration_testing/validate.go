@@ -62,7 +62,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		stepError := s.Validator()
 		if stepError != nil {
 			resp.Steps[idx].Error = stepError.Error()
-			pkgLogger.Error(fmt.Errorf("error occurred while validation for destinationType: %s, step: %s with error: %s", ct.GetDestinationType(), s, stepError.Error()))
+			pkgLogger.Error(fmt.Errorf("error occurred while validation for destinationType: %s, step: %s with error: %s", ct.GetDestinationType(), s.Name, stepError.Error()))
 		} else {
 			resp.Steps[idx].Success = true
 		}
