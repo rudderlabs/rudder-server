@@ -65,6 +65,5 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 	fi
 
 install-tools:
-	# Try install for go 1.16+, fallback to get
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go get github.com/golang/mock/mockgen@v1.6.0

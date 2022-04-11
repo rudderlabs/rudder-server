@@ -305,7 +305,6 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	return err
 }
 
-
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
 func RemoveFilePaths(filePaths ...string) {
 	for _, fp := range filePaths {
@@ -1393,4 +1392,22 @@ func ReverseInt(s []int) []int {
 
 func IsMultiTenant() bool {
 	return config.GetBool("EnableMultitenancy", false)
+}
+
+// lookup map recursively and return value
+func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
+	if len(keys) == 0 {
+		return nil
+	}
+	if val, ok := mapToLookup[keys[0]]; ok {
+		if len(keys) == 1 {
+			return val
+		}
+		nextMap, ok := val.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		return MapLookup(nextMap, keys[1:]...)
+	}
+	return nil
 }
