@@ -48,6 +48,11 @@ func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 		},
 		&validationStep{
 			ID:        5,
+			Name:      "Verifying Fetch Schema",
+			Validator: ct.verifyingFetchSchema,
+		},
+		&validationStep{
+			ID:        6,
 			Name:      "Verifying Load Table",
 			Validator: ct.verifyingLoadTable,
 		},

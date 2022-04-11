@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -21,6 +20,13 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
+
+	// Getting warehouse manager
+	var err error
+	if ct.whManager, err = manager.New(ct.GetDestinationType()); err != nil {
+		return nil, err
+	}
+	ct.warehouse = ct.warehouseAdapter()
 
 	resp := validationResponse{}
 
@@ -56,6 +62,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		stepError := s.Validator()
 		if stepError != nil {
 			resp.Steps[idx].Error = stepError.Error()
+			pkgLogger.Error(fmt.Errorf("error occurred while validation for destinationType: %s, step: %s with error: %s", ct.GetDestinationType(), s, stepError.Error()))
 		} else {
 			resp.Steps[idx].Success = true
 		}
@@ -105,23 +112,16 @@ func (ct *CTHandleT) verifyingConnections() (err error) {
 }
 
 func (ct *CTHandleT) verifyingCreateSchema() (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
-	if err != nil {
-		return
-	}
-	ct.warehouse = ct.warehouseAdapter()
-
 	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
+	ct.client, err = ct.whManager.Connect(ct.warehouse)
 	if err != nil {
 		return
 	}
 	defer ct.client.Close()
 
 	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		return bqHandle.VerifyCreateSchema(&ct.client, ct.warehouse, context.TODO())
+		bqHandle := ct.GetBigQueryHandle()
+		return bqHandle.CreateSchema()
 	}
 
 	// Creating schema query and running over the warehouse
@@ -130,15 +130,8 @@ func (ct *CTHandleT) verifyingCreateSchema() (err error) {
 }
 
 func (ct *CTHandleT) verifyingCreateTable() (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
-	if err != nil {
-		return
-	}
-	ct.warehouse = ct.warehouseAdapter()
-
 	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
+	ct.client, err = ct.whManager.Connect(ct.warehouse)
 	if err != nil {
 		return
 	}
@@ -147,7 +140,27 @@ func (ct *CTHandleT) verifyingCreateTable() (err error) {
 	defer ct.cleanup()
 
 	// Create table
-	return ct.createTable()
+	err = ct.createTable()
+	if err != nil {
+		return
+	}
+	return ct.alterTable()
+}
+
+func (ct *CTHandleT) verifyingFetchSchema() (err error) {
+	// Getting warehouse client
+	ct.client, err = ct.whManager.Connect(ct.warehouse)
+	if err != nil {
+		return
+	}
+	// Creating create table query and running over the warehouse
+	if ct.GetDestinationType() == warehouseutils.DELTALAKE {
+		dbHandle := ct.GetDatabricksHandle()
+		_, err = dbHandle.FetchSchema(ct.warehouse)
+	} else {
+		_, err = ct.client.Query(ct.FetchSchemaQuery(), client.Read)
+	}
+	return
 }
 
 func (ct *CTHandleT) verifyingLoadTable() (err error) {
@@ -285,15 +298,8 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 }
 
 func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
-	if err != nil {
-		return
-	}
-	ct.warehouse = ct.warehouseAdapter()
-
 	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
+	ct.client, err = ct.whManager.Connect(ct.warehouse)
 	if err != nil {
 		return
 	}
@@ -308,7 +314,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	}
 
 	// loading test table from staging file
-	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
+	err = ct.whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
 	return
 }
 
@@ -320,10 +326,23 @@ func (ct *CTHandleT) createTable() (err error) {
 	)
 	// Creating create table query and running over the warehouse
 	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		err = bqHandle.CreateTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
+		bqHandle := ct.GetBigQueryHandle()
+		err = bqHandle.CreateTable(ct.stagingTableName, TestTableSchemaMap)
 	} else {
 		_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
+	}
+	return
+}
+
+func (ct *CTHandleT) alterTable() (err error) {
+	// Creating create table query and running over the warehouse
+	if ct.GetDestinationType() == warehouseutils.BQ {
+		bqHandle := ct.GetBigQueryHandle()
+		for columnName, columnType := range AlterColumnMap {
+			err = bqHandle.AddColumn(ct.stagingTableName, columnName, columnType)
+		}
+	} else {
+		_, err = ct.client.Query(ct.AlterTableQuery(), client.Write)
 	}
 	return
 }
@@ -331,8 +350,9 @@ func (ct *CTHandleT) createTable() (err error) {
 func (ct *CTHandleT) cleanup() {
 	// Dropping table
 	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		bqHandle.DeleteTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
+		bqHandle := ct.GetBigQueryHandle()
+		bqHandle.DeleteTable(ct.stagingTableName)
+		bqHandle.DeleteTable(ct.stagingTableName + "_view")
 	} else {
 		ct.client.Query(ct.DropTableQuery(), client.Write)
 	}

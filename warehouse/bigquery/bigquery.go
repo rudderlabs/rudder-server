@@ -102,6 +102,13 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	}
 	return schema
 }
+
+func (bq *HandleT) DeleteTable(tableName string) (err error) {
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
+	err = tableRef.Delete(bq.BQContext)
+	return
+}
+
 func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columnMap)
@@ -115,11 +122,11 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return
 	}
 
-	err = bq.createTableView(tableName, columnMap)
+	err = bq.CreateTableView(tableName, columnMap)
 	return
 }
 
-func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) CreateTableView(tableName string, columnMap map[string]string) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -224,8 +231,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("BQ: Deleting table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
-	tableRef := bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
-	err := tableRef.Delete(bq.BQContext)
+	err := bq.DeleteTable(stagingTableName)
 	if err != nil {
 		pkgLogger.Errorf("BQ:  Error dropping staging table %s in bigquery dataset %s in project %s : %v", stagingTableName, bq.Namespace, bq.ProjectID, err)
 	}
@@ -446,7 +452,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
 	if !viewExists {
 		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.Namespace, bq.ProjectID)
-		bq.createTableView(warehouseutils.UsersTable, userColMap)
+		bq.CreateTableView(warehouseutils.UsersTable, userColMap)
 	}
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
@@ -678,8 +684,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 	pkgLogger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		tableRef := bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
-		err := tableRef.Delete(bq.BQContext)
+		err := bq.DeleteTable(stagingTableName)
 		if err != nil {
 			pkgLogger.Errorf("WH: BQ:  Error dropping dangling staging table: %s in BQ: %v", stagingTableName, err)
 			delSuccess = false
@@ -1027,41 +1032,6 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
-}
-
-func (bq *HandleT) VerifyCreateSchema(client *client.Client, warehouse warehouseutils.WarehouseT, ctx context.Context) (err error) {
-	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, warehouse))
-	if location == "" {
-		location = "US"
-	}
-
-	err = client.BQ.Dataset(warehouse.Namespace).Create(ctx, &bigquery.DatasetMetadata{
-		Location: location,
-	})
-	if checkAndIgnoreAlreadyExistError(err) {
-		err = nil
-		return
-	}
-	return
-}
-
-func (bq *HandleT) CreateTestTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
-	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
-
-	err = tableRef.Create(ctx, &bigquery.TableMetadata{
-		Schema:           getTableSchema(columns),
-		TimePartitioning: &bigquery.TimePartitioning{},
-	})
-	if !checkAndIgnoreAlreadyExistError(err) {
-		return
-	}
-	return
-}
-
-func (bq *HandleT) DeleteTestTable(client *client.Client, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, ctx context.Context) (err error) {
-	tableRef := client.BQ.Dataset(warehouse.Namespace).Table(stagingTableName)
-	err = tableRef.Delete(ctx)
-	return
 }
 
 func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {

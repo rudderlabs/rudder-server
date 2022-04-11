@@ -1,11 +1,14 @@
 package configuration_testing
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/gofrs/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
 	"time"
@@ -25,7 +28,10 @@ var (
 		"id":  1,
 		"val": "RudderStack",
 	}
-	TestNamespace = "_rudderstack_setup_test"
+	TestNamespace  = "_rudderstack_setup_test"
+	AlterColumnMap = map[string]string{
+		"val_1": "string",
+	}
 )
 
 // warehouseAdapter returns warehouseT from info request
@@ -40,7 +46,7 @@ func (ct *CTHandleT) warehouseAdapter() warehouseutils.WarehouseT {
 			Name: randomSourceName,
 		},
 		Destination: destination,
-		Namespace:   TestNamespace,
+		Namespace:   warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace),
 		Type:        destination.DestinationDefinition.Name,
 		Identifier:  warehouseutils.GetWarehouseIdentifier(destination.DestinationDefinition.Name, randomSourceId, destination.ID),
 	}
@@ -83,4 +89,24 @@ func (ct *CTHandleT) GetDestinationType() (destinationType string) {
 	destination := ct.infoRequest.Destination
 	destinationType = destination.DestinationDefinition.Name
 	return
+}
+
+func (ct *CTHandleT) GetBigQueryHandle() *bigquery.HandleT {
+	bqHandle := bigquery.HandleT{
+		BQContext: context.Background(),
+		Db:        ct.client.BQ,
+		Namespace: ct.warehouse.Namespace,
+		Warehouse: ct.warehouse,
+		ProjectID: strings.TrimSpace(warehouseutils.GetConfigValue(bigquery.GCPProjectID, ct.warehouse)),
+	}
+	return &bqHandle
+}
+
+func (ct *CTHandleT) GetDatabricksHandle() *deltalake.HandleT {
+	dbHandle := deltalake.HandleT{
+		DBHandleT: ct.client.DBHandleT,
+		Namespace: ct.warehouse.Namespace,
+		Warehouse: ct.warehouse,
+	}
+	return &dbHandle
 }

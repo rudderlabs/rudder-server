@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -40,5 +41,6 @@ type CTHandleT struct {
 	infoRequest      *infoRequest
 	client           client.Client
 	warehouse        warehouseutils.WarehouseT
+	whManager        manager.ManagerI
 	stagingTableName string
 }
