@@ -13,9 +13,9 @@ mocks: install-tools ## Generate all mocks
 
 test: enterprise-prepare-build mocks ## Run all unit tests
 ifdef package
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests $(package)
+	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace $(package)
 else
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace ./...
 endif
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
@@ -65,6 +65,5 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 	fi
 
 install-tools:
-	# Try install for go 1.16+, fallback to get
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go get github.com/golang/mock/mockgen@v1.6.0

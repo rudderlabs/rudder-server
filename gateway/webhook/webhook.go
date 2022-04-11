@@ -22,14 +22,15 @@ import (
 )
 
 var (
-	sourceTransformerURL  string
-	webhookBatchTimeout   time.Duration
-	maxTransformerProcess int
-	maxWebhookBatchSize   int
-	webhookRetryMax       int
-	webhookRetryWaitMax   time.Duration
-	webhookRetryWaitMin   time.Duration
-	pkgLogger             logger.LoggerI
+	sourceTransformerURL       string
+	webhookBatchTimeout        time.Duration
+	maxTransformerProcess      int
+	maxWebhookBatchSize        int
+	webhookRetryMax            int
+	webhookRetryWaitMax        time.Duration
+	webhookRetryWaitMin        time.Duration
+	pkgLogger                  logger.LoggerI
+	sourceListForParsingParams []string
 )
 
 func Init() {
@@ -103,11 +104,11 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat, "reqType": "webhook"})
-	pkgLogger.Debugf("Webhook: Failing request since: %v", reason)
 	statusCode := 400
 	if code != 0 {
 		statusCode = code
 	}
+	pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
 	webhook.gwHandle.IncrementAckCount(1)
 }
@@ -192,10 +193,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.statusCode != 0 {
 			code = resp.statusCode
 		}
-		pkgLogger.Debug(resp.err)
+		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.err)
 		http.Error(w, resp.err, code)
 	} else {
-		pkgLogger.Debug(response.GetStatus(response.Ok))
+		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
@@ -245,6 +246,22 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if err != nil {
 				req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
+			}
+
+			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+				queryParams := req.request.URL.Query()
+				paramsBytes, err := json.Marshal(queryParams)
+
+				if err != nil {
+					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
+					continue
+				}
+
+				closingBraceIdx := bytes.LastIndexByte(body, '}')
+				appendData := []byte(`, "query_parameters": `)
+				appendData = append(appendData, paramsBytes...)
+				body = append(body[:closingBraceIdx], appendData...)
+				body = append(body, '}')
 			}
 
 			if !json.Valid(body) {
@@ -367,7 +384,7 @@ func (webhook *HandleT) printStats(ctx context.Context) {
 		if lastRecvCount != webhook.recvCount || lastackCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
 			lastackCount = webhook.ackCount
-			pkgLogger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+			pkgLogger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
 		}
 
 		select {

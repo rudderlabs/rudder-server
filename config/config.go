@@ -75,7 +75,7 @@ func UpdateConfig() {
 func watchForConfigChange() {
 	defer func() {
 		if r := recover(); r != nil {
-			err := fmt.Errorf("failed while trying to update Config Variables with Error: %w", r)
+			err := fmt.Errorf("cannot update Config Variables: %v", r)
 			fmt.Println(err)
 		}
 	}()
@@ -536,6 +536,43 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 	}
 }
 
+func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isHotReloadable bool, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
+	if isHotReloadable {
+		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
+	}
+	for _, key := range keys {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetStringSlice(key, defaultValue)
+			break
+		}
+	}
+	if !isSet {
+		for _, key := range keys {
+			if viper.IsSet(key) {
+				isSet = true
+				*ptr = GetStringSlice(key, defaultValue)
+				break
+			}
+		}
+	}
+
+	if !isSet {
+		*ptr = defaultValue
+	}
+}
+
 // GetInt64 is wrapper for viper's GetInt
 func GetInt64(key string, defaultValue int64) (value int64) {
 
@@ -576,6 +613,25 @@ func GetString(key string, defaultValue string) (value string) {
 		return defaultValue
 	}
 	return viper.GetString(key)
+}
+
+// GetStringSlice is wrapper for viper's GetStringSlice
+func GetStringSlice(key string, defaultValue []string) (value []string) {
+	envVal := GetEnv(TransformKey(key), "")
+
+	// parsing comma separated string from env and populating a slice
+	if envVal != "" {
+		envValList := strings.Split(envVal, ",")
+		for i, elem := range envValList {
+			envValList[i] = strings.ToLower(strings.Trim(elem, " "))
+		}
+		return envValList
+	}
+
+	if !viper.IsSet(key) {
+		return defaultValue
+	}
+	return viper.GetStringSlice(key)
 }
 
 // GetDuration is wrapper for viper's GetDuration
@@ -720,7 +776,7 @@ func GetNamespaceIdentifier() string {
 	return "none"
 }
 
-// returns value stored in KUBE_NAMESPACE env var
+// GetKubeNamespace returns value stored in KUBE_NAMESPACE env var
 func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")
 }

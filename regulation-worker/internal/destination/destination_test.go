@@ -73,7 +73,7 @@ func TestGetDestDetails(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	mockDestMiddleware := destination.NewMockdestinationMiddleware(mockCtrl)
-	mockDestMiddleware.EXPECT().Get().Return(testConfig, true).Times(1)
+	mockDestMiddleware.EXPECT().Get("").Return(testConfig, true).Times(1)
 
 	dest := destination.DestMiddleware{
 		Dest: mockDestMiddleware,

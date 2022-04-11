@@ -29,13 +29,17 @@ import (
 	"time"
 	"unicode"
 
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/araddon/dateparse"
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	uuid "github.com/gofrs/uuid"
+	gluuid "github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
@@ -46,6 +50,7 @@ import (
 var AppStartTime int64
 var errorStorePath string
 var reservedFolderPaths []*RFP
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -81,12 +86,27 @@ type RudderError struct {
 	Code              int
 }
 
+type pair struct {
+	key   string
+	value float64
+}
+
+type pairList []pair
+
+func (p pairList) Len() int           { return len(p) }
+func (p pairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p pairList) Less(i, j int) bool { return p[i].value < p[j].value }
+
 type RFP struct {
 	path         string
 	levelsToKeep int
 }
 
 var pkgLogger logger.LoggerI
+
+func init() {
+	gluuid.EnableRandPool()
+}
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
@@ -203,7 +223,7 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
-	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
+	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
 		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
@@ -260,12 +280,12 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	// Get the file information
 	info, err := fileToZip.Stat()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	header, err := zip.FileInfoHeader(info)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
@@ -279,30 +299,10 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
-}
-
-// UnZipSingleFile unzips zip containing single file into ouputfile path passed
-func UnZipSingleFile(outputfile string, filename string) {
-	r, err := zip.OpenReader(filename)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Close()
-	inputfile := r.File[0]
-	// Make File
-	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
-	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	if err != nil {
-		panic(err)
-	}
-	rc, _ := inputfile.Open()
-	io.Copy(outFile, rc)
-	outFile.Close()
-	rc.Close()
 }
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
@@ -327,7 +327,7 @@ func GetReservedFolderPaths() []*RFP {
 		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 1},
 		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
 		{path: RudderRedshiftManifests, levelsToKeep: 0},
-		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 2},
 		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
 	}
 }
@@ -520,39 +520,21 @@ func ContainsString(slice []string, str string) bool {
 	return false
 }
 
-func equal(expected, actual interface{}) bool {
-	if expected == nil || actual == nil {
-		return expected == actual
+func ContainsInt64(slice []int64, val int64) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
 	}
-	return reflect.DeepEqual(expected, actual)
+	return false
 }
 
-// Contains returns true if an element is present in a iteratee.
-// https://github.com/thoas/go-funk
-func Contains(in interface{}, elem interface{}) bool {
-	inValue := reflect.ValueOf(in)
-	elemValue := reflect.ValueOf(elem)
-	inType := inValue.Type()
-
-	switch inType.Kind() {
-	case reflect.String:
-		return strings.Contains(inValue.String(), elemValue.String())
-	case reflect.Map:
-		for _, key := range inValue.MapKeys() {
-			if equal(key.Interface(), elem) {
-				return true
-			}
+func ContainsInt(slice []int, val int) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
 		}
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < inValue.Len(); i++ {
-			if equal(inValue.Index(i).Interface(), elem) {
-				return true
-			}
-		}
-	default:
-		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
 	}
-
 	return false
 }
 
@@ -693,6 +675,15 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 
 func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
+}
+
+func ConvertInterfaceToStringArray(input []interface{}) []string {
+	output := make([]string, len(input))
+	for i, val := range input {
+		valString, _ := val.(string)
+		output[i] = valString
+	}
+	return output
 }
 
 func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
@@ -974,6 +965,11 @@ func IsValidUUID(uuid string) bool {
 	return r.MatchString(uuid)
 }
 
+func FastUUID() uuid.UUID {
+	b, _ := gluuid.New().MarshalBinary()
+	return uuid.FromBytesOrNil(b)
+}
+
 func HasAWSKeysInConfig(config interface{}) bool {
 	configMap := config.(map[string]interface{})
 	if configMap["useSTSTokens"] == false {
@@ -1055,7 +1051,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -1162,6 +1158,13 @@ func MinInt(a, b int) int {
 	return b
 }
 
+func MaxInt(a, b int) int {
+	if a >= b {
+		return a
+	}
+	return b
+}
+
 //GetTagName gets the tag name using a uuid and name
 func GetTagName(id string, names ...string) string {
 	var truncatedNames string
@@ -1233,20 +1236,37 @@ func GetDatabricksVersion() (version string) {
 	return
 }
 
+func WithBugsnagForWarehouse(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer BugsnagNotify(ctx, "Warehouse")()
+		return fn()
+	}
+}
+
+func BugsnagNotify(ctx context.Context, team string) func() {
+	return func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				},
+				"Team": {
+					"Name": team,
+				},
+			})
+
+			RecordAppError(fmt.Errorf("%v", r))
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+	}
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
-		defer func() {
-			if r := recover(); r != nil {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					}})
-
-				RecordAppError(fmt.Errorf("%v", r))
-				panic(r)
-			}
-		}()
+		defer BugsnagNotify(ctx, "Core")()
 		return fn()
 	}
 }
@@ -1322,6 +1342,25 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
+func SortMap(inputMap map[string]metric.MovingAverage) []string {
+	pairArr := make(pairList, len(inputMap))
+
+	i := 0
+	for k, v := range inputMap {
+		pairArr[i] = pair{k, v.Value()}
+		i++
+	}
+
+	sort.Sort(pairArr)
+	var sortedWorkspaceList []string
+	//p is sorted
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedWorkspaceList = append(sortedWorkspaceList, k.key)
+	}
+	return sortedWorkspaceList
+}
+
 func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	select {
 	case <-ctx.Done():
@@ -1329,4 +1368,46 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	case <-time.After(delay):
 		return false
 	}
+}
+
+func Unique(stringSlice []string) []string {
+	keys := make(map[string]struct{})
+	list := []string{}
+	for _, entry := range stringSlice {
+		if _, ok := keys[entry]; !ok {
+			keys[entry] = struct{}{}
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
+// ReverseInt reverses an array of int
+func ReverseInt(s []int) []int {
+	for i, j := 0, len(s)-1; i < len(s)/2; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
+}
+
+func IsMultiTenant() bool {
+	return config.GetBool("EnableMultitenancy", false)
+}
+
+// lookup map recursively and return value
+func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
+	if len(keys) == 0 {
+		return nil
+	}
+	if val, ok := mapToLookup[keys[0]]; ok {
+		if len(keys) == 1 {
+			return val
+		}
+		nextMap, ok := val.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		return MapLookup(nextMap, keys[1:]...)
+	}
+	return nil
 }

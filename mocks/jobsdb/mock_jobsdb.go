@@ -169,6 +169,18 @@ func (mr *MockJobsDBMockRecorder) GetJournalEntries(arg0 interface{}) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJournalEntries", reflect.TypeOf((*MockJobsDB)(nil).GetJournalEntries), arg0)
 }
 
+// GetPileUpCounts mocks base method.
+func (m *MockJobsDB) GetPileUpCounts(arg0 map[string]map[string]int) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "GetPileUpCounts", arg0)
+}
+
+// GetPileUpCounts indicates an expected call of GetPileUpCounts.
+func (mr *MockJobsDBMockRecorder) GetPileUpCounts(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPileUpCounts", reflect.TypeOf((*MockJobsDB)(nil).GetPileUpCounts), arg0)
+}
+
 // GetProcessed mocks base method.
 func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()

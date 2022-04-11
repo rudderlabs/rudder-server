@@ -18,6 +18,13 @@ const (
 	DBClient  = "DBClient"
 )
 
+type QueryType int64
+
+const (
+	Read QueryType = iota
+	Write
+)
+
 type Client struct {
 	SQL       *sql.DB
 	BQ        *bigquery.Client
@@ -25,14 +32,13 @@ type Client struct {
 	Type      string
 }
 
-func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) sqlWriteQuery(statement string) (result warehouseutils.QueryResult, err error) {
+	_, err = cl.SQL.Exec(statement)
+	return
+}
+
+func (cl *Client) sqlReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-	if err == sql.ErrNoRows {
-		return result, nil
-	}
 	defer rows.Close()
 
 	result.Columns, err = rows.Columns()
@@ -50,6 +56,12 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 
 		err = rows.Scan(valuePtrs...)
+		for i := 0; i < colCount; i++ {
+			switch t := values[i].(type) {
+			case []uint8:
+				values[i] = string(t)
+			}
+		}
 		if err != nil {
 			return result, err
 		}
@@ -92,9 +104,9 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) dbReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
-		Config: cl.DBHandleT.CredConfig,
+		Config:       cl.DBHandleT.CredConfig,
 		SqlStatement: statement,
 		Identifier:   cl.DBHandleT.CredIdentifier,
 	})
@@ -108,14 +120,43 @@ func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) dbWriteQuery(statement string) (result warehouseutils.QueryResult, err error) {
+	executeResponse, err := cl.DBHandleT.Client.Execute(cl.DBHandleT.Context, &proto.ExecuteRequest{
+		Config:       cl.DBHandleT.CredConfig,
+		SqlStatement: statement,
+		Identifier:   cl.DBHandleT.CredIdentifier,
+	})
+	if err != nil {
+		return
+	}
+	errorCode := executeResponse.GetErrorCode()
+	if (errorCode != "" && errorCode != "42000") || (errorCode != "" && errorCode != "42S02") {
+		err = fmt.Errorf("error while executing with response: %v", executeResponse.GetErrorMessage())
+		return
+	}
+	result = warehouseutils.QueryResult{
+		Columns: []string{},
+		Values:  [][]string{},
+	}
+	return result, nil
+}
+
+func (cl *Client) Query(statement string, queryType QueryType) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
 	case DBClient:
-		return cl.dbQuery(statement)
+		if queryType == Write {
+			return cl.dbWriteQuery(statement)
+		} else {
+			return cl.dbReadQuery(statement)
+		}
 	default:
-		return cl.sqlQuery(statement)
+		if queryType == Write {
+			return cl.sqlWriteQuery(statement)
+		} else {
+			return cl.sqlReadQuery(statement)
+		}
 	}
 }
 

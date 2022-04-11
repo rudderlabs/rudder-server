@@ -24,9 +24,13 @@ func NewTableUpload(uploadID int64, tableName string) *TableUploadT {
 	return &TableUploadT{uploadID: uploadID, tableName: tableName}
 }
 
-func getTotalEventsUploaded(uploadID int64) (int64, error) {
+func (job *UploadJobT) getTotalEventsUploaded(includeDiscards bool) (int64, error) {
 	var total sql.NullInt64
-	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s'`, uploadID, ExportedData)
+	var discardsStatement string
+	if !includeDiscards {
+		discardsStatement = fmt.Sprintf(`and table_name != '%s'`, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
+	}
+	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s' %s`, job.upload.ID, ExportedData, discardsStatement)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	return total.Int64, err
 }

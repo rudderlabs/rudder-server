@@ -3,38 +3,32 @@ package processor
 import "fmt"
 
 var (
-	ProcessorManager ProcessorManagerI
+	globalManager *managerImpl
 )
 
-type ProcessorManagerI interface {
-	Pause()
-	Resume()
-}
-
-type ProcessorManagerT struct {
+type managerImpl struct {
 	Processor *HandleT
 }
 
-func ProcessorManagerSetup(processor *HandleT) {
+func ManagerSetup(processor *HandleT) {
 	pkgLogger.Info("setting up ProcessorManager.")
-	pm := new(ProcessorManagerT)
+	pm := new(managerImpl)
 
-	ProcessorManager = pm
+	globalManager = pm
 	pm.Processor = processor
 }
 
-func GetProcessorManager() (ProcessorManagerI, error) {
-	if ProcessorManager == nil {
+func GetProcessorManager() (*managerImpl, error) { // skipcq: RVV-B0011
+	if globalManager == nil {
 		return nil, fmt.Errorf("processorManager is not initialized. Retry after sometime")
 	}
-
-	return ProcessorManager, nil
+	return globalManager, nil
 }
 
-func (pm *ProcessorManagerT) Pause() {
+func (pm *managerImpl) Pause() {
 	pm.Processor.Pause()
 }
 
-func (pm *ProcessorManagerT) Resume() {
+func (pm *managerImpl) Resume() {
 	pm.Processor.Resume()
 }

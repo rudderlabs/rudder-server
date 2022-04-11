@@ -1,9 +1,0 @@
-FROM golang:1.16.8-alpine
-ENV GO111MODULE=on
-
-RUN mkdir /app
-ADD . /app
-WORKDIR /app
-
-EXPOSE 8181
-CMD ["go", "run", "tests/sink.go"]

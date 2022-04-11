@@ -35,6 +35,8 @@ Gateway:
     maxTransformerProcess: 64
     maxRetry: 5
     maxRetryTime: 10s
+    sourceListForParsingParams:
+      - shopify
 EventSchemas:
   enableEventSchemasFeature: false
   syncInterval: 240s
@@ -171,6 +173,7 @@ Processor:
   loopSleep: 10ms
   maxLoopSleep: 5000ms
   fixedLoopSleep: 0ms
+  storeTimeout: 5m
   maxLoopProcessEvents: 10000
   transformBatchSize: 100
   userTransformBatchSize: 200
@@ -190,6 +193,7 @@ Processor:
 Dedup:
   enableDedup: false
   dedupWindow: 3600s
+  memOptimized: true
 BackendConfig:
   configFromFile: false
   configJSONPath: /etc/rudderstack/workspaceConfig.json
@@ -240,3 +244,5 @@ PgNotifier:
   retriggerCount: 500
   trackBatchInterval: 2s
   maxAttempt: 3
+EnableMultitenancy: false
+LegacyAppHandler: true

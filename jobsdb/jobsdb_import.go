@@ -15,7 +15,8 @@ func (jd *HandleT) SetupForImport() {
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
-	ds := jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+	ds := newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
+	jd.addDS(ds)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
@@ -70,7 +71,8 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
 		jd.dsListLock.Lock()
-		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+		jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
+		jd.addDS(jd.migrationState.dsForImport)
 		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
 		jd.assert(found, "There should be a setup checkpoint at this point. If not something went wrong. Go debug")
 		setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
@@ -98,7 +100,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertError(err)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
-	err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, jobList)
+	err = jd.copyJobsDSInTxn(txn, jd.migrationState.dsForImport, jobList)
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
@@ -117,10 +119,8 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	err = txn.Commit()
 	jd.assertError(err)
 
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, hasJobs, nil)
-	// fmt.Println("Bursting CACHE")
-
+	//Clear ds from cache
+	jd.dropDSFromCache(jd.migrationState.dsForImport)
 }
 
 func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {
@@ -156,7 +156,8 @@ func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
 	if jd.isEmpty(dsList[dsListLen-1]) {
 		ds = dsList[dsListLen-1]
 	} else {
-		ds = jd.addNewDS(appendToDsList, dataSetT{})
+		ds = newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend())
+		jd.addNewDS(ds)
 	}
 
 	var serialInt sql.NullInt64

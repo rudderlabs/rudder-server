@@ -1,11 +1,13 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -18,32 +20,7 @@ import (
 )
 
 // Upload passed in file to s3
-func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
-	if manager.Config.Bucket == "" {
-		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
-	}
-	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
-	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
-	}
-	var uploadSession *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config. Using them.")
-		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	}
-	s3manager := awsS3Manager.NewUploader(uploadSession)
+func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 
@@ -69,7 +46,16 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
 
-	output, err := s3manager.Upload(uploadInput)
+	uploadSession, err := manager.getSession(ctx)
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
+	}
+	s3manager := awsS3Manager.NewUploader(uploadSession)
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
+	output, err := s3manager.UploadWithContext(ctx, uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
 			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
@@ -80,15 +66,18 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
-func (manager *S3Manager) Download(output *os.File, key string) error {
-	sess, err := manager.getSession()
+func (manager *S3Manager) Download(ctx context.Context, output *os.File, key string) error {
+	sess, err := manager.getSession(ctx)
 	if err != nil {
 		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	downloader := s3manager.NewDownloader(sess)
 
-	_, err = downloader.Download(output,
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
+	_, err = downloader.DownloadWithContext(ctx, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -102,8 +91,37 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	return nil
 }
 
-func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
-	sess, err := manager.getSession()
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://bucket-name.s3.amazonaws.com/key - >> key
+*/
+func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
+	parsedUrl, err := url.Parse(location)
+	if err != nil {
+		return "", err
+	}
+	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
+	}
+	return trimedUrl, nil
+
+}
+
+func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
+	parsedUrl, err := url.Parse(location)
+	if err != nil {
+		fmt.Println("error while parsing location url: ", err)
+	}
+	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+	}
+	return trimedUrl
+}
+
+func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
+	sess, err := manager.getSession(ctx)
 	if err != nil {
 		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
@@ -127,7 +145,11 @@ func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 				Objects: objects[i:j],
 			},
 		}
-		_, err := svc.DeleteObjects(input)
+
+		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		defer cancel()
+
+		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				switch aerr.Code() {
@@ -145,7 +167,7 @@ func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 	return nil
 }
 
-func (manager *S3Manager) getSession() (*session.Session, error) {
+func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
 	if manager.session != nil {
 		return manager.session, nil
 	}
@@ -153,12 +175,21 @@ func (manager *S3Manager) getSession() (*session.Session, error) {
 	if manager.Config.Bucket == "" {
 		return nil, errors.New("no storage bucket configured to downloader")
 	}
+	var region string
+	var err error
+	if manager.Config.Region == nil {
+		getRegionSession := session.Must(session.NewSession())
 
-	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
-	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
+		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		defer cancel()
+
+		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+		if err != nil {
+			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
+			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
+		}
+	} else {
+		region = *manager.Config.Region
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
@@ -166,6 +197,9 @@ func (manager *S3Manager) getSession() (*session.Session, error) {
 		sess = session.Must(session.NewSession(&aws.Config{
 			Region:                        aws.String(region),
 			CredentialsChainVerboseErrors: aws.Bool(true),
+			Endpoint:                      manager.Config.Endpoint,
+			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
+			DisableSSL:                    manager.Config.DisableSSL,
 		}))
 	} else {
 		pkgLogger.Debug("Credentials found in the destination's config.")
@@ -173,63 +207,26 @@ func (manager *S3Manager) getSession() (*session.Session, error) {
 			Region:                        aws.String(region),
 			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 			CredentialsChainVerboseErrors: aws.Bool(true),
+			Endpoint:                      manager.Config.Endpoint,
+			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
+			DisableSSL:                    manager.Config.DisableSSL,
 		}))
 	}
 	return sess, nil
 }
 
-func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
-	locationSlice := strings.Split(location, "amazonaws.com/")
-	return locationSlice[len(locationSlice)-1]
-}
-
-/*
-GetObjectNameFromLocation gets the object name/key name from the object location url
-	https://bucket-name.s3.amazonaws.com/key - >> key
-*/
-func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
-	uri, err := url.Parse(location)
-	if err != nil {
-		return "", err
-	}
-	host := uri.Host
-	path := uri.Path[1:]
-	if strings.Contains(host, manager.Config.Bucket) {
-		return path, nil
-	}
-	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
-}
-
 //IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
 //then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
-func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		return
 	}
 	fileObjects = make([]*FileObject, 0)
 
-	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+	sess, err := manager.getSession(ctx)
 	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
+		return []*FileObject{}, fmt.Errorf(`error starting S3 session: %v`, err)
 	}
-	var sess *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	}
-
 	// Create S3 service client
 	svc := s3.New(sess)
 	listObjectsV2Input := s3.ListObjectsV2Input{
@@ -243,15 +240,18 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+
+	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	defer cancel()
+
 	// Get the list of items
-	resp, err := svc.ListObjectsV2(&listObjectsV2Input)
+	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
 		return
 	}
 	if resp.IsTruncated != nil {
 		manager.Config.IsTruncated = *resp.IsTruncated
 	}
-	manager.Config.IsTruncated = *resp.IsTruncated
 	manager.Config.ContinuationToken = resp.NextContinuationToken
 	for _, item := range resp.Contents {
 		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
@@ -259,26 +259,48 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 	return
 }
 
+func (manager *S3Manager) GetConfiguredPrefix() string {
+	return manager.Config.Prefix
+}
+
 type S3Manager struct {
 	Config  *S3Config
 	session *session.Session
+	Timeout *time.Duration
+}
+
+func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey, startAfter string
-	var continuationToken *string
+	var continuationToken, endPoint, region *string
 	var enableSSE, ok bool
+	var s3ForcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
+		tmp, ok := config["bucketName"].(string)
+		if ok {
+			bucketName = tmp
+		}
 	}
 	if config["prefix"] != nil {
-		prefix = config["prefix"].(string)
+		tmp, ok := config["prefix"].(string)
+		if ok {
+			prefix = tmp
+		}
 	}
 	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
+		tmp, ok := config["accessKeyID"].(string)
+		if ok {
+			accessKeyID = tmp
+		}
 	}
 	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
+		tmp, ok := config["accessKey"].(string)
+		if ok {
+			accessKey = tmp
+		}
 	}
 	if config["enableSSE"] != nil {
 		if enableSSE, ok = config["enableSSE"].(bool); !ok {
@@ -286,11 +308,51 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		}
 	}
 	if config["startAfter"] != nil {
-		startAfter = config["startAfter"].(string)
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
+		}
 	}
-
+	if config["endPoint"] != nil {
+		tmp, ok := config["endPoint"].(string)
+		if ok {
+			endPoint = &tmp
+		}
+	}
+	if config["s3ForcePathStyle"] != nil {
+		tmp, ok := config["s3ForcePathStyle"].(bool)
+		if ok {
+			s3ForcePathStyle = &tmp
+		}
+	}
+	if config["disableSSL"] != nil {
+		tmp, ok := config["disableSSL"].(bool)
+		if ok {
+			disableSSL = &tmp
+		}
+	}
+	if config["region"] != nil {
+		tmp, ok := config["region"].(string)
+		if ok {
+			region = &tmp
+		}
+	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint, ContinuationToken: continuationToken, StartAfter: startAfter, IsTruncated: true}
+	return &S3Config{
+		Endpoint:          endPoint,
+		Bucket:            bucketName,
+		Prefix:            prefix,
+		AccessKeyID:       accessKeyID,
+		AccessKey:         accessKey,
+		EnableSSE:         enableSSE,
+		Region:            region,
+		RegionHint:        regionHint,
+		ContinuationToken: continuationToken,
+		StartAfter:        startAfter,
+		IsTruncated:       true,
+		S3ForcePathStyle:  s3ForcePathStyle,
+		DisableSSL:        disableSSL,
+	}
 }
 
 type S3Config struct {
@@ -299,12 +361,12 @@ type S3Config struct {
 	AccessKeyID       string
 	AccessKey         string
 	EnableSSE         bool
+	Region            *string
 	RegionHint        string
 	ContinuationToken *string
 	StartAfter        string
 	IsTruncated       bool
-}
-
-func (manager *S3Manager) GetConfiguredPrefix() string {
-	return manager.Config.Prefix
+	Endpoint          *string
+	S3ForcePathStyle  *bool
+	DisableSSL        *bool
 }

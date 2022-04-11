@@ -16,12 +16,13 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
+	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -78,6 +79,7 @@ type testContext struct {
 	mockFileManager        *mocksFileManager.MockFileManager
 	mockConfigPrefix       string
 	mockFileObjects        []*filemanager.FileObject
+	mockMultitenantI       *mocksMultitenant.MockMultiTenantI
 }
 
 // Initiaze mocks and common expectations
@@ -89,14 +91,16 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockFileManagerFactory = mocksFileManager.NewMockFileManagerFactory(c.mockCtrl)
 	c.mockFileManager = mocksFileManager.NewMockFileManager(c.mockCtrl)
+	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
-	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
-			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
+			go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		})
+	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
+	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
@@ -147,32 +151,30 @@ var _ = Describe("BatchRouter", func() {
 		It("should initialize and recover after crash", func() {
 			batchrouter := &HandleT{}
 
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI)
 		})
 	})
 
 	Context("normal operation - s3 - do not readPerDestination", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 		})
 
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI)
 			readPerDestination = false
 			setQueryFilters()
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
-			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
+			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
 			c.mockFileManager.EXPECT().GetConfiguredPrefix().Return(c.mockConfigPrefix)
-			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
+			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
 
 			s3Payload := `{
 				"userId": "identified user id",

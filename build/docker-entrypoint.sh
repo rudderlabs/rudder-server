@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Used mysql docker entrypoint script as reference to create this script
 # https://github.com/docker-library/mysql/blob/master/5.6/docker-entrypoint.sh

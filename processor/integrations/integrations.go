@@ -1,22 +1,23 @@
 package integrations
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
 
 var (
+	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 	destTransformURL      string
 	postParametersTFields []string
 )
@@ -58,20 +59,6 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
-// This struct represents the datastructure present in Transformer network layer Error builder
-type TransErrorSpecT struct {
-	Message                  string                 `json:"message"`
-	Status                   int                    `json:"status"`
-	StatTags                 map[string]string      `json:"statTags"`
-	DestinationResponse      map[string]interface{} `json:"destinationResponse"`
-	ApiLimit                 map[string]interface{} `json:"apiLimit"`
-	Metadata                 map[string]interface{} `json:"metadata"`
-	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
-	FailureAt                string                 `json:"failureAt"`
-	AuthErrorCategory        string                 `json:"authErrorCategory"`
-	AccessToken              string                 `json:"accessToken"`
-}
-
 type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }
@@ -83,7 +70,7 @@ type TransResponseT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := json.Unmarshal(input, &integrationStat)
+	err := jsonfast.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -93,7 +80,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := json.Unmarshal(input, &integrationStats)
+	err := jsonfast.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -106,7 +93,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := json.Marshal(transformRawParams)
+	transformRaw, err := jsonfast.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}
@@ -180,7 +167,7 @@ func GetTransformerURL() string {
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	if misc.Contains(warehouse.WarehouseDestinations, destType) {
+	if misc.ContainsString(warehouseutils.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))

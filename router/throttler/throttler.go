@@ -131,11 +131,11 @@ func (throttler *HandleT) CheckLimitReached(destID string, userID string, curren
 func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Time) {
 	if throttler.destLimiter.enabled && destID != "" {
 		destKey := throttler.getDestKey(destID)
-		throttler.destLimiter.ratelimiter.Inc(destKey, currentTime)
+		_ = throttler.destLimiter.ratelimiter.Inc(destKey, currentTime)
 	}
 	if throttler.userLimiter.enabled && userID != "" {
 		userKey := throttler.getUserKey(destID, userID)
-		throttler.userLimiter.ratelimiter.Inc(userKey, currentTime)
+		_ = throttler.userLimiter.ratelimiter.Inc(userKey, currentTime)
 	}
 }
 
@@ -144,11 +144,11 @@ func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Tim
 func (throttler *HandleT) Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string) {
 	if throttler.destLimiter.enabled && destID != "" && (atLevel == ALL_LEVELS || atLevel == DESTINATION_LEVEL) {
 		destKey := throttler.getDestKey(destID)
-		throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)
+		_ = throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)
 	}
 	if throttler.userLimiter.enabled && userID != "" && (atLevel == ALL_LEVELS || atLevel == USER_LEVEL) {
 		userKey := throttler.getUserKey(destID, userID)
-		throttler.userLimiter.ratelimiter.Dec(userKey, count, currentTime)
+		_ = throttler.userLimiter.ratelimiter.Dec(userKey, count, currentTime)
 	}
 }
 

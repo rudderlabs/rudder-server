@@ -33,6 +33,18 @@ func (m *MockDedupI) EXPECT() *MockDedupIMockRecorder {
 	return m.recorder
 }
 
+// Close mocks base method.
+func (m *MockDedupI) Close() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Close")
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockDedupIMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockDedupI)(nil).Close))
+}
+
 // FindDuplicates mocks base method.
 func (m *MockDedupI) FindDuplicates(arg0 []string, arg1 map[string]struct{}) []int {
 	m.ctrl.T.Helper()

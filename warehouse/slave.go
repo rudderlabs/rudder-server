@@ -68,9 +68,9 @@ func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bo
 /*
  * Get download path for the job. Also creates missing directories for this path
  */
-func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
+func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	job := jobRun.job
-	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseJsonUploadsTmp)
+	dirName := fmt.Sprintf(`/%s/_%s/`, misc.RudderWarehouseJsonUploadsTmp, strconv.Itoa(index))
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
@@ -120,7 +120,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	timer := jobRun.timerStat("download_staging_file_time")
 	timer.Start()
 
-	err = downloader.Download(file, job.StagingFileLocation)
+	err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to download file")
 		return err
@@ -146,7 +146,7 @@ func (job *PayloadT) getDiscardsTable() string {
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := uuid.Must(uuid.NewV4()).String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -254,10 +254,10 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if misc.Contains(timeWindowDestinations, job.DestinationType) {
-		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
+		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }
@@ -351,7 +351,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
-	jobRun.setStagingFileDownloadPath()
+	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
 	err = jobRun.downloadStagingFile()
@@ -713,7 +713,7 @@ func setupSlave(ctx context.Context) error {
 	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
 			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
@@ -729,7 +729,7 @@ func setupSlave(ctx context.Context) error {
 			return nil
 		}))
 	}
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		return notifier.RunMaintenanceWorker(ctx)
 	}))
 	return g.Wait()
@@ -739,7 +739,17 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if (hasID && hasReceivedAt) || violatedConstraints.isViolated {
+	if violatedConstraints.isViolated {
+		if !hasID {
+			rowID = violatedConstraints.violatedIdentifier
+			hasID = true
+		}
+		if !hasReceivedAt {
+			receivedAt = time.Now().Format(misc.RFC3339Milli)
+			hasReceivedAt = true
+		}
+	}
+	if hasID && hasReceivedAt {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
