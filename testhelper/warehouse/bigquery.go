@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"os"
 	"time"
+	"strings"
 )
 
 type BiqQueryTest struct {
@@ -35,7 +36,8 @@ func jsonEscape(i string) (string, error) {
 		return "", fmt.Errorf("could not escape big query JSON credentials for workspace config with error: %s", err.Error())
 	}
 	// Trim the beginning and trailing " character
-	return string(b[1 : len(b)-1]), nil
+	// TODO:  instead of the below return?
+	return strings.Trim(string(b), `"`), nil
 }
 
 // SetWHBigQueryDestination setup warehouse Big query destination
