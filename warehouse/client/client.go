@@ -39,6 +39,13 @@ func (cl *Client) sqlWriteQuery(statement string) (result warehouseutils.QueryRe
 
 func (cl *Client) sqlReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
+	if err != nil && err != sql.ErrNoRows {
+		return
+	}
+	if err == sql.ErrNoRows {
+		return result, nil
+	}
+
 	defer rows.Close()
 
 	result.Columns, err = rows.Columns()

@@ -739,9 +739,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
-						if sourceID != destinationJobMetadata.SourceID {
-							panic(fmt.Errorf("different sources are grouped together"))
-						}
 						if destinationID != destinationJobMetadata.DestinationID {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
