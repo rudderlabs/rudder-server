@@ -1515,16 +1515,17 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
+func (job *UploadJobT) hasLoadFiles(tableName string) (exists bool, err error) {
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS (
+											SELECT 1 FROM %[1]s
+											WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)
+										)`,
 		warehouseutils.WarehouseLoadFilesTable, sourceID, destID, tableName, job.upload.StartLoadFileID, job.upload.EndLoadFileID)
-	var count sql.NullInt64
-	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
-	return count.Int64 > 0, err
+	err = dbHandle.QueryRow(sqlStatement).Scan(&exists)
+	return
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
