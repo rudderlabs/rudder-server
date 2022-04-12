@@ -965,7 +965,6 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			// Discuss with @Shanmukh regarding this.
 			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name, warehouse.Source.ID).Count(uploaded)
 		}
 		select {

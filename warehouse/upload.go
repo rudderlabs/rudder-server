@@ -1516,7 +1516,7 @@ func (job *UploadJobT) populateLoadFilesTableMap() {
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT distinct %[1]s.table_name FROM %[1]s WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v );`,
+	sqlStatement := fmt.Sprintf(`SELECT distinct %[1]s.table_name FROM %[1]s WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' %[1]s.id >= %[4]v AND %[1]s.id <= %[5]v );`,
 		warehouseutils.WarehouseLoadFilesTable,
 		sourceID,
 		destID,
@@ -1543,7 +1543,6 @@ func (job *UploadJobT) populateLoadFilesTableMap() {
 		}
 		job.loadFilesTableMap[tableNameT(tableName)] = true
 	}
-	return
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
