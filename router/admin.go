@@ -15,26 +15,26 @@ func RegisterAdminHandlers(readonlyRouterDB, readonlyBatchRouterDB jobsdb.Readon
 	admin.RegisterAdminHandler("BatchRouter", &RouterRpcHandler{jobsDBPrefix: "batch_rt", readonlyBatchRouterDB: readonlyBatchRouterDB})
 }
 
-type RouterAdmin struct {
+type Admin struct {
 	handles map[string]*HandleT
 }
 
-var adminInstance *RouterAdmin
+var adminInstance *Admin
 var routerJobsTableName, routerJobStatusTableName string
 
-func Init2() {
-	adminInstance = &RouterAdmin{
+func InitRouterAdmin() {
+	adminInstance = &Admin{
 		handles: make(map[string]*HandleT),
 	}
 	admin.RegisterStatusHandler("routers", adminInstance)
 }
 
-func (ra *RouterAdmin) registerRouter(name string, handle *HandleT) {
+func (ra *Admin) registerRouter(name string, handle *HandleT) {
 	ra.handles[name] = handle
 }
 
 // Status function is used for debug purposes by the admin interface
-func (ra *RouterAdmin) Status() interface{} {
+func (ra *Admin) Status() interface{} {
 	statusList := make([]map[string]interface{}, 0)
 	for name, router := range ra.handles {
 		routerStatus := router.perfStats.Status()
@@ -161,7 +161,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		*result = string(response)
 	}
 	// Since we try to execute each query independently once we are connected to db
-	// this tries to captures errors that happened on all the execution paths
+	// this tries to capture errors that happened on all the execution paths
 	return completeErr
 }
 

@@ -203,7 +203,7 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	operationmanager.Init()
 	operationmanager.Init2()
 	ratelimiter.Init()

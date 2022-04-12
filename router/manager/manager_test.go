@@ -145,10 +145,10 @@ var (
 					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
@@ -166,7 +166,7 @@ func initRouter() {
 	jobsdb.Init3()
 	archiver.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 }
