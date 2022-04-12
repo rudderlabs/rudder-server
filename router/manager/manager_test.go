@@ -166,7 +166,7 @@ func initRouter() {
 	jobsdb.Init3()
 	archiver.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 }

@@ -106,17 +106,12 @@ func (c *testContext) Finish() {
 	c.mockCtrl.Finish()
 }
 
-var (
-	CustomVal     map[string]string = map[string]string{"GA": "GA"}
-	emptyJobsList []*jobsdb.JobT
-)
-
 func initRouter() {
 	config.Load()
 	admin.Init()
 	logger.Init()
 	Init()
-	Init2()
+	InitRouterAdmin()
 }
 
 var _ = Describe("Router", func() {
