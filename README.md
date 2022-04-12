@@ -80,7 +80,7 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 - [**Docker**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/)
 - [**Kubernetes**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/kubernetes/)
-- [**Developer machine setup**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/developer-machine-setup/)
+- [**Developer machine setup**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/developer-machine-setup/)
 
 > **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
 
