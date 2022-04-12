@@ -3,14 +3,14 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
-	"strconv"
-
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/phayes/freeport"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"log"
+	"os"
+	"strconv"
+	"time"
 )
 
 type ClickHouseClusterResource struct {
@@ -33,11 +33,12 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 }
 
 type ClickHouseClusterTest struct {
-	Network   *dc.Network
-	Zookeeper *dockertest.Resource
-	Resources ClickHouseClusterResources
-	EventsMap EventsCountMap
-	WriteKey  string
+	Network                *dc.Network
+	Zookeeper              *dockertest.Resource
+	Resources              ClickHouseClusterResources
+	EventsMap              EventsCountMap
+	WriteKey               string
+	TableTestQueryFreqInMS time.Duration
 }
 
 // SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
@@ -58,8 +59,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		},
 		Resources: []*ClickHouseClusterResource{
 			{
-				Name:      "clickhouse01",
-				HostName:  "clickhouse01",
+				Name:     "clickhouse01",
+				HostName: "clickhouse01",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -71,8 +72,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse02",
-				HostName:  "clickhouse02",
+				Name:     "clickhouse02",
+				HostName: "clickhouse02",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -84,8 +85,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse03",
-				HostName:  "clickhouse03",
+				Name:     "clickhouse03",
+				HostName: "clickhouse03",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -97,8 +98,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse04",
-				HostName:  "clickhouse04",
+				Name:     "clickhouse04",
+				HostName: "clickhouse04",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -110,6 +111,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 		},
+		TableTestQueryFreqInMS: 100,
 	}
 	chClusterTest := Test.CHClusterTest
 	cleanup = func() {}
@@ -165,7 +167,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	if chClusterTest.Network != nil {
 		if chClusterTest.Zookeeper != nil {
 			if err = pool.Client.ConnectNetwork(chClusterTest.Network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.Zookeeper.Container.Name,
+				Container:      chClusterTest.Zookeeper.Container.Name,
 				EndpointConfig: &dc.EndpointConfig{},
 			}); err != nil {
 				chSetupError = err

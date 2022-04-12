@@ -163,7 +163,7 @@ func initJobsDB() {
 	archiver.Init()
 	stats.Setup()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()

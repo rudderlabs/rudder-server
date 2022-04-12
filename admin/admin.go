@@ -76,11 +76,11 @@ type Admin struct {
 	rpcServer           *rpc.Server
 }
 
-var instance Admin
+var instance *Admin
 var pkgLogger logger.LoggerI
 
 func Init() {
-	instance = Admin{
+	instance = &Admin{
 		statusHandlers: make(map[string]PackageStatusHandler),
 		rpcServer:      rpc.NewServer(),
 	}
@@ -89,7 +89,7 @@ func Init() {
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
-func (a Admin) Status(_ struct{}, reply *string) (err error) {
+func (a *Admin) Status(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -110,7 +110,7 @@ func (a Admin) Status(_ struct{}, reply *string) (err error) {
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a Admin) PrintStack(_ struct{}, reply *string) (err error) {
+func (a *Admin) PrintStack(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -124,7 +124,7 @@ func (a Admin) PrintStack(_ struct{}, reply *string) (err error) {
 }
 
 // HeapDump creates heap profile at given path using pprof
-func (a Admin) HeapDump(path *string, reply *string) (err error) {
+func (a *Admin) HeapDump(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -142,7 +142,7 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 }
 
 // StartCpuProfile starts writing cpu profile at given path using pprof
-func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
+func (a *Admin) StartCpuProfile(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -165,7 +165,7 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 }
 
 // StopCpuProfile stops writing already cpu profile
-func (a Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
+func (a *Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -179,7 +179,7 @@ func (a Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a Admin) ServerConfig(_ struct{}, reply *string) (err error) {
+func (a *Admin) ServerConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -201,7 +201,7 @@ type LogLevel struct {
 	Level  string
 }
 
-func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
+func (a *Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -216,7 +216,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 }
 
 //GetLoggingConfig returns the logging configuration
-func (a Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
+func (a *Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -230,7 +230,7 @@ func (a Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 }
 
 //GetFormattedEnv return the formatted env
-func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
+func (a *Admin) GetFormattedEnv(env string, reply *string) (err error) {
 	*reply = config.TransformKey(env)
 	return nil
 }
