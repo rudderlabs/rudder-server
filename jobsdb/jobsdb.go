@@ -472,7 +472,7 @@ func (jd *HandleT) Status() interface{} {
 	pendingEvents := []map[string]interface{}{}
 	for _, pendingEvent := range pendingEventMetrics {
 		count := pendingEvent.Value.(metric.Gauge).IntValue()
-		if count > 0 {
+		if count != 0 {
 			pendingEvents = append(pendingEvents, map[string]interface{}{
 				"tags":  pendingEvent.Tags,
 				"count": count,
@@ -1780,30 +1780,30 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 		0, GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	jobsToMigrate := append(unprocessedList, retryList...)
 	noJobsMigrated = len(jobsToMigrate)
-	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
-	//instead of getting auto-assigned
-	err = jd.storeJobsDS(destDS, true, jobsToMigrate) //TODO: switch to transaction
-	jd.assertError(err)
 
-	//Now copy over the latest status of the unfinished jobs
-	var statusList []*JobStatusT
-	for _, job := range retryList {
-		newStatus := JobStatusT{
-			JobID:         job.JobID,
-			JobState:      job.LastJobStatus.JobState,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ExecTime:      job.LastJobStatus.ExecTime,
-			RetryTime:     job.LastJobStatus.RetryTime,
-			ErrorCode:     job.LastJobStatus.ErrorCode,
-			ErrorResponse: job.LastJobStatus.ErrorResponse,
-			Parameters:    job.LastJobStatus.Parameters,
-			WorkspaceId:   job.WorkspaceId,
+	err = jd.doInTransaction(func(txn *sql.Tx) error {
+		if err := jd.copyJobsDS(txn, destDS, jobsToMigrate); err != nil {
+			return err
 		}
-		statusList = append(statusList, &newStatus)
-	}
-	err = jd.updateJobStatusDS(destDS, statusList, []string{}, nil) //TODO: switch to transaction
+		//Now copy over the latest status of the unfinished jobs
+		var statusList []*JobStatusT
+		for _, job := range retryList {
+			newStatus := JobStatusT{
+				JobID:         job.JobID,
+				JobState:      job.LastJobStatus.JobState,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ExecTime:      job.LastJobStatus.ExecTime,
+				RetryTime:     job.LastJobStatus.RetryTime,
+				ErrorCode:     job.LastJobStatus.ErrorCode,
+				ErrorResponse: job.LastJobStatus.ErrorResponse,
+				Parameters:    job.LastJobStatus.Parameters,
+				WorkspaceId:   job.WorkspaceId,
+			}
+			statusList = append(statusList, &newStatus)
+		}
+		return jd.copyJobStatusDS(txn, destDS, statusList, []string{}, nil)
+	})
 	jd.assertError(err)
-
 	return
 }
 
@@ -1831,61 +1831,77 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
-func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
+func (jd *HandleT) storeJobsDS(ds dataSetT, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
 	queryStat := jd.storeTimerStat("store_jobs")
 	queryStat.Start()
 	defer queryStat.End()
 
+	// Always clear cache even in case of an error,
+	// since we are not sure about the state of the db
+	defer jd.clearCache(ds, jobList)
+
+	return jd.doInTransaction(func(txn *sql.Tx) error {
+		return jd.storeJobsDSInTxn(txn, ds, jobList)
+	})
+}
+
+/*
+Next set of functions are for reading/writing jobs and job_status for
+a given dataset. The names should be self explainatory
+*/
+func (jd *HandleT) copyJobsDS(txn *sql.Tx, ds dataSetT, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
+	queryStat := jd.storeTimerStat("store_jobs")
+	queryStat.Start()
+	defer queryStat.End()
+
+	// Always clear cache even in case of an error,
+	// since we are not sure about the state of the db
+	defer jd.clearCache(ds, jobList)
+	return jd.copyJobsDSInTxn(txn, ds, jobList)
+}
+
+func (jd *HandleT) doInTransaction(f func(txn *sql.Tx) error) error {
 	txn, err := jd.dbHandle.Begin()
 	if err != nil {
 		return err
 	}
-
-	// Always clear cache even in case of an error,
-	// since we are not sure about the state of the db
-	defer func() {
-		customValParamMap := make(map[string]map[string]map[string]struct{})
-		var workspaces []string //for bursting old cache
-		for _, job := range jobList {
-			if !misc.ContainsString(workspaces, job.WorkspaceId) {
-				workspaces = append(workspaces, job.WorkspaceId)
-			}
-			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
-		}
-
-		if useNewCacheBurst {
-			jd.clearCache(ds, customValParamMap)
-		} else {
-			//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
-			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
-			for _, workspace := range workspaces {
-				jd.markClearEmptyResult(ds, workspace, []string{}, []string{}, nil, hasJobs, nil)
-			}
-		}
-	}()
-
-	err = jd.storeJobsDSInTxn(txn, ds, copyID, jobList)
+	err = f(txn)
 	if err != nil {
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("%w; %s", err, rollbackErr)
 		}
 		return err
 	}
-
-	err = txn.Commit()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return txn.Commit()
 }
 
-func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
+	customValParamMap := make(map[string]map[string]map[string]struct{})
+	var workspaces []string //for bursting old cache
+	for _, job := range jobList {
+		if !misc.ContainsString(workspaces, job.WorkspaceId) {
+			workspaces = append(workspaces, job.WorkspaceId)
+		}
+		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
+	}
+
+	if useNewCacheBurst {
+		jd.doClearCache(ds, customValParamMap)
+	} else {
+		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
+		for _, workspace := range workspaces {
+			jd.markClearEmptyResult(ds, workspace, []string{}, []string{}, nil, hasJobs, nil)
+		}
+	}
+}
+
+func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
 	queryStat := jd.storeTimerStat("store_jobs_retry_each")
 	queryStat.Start()
 	defer queryStat.End()
 
-	err := jd.storeJobsDS(ds, copyID, jobList)
+	err := jd.storeJobsDS(ds, jobList)
 	if err == nil {
 		return
 	}
@@ -1928,7 +1944,7 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 }
 
 //mark cache empty after going over ds->workspace->customvals->params and for all stateFilters
-func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
+func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
 	//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 	for workspace, workspaceCVPMap := range CVPMap {
 		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
@@ -2000,16 +2016,12 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	}
 }
 
-func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
+func (jd *HandleT) copyJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 
-	if copyID {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-			"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
-	} else {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
-	}
+	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
+		"event_payload", "event_count", "created_at", "expire_at", "workspace_id"))
 
 	if err != nil {
 		return err
@@ -2023,18 +2035,47 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 			eventCount = job.EventCount
 		}
 
-		if copyID {
-			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
-		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId)
-		}
+		_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
+			string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
+
 		if err != nil {
 			return err
 		}
 	}
-	_, err = stmt.Exec()
+	if _, err = stmt.Exec(); err != nil {
+		return err
+	}
 
+	// We are manually triggering ANALYZE to help with query planning since a large
+	// amount of rows are being copied in the table in a very short time and
+	// AUTOVACUUM might not have a chance to do its work before we start querying
+	// this table
+	_, err = txHandler.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
+	return err
+}
+
+func (*HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
+	var stmt *sql.Stmt
+	var err error
+
+	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+	if err != nil {
+		return err
+	}
+
+	defer stmt.Close()
+
+	for _, job := range jobList {
+		eventCount := 1
+		if job.EventCount > 1 {
+			eventCount = job.EventCount
+		}
+
+		if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			return err
+		}
+	}
+	_, err = stmt.Exec()
 	return err
 }
 
@@ -2459,24 +2500,23 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	return jobList
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+// copyJobStatusDS is expected to be called only during a migration
+func (jd *HandleT) copyJobStatusDS(txn *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 	if len(statusList) == 0 {
 		return nil
 	}
 
-	txn, err := jd.dbHandle.Begin()
-	if err != nil {
-		return err
-	}
-
+	var stateFiltersByWorkspace map[string][]string
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	stateFiltersByWorkspace, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
+	stateFiltersByWorkspace, err = jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
 	if err != nil {
-		txn.Rollback()
 		return err
 	}
-
-	err = txn.Commit()
+	// We are manually triggering ANALYZE to help with query planning since a large
+	// amount of rows are being copied in the table in a very short time and
+	// AUTOVACUUM might not have a chance to do its work before we start querying
+	// this table
+	_, err = txn.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -3487,7 +3527,7 @@ func (jd *HandleT) store(jobList []*JobT) error {
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
+	err := jd.storeJobsDS(dsList[len(dsList)-1], jobList)
 	return err
 }
 
@@ -3524,7 +3564,7 @@ func (jd *HandleT) storeWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], false, jobList)
+	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], jobList)
 }
 
 /*

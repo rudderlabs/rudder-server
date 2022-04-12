@@ -41,6 +41,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
 
@@ -64,12 +65,15 @@ func RegisterAdminHandler(name string, handler interface{}) {
 
 // RegisterStatusHandler expects object implementing PackageStatusHandler interface
 func RegisterStatusHandler(name string, handler PackageStatusHandler) {
+	instance.statusHandlersMutex.Lock()
 	instance.statusHandlers[strings.ToLower(name)] = handler
+	instance.statusHandlersMutex.Unlock()
 }
 
 type Admin struct {
-	statusHandlers map[string]PackageStatusHandler
-	rpcServer      *rpc.Server
+	statusHandlersMutex sync.RWMutex
+	statusHandlers      map[string]PackageStatusHandler
+	rpcServer           *rpc.Server
 }
 
 var instance Admin
@@ -95,9 +99,11 @@ func (a Admin) Status(_ struct{}, reply *string) (err error) {
 	statusObj := make(map[string]interface{})
 	statusObj["server-mode"] = db.CurrentMode
 
+	a.statusHandlersMutex.RLock()
 	for moduleName, handler := range a.statusHandlers {
 		statusObj[moduleName] = handler.Status()
 	}
+	a.statusHandlersMutex.RUnlock()
 	formattedOutput, err := json.MarshalIndent(statusObj, "", "  ")
 	*reply = string(formattedOutput)
 	return err

@@ -32,14 +32,13 @@ type Client struct {
 	Type      string
 }
 
-func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) sqlWriteQuery(statement string) (result warehouseutils.QueryResult, err error) {
+	_, err = cl.SQL.Exec(statement)
+	return
+}
+
+func (cl *Client) sqlReadQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-	if err == sql.ErrNoRows {
-		return result, nil
-	}
 	defer rows.Close()
 
 	result.Columns, err = rows.Columns()
@@ -153,7 +152,11 @@ func (cl *Client) Query(statement string, queryType QueryType) (result warehouse
 			return cl.dbReadQuery(statement)
 		}
 	default:
-		return cl.sqlQuery(statement)
+		if queryType == Write {
+			return cl.sqlWriteQuery(statement)
+		} else {
+			return cl.sqlReadQuery(statement)
+		}
 	}
 }
 
