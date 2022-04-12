@@ -161,7 +161,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		*result = string(response)
 	}
 	// Since we try to execute each query independently once we are connected to db
-	// this tries to captures errors that happened on all the execution paths
+	// this tries to capture errors that happened on all the execution paths
 	return completeErr
 }
 
