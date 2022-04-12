@@ -8,8 +8,8 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"os"
-	"time"
 	"strings"
+	"time"
 )
 
 type BiqQueryTest struct {
@@ -85,10 +85,11 @@ func SetWHBigQueryDestination() (cleanup func()) {
 	credentials, _ := json.Marshal(bqTest.Credentials.Credentials)
 	operation := func() error {
 		var err error
-		bqTest.DB, err = bigquery.Connect(&bigquery.BQCredentialsT{
-			ProjectID:   bqTest.Credentials.ProjectID,
-			Credentials: string(credentials),
-		}, bqTest.Context)
+		bqTest.DB, err = bigquery.Connect(bqTest.Context,
+			&bigquery.BQCredentialsT{
+				ProjectID:   bqTest.Credentials.ProjectID,
+				Credentials: string(credentials),
+			})
 		return err
 	}
 	bqTest.Credentials.CredentialsEscaped, err = jsonEscape(string(credentials))
@@ -97,8 +98,6 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		return
 	}
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(5))
-	err = backoff.Retry(operation, backoffWithMaxRetry)
-
 	if err = backoff.Retry(operation, backoffWithMaxRetry); err != nil {
 		fmt.Println(fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error()))
 	}

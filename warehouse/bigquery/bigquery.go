@@ -586,7 +586,7 @@ type BQCredentialsT struct {
 	Credentials string
 }
 
-func Connect(cred *BQCredentialsT, context context.Context) (*bigquery.Client, error) {
+func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
 	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
 	return client, err
 }
@@ -594,7 +594,7 @@ func Connect(cred *BQCredentialsT, context context.Context) (*bigquery.Client, e
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
 	bq.BQContext = context.Background()
-	client, err := Connect(&cred, bq.BQContext)
+	client, err := Connect(bq.BQContext, &cred)
 	return client, err
 }
 

@@ -1131,7 +1131,7 @@ func TestWHMssqlDestination(t *testing.T) {
 }
 
 func getMessagId(wdt *wht.WareHouseDestinationTest) string {
-	if len(wdt.MessageId) == 0 {
+	if wdt.MessageId == "" {
 		return uuid.Must(uuid.NewV4()).String()
 	}
 	return wdt.MessageId
