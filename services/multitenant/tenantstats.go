@@ -31,6 +31,8 @@ type MultitenantStatsT struct {
 	routerTenantLatencyStat map[string]map[string]metric.MovingAverage
 	routerLatencyMutex      sync.RWMutex
 	processorStageTime      time.Time
+	// have DBs also
+	RouterDBs map[string]jobsdb.MultiTenantJobsDB
 }
 
 type MultiTenantI interface {
@@ -38,6 +40,36 @@ type MultiTenantI interface {
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
+	lifecycle
+}
+
+type lifecycle interface {
+	Start()
+	Stop()
+}
+
+func (multitenantStat *MultitenantStatsT) Stop() {
+	// reset the store sync map
+	metric.GetManager().Reset()
+}
+
+func (multitenantStat *MultitenantStatsT) Start() {
+	multitenantStat.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
+	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
+	multitenantStat.failureRate = make(map[string]map[string]metric.MovingAverage)
+	for dbPrefix := range multitenantStat.RouterDBs {
+		multitenantStat.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
+		pileUpStatMap := make(map[string]map[string]int)
+		multitenantStat.RouterDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
+		for workspace := range pileUpStatMap {
+			for destType := range pileUpStatMap[workspace] {
+				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
+			}
+		}
+	}
+
+	multitenantStat.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
+	multitenantStat.processorStageTime = time.Now()
 }
 
 type workspaceScore struct {
@@ -55,6 +87,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 	multitenantStat.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	multitenantStat.failureRate = make(map[string]map[string]metric.MovingAverage)
+	multitenantStat.RouterDBs = routerDBs
 	for dbPrefix := range routerDBs {
 		multitenantStat.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 		pileUpStatMap := make(map[string]map[string]int)
@@ -212,7 +245,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - workspacePickUpCount[workspaceKey]
 				usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value())
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRate : %v ,DestType : %v,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value(), destType)
 			}
 		}
 	}
@@ -242,7 +275,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 		runningJobCount = runningJobCount - pickUpCount
 		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
 
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), pendingEvents)
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,DestType : %v ,PileUpLoop ", float64(pickUpCount)*multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), runningTimeCounter, workspaceKey, runningJobCount, multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value(), pendingEvents, destType)
 	}
 
 	return workspacePickUpCount, usedLatencies

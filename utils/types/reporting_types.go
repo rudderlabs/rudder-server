@@ -25,6 +25,7 @@ var (
 
 	//Module names
 	GATEWAY                = "gateway"
+	DESTINATION_FILTER     = "destination_filter"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
 	USER_TRANSFORMER       = "user_transformer"
 	EVENT_FILTER           = "event_filter"

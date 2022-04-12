@@ -14,7 +14,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
       with:
-        go-version: '~1.16.4'
+        go-version: '~1.17.8'
     - uses: actions/cache@v2
       with:
         path: |
@@ -34,7 +34,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
       with:
-        go-version: '~1.16.4'
+        go-version: '~1.17.8'
     - uses: actions/cache@v2
       with:
         path: |
@@ -54,7 +54,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
       with:
-        go-version: '~1.16.4'
+        go-version: '~1.17.8'
     - uses: actions/cache@v2
       with:
         path: |
@@ -65,5 +65,5 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.4)
+    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
     - run: make test

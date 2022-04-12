@@ -17,11 +17,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/router"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/services/dedup"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -32,15 +28,18 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/tidwall/gjson"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -53,19 +52,39 @@ type PauseT struct {
 	respChannel chan bool
 }
 
-//HandleT is an handle to this object used in main.go
+//HandleT is a handle to this object used in main.go
 type HandleT struct {
-	paused                         bool
-	pauseLock                      sync.Mutex
-	pauseChannel                   chan *PauseT
-	resumeChannel                  chan bool
-	backendConfig                  backendconfig.BackendConfig
-	stats                          stats.Stats
-	gatewayDB                      jobsdb.JobsDB
-	routerDB                       jobsdb.JobsDB
-	batchRouterDB                  jobsdb.JobsDB
-	errorDB                        jobsdb.JobsDB
-	transformer                    transformer.Transformer
+	paused              bool
+	pauseLock           sync.Mutex
+	pauseChannel        chan *PauseT
+	resumeChannel       chan bool
+	backendConfig       backendconfig.BackendConfig
+	transformer         transformer.Transformer
+	lastJobID           int64
+	gatewayDB           jobsdb.JobsDB
+	routerDB            jobsdb.JobsDB
+	batchRouterDB       jobsdb.JobsDB
+	errorDB             jobsdb.JobsDB
+	logger              logger.LoggerI
+	eventSchemaHandler  types.EventSchemasI
+	dedupHandler        dedup.DedupI
+	reporting           types.ReportingI
+	reportingEnabled    bool
+	multitenantI        multitenant.MultiTenantI
+	backgroundWait      func() error
+	backgroundCancel    context.CancelFunc
+	transformerFeatures json.RawMessage
+	readLoopSleep       time.Duration
+	maxLoopSleep        time.Duration
+	storeTimeout        time.Duration
+	statsFactory        stats.Stats
+	stats               processorStats
+}
+
+type processorStats struct {
+	transformEventsByTimeMutex     sync.RWMutex
+	destTransformEventsByTimeTaken transformRequestPQ
+	userTransformEventsByTimeTaken transformRequestPQ
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
 	statGatewayDBR                 stats.RudderStats
@@ -74,9 +93,6 @@ type HandleT struct {
 	statRouterDBW                  stats.RudderStats
 	statBatchRouterDBW             stats.RudderStats
 	statProcErrDBW                 stats.RudderStats
-	transformEventsByTimeMutex     sync.RWMutex
-	destTransformEventsByTimeTaken transformRequestPQ
-	userTransformEventsByTimeTaken transformRequestPQ
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
@@ -94,7 +110,6 @@ type HandleT struct {
 	statDBReadRequests             stats.RudderStats
 	statDBReadEvents               stats.RudderStats
 	statDBReadPayloadBytes         stats.RudderStats
-	lastJobID                      int64
 	statDBReadOutOfOrder           stats.RudderStats
 	statDBReadOutOfSequence        stats.RudderStats
 	statMarkExecuting              stats.RudderStats
@@ -106,18 +121,6 @@ type HandleT struct {
 	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	logger                         logger.LoggerI
-	eventSchemaHandler             types.EventSchemasI
-	dedupHandler                   dedup.DedupI
-	reporting                      types.ReportingI
-	reportingEnabled               bool
-	transformerFeatures            json.RawMessage
-	readLoopSleep                  time.Duration
-	maxLoopSleep                   time.Duration
-	storeTimeout                   time.Duration
-	multitenantI                   multitenant.MultiTenantI
-	backgroundWait                 func() error
-	backgroundCancel               context.CancelFunc
 	DBReadThroughput               stats.RudderStats
 	processJobThroughput           stats.RudderStats
 	transformationsThroughput      stats.RudderStats
@@ -208,10 +211,10 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 
-	numEvents := proc.stats.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
-	transformTime := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
+	transformTime := proc.statsFactory.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -226,10 +229,10 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 
 	tags["transform_at"] = transformAt
 
-	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
-	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
+	destTransform := proc.statsFactory.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -242,10 +245,10 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
 	tags := buildStatTags(sourceID, workspaceID, destination, EVENT_FILTER)
 
-	numEvents := proc.stats.NewTaggedStat("proc_event_filter_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_event_filter_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_event_filter_output_failed_events", stats.CountType, tags)
-	eventFilterTime := proc.stats.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_failed_events", stats.CountType, tags)
+	eventFilterTime := proc.statsFactory.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -255,19 +258,12 @@ func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destinatio
 	}
 }
 
-//Print the internal structure
-func (proc *HandleT) Print() {
-	if !proc.logger.IsDebugLevel() {
-		return
-	}
-}
-
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
 }
 
-// NewProcessor creates a new Processor intanstace
+// NewProcessor creates a new Processor instance
 func NewProcessor() *HandleT {
 	return &HandleT{
 		transformer: transformer.NewTransformer(),
@@ -275,13 +271,13 @@ func NewProcessor() *HandleT {
 }
 
 func (proc *HandleT) Status() interface{} {
-	proc.transformEventsByTimeMutex.RLock()
-	defer proc.transformEventsByTimeMutex.RUnlock()
+	proc.stats.transformEventsByTimeMutex.RLock()
+	defer proc.stats.transformEventsByTimeMutex.RUnlock()
 	statusRes := make(map[string][]interface{})
-	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
+	for _, pqDestEvent := range proc.stats.destTransformEventsByTimeTaken {
 		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
 	}
-	for _, pqUserEvent := range proc.userTransformEventsByTimeTaken {
+	for _, pqUserEvent := range proc.stats.userTransformEventsByTimeTaken {
 		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
 	}
 
@@ -293,7 +289,11 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func (proc *HandleT) Setup(
+	backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB,
+	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	multiTenantStat multitenant.MultiTenantI,
+) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	//TODO : Remove this
@@ -301,80 +301,81 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
-	proc.stats = stats.DefaultStats
 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
 	proc.storeTimeout = storeTimeout
 
-	proc.multitenantI = multitenantStat
+	proc.multitenantI = multiTenantStat
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
-	proc.pStatsJobs = &misc.PerfStats{}
-	proc.pStatsDBR = &misc.PerfStats{}
-	proc.pStatsDBW = &misc.PerfStats{}
-	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
-	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
-	proc.pStatsJobs.Setup("ProcessorJobs")
-	proc.pStatsDBR.Setup("ProcessorDBRead")
-	proc.pStatsDBW.Setup("ProcessorDBWrite")
 
-	proc.statGatewayDBR = proc.stats.NewStat("processor.gateway_db_read", stats.CountType)
-	proc.statGatewayDBW = proc.stats.NewStat("processor.gateway_db_write", stats.CountType)
-	proc.statRouterDBW = proc.stats.NewStat("processor.router_db_write", stats.CountType)
-	proc.statBatchRouterDBW = proc.stats.NewStat("processor.batch_router_db_write", stats.CountType)
-	proc.statDBR = proc.stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
-	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
-	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
-	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
-	proc.statMarkExecuting = proc.stats.NewStat("processor.mark_executing", stats.TimerType)
-	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
-	proc.validateEventsTime = proc.stats.NewStat("processor.validate_events_time", stats.TimerType)
-	proc.processJobsTime = proc.stats.NewStat("processor.process_jobs_time", stats.TimerType)
-	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
-	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
-	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
-	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
-	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
-	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
-	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
-	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	// Stats
+	proc.statsFactory = stats.DefaultStats
+	proc.stats.pStatsJobs = &misc.PerfStats{}
+	proc.stats.pStatsDBR = &misc.PerfStats{}
+	proc.stats.pStatsDBW = &misc.PerfStats{}
+	proc.stats.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
+	proc.stats.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
+	proc.stats.pStatsJobs.Setup("ProcessorJobs")
+	proc.stats.pStatsDBR.Setup("ProcessorDBRead")
+	proc.stats.pStatsDBW.Setup("ProcessorDBWrite")
+	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
+	proc.stats.statGatewayDBW = proc.statsFactory.NewStat("processor.gateway_db_write", stats.CountType)
+	proc.stats.statRouterDBW = proc.statsFactory.NewStat("processor.router_db_write", stats.CountType)
+	proc.stats.statBatchRouterDBW = proc.statsFactory.NewStat("processor.batch_router_db_write", stats.CountType)
+	proc.stats.statDBR = proc.statsFactory.NewStat("processor.gateway_db_read_time", stats.TimerType)
+	proc.stats.statDBW = proc.statsFactory.NewStat("processor.gateway_db_write_time", stats.TimerType)
+	proc.stats.statProcErrDBW = proc.statsFactory.NewStat("processor.proc_err_db_write", stats.CountType)
+	proc.stats.statLoopTime = proc.statsFactory.NewStat("processor.loop_time", stats.TimerType)
+	proc.stats.statMarkExecuting = proc.statsFactory.NewStat("processor.mark_executing", stats.TimerType)
+	proc.stats.eventSchemasTime = proc.statsFactory.NewStat("processor.event_schemas_time", stats.TimerType)
+	proc.stats.validateEventsTime = proc.statsFactory.NewStat("processor.validate_events_time", stats.TimerType)
+	proc.stats.processJobsTime = proc.statsFactory.NewStat("processor.process_jobs_time", stats.TimerType)
+	proc.stats.statSessionTransform = proc.statsFactory.NewStat("processor.session_transform_time", stats.TimerType)
+	proc.stats.statUserTransform = proc.statsFactory.NewStat("processor.user_transform_time", stats.TimerType)
+	proc.stats.statDestTransform = proc.statsFactory.NewStat("processor.dest_transform_time", stats.TimerType)
+	proc.stats.marshalSingularEvents = proc.statsFactory.NewStat("processor.marshal_singular_events", stats.TimerType)
+	proc.stats.destProcessing = proc.statsFactory.NewStat("processor.dest_processing", stats.TimerType)
+	proc.stats.pipeProcessing = proc.statsFactory.NewStat("processor.pipe_processing", stats.TimerType)
+	proc.stats.statNumRequests = proc.statsFactory.NewStat("processor.num_requests", stats.CountType)
+	proc.stats.statNumEvents = proc.statsFactory.NewStat("processor.num_events", stats.CountType)
 
-	proc.statDBReadRequests = proc.stats.NewStat("processor.db_read_requests", stats.HistogramType)
-	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
-	proc.statDBReadPayloadBytes = proc.stats.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
+	proc.stats.statDBReadRequests = proc.statsFactory.NewStat("processor.db_read_requests", stats.HistogramType)
+	proc.stats.statDBReadEvents = proc.statsFactory.NewStat("processor.db_read_events", stats.HistogramType)
+	proc.stats.statDBReadPayloadBytes = proc.statsFactory.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
 
-	proc.statDBReadOutOfOrder = proc.stats.NewStat("processor.db_read_out_of_order", stats.CountType)
-	proc.statDBReadOutOfSequence = proc.stats.NewStat("processor.db_read_out_of_sequence", stats.CountType)
+	proc.stats.statDBReadOutOfOrder = proc.statsFactory.NewStat("processor.db_read_out_of_order", stats.CountType)
+	proc.stats.statDBReadOutOfSequence = proc.statsFactory.NewStat("processor.db_read_out_of_sequence", stats.CountType)
 
-	proc.statDBWriteJobsTime = proc.stats.NewStat("processor.db_write_jobs_time", stats.TimerType)
-	proc.statDBWriteStatusTime = proc.stats.NewStat("processor.db_write_status_time", stats.TimerType)
-	proc.statDBWriteRouterPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
+	proc.stats.statDBWriteJobsTime = proc.statsFactory.NewStat("processor.db_write_jobs_time", stats.TimerType)
+	proc.stats.statDBWriteStatusTime = proc.statsFactory.NewStat("processor.db_write_status_time", stats.TimerType)
+	proc.stats.statDBWriteRouterPayloadBytes = proc.statsFactory.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
 		"module": "router",
 	})
-	proc.statDBWriteBatchPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
+	proc.stats.statDBWriteBatchPayloadBytes = proc.statsFactory.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
 		"module": "batch_router",
 	})
-	proc.statDBWriteRouterEvents = proc.stats.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
+	proc.stats.statDBWriteRouterEvents = proc.statsFactory.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
 		"module": "router",
 	})
-	proc.statDBWriteBatchEvents = proc.stats.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
+	proc.stats.statDBWriteBatchEvents = proc.statsFactory.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
 		"module": "batch_router",
 	})
 
 	// Add a separate tag for batch router
-	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
+	proc.stats.statDestNumOutputEvents = proc.statsFactory.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "router",
 	})
-	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
+	proc.stats.statBatchDestNumOutputEvents = proc.statsFactory.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
-	proc.DBReadThroughput = proc.stats.NewStat("processor.db_read_throughput", stats.CountType)
-	proc.processJobThroughput = proc.stats.NewStat("processor.processJob_thoughput", stats.CountType)
-	proc.transformationsThroughput = proc.stats.NewStat("processor.transformations_throughput", stats.CountType)
-	proc.DBWriteThroughput = proc.stats.NewStat("processor.db_write_throughput", stats.CountType)
+	proc.stats.DBReadThroughput = proc.statsFactory.NewStat("processor.db_read_throughput", stats.CountType)
+	proc.stats.processJobThroughput = proc.statsFactory.NewStat("processor.processJob_thoughput", stats.CountType)
+	proc.stats.transformationsThroughput = proc.statsFactory.NewStat("processor.transformations_throughput", stats.CountType)
+	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
 
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
@@ -515,8 +516,12 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 
 			retry := proc.makeFeaturesFetchCall()
 			if retry {
-				time.Sleep(200 * time.Millisecond)
-				continue
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(200 * time.Millisecond):
+					continue
+				}
 			}
 		}
 
@@ -547,14 +552,14 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return true
 	}
 
 	if res.StatusCode == 200 {
-		proc.transformerFeatures = json.RawMessage(body)
+		proc.transformerFeatures = body
 	} else if res.StatusCode == 404 {
 		proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 	}
@@ -582,7 +587,7 @@ func SetIsUnlocked(unlockVar bool) {
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch
@@ -658,8 +663,8 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 
 	// use existing timestamp if it exists in the event, add new timestamp otherwise
 	if timestamp, ok = misc.GetParsedTimestamp(event.Message["timestamp"]); !ok {
-		// calculate new timestamp using using the formula
-		// timestamp = receivedAt - (sentAt - originalTimestamp)
+		// calculate new timestamp using the formula
+		// timestamp = receivedAt - (sentAt - originalTimestamp)
 		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
 	}
 
@@ -672,12 +677,6 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 
 func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
-
-	eventBytes, err := jsonfast.Marshal(singularEvent)
-	if err != nil {
-		//Marshalling should never fail. But still panicking.
-		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v", singularEvent))
-	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
@@ -686,17 +685,20 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
-	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
-	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
-	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
-	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
-	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
-	commonMetadata.RecordID = gjson.GetBytes(eventBytes, "recordId").Value()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
-	commonMetadata.EventName = misc.GetStringifiedData(singularEvent["event"])
-	commonMetadata.EventType = misc.GetStringifiedData(singularEvent["type"])
+
+	commonMetadata.SourceBatchID, _ = misc.MapLookup(singularEvent, "context", "sources", "batch_id").(string)
+	commonMetadata.SourceTaskID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_id").(string)
+	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
+	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
+	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
+	commonMetadata.RecordID = misc.MapLookup(singularEvent, "context", "record_id")
+
+	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
+	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
+
 	return &commonMetadata
 }
 
@@ -840,11 +842,11 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 			pu = types.USER_TRANSFORMER
 		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.GATEWAY
+			inPU = types.DESTINATION_FILTER
 			pu = types.TRACKINGPLAN_VALIDATOR
 		} else if stage == transformer.EventFilterStage {
 			if userTransformationEnabled {
@@ -853,7 +855,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 				if trackingPlanEnabled {
 					inPU = types.TRACKINGPLAN_VALIDATOR
 				} else {
-					inPU = types.GATEWAY
+					inPU = types.DESTINATION_FILTER
 				}
 			}
 			pu = types.EVENT_FILTER
@@ -879,21 +881,59 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		var eventType string
 		eventName = event.Metadata.EventName
 		eventType = event.Metadata.EventType
-		countKey := strings.Join([]string{event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, eventName, eventType}, METRICKEYDELIMITER)
+
+		countKey := strings.Join([]string{
+			event.Metadata.SourceID,
+			event.Metadata.DestinationID,
+			event.Metadata.SourceBatchID,
+			eventName,
+			eventType,
+		}, METRICKEYDELIMITER)
+
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
 		}
 		countMap[countKey] = countMap[countKey] + 1
+
 		if countMetadataMap != nil {
 			if _, ok := countMetadataMap[countKey]; !ok {
-				countMetadataMap[countKey] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				countMetadataMap[countKey] = MetricMetadata{
+					sourceID:                event.Metadata.SourceID,
+					destinationID:           event.Metadata.DestinationID,
+					sourceBatchID:           event.Metadata.SourceBatchID,
+					sourceTaskID:            event.Metadata.SourceTaskID,
+					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
+					sourceJobID:             event.Metadata.SourceJobID,
+					sourceJobRunID:          event.Metadata.SourceJobRunID,
+					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
+					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
+					sourceCategory:          event.Metadata.SourceCategory,
+				}
 			}
 		}
 
-		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode, eventName, eventType)
+		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s",
+			event.Metadata.SourceID,
+			event.Metadata.DestinationID,
+			event.Metadata.SourceBatchID,
+			status, event.StatusCode,
+			eventName, eventType,
+		)
+
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID, event.Metadata.SourceDefinitionID, event.Metadata.DestinationDefinitionID, event.Metadata.SourceCategory)
+			cd := types.CreateConnectionDetail(
+				event.Metadata.SourceID,
+				event.Metadata.DestinationID,
+				event.Metadata.SourceBatchID,
+				event.Metadata.SourceTaskID,
+				event.Metadata.SourceTaskRunID,
+				event.Metadata.SourceJobID,
+				event.Metadata.SourceJobRunID,
+				event.Metadata.SourceDefinitionID,
+				event.Metadata.DestinationDefinitionID,
+				event.Metadata.SourceCategory,
+			)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]
@@ -991,7 +1031,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 				if trackingPlanEnabled {
 					inPU = types.TRACKINGPLAN_VALIDATOR
 				} else {
-					inPU = types.GATEWAY
+					inPU = types.DESTINATION_FILTER
 				}
 			}
 			pu = types.EVENT_FILTER
@@ -1002,11 +1042,11 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 			pu = types.USER_TRANSFORMER
 		} else if stage == transformer.TrackingPlanValidationStage {
-			inPU = types.GATEWAY
+			inPU = types.DESTINATION_FILTER
 			pu = types.TRACKINGPLAN_VALIDATOR
 		}
 		for k, cd := range connectionDetailsMap {
@@ -1038,7 +1078,7 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 			"writeKey":   writeKey,
 			"event_type": eventType,
 		}
-		statEventType := proc.stats.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
+		statEventType := proc.statsFactory.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
 		statEventType.Count(1)
 		if captureEventNameStats {
 			if eventType != "track" {
@@ -1050,12 +1090,12 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 					eventName = eventType
 				}
 			}
-			tags_detailed := map[string]string{
+			tagsDetailed := map[string]string{
 				"writeKey":   writeKey,
 				"event_type": eventType,
 				"event_name": eventName,
 			}
-			statEventTypeDetailed := proc.stats.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tags_detailed)
+			statEventTypeDetailed := proc.statsFactory.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tagsDetailed)
 			statEventTypeDetailed.Count(1)
 		}
 	}
@@ -1063,7 +1103,7 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 
 func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap map[string]int64) []*types.PUReportedMetric {
 	//Calculate diff and append to reportMetrics
-	//diff = succesCount + abortCount - inCount
+	//diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
 		var eventName, eventType string
@@ -1096,7 +1136,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 	jobList := subJobs.subJobs
 	start := time.Now()
 
-	proc.statNumRequests.Count(len(jobList))
+	proc.stats.statNumRequests.Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
@@ -1130,6 +1170,9 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 
+	outCountMap := make(map[string]int64) // destinations enabled
+	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -1138,7 +1181,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
 		} else {
 			singularEvents = parsedEventList[idx]
-			ok = (singularEvents != nil)
+			ok = singularEvents != nil
 		}
 		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
 		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
@@ -1168,24 +1211,41 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
+					SingularEvent: singularEvent,
+					ReceivedAt:    receivedAt,
+				}
 
-				//Getting all the destinations which are enabled for this
-				//event
-				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
-				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
 					continue
 				}
 
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+					singularEvent,
+					batchEvent,
+					receivedAt,
+					sourceForSingularEvent,
+				)
+
+				//REPORTING - GATEWAY metrics - START
+				// dummy event for metrics purposes only
+				event := transformer.TransformerResponseT{}
+				if proc.isReportingEnabled() {
+					event.Metadata = *commonMetadataFromSingularEvent
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, []byte(`{}`))
+				}
+				//REPORTING - GATEWAY metrics - END
+
+				//Getting all the destinations which are enabled for this
+				//event
+				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
+				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
 				}
-
-				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 
 				_, ok = groupedEventsByWriteKey[WriteKeyT(writeKey)]
 				if !ok {
@@ -1197,9 +1257,6 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
-				eventType := misc.GetStringifiedData(singularEvent["type"])
-				eventName := misc.GetStringifiedData(singularEvent["event"])
-
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
 					proc.logger.Error("Source not found for writeKey : ", writeKey)
@@ -1208,36 +1265,14 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 					shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 					shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
+					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 				}
 
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
-				//REPORTING - GATEWAY metrics - START
 				if proc.isReportingEnabled() {
-					//Grouping events by sourceid + destinationid + source batch id to find the count
-					key := fmt.Sprintf("%s:%s:%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID, eventName, eventType)
-					if _, ok := inCountMap[key]; !ok {
-						inCountMap[key] = 0
-					}
-					inCountMap[key] = inCountMap[key] + 1
-					if _, ok := inCountMetadataMap[key]; !ok {
-						inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceTaskRunID: commonMetadataFromSingularEvent.SourceTaskRunID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID, sourceJobRunID: commonMetadataFromSingularEvent.SourceJobRunID}
-					}
-
-					_, ok := connectionDetailsMap[key]
-					if !ok {
-						cd := types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID, commonMetadataFromSingularEvent.SourceDefinitionID, commonMetadataFromSingularEvent.DestinationDefinitionID, commonMetadataFromSingularEvent.SourceCategory)
-						connectionDetailsMap[key] = cd
-					}
-					sd, ok := statusDetailsMap[key]
-					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), eventName, eventType)
-						statusDetailsMap[key] = sd
-					}
-					sd.Count++
+					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, []byte(`{}`))
 				}
-				//REPORTING - GATEWAY metrics - END
 			}
 		}
 
@@ -1266,14 +1301,34 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				StatusDetail:      statusDetailsMap[k],
 			}
 			reportMetrics = append(reportMetrics, m)
+
+			if _, ok := destFilterStatusDetailMap[k]; ok {
+				destFilterMetric := &types.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.DESTINATION_FILTER, false, false),
+					StatusDetail:      destFilterStatusDetailMap[k],
+				}
+				reportMetrics = append(reportMetrics, destFilterMetric)
+			}
 		}
+		// empty failedCountMap because no failures,
+		// events are just dropped at this point if no destination is found to route the events
+		diffMetrics := getDiffMetrics(
+			types.GATEWAY,
+			types.DESTINATION_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			outCountMap,
+			map[string]int64{},
+		)
+		reportMetrics = append(reportMetrics, diffMetrics...)
 	}
 	//REPORTING - GATEWAY metrics - END
 
-	proc.statNumEvents.Count(totalEvents)
+	proc.stats.statNumEvents.Count(totalEvents)
 
 	marshalTime := time.Since(marshalStart)
-	defer proc.marshalSingularEvents.SendTiming(marshalTime)
+	defer proc.stats.marshalSingularEvents.SendTiming(marshalTime)
 
 	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
@@ -1281,7 +1336,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 	validateEventsStart := time.Now()
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
-	defer proc.validateEventsTime.SendTiming(validateEventsTime)
+	defer proc.stats.validateEventsTime.SendTiming(validateEventsTime)
 
 	// Appending validatedErrorJobs to procErrorJobs
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
@@ -1349,10 +1404,10 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
 	processTime := time.Since(start)
-	proc.processJobsTime.SendTiming(processTime)
+	proc.stats.processJobsTime.SendTiming(processTime)
 	processJobThroughput := throughputPerSecond(totalEvents, processTime)
 	//processJob throughput per second.
-	proc.processJobThroughput.Count(processJobThroughput)
+	proc.stats.processJobThroughput.Count(processJobThroughput)
 	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -1437,11 +1492,11 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	}
 
 	destProcTime := time.Since(destProcStart)
-	defer proc.destProcessing.SendTiming(destProcTime)
+	defer proc.stats.destProcessing.SendTiming(destProcTime)
 
 	//this tells us how many transformations we are doing per second.
 	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
-	proc.transformationsThroughput.Count(transformationsThroughput)
+	proc.stats.transformationsThroughput.Count(transformationsThroughput)
 	return storeMessage{
 		in.statusList,
 		destJobs,
@@ -1514,9 +1569,9 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
 
-		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
-		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
-		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
+		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
+		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
+		proc.stats.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
 	}
 
 	if len(destJobs) > 0 {
@@ -1540,9 +1595,9 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
 
-		proc.statDestNumOutputEvents.Count(len(destJobs))
-		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
+		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
+		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
+		proc.stats.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -1585,23 +1640,23 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.Since(beforeStoreStatus)
+	proc.stats.statDBW.Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
 	//DB write throughput per second.
 	dbWriteThroughput := throughputPerSecond(len(destJobs), dbWriteTime)
-	proc.DBWriteThroughput.Count(dbWriteThroughput)
-	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
-	proc.statDBWriteStatusTime.Since(txnStart)
+	proc.stats.DBWriteThroughput.Count(dbWriteThroughput)
+	proc.stats.statDBWriteJobsTime.SendTiming(writeJobsTime)
+	proc.stats.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
-	proc.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
-	proc.pStatsJobs.Rate(in.totalEvents, time.Since(in.start))
+	proc.stats.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
+	proc.stats.pStatsJobs.Rate(in.totalEvents, time.Since(in.start))
 
-	proc.statGatewayDBW.Count(len(statusList))
-	proc.statRouterDBW.Count(len(destJobs))
-	proc.statBatchRouterDBW.Count(len(batchDestJobs))
-	proc.statProcErrDBW.Count(len(in.procErrorJobs))
+	proc.stats.statGatewayDBW.Count(len(statusList))
+	proc.stats.statRouterDBW.Count(len(destJobs))
+	proc.stats.statBatchRouterDBW.Count(len(batchDestJobs))
+	proc.stats.statProcErrDBW.Count(len(in.procErrorJobs))
 }
 
 type transformSrcDestOutput struct {
@@ -1621,7 +1676,7 @@ func (proc *HandleT) transformSrcDest(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
-	defer proc.pipeProcessing.Since(time.Now())
+	defer proc.stats.pipeProcessing.Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
@@ -1654,12 +1709,18 @@ func (proc *HandleT) transformSrcDest(
 
 	//REPORTING - START
 	if proc.isReportingEnabled() {
-		//Grouping events by sourceid + destinationid + source batch id to find the count
+		//Grouping events by sourceid + destinationid + sourcebatchid + eventName + eventType to find the count
 		inCountMap = make(map[string]int64)
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
-			key := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, event.Metadata.EventName, METRICKEYDELIMITER, event.Metadata.EventType)
+			key := strings.Join([]string{
+				event.Metadata.SourceID,
+				event.Metadata.DestinationID,
+				event.Metadata.SourceBatchID,
+				event.Metadata.EventName,
+				event.Metadata.EventType,
+			}, METRICKEYDELIMITER)
 			if _, ok := inCountMap[key]; !ok {
 				inCountMap[key] = 0
 			}
@@ -1690,7 +1751,7 @@ func (proc *HandleT) transformSrcDest(
 				Stage:          transformer.UserTransformerStage,
 				ProcessingTime: d.Seconds(),
 				Index:          -1,
-			}, &proc.userTransformEventsByTimeTaken)
+			}, &proc.stats.userTransformEventsByTimeTaken)
 
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
@@ -1711,7 +1772,14 @@ func (proc *HandleT) transformSrcDest(
 
 			//REPORTING - START
 			if proc.isReportingEnabled() {
-				diffMetrics := getDiffMetrics(types.GATEWAY, types.USER_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+				diffMetrics := getDiffMetrics(
+					types.DESTINATION_FILTER,
+					types.USER_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					failedCountMap,
+				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, failedMetrics...)
 				reportMetrics = append(reportMetrics, diffMetrics...)
@@ -1768,7 +1836,7 @@ func (proc *HandleT) transformSrcDest(
 			if trackingPlanEnabled {
 				inPU = types.TRACKINGPLAN_VALIDATOR
 			} else {
-				inPU = types.GATEWAY
+				inPU = types.DESTINATION_FILTER
 			}
 		}
 
@@ -1816,12 +1884,22 @@ func (proc *HandleT) transformSrcDest(
 			transformAt = "processor"
 
 			timeTaken := time.Since(s).Seconds()
-			proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
+			proc.addToTransformEventByTimePQ(
+				&TransformRequestT{
+					Event:          eventsToTransform,
+					Stage:          "destination-transformer",
+					ProcessingTime: timeTaken, Index: -1,
+				},
+				&proc.stats.destTransformEventsByTimeTaken,
+			)
 
 			proc.logger.Debug("Dest Transform output size", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
-			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled)
+			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(
+				response, commonMetaData, eventsByMessageID,
+				transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled,
+			)
 			destTransformationStat.numEvents.Count(len(eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
 			destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
@@ -1868,8 +1946,7 @@ func (proc *HandleT) transformSrcDest(
 		//Save the JSON in DB. This is what the router uses
 		for i := range response.Events {
 			destEventJSON, err := jsonfast.Marshal(response.Events[i].Output)
-			//Should be a valid JSON since its our transformation
-			//but we handle anyway
+			// Should be a valid JSON since it's our transformation, but we handle it anyway
 			if err != nil {
 				continue
 			}
@@ -2012,8 +2089,8 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 }
 
 func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
-	proc.transformEventsByTimeMutex.Lock()
-	defer proc.transformEventsByTimeMutex.Unlock()
+	proc.stats.transformEventsByTimeMutex.Lock()
+	defer proc.stats.transformEventsByTimeMutex.Unlock()
 	if pq.Len() < transformTimesPQLength {
 		pq.Add(event)
 		return
@@ -2052,20 +2129,20 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 
 		if job.JobID <= proc.lastJobID {
 			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.statDBReadOutOfOrder.Count(1)
+			proc.stats.statDBReadOutOfOrder.Count(1)
 		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
 			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
-			proc.statDBReadOutOfSequence.Count(1)
+			proc.stats.statDBReadOutOfSequence.Count(1)
 		}
 		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
-	defer proc.statDBR.SendTiming(dbReadTime)
+	defer proc.stats.statDBR.SendTiming(dbReadTime)
 
 	// check if there is work to be done
 	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		proc.pStatsDBR.Rate(0, time.Since(s))
+		proc.stats.pStatsDBR.Rate(0, time.Since(s))
 		return unprocessedList
 	}
 
@@ -2077,22 +2154,22 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 		}
 	}
 	eventSchemasTime := time.Since(eventSchemasStart)
-	defer proc.eventSchemasTime.SendTiming(eventSchemasTime)
+	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
-	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
-	proc.statGatewayDBR.Count(len(unprocessedList))
+	proc.stats.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
+	proc.stats.statGatewayDBR.Count(len(unprocessedList))
 
-	proc.statDBReadRequests.Observe(float64(len(unprocessedList)))
-	proc.statDBReadEvents.Observe(float64(totalEvents))
-	proc.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
+	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList)))
+	proc.stats.statDBReadEvents.Observe(float64(totalEvents))
+	proc.stats.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
 
 	return unprocessedList
 }
 
 func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 	start := time.Now()
-	defer proc.statMarkExecuting.Since(start)
+	defer proc.stats.statMarkExecuting.Since(start)
 
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
@@ -2136,7 +2213,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			}, nil),
 		),
 	)
-	proc.statLoopTime.Since(s)
+	proc.stats.statLoopTime.Since(s)
 
 	return true
 }
@@ -2297,7 +2374,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				dbReadThroughput := throughputPerSecond(events, dbReadTime)
 				//DB read throughput per second.
-				proc.DBReadThroughput.Count(dbReadThroughput)
+				proc.stats.DBReadThroughput.Count(dbReadThroughput)
 
 				// nextSleepTime is dependent on the number of events read in this loop
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
@@ -2389,7 +2466,7 @@ func subJobMerger(mergedJob *storeMessage, subJob *storeMessage) *storeMessage {
 }
 
 func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
-	normalizedTime := (float64(timeTaken) / float64(time.Second))
+	normalizedTime := float64(timeTaken) / float64(time.Second)
 	return int(float64(processedJob) / normalizedTime)
 }
 
@@ -2402,7 +2479,7 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 		tags := map[string]string{
 			"source": sourceTag,
 		}
-		sourceStatsD := proc.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
 	}
 }

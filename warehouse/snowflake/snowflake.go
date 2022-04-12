@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"reflect"
 	"sort"
 	"strings"
@@ -22,11 +23,13 @@ import (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	connectTimeout     time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
@@ -561,14 +564,19 @@ type SnowflakeCredentialsT struct {
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:     cred.account,
-		User:        cred.username,
-		Password:    cred.password,
-		Database:    cred.dbName,
-		Schema:      cred.schemaName,
-		Warehouse:   cred.whName,
-		Application: "Rudderstack",
+		Account:      cred.account,
+		User:         cred.username,
+		Password:     cred.password,
+		Database:     cred.dbName,
+		Schema:       cred.schemaName,
+		Warehouse:    cred.whName,
+		LoginTimeout: timeout / time.Second,
+		Application:  "Rudderstack",
 	}
 
 	var err error
@@ -798,12 +806,12 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	sf.Warehouse = warehouse
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	timeOut := warehouseutils.TestConnectionTimeout
+	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), timeOut)
 	if err != nil {
 		return
 	}
 	defer sf.Db.Close()
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -904,7 +912,7 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, columns map[string]string, payloadMap map[string]interface{}, format string) (err error) {
+func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
 
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'

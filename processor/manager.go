@@ -3,12 +3,13 @@ package processor
 import (
 	"context"
 
+	"golang.org/x/sync/errgroup"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"golang.org/x/sync/errgroup"
 )
 
 type LifecycleManager struct {
@@ -25,10 +26,6 @@ type LifecycleManager struct {
 	ReportingI       types.ReportingI         // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
-}
-
-func (proc *LifecycleManager) Run(ctx context.Context) error {
-	return nil
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -61,7 +58,7 @@ func (proc *LifecycleManager) Stop() {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT) *LifecycleManager {
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT, tenantDB multitenant.MultiTenantI, reporting types.ReportingI) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx:          ctx,
@@ -70,8 +67,9 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
 		clearDB:          clearDb,
-		MultitenantStats: multitenant.NOOP,
+		MultitenantStats: tenantDB,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
+		ReportingI:       reporting,
 	}
 	return proc
 }

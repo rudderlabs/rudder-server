@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/multitenant"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest"
@@ -31,8 +33,8 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
@@ -133,16 +135,16 @@ const (
 )
 
 var (
-	workspaceID = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.Must(uuid.NewV4()).String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
@@ -165,10 +167,11 @@ func initJobsDB() {
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
-	cluster.Init()
+	Init()
 }
 
 func TestDynamicClusterManager(t *testing.T) {
+	//t.Skip("Skipping test for now on CI")
 	initJobsDB()
 
 	processor.SetFeaturesRetryAttempts(0)
@@ -190,23 +193,40 @@ func TestDynamicClusterManager(t *testing.T) {
 	clearDb := false
 	ctx := context.Background()
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+		},
+	}
+
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{})
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1)
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	router := routermanager.New(ctx, brtDB, errDB, tDb)
-	router.BackendConfig = mockBackendConfig
-	router.ReportingI = &reportingNOOP{}
-	router.MultitenantStats = mockMTI
+	rtFactory := &router.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      tDb,
+		ProcErrorDB:   errDB,
+	}
+	brtFactory := &batchrouter.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      brtDB,
+		ProcErrorDB:   errDB,
+	}
+	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		channel chan utils.DataEvent, topic backendConfig.Topic) {
+		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
@@ -219,11 +239,11 @@ func TestDynamicClusterManager(t *testing.T) {
 		BatchRouterDB: brtDB,
 		ErrorDB:       errDB,
 
-		Processor: processor,
-		Router:    router,
-		Provider:  provider,
+		Processor:       processor,
+		Router:          router,
+		Provider:        provider,
+		MultiTenantStat: mtStat,
 	}
-	dCM.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/multitenant"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
@@ -26,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +37,15 @@ var (
 	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
 	db     *sql.DB
 )
+
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
+}
+func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
+}
+func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
+}
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
@@ -188,7 +200,13 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+		},
+	}
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{})
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()

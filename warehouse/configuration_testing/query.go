@@ -55,7 +55,7 @@ func (ct *CTHandleT) CreateTableQuery() (sqlStatement string) {
 	case warehouseutils.AZURE_SYNAPSE, warehouseutils.MSSQL:
 		sqlStatement = fmt.Sprintf(`IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 			CREATE TABLE %[1]s ( %v )`,
-			ct.stagingTableName,
+			fmt.Sprintf("%s.%s", ct.warehouse.Namespace, ct.stagingTableName),
 			mssql.ColumnsWithDataTypes(TestTableSchemaMap, ""),
 		)
 	case warehouseutils.POSTGRES:
