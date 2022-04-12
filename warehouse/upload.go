@@ -112,6 +112,8 @@ type UploadT struct {
 	LoadFileType    string
 }
 
+type tableNameT string
+
 type UploadJobT struct {
 	upload              *UploadT
 	dbHandle            *sql.DB
@@ -125,6 +127,7 @@ type UploadJobT struct {
 	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
+	loadFilesTableMap   map[tableNameT]bool
 }
 
 type UploadColumnT struct {
@@ -450,6 +453,8 @@ func (job *UploadJobT) run() (err error) {
 
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
+
+			job.populateLoadFilesTableMap()
 
 			var wg sync.WaitGroup
 			wg.Add(3)
@@ -863,13 +868,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			wg.Done()
 			continue
 		}
-		hasLoadFiles, err := job.hasLoadFiles(tableName)
-		if err != nil {
-			loadErrors = append(loadErrors, err)
-			wg.Done()
-			continue
-		}
-		if !hasLoadFiles {
+		hasLoadFiles, ok := job.loadFilesTableMap[tableNameT(tableName)]
+		if !ok || !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
@@ -1015,11 +1015,8 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		hasLoadFiles, err = job.hasLoadFiles(tName)
-		if err != nil {
-			break
-		}
-		if hasLoadFiles {
+		hasLoadFiles, ok := job.loadFilesTableMap[tableNameT(tName)]
+		if ok && hasLoadFiles {
 			// There is at least one table to load
 			break
 		}
@@ -1515,16 +1512,37 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) hasLoadFiles(tableName string) (exists bool, err error) {
+func (job *UploadJobT) populateLoadFilesTableMap() {
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS (
-											SELECT 1 FROM %[1]s
-											WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)
-										)`,
-		warehouseutils.WarehouseLoadFilesTable, sourceID, destID, tableName, job.upload.StartLoadFileID, job.upload.EndLoadFileID)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&exists)
+	sqlStatement := fmt.Sprintf(`SELECT distinct %[1]s.table_name FROM %[1]s WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v );`,
+		warehouseutils.WarehouseLoadFilesTable,
+		sourceID,
+		destID,
+		job.upload.StartLoadFileID,
+		job.upload.EndLoadFileID,
+	)
+	rows, err := dbHandle.Query(sqlStatement)
+	if err == sql.ErrNoRows {
+		err = nil
+		return
+	}
+	if err != nil && err != sql.ErrNoRows {
+		pkgLogger.Errorf("[WH] Error occurred while populateLoadFilesTableMap with error: %s", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tableName string
+		err = rows.Scan(&tableName)
+		if err != nil {
+			pkgLogger.Errorf("[WH] Error occurred while processing load files table map with error: %s", err.Error())
+			return
+		}
+		job.loadFilesTableMap[tableNameT(tableName)] = true
+	}
 	return
 }
 
