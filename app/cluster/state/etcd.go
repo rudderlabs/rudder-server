@@ -72,10 +72,6 @@ func EnvETCDConfig() *ETCDConfig {
 	releaseName := config.GetEnv("RELEASE_NAME", `multitenantv1`)
 	serverIndex := config.GetInstanceID()
 
-	// TODO: do we need these:
-	// workspaceWatchKey := config.GetEnv("WORKSPACE_RELOAD_TRIGGER_KEY", "")
-	// workspaceFetchKey := config.GetEnv("WORKSPACE_FETCH_KEY", "")
-
 	envConfigOnce.Do(func() {
 		config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, true, time.Second, "etcd.getTimeout")
 		config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, true, time.Second, "etcd.watchTimeout")
