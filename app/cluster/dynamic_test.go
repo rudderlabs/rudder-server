@@ -55,6 +55,19 @@ func (m *mockLifecycle) Stop() {
 	m.status = "stop"
 }
 
+type startStopPooling struct {
+	workspaces        string
+	stopPollingCalled bool
+}
+
+func (s *startStopPooling) StartPolling(workspaces string) {
+	s.workspaces = workspaces
+}
+
+func (s *startStopPooling) StopPolling() {
+	s.stopPollingCalled = true
+}
+
 func Init() {
 	config.Load()
 	stats.Setup()
@@ -82,6 +95,8 @@ func TestDynamicCluster(t *testing.T) {
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
+
+	backendConfig := startStopPooling{}
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -94,6 +109,7 @@ func TestDynamicCluster(t *testing.T) {
 		Router:    router,
 
 		MultiTenantStat: mtStat,
+		BackendConfig:   &backendConfig,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -168,6 +184,22 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
+	})
+
+	t.Run("Update workspaceIDs", func(t *testing.T) {
+		chACK := make(chan bool)
+		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func() error {
+			close(chACK)
+			return nil
+		}))
+
+		require.Eventually(t, func() bool {
+			<-chACK
+			return true
+		}, time.Second, time.Millisecond)
+
+		require.True(t, backendConfig.stopPollingCalled)
+		require.Equal(t, "a,b,c", backendConfig.workspaces)
 	})
 
 	t.Run("Shutdown from Normal ", func(t *testing.T) {

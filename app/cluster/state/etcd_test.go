@@ -152,11 +152,48 @@ func Test_ServerMode(t *testing.T) {
 		require.JSONEq(t, `{"status":"NORMAL"}`, string(resp.Kvs[0].Value))
 	}
 
+	t.Log("update with invalid JSON should return error")
+	{
+		etcdClient.Put(ctx, modeRequestKey, `{"mode''`)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+	}
+
+	t.Log("update with invalid mode should return error")
+	{
+		etcdClient.Put(ctx, modeRequestKey, `{"mode": "NOT_A_MODE", "ack_key": "test-ack/2"}`)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+	}
+
+	t.Log("delete key should return error")
+	{
+		etcdClient.Delete(ctx, modeRequestKey)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+	}
+
 	t.Log("channel should close after context cancelation")
 	cancel()
 	{
 		_, ok := <-ch
 		require.False(t, ok)
+	}
+
+	t.Log("error if key is missing")
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		ch := provider.ServerMode(ctx)
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+		cancel()
 	}
 
 }
@@ -207,11 +244,39 @@ func Test_Workspaces(t *testing.T) {
 		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
 	}
 
+	t.Log("error if update with invalid JSON ")
+	{
+		etcdClient.Put(ctx, requestKey, `{"mode''`)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+	}
+
+	t.Log("error if key is deleted")
+	{
+		etcdClient.Delete(ctx, requestKey)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+	}
+
 	t.Log("channel should close after context cancelation")
 	cancel()
 	{
 		_, ok := <-ch
 		require.False(t, ok)
+	}
+
+	t.Log("error if key is missing")
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		ch := provider.WorkspaceIDs(ctx)
+		m, ok := <-ch
+		require.True(t, ok)
+		require.Error(t, m.Err())
+		cancel()
 	}
 
 }

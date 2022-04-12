@@ -68,7 +68,7 @@ type workspacesAckValue struct {
 }
 
 func EnvETCDConfig() *ETCDConfig {
-	endpoints := strings.Split(config.GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetEnv("RELEASE_NAME", `multitenantv1`)
 	serverIndex := config.GetInstanceID()
 
@@ -131,57 +131,23 @@ func (manager *ETCDManager) Ping() error {
 	return nil
 }
 
-func (manager *ETCDManager) Put(ctx context.Context, key string, value string) error {
-	if err := manager.init(); err != nil {
-		return err
-	}
-
-	_, err := manager.Client.Put(ctx, key, value)
-	return err
-}
-
-func (manager *ETCDManager) Watch(ctx context.Context, key string) (chan interface{}, error) {
-	if err := manager.init(); err != nil {
-		return nil, err
-	}
-	resultChan := make(chan interface{}, 1)
-	watchChan := manager.Client.Watch(ctx, key)
-	resultChan <- watchChan
-
-	return resultChan, nil
-}
-
-func (manager *ETCDManager) Get(ctx context.Context, key string) (string, error) {
-	if err := manager.init(); err != nil {
-		return "", err
-	}
-
-	var result string
-	val, err := manager.Client.Get(ctx, key)
-	if err != nil {
-		return "", err
-	}
-	if len(val.Kvs) > 0 {
-		result = string(val.Kvs[0].Value)
-	} else {
-		result = ``
-	}
-	return result, nil
-}
-
 func (manager *ETCDManager) prepareMode(raw []byte) servermode.ModeRequest {
 	var req modeRequestValue
 	err := json.Unmarshal(raw, &req)
 	if err != nil {
-		// TODO: fix me
-		return servermode.ModeRequest{}
+		return servermode.ModeError(fmt.Errorf("unmarshal mode request: %w", err))
+	}
+
+	mode := servermode.Mode(req.Mode)
+	if !mode.Valid() {
+		return servermode.ModeError(fmt.Errorf("invalid mode: %s", mode))
 	}
 
 	return servermode.NewModeRequest(
-		servermode.Mode(req.Mode),
+		mode,
 		func() error {
 			ackValue, err := json.MarshalToString(modeAckValue{
-				Status: servermode.Mode(req.Mode),
+				Status: mode,
 			})
 			if err != nil {
 				return err
@@ -217,20 +183,25 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Mo
 
 	resultChan <- manager.prepareMode(resp.Kvs[0].Value)
 
-	go func(returnChan chan servermode.ModeRequest) {
-		etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+	go func() {
 		for watchResp := range etcdWatchChan {
+			if watchResp.Err() != nil {
+				resultChan <- servermode.ModeError(watchResp.Err())
+				continue
+			}
+
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
 					resultChan <- manager.prepareMode(event.Kv.Value)
 				default:
-					// TODO: handle other events
+					resultChan <- servermode.ModeError(fmt.Errorf("unknown event type %q", event.Type))
 				}
 			}
 		}
 		close(resultChan)
-	}(resultChan)
+	}()
 
 	return resultChan
 }
@@ -281,21 +252,26 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.W
 	}
 
 	resultChan <- manager.prepareWorkspace(resp.Kvs[0].Value)
+	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
 
-	go func(returnChan chan workspace.WorkspacesRequest) {
-		etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+	go func() {
 		for watchResp := range etcdWatchChan {
+			if watchResp.Err() != nil {
+				resultChan <- workspace.WorkspacesError(watchResp.Err())
+				continue
+			}
+
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
 					resultChan <- manager.prepareWorkspace(event.Kv.Value)
 				default:
-					// TODO: handle other events
+					resultChan <- workspace.WorkspacesError(fmt.Errorf("unknown event type %q", event.Type))
 				}
 			}
 		}
 		close(resultChan)
-	}(resultChan)
+	}()
 
 	return resultChan
 }

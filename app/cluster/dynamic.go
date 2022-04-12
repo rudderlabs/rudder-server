@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,11 @@ type lifecycle interface {
 	Stop()
 }
 
+type startStopPooling interface {
+	StopPolling()
+	StartPolling(workspaces string)
+}
+
 type Dynamic struct {
 	Provider ModeProvider
 
@@ -49,7 +55,7 @@ type Dynamic struct {
 	serverStopTimeStat   stats.RudderStats
 	serverStartCountStat stats.RudderStats
 	serverStopCountStat  stats.RudderStats
-	backendConfig        backendconfig.BackendConfig
+	BackendConfig        startStopPooling
 
 	logger logger.LoggerI
 
@@ -67,14 +73,21 @@ func (d *Dynamic) init() {
 	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
 	d.serverStartCountStat = stats.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
 	d.serverStopCountStat = stats.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
-	d.backendConfig = backendconfig.DefaultBackendConfig
+
+	if d.BackendConfig == nil {
+		d.BackendConfig = backendconfig.DefaultBackendConfig
+	}
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
-	// workspacesChan := d.Provider.WorkspaceServed()
 	d.once.Do(d.init)
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	serverModeChan := d.Provider.ServerMode(ctx)
+	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,21 +100,33 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				return req.Err()
 			}
 
-			d.logger.Debugf("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
 			err := d.handleModeChange(req.Mode())
 			if err != nil {
 				d.logger.Error(err)
 				return err
 			}
-			d.logger.Debugf("Acknowledging the mode change.")
-			req.Ack()
-			// case newWorkspaces := <-workspacesChan:
-			// 	err := d.handleWorkspaceChange(newWorkspaces.Workspaces())
-			// 	if err != nil {
-			// 		d.logger.Error(err)
-			// 		return err
-			// 	}
-			// 	newWorkspaces.Ack()
+			d.logger.Debugf("Acknowledging the mode change")
+
+			if err := req.Ack(); err != nil {
+				return fmt.Errorf("ack mode change: %w", err)
+			}
+		case req := <-workspaceIDsChan:
+			if req.Err() != nil {
+				return req.Err()
+			}
+			ids := strings.Join(req.WorkspaceIDs(), ",")
+
+			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
+			err := d.handleWorkspaceChange(ids)
+			if err != nil {
+				return err
+			}
+			d.logger.Debugf("Acknowledging the workspaceIDs change")
+
+			if err := req.Ack(); err != nil {
+				return fmt.Errorf("ack workspaceIDs change: %w", err)
+			}
 		}
 	}
 }
@@ -142,8 +167,8 @@ func (d *Dynamic) handleWorkspaceChange(workspaces string) error {
 	if d.currentWorkspaceIDs == workspaces {
 		return nil
 	}
-	d.backendConfig.StopPolling()
-	d.backendConfig.StartPolling(workspaces)
+	d.BackendConfig.StopPolling()
+	d.BackendConfig.StartPolling(workspaces)
 	return nil
 }
 
