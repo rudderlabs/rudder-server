@@ -1513,6 +1513,8 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 }
 
 func (job *UploadJobT) populateLoadFilesTableMap() {
+	job.loadFilesTableMap = make(map[tableNameT]bool)
+
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
