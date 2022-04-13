@@ -407,7 +407,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 	config.RegisterBoolConfigVariable(false, &instanceBackupEnabled, false, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 	config.RegisterBoolConfigVariable(false, &instanceBackupFailedAndAborted, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-	config.RegisterDurationConfigVariable(time.Minute*10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
+	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
 		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
 
@@ -2785,21 +2785,18 @@ func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) e
 		jd.logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
 		_, err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return err
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
 			return err
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err = jd.backupTable(ctx, backupDSRange, true)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return err
 		}
 
@@ -3005,15 +3002,15 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
 	// get a file uploader
-	fileUploader, errored := jd.getFileUploader()
-	jd.assertError(errored)
-
+	fileUploader, err := jd.getFileUploader()
+	if err != nil {
+		return filemanager.UploadOutput{}, err
+	}
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = jd.maxBackupRetryTime
 	boCtx := backoff.WithContext(bo, ctx)
 
-	var err error
 	var output filemanager.UploadOutput
 	backup := func() error {
 		output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
