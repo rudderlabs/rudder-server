@@ -1,6 +1,7 @@
 package destinationdebugger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -82,11 +83,11 @@ func HasUploadEnabled(destID string) bool {
 }
 
 //Setup initializes this module
-func Setup(backendConfig backendconfig.BackendConfig) {
+func Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
 	uploader = debugger.New(url, eventDeliveryStatusUploader)
-	uploader.Start()
+	uploader.Start(ctx)
 
 	rruntime.Go(func() {
 		backendConfigSubscriber(backendConfig)

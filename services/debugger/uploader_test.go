@@ -2,6 +2,7 @@ package debugger
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -69,8 +70,9 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			uploader.(*Uploader).Client = mockHTTPClient
 
 			uploader.RecordEvent(recordingEvent)
@@ -105,8 +107,9 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			uploader.(*Uploader).Client = mockHTTPClient
 
 			uploader.RecordEvent(recordingEvent)
@@ -141,8 +144,9 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			uploader.(*Uploader).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 
@@ -163,8 +167,9 @@ var _ = Describe("Uploader", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			mockHTTP := mocksSysUtils.NewMockHttpI(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			Http = mockHTTP
 			uploader.RecordEvent(recordingEvent)
 
@@ -209,7 +214,7 @@ var _ = Describe("Uploader", func() {
 			//New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			uploader.(*Uploader).batchTimeout = time.Millisecond
+			uploader.(*Uploader).flushInterval = time.Millisecond
 			uploader.(*Uploader).retrySleep = time.Millisecond
 
 			wg := sync.WaitGroup{}
@@ -226,8 +231,9 @@ var _ = Describe("Uploader", func() {
 				Body:       r,
 			}, errors.New("client do failed")).Times(3)
 
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 
 			uploader.RecordEvent(recordingEvent)
 			wg.Wait()
@@ -236,8 +242,9 @@ var _ = Describe("Uploader", func() {
 		It("should drop some events if number of events to record is more than queue size", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
-			defer uploader.Stop()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			uploader.(*Uploader).Client = mockHTTPClient
 			Http = sysUtils.NewHttp()
@@ -272,17 +279,21 @@ var _ = Describe("Uploader", func() {
 
 			uploader.RecordEvent(recordingEvent)
 			uploader.RecordEvent(recordingEvent)
+			time.Sleep(5*time.Millisecond)
+			//cancel()
 		})
 
 		It("should send events in batches", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Start()
+			uploader.(*Uploader).flushInterval = time.Millisecond
+			ctx := context.Background()
+			uploader.Start(ctx)
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			uploader.(*Uploader).Client = mockHTTPClient
 			Http = sysUtils.NewHttp()
 			uploader.(*Uploader).maxBatchSize = 1
-			uploader.(*Uploader).batchTimeout = time.Millisecond
+			uploader.(*Uploader).flushInterval = time.Millisecond
 
 			wg := sync.WaitGroup{}
 			wg.Add(2)

@@ -1,6 +1,7 @@
 package transformationdebugger
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -97,11 +98,11 @@ func IsUploadEnabled(id string) bool {
 }
 
 //Setup initializes this module
-func Setup() {
+func Setup(ctx context.Context) {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
 	uploader = debugger.New(url, transformationStatusUploader)
-	uploader.Start()
+	uploader.Start(ctx)
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()

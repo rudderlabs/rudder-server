@@ -1,6 +1,7 @@
 package sourcedebugger
 
 import (
+	"context"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -36,11 +37,11 @@ type eventUploaderContext struct {
 }
 
 // Initiaze mocks and common expectations
-func (c *eventUploaderContext) Setup() {
+func (c *eventUploaderContext) Setup(ctx context.Context) {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.configInitialised = false
-	Setup(c.mockBackendConfig)
+	Setup(ctx, c.mockBackendConfig)
 }
 
 func (c *eventUploaderContext) Finish() {
@@ -59,11 +60,13 @@ var _ = Describe("eventUploader", func() {
 	var (
 		c              *eventUploaderContext
 		recordingEvent string
+		ctx            context.Context
 	)
 
 	BeforeEach(func() {
 		c = &eventUploaderContext{}
-		c.Setup()
+		ctx = context.Background()
+		c.Setup(ctx)
 		recordingEvent = `{"t":"a"}`
 		disableEventUploads = false
 	})

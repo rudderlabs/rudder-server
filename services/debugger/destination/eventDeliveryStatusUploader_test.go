@@ -1,6 +1,7 @@
 package destinationdebugger
 
 import (
+	"context"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -165,11 +166,11 @@ type eventDeliveryStatusUploaderContext struct {
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 }
 
-func (c *eventDeliveryStatusUploaderContext) Setup() {
+func (c *eventDeliveryStatusUploaderContext) Setup(ctx context.Context) {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.configInitialised = false
-	Setup(c.mockBackendConfig)
+	Setup(ctx, c.mockBackendConfig)
 }
 
 func (c *eventDeliveryStatusUploaderContext) Finish() {
@@ -188,11 +189,13 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	var (
 		c              *eventDeliveryStatusUploaderContext
 		deliveryStatus DeliveryStatusT
+		ctx			   context.Context
 	)
 
 	BeforeEach(func() {
 		c = &eventDeliveryStatusUploaderContext{}
-		c.Setup()
+		ctx = context.Background()
+		c.Setup(ctx)
 		deliveryStatus = DeliveryStatusT{
 			DestinationID: DestinationIDEnabledA,
 			SourceID:      SourceIDEnabled,

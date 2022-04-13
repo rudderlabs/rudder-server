@@ -5,12 +5,12 @@ package debugger
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -21,8 +21,7 @@ var (
 )
 
 type UploaderI interface {
-	Start()
-	Stop()
+	Start(ctx context.Context)
 	RecordEvent(data interface{})
 }
 
@@ -38,9 +37,7 @@ type Uploader struct {
 	eventBuffer                            []interface{}
 	Client                                 sysUtils.HTTPClientI
 	maxBatchSize, maxRetry, maxESQueueSize int
-	batchTimeout, retrySleep               time.Duration
-
-	bgWaitGroup sync.WaitGroup
+	flushInterval, retrySleep              time.Duration
 }
 
 func init() {
@@ -52,7 +49,7 @@ func (uploader *Uploader) Setup() {
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")
 	config.RegisterIntConfigVariable(1024, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
-	config.RegisterDurationConfigVariable(time.Duration(2), &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
+	config.RegisterDurationConfigVariable(time.Duration(2), &uploader.flushInterval, true, time.Second, "Debugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(time.Duration(100), &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
 }
 
@@ -61,34 +58,30 @@ func New(url string, transformer Transformer) UploaderI {
 	eventBuffer := make([]interface{}, 0)
 	client := &http.Client{}
 
-	uploader := &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
+	uploader := &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client}
 	uploader.Setup()
 	return uploader
 }
 
-func (uploader *Uploader) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	rruntime.Go(func() {
+func (uploader *Uploader) Start(ctx context.Context) {
+	go func (){
 		uploader.handleEvents()
-		cancel()
-	})
+	}()
 
-	uploader.bgWaitGroup.Add(1)
-	rruntime.Go(func() {
+	go func (){
 		uploader.flushEvents(ctx)
-		uploader.bgWaitGroup.Done()
-	})
-}
+	}()
 
-func (upload *Uploader) Stop() {
-	close(upload.eventBatchChannel)
-	upload.bgWaitGroup.Wait()
+	go func (){
+		 <-ctx.Done()
+		 close(uploader.eventBatchChannel)
+	}()
 }
 
 //RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
 func (uploader *Uploader) RecordEvent(data interface{}) {
+	fmt.Println("RecordEvent: passing new data to internal channel")
 	uploader.eventBatchChannel <- data
 }
 
@@ -136,6 +129,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 
 func (uploader *Uploader) handleEvents() {
 	for eventSchema := range uploader.eventBatchChannel {
+		fmt.Println("handleEvents got new event: ", eventSchema)
 		uploader.eventBufferLock.Lock()
 
 		//If eventBuffer size is more than maxESQueueSize, Delete oldest.
@@ -153,9 +147,14 @@ func (uploader *Uploader) handleEvents() {
 
 func (uploader *Uploader) flushEvents(ctx context.Context) {
 	for {
+		fmt.Println("flushEvents waiting for cancel or interval: ", uploader.flushInterval)
 		select {
-		case <-ctx.Done():
-		case <-time.After(uploader.batchTimeout):
+		case <-ctx.Done(): {
+			fmt.Println("flushEvents notified that ctx is Done")
+			return
+		}
+		case <-time.After(uploader.flushInterval):
+			fmt.Println("flushEvents notified by uploader.flushInterval timer")
 		}
 		uploader.eventBufferLock.Lock()
 

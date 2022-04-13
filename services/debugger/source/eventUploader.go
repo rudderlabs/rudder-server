@@ -1,6 +1,7 @@
 package sourcedebugger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -57,11 +58,11 @@ type EventUploader struct {
 }
 
 //Setup initializes this module
-func Setup(backendConfig backendconfig.BackendConfig) {
+func Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
-	uploader.Start()
+	uploader.Start(ctx)
 
 	rruntime.Go(func() {
 		backendConfigSubscriber(backendConfig)
