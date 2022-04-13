@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/middleware"
 	"github.com/rudderlabs/rudder-server/router"
 	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -74,27 +75,27 @@ type batchWebRequestT struct {
 }
 
 var (
-	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort int
-	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes                int
-	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
-	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
-	enabledWriteKeyWebhookMap                                                 map[string]string
-	enabledWriteKeyWorkspaceMap                                               map[string]string
-	sourceIDToNameMap                                                         map[string]string
-	configSubscriberLock                                                      sync.RWMutex
-	maxReqSize                                                                int
-	enableRateLimit                                                           bool
-	enableSuppressUserFeature                                                 bool
-	enableEventSchemasFeature                                                 bool
-	diagnosisTickerTime                                                       time.Duration
-	ReadTimeout                                                               time.Duration
-	ReadHeaderTimeout                                                         time.Duration
-	WriteTimeout                                                              time.Duration
-	IdleTimeout                                                               time.Duration
-	allowReqsWithoutUserIDAndAnonymousID                                      bool
-	gwAllowPartialWriteWithErrors                                             bool
-	pkgLogger                                                                 logger.LoggerI
-	Diagnostics                                                               diagnostics.DiagnosticsI
+	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort         int
+	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes, maxConcurrentRequests int
+	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
+	enabledWriteKeysSourceMap                                                         map[string]backendconfig.SourceT
+	enabledWriteKeyWebhookMap                                                         map[string]string
+	enabledWriteKeyWorkspaceMap                                                       map[string]string
+	sourceIDToNameMap                                                                 map[string]string
+	configSubscriberLock                                                              sync.RWMutex
+	maxReqSize                                                                        int
+	enableRateLimit                                                                   bool
+	enableSuppressUserFeature                                                         bool
+	enableEventSchemasFeature                                                         bool
+	diagnosisTickerTime                                                               time.Duration
+	ReadTimeout                                                                       time.Duration
+	ReadHeaderTimeout                                                                 time.Duration
+	WriteTimeout                                                                      time.Duration
+	IdleTimeout                                                                       time.Duration
+	allowReqsWithoutUserIDAndAnonymousID                                              bool
+	gwAllowPartialWriteWithErrors                                                     bool
+	pkgLogger                                                                         logger.LoggerI
+	Diagnostics                                                                       diagnostics.DiagnosticsI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -176,9 +177,8 @@ type HandleT struct {
 	netHandle                                                  *http.Client
 	httpTimeout                                                time.Duration
 	httpWebServer                                              *http.Server
-
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
+	backgroundCancel                                           context.CancelFunc
+	backgroundWait                                             func() error
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -652,15 +652,6 @@ func (gateway *HandleT) printStats(ctx context.Context) {
 		recvCount := atomic.LoadUint64(&gateway.recvCount)
 		ackCount := atomic.LoadUint64(&gateway.ackCount)
 		gateway.logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
-	}
-}
-
-func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": r.URL.Path})
-		latencyStat.Start()
-		wrappedFunc(w, r)
-		latencyStat.End()
 	}
 }
 
@@ -1304,24 +1295,28 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
-	srvMux.Use(headerMiddleware)
-	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler)).Methods("POST")
+	srvMux.Use(
+		middleware.StatMiddleware(ctx),
+		middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		middleware.ContentType(),
+	)
+	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/page", gateway.webPageHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/screen", gateway.webScreenHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
 	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
-	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/audiencelist", gateway.stat(gateway.webAudienceListHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
-	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler)).Methods("GET")
-	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler)).Methods("GET")
+	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
+	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
-	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler)).Methods("POST", "GET")
-	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
+	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
 
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
@@ -1334,9 +1329,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	}
 
 	//todo: remove in next release
-	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/failed-events", gateway.stat(gateway.fetchFailedEventsHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/clear-failed-events", gateway.stat(gateway.clearFailedEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/clear", gateway.ClearHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1380,8 +1376,14 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
 	gateway.logger.Infof("Starting AdminHandler in %d", adminWebPort)
 	srvMux := mux.NewRouter()
-	srvMux.Use(headerMiddleware)
-	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
+	srvMux.Use(
+		middleware.StatMiddleware(ctx),
+		middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		middleware.ContentType(),
+	)
+	srvMux.HandleFunc("/v1/clear", gateway.ClearHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/clear", gateway.OperationStatusHandler).Methods("GET")
+	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
 
 	srv := &http.Server{
 		Addr:    ":" + strconv.Itoa(adminWebPort),
@@ -1398,17 +1400,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-//Currently sets the content-type only for eventSchemas, health responses.
-//Note : responses via http.Error aren't affected. They default to text/plain
-func headerMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health") {
-			w.Header().Add("Content-Type", "application/json; charset=utf-8")
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // Gets the config from config backend and extracts enabled writekeys
@@ -1448,6 +1439,7 @@ Finds the worker for a particular userID and queues the webrequest with the work
 They are further batched together in userWebRequestBatcher
 */
 func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
+
 	userIDHeader := req.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
