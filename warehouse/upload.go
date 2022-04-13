@@ -454,7 +454,9 @@ func (job *UploadJobT) run() (err error) {
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
 
-			job.populateLoadFilesTableMap()
+			if err = job.populateLoadFilesTableMap(); err != nil {
+				break
+			}
 
 			var wg sync.WaitGroup
 			wg.Add(3)
@@ -1512,7 +1514,7 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) populateLoadFilesTableMap() {
+func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
 	job.loadFilesTableMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
