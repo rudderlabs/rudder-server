@@ -1547,6 +1547,7 @@ func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
 		}
 		job.loadFilesTableMap[tableNameT(tableName)] = true
 	}
+	return
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
