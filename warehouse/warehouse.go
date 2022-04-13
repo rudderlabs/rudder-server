@@ -946,6 +946,9 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 
 			var createdAt sql.NullTime
 			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
+			if err == sql.ErrNoRows {
+				continue
+			}
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
@@ -954,15 +957,23 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				continue
 			}
 
-			sqlStatement = fmt.Sprintf(`
-				select cast( case when count(*) > 0 then 1 else 0 end as bit )
-				from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s' or status like '%[6]s') and updated_at > '%[7]s'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, "%_failed", createdAt.Time.Format(misc.RFC3339Milli))
+			sqlStatement = fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %[1]s WHERE source_id='%[2]s' AND destination_id='%[3]s' AND (status='%[4]s' OR status='%[5]s' OR status LIKE '%[6]s') AND updated_at > '%[7]s' );`,
+				warehouseutils.WarehouseUploadsTable,
+				source.ID,
+				destination.ID,
+				ExportedData,
+				Aborted,
+				"%_failed",
+				createdAt.Time.Format(misc.RFC3339Milli),
+			)
 
-			var uploaded int
-			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
+			var exists bool
+			var uploaded int = 0
+			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+			} else if exists {
+				uploaded = 1
 			}
 
 			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name, warehouse.Source.ID).Count(uploaded)
