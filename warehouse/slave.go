@@ -120,7 +120,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	timer := jobRun.timerStat("download_staging_file_time")
 	timer.Start()
 
-	err = downloader.Download(file, job.StagingFileLocation)
+	err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to download file")
 		return err
@@ -146,7 +146,7 @@ func (job *PayloadT) getDiscardsTable() string {
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := uuid.Must(uuid.NewV4()).String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -254,10 +254,10 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if misc.ContainsString(timeWindowDestinations, job.DestinationType) {
-		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
+		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }
@@ -713,7 +713,7 @@ func setupSlave(ctx context.Context) error {
 	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
 			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
@@ -729,7 +729,7 @@ func setupSlave(ctx context.Context) error {
 			return nil
 		}))
 	}
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		return notifier.RunMaintenanceWorker(ctx)
 	}))
 	return g.Wait()

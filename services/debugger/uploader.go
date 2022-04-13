@@ -111,6 +111,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 			//Refresh the connection
 			continue
 		}
+		defer resp.Body.Close()
 		break
 	}
 

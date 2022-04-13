@@ -40,9 +40,9 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -831,6 +831,12 @@ type pendingEventsRequestPayload struct {
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	//Force return that there are pending
+	if config.GetBool("Gateway.DisablePendingEvents", false) {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
+	}
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -916,33 +922,38 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", time.Duration(10), time.Second))
+	defer cancel()
+
+	var pending bool
 	if !excludeGateway {
-		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
-		totalPendingTillNow = gwPendingCount
+		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
+		if err != nil || pending {
+			w.Write([]byte(`{ "pending_events": 1 }`))
+			return
+		}
 	}
 
-	if totalPendingTillNow <= 0 {
-		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += rtPendingCount
+	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
 	}
 
-	if totalPendingTillNow <= 0 {
-		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-		totalPendingTillNow += brtPendingCount
+	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
+	if err != nil || pending {
+		w.Write([]byte(`{ "pending_events": 1 }`))
+		return
 	}
 
-	whPending := false
-	if totalPendingTillNow <= 0 {
-		whPending = gateway.getWarehousePending(payload)
-	}
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
+}
 
-	pendingEventsResponse := totalPendingTillNow
-	if whPending {
-		pendingEventsResponse = 1
+func getIntResponseFromBool(resp bool) int {
+	if resp {
+		return 1
 	}
-
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+	return 0
 }
 
 func (gateway *HandleT) getWarehousePending(payload []byte) bool {
@@ -1135,7 +1146,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	if errorMessage != "" {
 		return
 	}
-	gateway.logger.Debug(fmt.Sprintf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok)))
+	gateway.logger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 
 	httpWriteTime := gateway.stats.NewTaggedStat("gateway.http_write_time", stats.TimerType, stats.Tags{"reqType": reqType})
 	httpWriteStartTime := time.Now()
@@ -1481,7 +1492,7 @@ func headerMiddleware(next http.Handler) http.Handler {
 
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch

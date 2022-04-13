@@ -5,11 +5,15 @@ env:
     ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
     CODECOV_TOKEN: "/codebuild/codecov-token"
+    BIGQUERY_INTEGRATION_TEST_USER_CRED: "/codebuild/integration/tests/bigquery"
 
 phases:
   install:
-    runtime-versions:
-      golang: 1.16
+    commands:
+      # Make sure goenv is up to date
+      - cd $HOME/.goenv && git pull --ff-only && cd -
+      # Install Go 1.17
+      - goenv install 1.17.8 && goenv global 1.17.8
   pre_build:
     commands:
       - env
@@ -28,7 +32,7 @@ phases:
       - docker pull postgres:11-alpine
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull yandex/clickhouse-server:21-alpine
-      - docker pull mcr.microsoft.com/mssql/server:2019-CU10-ubuntu-20.04
+      - docker pull mcr.microsoft.com/azure-sql-edge:1.0.5
       - docker pull zookeeper:3.5
       - docker pull minio/minio:latest
       - docker pull mcr.microsoft.com/azure-storage/azurite:latest
@@ -42,8 +46,8 @@ phases:
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       # Build Open source version
       - make test
-      - RSERVER_ENABLE_MULTITENANCY=true  go test -v ./docker_test.go -integration -count 1
-      - RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
+      - RSERVER_ENABLE_MULTITENANCY=true  go test -v ./docker_test.go -integration -bigqueryintegration -count 1
+      - RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -bigqueryintegration -count 1
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build

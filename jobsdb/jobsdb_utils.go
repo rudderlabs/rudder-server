@@ -241,7 +241,7 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 

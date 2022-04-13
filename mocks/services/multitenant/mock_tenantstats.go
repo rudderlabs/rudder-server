@@ -34,18 +34,6 @@ func (m *MockMultiTenantI) EXPECT() *MockMultiTenantIMockRecorder {
 	return m.recorder
 }
 
-// AddToInMemoryCount mocks base method.
-func (m *MockMultiTenantI) AddToInMemoryCount(arg0, arg1 string, arg2 int, arg3 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddToInMemoryCount", arg0, arg1, arg2, arg3)
-}
-
-// AddToInMemoryCount indicates an expected call of AddToInMemoryCount.
-func (mr *MockMultiTenantIMockRecorder) AddToInMemoryCount(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddToInMemoryCount", reflect.TypeOf((*MockMultiTenantI)(nil).AddToInMemoryCount), arg0, arg1, arg2, arg3)
-}
-
 // CalculateSuccessFailureCounts mocks base method.
 func (m *MockMultiTenantI) CalculateSuccessFailureCounts(arg0, arg1 string, arg2, arg3 bool) {
 	m.ctrl.T.Helper()
@@ -73,18 +61,6 @@ func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, ar
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4)
 }
 
-// RemoveFromInMemoryCount mocks base method.
-func (m *MockMultiTenantI) RemoveFromInMemoryCount(arg0, arg1 string, arg2 int, arg3 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "RemoveFromInMemoryCount", arg0, arg1, arg2, arg3)
-}
-
-// RemoveFromInMemoryCount indicates an expected call of RemoveFromInMemoryCount.
-func (mr *MockMultiTenantIMockRecorder) RemoveFromInMemoryCount(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveFromInMemoryCount", reflect.TypeOf((*MockMultiTenantI)(nil).RemoveFromInMemoryCount), arg0, arg1, arg2, arg3)
-}
-
 // ReportProcLoopAddStats mocks base method.
 func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int, arg1 string) {
 	m.ctrl.T.Helper()
@@ -95,6 +71,30 @@ func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int
 func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportProcLoopAddStats", reflect.TypeOf((*MockMultiTenantI)(nil).ReportProcLoopAddStats), arg0, arg1)
+}
+
+// Start mocks base method.
+func (m *MockMultiTenantI) Start() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Start")
+}
+
+// Start indicates an expected call of Start.
+func (mr *MockMultiTenantIMockRecorder) Start() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockMultiTenantI)(nil).Start))
+}
+
+// Stop mocks base method.
+func (m *MockMultiTenantI) Stop() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Stop")
+}
+
+// Stop indicates an expected call of Stop.
+func (mr *MockMultiTenantIMockRecorder) Stop() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockMultiTenantI)(nil).Stop))
 }
 
 // UpdateWorkspaceLatencyMap mocks base method.

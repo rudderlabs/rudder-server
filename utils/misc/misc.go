@@ -39,6 +39,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
@@ -279,12 +280,12 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	// Get the file information
 	info, err := fileToZip.Stat()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	header, err := zip.FileInfoHeader(info)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
@@ -298,30 +299,10 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
-}
-
-// UnZipSingleFile unzips zip containing single file into ouputfile path passed
-func UnZipSingleFile(outputfile string, filename string) {
-	r, err := zip.OpenReader(filename)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Close()
-	inputfile := r.File[0]
-	// Make File
-	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
-	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	if err != nil {
-		panic(err)
-	}
-	rc, _ := inputfile.Open()
-	io.Copy(outFile, rc)
-	outFile.Close()
-	rc.Close()
 }
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
@@ -696,6 +677,15 @@ func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
 }
 
+func ConvertInterfaceToStringArray(input []interface{}) []string {
+	output := make([]string, len(input))
+	for i, val := range input {
+		valString, _ := val.(string)
+		output[i] = valString
+	}
+	return output
+}
+
 func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
 	var respBody []byte
 	var statusCode int
@@ -1061,7 +1051,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -1246,20 +1236,37 @@ func GetDatabricksVersion() (version string) {
 	return
 }
 
+func WithBugsnagForWarehouse(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer BugsnagNotify(ctx, "Warehouse")()
+		return fn()
+	}
+}
+
+func BugsnagNotify(ctx context.Context, team string) func() {
+	return func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				},
+				"Team": {
+					"Name": team,
+				},
+			})
+
+			RecordAppError(fmt.Errorf("%v", r))
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+	}
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
-		defer func() {
-			if r := recover(); r != nil {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					}})
-
-				RecordAppError(fmt.Errorf("%v", r))
-				panic(r)
-			}
-		}()
+		defer BugsnagNotify(ctx, "Core")()
 		return fn()
 	}
 }
@@ -1335,7 +1342,7 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
-func SortMap(inputMap map[string]MovingAverage) []string {
+func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	pairArr := make(pairList, len(inputMap))
 
 	i := 0
@@ -1381,4 +1388,26 @@ func ReverseInt(s []int) []int {
 		s[i], s[j] = s[j], s[i]
 	}
 	return s
+}
+
+func IsMultiTenant() bool {
+	return config.GetBool("EnableMultitenancy", false)
+}
+
+// lookup map recursively and return value
+func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
+	if len(keys) == 0 {
+		return nil
+	}
+	if val, ok := mapToLookup[keys[0]]; ok {
+		if len(keys) == 1 {
+			return val
+		}
+		nextMap, ok := val.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		return MapLookup(nextMap, keys[1:]...)
+	}
+	return nil
 }

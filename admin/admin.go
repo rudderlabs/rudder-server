@@ -32,7 +32,6 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -42,17 +41,18 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
+
+	"github.com/spf13/viper"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/spf13/viper"
 )
 
 // PackageStatusHandler to be implemented by the package objects that are registered as status handlers
-// output of Status() is expected to be json encodeable by default
+// output of Status() is expected to be json encodable by default
 type PackageStatusHandler interface {
 	Status() interface{}
 }
@@ -60,17 +60,20 @@ type PackageStatusHandler interface {
 // RegisterAdminHandler is used by other packages to
 // expose admin functions over the unix socket based rpc interface
 func RegisterAdminHandler(name string, handler interface{}) {
-	instance.rpcServer.RegisterName(name, handler)
+	_ = instance.rpcServer.RegisterName(name, handler) // @TODO fix ignored error
 }
 
 // RegisterStatusHandler expects object implementing PackageStatusHandler interface
 func RegisterStatusHandler(name string, handler PackageStatusHandler) {
-	instance.statushandlers[strings.ToLower(name)] = handler
+	instance.statusHandlersMutex.Lock()
+	instance.statusHandlers[strings.ToLower(name)] = handler
+	instance.statusHandlersMutex.Unlock()
 }
 
 type Admin struct {
-	statushandlers map[string]PackageStatusHandler
-	rpcServer      *rpc.Server
+	statusHandlersMutex sync.RWMutex
+	statusHandlers      map[string]PackageStatusHandler
+	rpcServer           *rpc.Server
 }
 
 var instance Admin
@@ -78,38 +81,40 @@ var pkgLogger logger.LoggerI
 
 func Init() {
 	instance = Admin{
-		statushandlers: make(map[string]PackageStatusHandler),
+		statusHandlers: make(map[string]PackageStatusHandler),
 		rpcServer:      rpc.NewServer(),
 	}
-	instance.rpcServer.Register(instance)
+	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
 	pkgLogger = logger.NewLogger().Child("admin")
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
-func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
+func (a Admin) Status(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	statusObj := make(map[string]interface{})
 	statusObj["server-mode"] = db.CurrentMode
 
-	for moduleName, handler := range a.statushandlers {
+	a.statusHandlersMutex.RLock()
+	for moduleName, handler := range a.statusHandlers {
 		statusObj[moduleName] = handler.Status()
 	}
+	a.statusHandlersMutex.RUnlock()
 	formattedOutput, err := json.MarshalIndent(statusObj, "", "  ")
 	*reply = string(formattedOutput)
 	return err
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
+func (a Admin) PrintStack(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	byteArr := make([]byte, 2048*1024)
@@ -123,15 +128,15 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	pprof.Lookup("heap").WriteTo(f, 1)
+	defer func() { _ = f.Close() }()
+	_ = pprof.Lookup("heap").WriteTo(f, 1)
 	*reply = "Heap profile written to " + *path
 	return nil
 }
@@ -141,7 +146,7 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
@@ -160,11 +165,11 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 }
 
 // StopCpuProfile stops writing already cpu profile
-func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
+func (a Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	pkgLogger.Info("Stopping cpu profile")
@@ -174,19 +179,19 @@ func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
+func (a Admin) ServerConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 
-	config := make(map[string]interface{})
+	conf := make(map[string]interface{})
 	for _, key := range viper.AllKeys() {
-		config[key] = viper.Get(key)
+		conf[key] = viper.Get(key)
 	}
-	formattedOutput, err := json.MarshalIndent(config, "", "  ")
+	formattedOutput, err := json.MarshalIndent(conf, "", "  ")
 	*reply = string(formattedOutput)
 	return err
 }
@@ -200,7 +205,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	err = logger.SetModuleLevel(l.Module, l.Level)
@@ -211,11 +216,11 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 }
 
 //GetLoggingConfig returns the logging configuration
-func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
+func (a Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	loggingConfigMap := logger.GetLoggingConfig()
@@ -230,7 +235,7 @@ func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
 	return nil
 }
 
-// StartServer starts an http server listening on unix socket and serving rpc communication
+// StartServer starts an HTTP server listening on unix socket and serving rpc communication
 func StartServer(ctx context.Context) error {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -238,7 +243,7 @@ func StartServer(ctx context.Context) error {
 	}
 	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
-		pkgLogger.Fatal(err)
+		pkgLogger.Fatal(err) // @TODO return?
 	}
 	defer func() {
 		if err := os.RemoveAll(sockAddr); err != nil {
@@ -248,7 +253,7 @@ func StartServer(ctx context.Context) error {
 
 	l, e := net.Listen("unix", sockAddr)
 	if e != nil {
-		pkgLogger.Fatal("listen error:", e)
+		pkgLogger.Fatal("listen error:", e) // @TODO return?
 	}
 	defer func() {
 		if err := l.Close(); err != nil {
@@ -263,7 +268,7 @@ func StartServer(ctx context.Context) error {
 	srv := &http.Server{Handler: srvMux}
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown
 	}()
 
 	return srv.Serve(l)

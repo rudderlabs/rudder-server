@@ -1,13 +1,13 @@
 package backendconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 
 	"github.com/cenkalti/backoff"
@@ -22,16 +22,11 @@ type MultiWorkspaceConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 //WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
-}
-type WorkspaceT struct {
-	WorkspaceID string `json:"id"`
-}
-
-type HostedWorkspacesT struct {
-	HostedWorkspaces []WorkspaceT `json:"workspaces"`
 }
 
 //SetUp sets up MultiWorkspaceConfig
@@ -75,7 +70,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 }
 
 //Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
+func (multiWorkspaceConfig *MultiWorkspaceConfig) Get(workspaceArr string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
@@ -97,7 +92,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		return ConfigT{}, false
 	}
 	var workspaces WorkspacesT
-	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
+	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Error("Error while parsing request", err, statusCode)
 		return ConfigT{}, false

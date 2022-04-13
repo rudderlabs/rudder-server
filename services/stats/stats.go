@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -19,22 +20,31 @@ const (
 	HistogramType = "histogram"
 )
 
-var client *statsd.Client
-var taggedClientsMap = make(map[string]*statsd.Client)
-var statsEnabled bool
-var statsTagsFormat string
-var statsdServerURL string
-var instanceID string
-var conn statsd.Option
-var taggedClientsMapLock sync.RWMutex
-var enabled bool
-var statsCollectionInterval int64
-var enableCPUStats bool
-var enableMemStats bool
-var enableGCStats bool
-var rc runtimeStatsCollector
-var pkgLogger logger.LoggerI
-var statsSamplingRate float32
+var (
+	statsEnabled            bool
+	statsTagsFormat         string
+	statsdServerURL         string
+	instanceID              string
+	enabled                 bool
+	statsCollectionInterval int64
+	enableCPUStats          bool
+	enableMemStats          bool
+	enableGCStats           bool
+	statsSamplingRate       float32
+
+	pkgLogger logger.LoggerI
+
+	conn   statsd.Option
+	client *statsd.Client
+	rc     runtimeStatsCollector
+	mc     metricStatsCollector
+
+	taggedClientsMapLock    sync.RWMutex
+	taggedClientsMap        = make(map[string]*statsd.Client)
+	connEstablished         bool
+	taggedClientPendingKeys [][]string
+	taggedClientPendingTags []string
+)
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -93,6 +103,28 @@ type RudderStatsT struct {
 	dontProcess bool
 }
 
+func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) (*statsd.Client, error) {
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = 0
+	var err error
+	var c *statsd.Client
+	newClient := func() error {
+		c, err = statsd.New(opts...)
+		if err != nil {
+			pkgLogger.Errorf("error while setting statsd client: %v", err)
+		}
+		return err
+	}
+
+	if err = backoff.Retry(newClient, bo); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
 //Setup creates a new statsd client
 func Setup() {
 	DefaultStats = &HandleT{}
@@ -100,22 +132,42 @@ func Setup() {
 	if !statsEnabled {
 		return
 	}
-
-	var err error
 	conn = statsd.Address(statsdServerURL)
-	//TODO: Add tags by calling a function...
+	// since, we don't want setup to be a blocking call, creating a separate `go routine`` for retry to get statsd client.
+	var err error
+	//NOTE: this is to get atleast a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
-	if err != nil {
-		// If nothing is listening on the target port, an error is returned and
-		// the returned client does nothing but is still usable. So we can
-		// just log the error and go on.
-		pkgLogger.Error(err)
+	if err == nil {
+		taggedClientsMapLock.Lock()
+		connEstablished = true
+		taggedClientsMapLock.Unlock()
 	}
-	if client != nil {
-		rruntime.Go(func() {
-			collectRuntimeStats(client)
-		})
-	}
+	rruntime.Go(func() {
+		if err != nil {
+			connEstablished = false
+			c, err := getNewStatsdClientWithExpoBackoff(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
+			if err != nil {
+				statsEnabled = false
+				pkgLogger.Errorf("error while creating new statsd client: %v", err)
+			} else {
+				client = c
+				taggedClientsMapLock.Lock()
+				for i, tagValue := range taggedClientPendingKeys {
+					taggedClient := client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagValue...), statsd.SampleRate(statsSamplingRate))
+					taggedClientsMap[taggedClientPendingTags[i]] = taggedClient
+				}
+
+				pkgLogger.Info("statsd client setup succeeded.")
+				connEstablished = true
+
+				taggedClientPendingKeys = nil
+				taggedClientPendingTags = nil
+				taggedClientsMapLock.Unlock()
+			}
+		}
+
+		collectPeriodicStats(client)
+	})
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -163,22 +215,21 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 	taggedClientsMapLock.RUnlock()
 
 	if !found {
-		taggedClientsMapLock.Lock()
+
 		tagVals := make([]string, 0, len(tags)*2)
 		for tagName, tagVal := range tags {
 			tagName = strings.ReplaceAll(tagName, ":", "-")
 			tagVal = strings.ReplaceAll(tagVal, ":", "-")
 			tagVals = append(tagVals, tagName, tagVal)
 		}
-		var err error
-		if config.GetBool("useNewClient", false) {
-			taggedClient, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-			if err != nil {
-				pkgLogger.Error(err)
-			}
-		} else {
-			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+
+		taggedClientsMapLock.Lock()
+		if !connEstablished {
+			taggedClientPendingTags = append(taggedClientPendingTags, tagStr)
+			taggedClientPendingKeys = append(taggedClientPendingKeys, tagVals)
 		}
+		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
@@ -195,7 +246,6 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
-// Count increases the stat by n. Only applies to CountType stats
 func (rStats *RudderStatsT) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
 		return
@@ -287,7 +337,7 @@ func (rStats *RudderStatsT) Observe(value float64) {
 	rStats.Client.Histogram(rStats.Name, value)
 }
 
-func collectRuntimeStats(client *statsd.Client) {
+func collectPeriodicStats(client *statsd.Client) {
 	gaugeFunc := func(key string, val uint64) {
 		client.Gauge("runtime_"+key, val)
 	}
@@ -296,19 +346,34 @@ func collectRuntimeStats(client *statsd.Client) {
 	rc.EnableCPU = enableCPUStats
 	rc.EnableMem = enableMemStats
 	rc.EnableGC = enableGCStats
+
+	mc = newMetricStatsCollector()
 	if enabled {
-		rc.run()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			rc.run()
+		}()
+		go func() {
+			defer wg.Done()
+			mc.run()
+		}()
+		wg.Wait()
 	}
 
 }
 
-// StopRuntimeStats stops collection of runtime stats.
-func StopRuntimeStats() {
-	if !statsEnabled {
+// StopPeriodicStats stops periodic collection of stats.
+func StopPeriodicStats() {
+	taggedClientsMapLock.RLock()
+	defer taggedClientsMapLock.RUnlock()
+	if !statsEnabled || !connEstablished {
 		return
 	}
 
 	close(rc.Done)
+	close(mc.done)
 }
 
 func getTagsFormat() statsd.TagFormat {
