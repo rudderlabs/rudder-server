@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWaitGroup(t *testing.T) {
+func TestSuccess(t *testing.T) {
 	start := time.Now()
 	gr1, gr2 := make(chan struct{}), make(chan struct{})
 
@@ -43,7 +43,7 @@ func TestWaitGroup(t *testing.T) {
 	}
 }
 
-func TestWaitGroupTimeout(t *testing.T) {
+func TestTimeout(t *testing.T) {
 	done := make(chan struct{})
 
 	wg := New()
@@ -64,4 +64,21 @@ func TestWaitGroupTimeout(t *testing.T) {
 
 	require.ErrorIs(t, wg.Wait(ctx), context.DeadlineExceeded)
 	<-done
+}
+
+func TestNegativeDelta(t *testing.T) {
+	wg := New()
+	wg.Add(1)
+	wg.Done()
+
+	var r interface{}
+	func() {
+		defer func() {
+			r = recover()
+		}()
+
+		wg.Done()
+	}()
+
+	require.EqualValues(t, "negative delta", r)
 }
