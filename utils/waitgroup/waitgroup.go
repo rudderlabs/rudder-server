@@ -10,7 +10,7 @@ import (
 // WARNING: IT SHOULD NOT BE USED unless for testing or edge cases with legacy code.
 // The preferable way is to have the go routines honour a context and have those timeout, instead of having
 // Wait() to timeout.
-func New() *waitGroup {
+func New() *waitGroup { // skipcq: RVV-B0011
 	return &waitGroup{
 		sem: semaphore.NewWeighted(1),
 	}
