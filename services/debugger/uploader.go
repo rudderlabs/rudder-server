@@ -65,16 +65,11 @@ func New(url string, transformer Transformer) UploaderI {
 
 func (uploader *Uploader) Start(ctx context.Context) {
 	go func (){
-		uploader.handleEvents()
+		uploader.handleEvents(ctx)
 	}()
 
 	go func (){
 		uploader.flushEvents(ctx)
-	}()
-
-	go func (){
-		 <-ctx.Done()
-		 close(uploader.eventBatchChannel)
 	}()
 }
 
@@ -127,21 +122,25 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	}
 }
 
-func (uploader *Uploader) handleEvents() {
-	for eventSchema := range uploader.eventBatchChannel {
-		fmt.Println("handleEvents got new event: ", eventSchema)
-		uploader.eventBufferLock.Lock()
+func (uploader *Uploader) handleEvents(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case eventSchema := <-uploader.eventBatchChannel:
+			uploader.eventBufferLock.Lock()
 
-		//If eventBuffer size is more than maxESQueueSize, Delete oldest.
-		if len(uploader.eventBuffer) >= uploader.maxESQueueSize {
-			uploader.eventBuffer[0] = nil
-			uploader.eventBuffer = uploader.eventBuffer[1:]
+			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
+			if len(uploader.eventBuffer) >= uploader.maxESQueueSize {
+				uploader.eventBuffer[0] = nil
+				uploader.eventBuffer = uploader.eventBuffer[1:]
+			}
+
+			//Append to request buffer
+			uploader.eventBuffer = append(uploader.eventBuffer, eventSchema)
+
+			uploader.eventBufferLock.Unlock()
 		}
-
-		//Append to request buffer
-		uploader.eventBuffer = append(uploader.eventBuffer, eventSchema)
-
-		uploader.eventBufferLock.Unlock()
 	}
 }
 
