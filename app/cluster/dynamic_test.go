@@ -27,7 +27,7 @@ func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ModeReq
 	return m.modeCh
 }
 
-func (m *mockModeProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.WorkspacesRequest {
+func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.WorkspacesRequest {
 	return m.workspaceCh
 }
 

@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	etcd "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 )
@@ -58,7 +57,7 @@ func run(m *testing.M) int {
 	if err := pool.Retry(func() error {
 		var err error
 
-		etcdClient, err = etcd.New(clientv3.Config{
+		etcdClient, err = etcd.New(etcd.Config{
 			Endpoints: etcdHosts,
 			DialOptions: []grpc.DialOption{
 				grpc.WithBlock(), // block until the underlying connection is up
