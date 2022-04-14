@@ -31,6 +31,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -355,6 +356,7 @@ type HandleT struct {
 	queryFilterKeys               QueryFiltersT
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
+	maxBackupRetryTime            time.Duration
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
@@ -405,7 +407,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 	config.RegisterBoolConfigVariable(false, &instanceBackupEnabled, false, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 	config.RegisterBoolConfigVariable(false, &instanceBackupFailedAndAborted, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-
+	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
 		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
 
@@ -2787,7 +2789,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		// check if non empty dataset is present to backup
 		// else continue
 		sleepMultiplier = 1
-		if (dataSetRangeT{} == backupDSRange) {
+		if (dataSetRangeT{} == *backupDSRange) {
 			// sleep for more duration if no dataset is found
 			sleepMultiplier = 6
 			continue
@@ -2801,51 +2803,50 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		var opID int64
 		if isBackupConfigured() {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
-			success := jd.backupDS(backupDSRange)
-			if !success {
-				jd.removeTableJSONDumps()
-				jd.JournalMarkDone(opID)
-				continue
+			err := jd.backupDS(ctx, backupDSRange)
+			if err != nil {
+				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
 		}
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
+		//Currently, we retry uploading a table for sometime & if it fails. We only drop that table & not all `pre_drop` tables.
+		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
+		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
+		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
 		jd.dropDS(backupDS, false)
 		jd.JournalMarkDone(opID)
 	}
 }
 
 //backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
-func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
+func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	// return after backing up aboprted jobs if the flag is turned on
 	// backupDS is only called when BackupSettings.BackupEnabled is true
 	if jd.BackupSettings.FailedOnly {
 		jd.logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
-		_, err := jd.backupTable(backupDSRange, false)
+		_, err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-			return false
+			return err
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err := jd.backupTable(backupDSRange, false)
+		_, err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
-			return false
+			return err
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err = jd.backupTable(backupDSRange, true)
+		_, err = jd.backupTable(ctx, backupDSRange, true)
 		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-			return false
+			return err
 		}
 
 	}
 
-	return true
+	return nil
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
@@ -2861,7 +2862,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 // getBackUpQuery individual queries for getting rows in json
-func (jd *HandleT) getBackUpQuery(backupDSRange dataSetRangeT, isJobStatusTable bool, offset int64) string {
+func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable bool, offset int64) string {
 	var stmt string
 	if jd.BackupSettings.FailedOnly {
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
@@ -2917,7 +2918,7 @@ func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }
 
-func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
+func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
 	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -3029,11 +3030,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	jd.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
-	// get a file uploader
-	fileUploader, errored := jd.getFileUploader()
-	jd.assertError(errored)
-	output, err = fileUploader.Upload(context.TODO(), file, pathPrefixes...)
-
+	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, pathPrefixes...)
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
@@ -3047,7 +3044,28 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	return true, nil
 }
 
-func (jd *HandleT) getBackupDSRange() dataSetRangeT {
+func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
+	// get a file uploader
+	fileUploader, err := jd.getFileUploader()
+	if err != nil {
+		return filemanager.UploadOutput{}, err
+	}
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = jd.maxBackupRetryTime
+	boCtx := backoff.WithContext(bo, ctx)
+
+	var output filemanager.UploadOutput
+	backup := func() error {
+		output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
+		return err
+	}
+
+	err = backoff.Retry(backup, boCtx)
+	return output, err
+}
+
+func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	var backupDS dataSetT
 	var backupDSRange dataSetRangeT
 
@@ -3064,7 +3082,7 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		}
 	}
 	if len(dnumList) == 0 {
-		return backupDSRange
+		return &backupDSRange
 	}
 
 	sortDnumList(jd, dnumList)
@@ -3094,7 +3112,7 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		endTime:   maxCreatedAt.UnixNano() / int64(time.Millisecond),
 		ds:        backupDS,
 	}
-	return backupDSRange
+	return &backupDSRange
 }
 
 /*
