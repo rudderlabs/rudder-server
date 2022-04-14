@@ -214,7 +214,7 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 	}
 
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	queryStat := jd.getTimerStat("update_job_status_time", tags)
+	queryStat := jd.getTimerStat("update_job_status_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -306,15 +306,6 @@ type MigrationState struct {
 	doesDSHaveJobsToMigrateMap map[string]bool
 }
 
-type writeReqType int
-
-const (
-	writeReqTypeStore writeReqType = iota
-	writeReqTypeStoreWithRetry
-	writeReqTypeUpdateJobStatus
-	writeReqTypeDeleteExecuting
-)
-
 /*
 HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
@@ -344,8 +335,8 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	writeChannel                  chan writeJob
-	readChannel                   chan readJob
+	writeChannel                  chan *queuedDbRequest
+	readChannel                   chan *queuedDbRequest
 	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
@@ -788,8 +779,8 @@ func (jd *HandleT) workersAndAuxSetup() {
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
 func (jd *HandleT) Start() {
-	jd.writeChannel = make(chan writeJob)
-	jd.readChannel = make(chan readJob)
+	jd.writeChannel = make(chan *queuedDbRequest)
+	jd.readChannel = make(chan *queuedDbRequest)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -913,17 +904,6 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 
 }
 
-type writeJob struct {
-	reqType              writeReqType
-	jobsList             []*JobT
-	jobStatusesList      []*JobStatusT
-	customValFiltersList []string
-	parameterFiltersList []ParameterFilterT
-	errorResponse        chan error
-	errorMapResponse     chan map[uuid.UUID]string
-	deleteParams         GetQueryParamsT
-}
-
 func (jd *HandleT) initDBWriters(ctx context.Context) {
 	g, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < jd.maxWriters; i++ {
@@ -932,32 +912,13 @@ func (jd *HandleT) initDBWriters(ctx context.Context) {
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait()
 }
 
 func (jd *HandleT) dbWriter(ctx context.Context) {
-	for writeReq := range jd.writeChannel {
-		switch writeReq.reqType {
-		case writeReqTypeStore:
-			err := jd.store(writeReq.jobsList)
-			writeReq.errorResponse <- err
-		case writeReqTypeStoreWithRetry:
-			errMap := jd.storeWithRetryEach(writeReq.jobsList)
-			writeReq.errorMapResponse <- errMap
-		case writeReqTypeUpdateJobStatus:
-			err := jd.updateJobStatus(writeReq.jobStatusesList, writeReq.customValFiltersList, writeReq.parameterFiltersList)
-			writeReq.errorResponse <- err
-		case writeReqTypeDeleteExecuting:
-			jd.deleteJobStatus(writeReq.deleteParams)
-			writeReq.errorResponse <- nil
-		}
+	for req := range jd.writeChannel {
+		req.response <- req.execute()
 	}
-}
-
-type readJob struct {
-	getQueryParams GetQueryParamsT
-	jobsListChan   chan []*JobT
-	reqType        string
 }
 
 func (jd *HandleT) initDBReaders(ctx context.Context) {
@@ -968,24 +929,12 @@ func (jd *HandleT) initDBReaders(ctx context.Context) {
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait()
 }
 
 func (jd *HandleT) dbReader(ctx context.Context) {
-	for readReq := range jd.readChannel {
-		if readReq.reqType == Failed.State {
-			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
-		} else if readReq.reqType == Waiting.State {
-			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
-		} else if readReq.reqType == NotProcessed.State {
-			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
-		} else if readReq.reqType == Executing.State {
-			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
-		} else if readReq.reqType == Importing.State {
-			readReq.jobsListChan <- jd.getImportingList(readReq.getQueryParams)
-		} else {
-			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
-		}
+	for req := range jd.readChannel {
+		req.response <- req.execute()
 	}
 }
 
@@ -1834,7 +1783,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 func (jd *HandleT) storeJobsDS(ds dataSetT, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
-	queryStat := jd.storeTimerStat("store_jobs")
+	queryStat := jd.getTimerStat("store_jobs", nil)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1852,7 +1801,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 func (jd *HandleT) copyJobsDS(txn *sql.Tx, ds dataSetT, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
-	queryStat := jd.storeTimerStat("store_jobs")
+	queryStat := jd.getTimerStat("copy_jobs", nil)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1899,7 +1848,7 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 }
 
 func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	queryStat := jd.storeTimerStat("store_jobs_retry_each")
+	queryStat := jd.getTimerStat("store_jobs_retry_each", nil)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2280,7 +2229,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("processed_ds_time", tags)
+	queryStat := jd.getTimerStat("processed_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2410,7 +2359,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("unprocessed_ds_time", tags)
+	queryStat := jd.getTimerStat("unprocessed_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2538,7 +2487,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		return
 	}
 
-	queryStat := jd.getTimerStat("update_job_status_ds_time", tags)
+	queryStat := jd.getTimerStat("update_job_status_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3355,30 +3304,12 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	if len(statusList) == 0 {
 		return nil
 	}
-
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	totalWriteTime := jd.getTimerStat("update_job_status_total_time", tags)
-	totalWriteTime.Start()
-	defer totalWriteTime.End()
-
-	if jd.enableWriterQueue {
-		waitTimeStat := jd.getTimerStat("update_job_status_wait_time", tags)
-		waitTimeStat.Start()
-		respCh := make(chan error)
-		writeJobRequest := writeJob{
-			reqType:              writeReqTypeUpdateJobStatus,
-			jobStatusesList:      statusList,
-			customValFiltersList: customValFilters,
-			parameterFiltersList: parameterFilters,
-			errorResponse:        respCh,
-		}
-		jd.writeChannel <- writeJobRequest
-		waitTimeStat.End()
-		err := <-respCh
-		return err
-	} else {
+	command := func() interface{} {
 		return jd.updateJobStatus(statusList, customValFilters, parameterFilters)
 	}
+	err, _ := jd.executeDbRequest(newWriteDbRequest("update_job_status", &tags, command)).(error)
+	return err
 }
 
 /*
@@ -3388,7 +3319,7 @@ Later we can move this to query
 */
 func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	queryStat := jd.getTimerStat("update_job_status_time", tags)
+	queryStat := jd.getTimerStat("update_job_status_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3514,26 +3445,11 @@ Store call is used to create new Jobs
 If enableWriterQueue is true, this goes through writer worker pool.
 */
 func (jd *HandleT) Store(jobList []*JobT) error {
-	totalWriteTime := jd.storeTimerStat("store_total_time")
-	totalWriteTime.Start()
-	defer totalWriteTime.End()
-
-	if jd.enableWriterQueue {
-		waitTimeStat := jd.storeTimerStat("store_wait_time")
-		waitTimeStat.Start()
-		respCh := make(chan error)
-		writeJobRequest := writeJob{
-			reqType:       writeReqTypeStore,
-			jobsList:      jobList,
-			errorResponse: respCh,
-		}
-		jd.writeChannel <- writeJobRequest
-		waitTimeStat.End()
-		err := <-respCh
-		return err
-	} else {
+	command := func() interface{} {
 		return jd.store(jobList)
 	}
+	err, _ := jd.executeDbRequest(newWriteDbRequest("store", nil, command)).(error)
+	return err
 }
 
 /*
@@ -3550,26 +3466,11 @@ func (jd *HandleT) store(jobList []*JobT) error {
 }
 
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-	totalWriteTime := jd.storeTimerStat("store_retry_each_total_time")
-	totalWriteTime.Start()
-	defer totalWriteTime.End()
-
-	if jd.enableWriterQueue {
-		waitTimeStat := jd.storeTimerStat("store_retry_each_wait_time")
-		waitTimeStat.Start()
-		respCh := make(chan map[uuid.UUID]string)
-		writeJobRequest := writeJob{
-			reqType:          writeReqTypeStoreWithRetry,
-			jobsList:         jobList,
-			errorMapResponse: respCh,
-		}
-		jd.writeChannel <- writeJobRequest
-		waitTimeStat.End()
-		errMap := <-respCh
-		return errMap
-	} else {
+	command := func() interface{} {
 		return jd.storeWithRetryEach(jobList)
 	}
+	res, _ := jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
+	return res
 }
 
 /*
@@ -3612,25 +3513,12 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("unprocessed_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("unprocessed_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        NotProcessed.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
+	command := func() interface{} {
 		return jd.getUnprocessed(params)
 	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).([]*JobT)
+	return res
+
 }
 
 /*
@@ -3645,7 +3533,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	count := params.JobCount
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("unprocessed_jobs_time", tags)
+	queryStat := jd.getTimerStat("unprocessed_jobs_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3697,29 +3585,13 @@ func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
-
 	params.StateFilters = []string{Importing.State}
-
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("importing_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("importing_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        Importing.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
+	command := func() interface{} {
 		return jd.getImportingList(params)
 	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("importing", &tags, command)).([]*JobT)
+	return res
 }
 
 /*
@@ -3756,7 +3628,7 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params Get
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_time", tags)
+	queryStat := jd.getTimerStat("delete_job_status_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3803,7 +3675,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	checkValidJobState(jd, stateFilters)
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_ds_time", tags)
+	queryStat := jd.getTimerStat("delete_job_status_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3878,7 +3750,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	count := params.JobCount
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("processed_jobs_time", tags)
+	queryStat := jd.getTimerStat("processed_jobs_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3938,29 +3810,14 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
-
 	params.StateFilters = []string{Failed.State}
-
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("processed_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        Failed.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
+	command := func() interface{} {
 		return jd.getToRetry(params)
 	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	return res
+
 }
 
 /*
@@ -3979,29 +3836,13 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
-
 	params.StateFilters = []string{Waiting.State}
-
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("processed_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        Waiting.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
+	command := func() interface{} {
 		return jd.getWaiting(params)
 	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	return res
 }
 
 /*
@@ -4016,29 +3857,13 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
-
 	params.StateFilters = []string{Executing.State}
-
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("processed_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        Executing.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
+	command := func() interface{} {
 		return jd.getExecuting(params)
 	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	return res
 }
 
 /*
@@ -4056,29 +3881,14 @@ func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
 	if params.JobCount == 0 {
 		return
 	}
-
 	params.StateFilters = []string{Executing.State}
-
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalWriteTime := jd.getTimerStat("delete_job_status_total_time", tags)
-	totalWriteTime.Start()
-	defer totalWriteTime.End()
-
-	if jd.enableWriterQueue {
-		waitTimeStat := jd.getTimerStat("delete_job_status_wait_time", tags)
-		waitTimeStat.Start()
-		respCh := make(chan error)
-		writeJobRequest := writeJob{
-			reqType:       writeReqTypeDeleteExecuting,
-			deleteParams:  params,
-			errorResponse: respCh,
-		}
-		jd.writeChannel <- writeJobRequest
-		waitTimeStat.End()
-		<-writeJobRequest.errorResponse
-	} else {
+	command := func() interface{} {
 		jd.deleteJobStatus(params)
+		return nil
 	}
+	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
+
 }
 
 /*
