@@ -177,7 +177,6 @@ var _ = Describe("Uploader", func() {
 
 					rawJSON, err := json.Marshal(data)
 					Expect(err).To(BeNil())
-					//wg.Done()
 					return rawJSON, nil
 				}).AnyTimes()
 			mockHTTP.EXPECT().NewRequest("POST", "http://test", gomock.Any()).
