@@ -30,9 +30,10 @@ type lifecycle interface {
 	Stop()
 }
 
-type startStopPooling interface {
-	StopPolling()
-	StartPolling(workspaces string)
+type configLifecycle interface {
+	Stop()
+	StartWithIDs(workspaces string)
+	WaitForConfig(ctx context.Context) error
 }
 
 type Dynamic struct {
@@ -55,7 +56,7 @@ type Dynamic struct {
 	serverStopTimeStat   stats.RudderStats
 	serverStartCountStat stats.RudderStats
 	serverStopCountStat  stats.RudderStats
-	BackendConfig        startStopPooling
+	BackendConfig        configLifecycle
 
 	logger logger.LoggerI
 
@@ -118,7 +119,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			ids := strings.Join(req.WorkspaceIDs(), ",")
 
 			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
-			err := d.handleWorkspaceChange(ids)
+			err := d.handleWorkspaceChange(ctx, ids)
 			if err != nil {
 				return err
 			}
@@ -163,13 +164,14 @@ func (d *Dynamic) stop() {
 	d.serverStopCountStat.Increment()
 }
 
-func (d *Dynamic) handleWorkspaceChange(workspaces string) error {
+func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) error {
 	if d.currentWorkspaceIDs == workspaces {
 		return nil
 	}
-	d.BackendConfig.StopPolling()
-	d.BackendConfig.StartPolling(workspaces)
-	return nil
+	d.BackendConfig.Stop()
+	d.BackendConfig.StartWithIDs(workspaces)
+
+	return d.BackendConfig.WaitForConfig(ctx)
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {

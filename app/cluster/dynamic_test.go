@@ -55,17 +55,22 @@ func (m *mockLifecycle) Stop() {
 	m.status = "stop"
 }
 
-type startStopPooling struct {
-	workspaces        string
-	stopPollingCalled bool
+type configMock struct {
+	workspaces          string
+	stopPollingCalled   bool
+	waitForConfigCalled bool
 }
 
-func (s *startStopPooling) StartPolling(workspaces string) {
+func (s *configMock) StartWithIDs(workspaces string) {
 	s.workspaces = workspaces
 }
 
-func (s *startStopPooling) StopPolling() {
+func (s *configMock) Stop() {
 	s.stopPollingCalled = true
+}
+func (s *configMock) WaitForConfig(ctx context.Context) error {
+	s.waitForConfigCalled = true
+	return nil
 }
 
 func Init() {
@@ -96,7 +101,7 @@ func TestDynamicCluster(t *testing.T) {
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
 
-	backendConfig := startStopPooling{}
+	backendConfig := configMock{}
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -199,6 +204,7 @@ func TestDynamicCluster(t *testing.T) {
 		}, time.Second, time.Millisecond)
 
 		require.True(t, backendConfig.stopPollingCalled)
+		require.True(t, backendConfig.waitForConfigCalled)
 		require.Equal(t, "a,b,c", backendConfig.workspaces)
 	})
 
