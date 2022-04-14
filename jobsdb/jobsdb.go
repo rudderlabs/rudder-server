@@ -2772,6 +2772,10 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
+		//Currently, we retry uploading a table for sometime & if it fails. We only drop that table & not all `pre_drop` tables.
+		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
+		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
+		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
 		jd.dropDS(backupDS, false)
 		jd.JournalMarkDone(opID)
 	}
