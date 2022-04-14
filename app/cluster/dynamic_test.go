@@ -114,14 +114,14 @@ func TestDynamicCluster(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	wait := make(chan bool)
+	wait := make(chan struct{})
 	go func() {
 		dc.Run(ctx)
 		close(wait)
 	}()
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
-		chACK := make(chan bool)
+		chACK := make(chan struct{})
 		provider.SendMode(servermode.NewModeRequest(servermode.NormalMode, func() error {
 			close(chACK)
 			return nil
@@ -154,7 +154,7 @@ func TestDynamicCluster(t *testing.T) {
 	})
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
-		chACK := make(chan bool)
+		chACK := make(chan struct{})
 		provider.SendMode(servermode.NewModeRequest(servermode.DegradedMode, func() error {
 			close(chACK)
 			return nil
@@ -187,7 +187,7 @@ func TestDynamicCluster(t *testing.T) {
 	})
 
 	t.Run("Update workspaceIDs", func(t *testing.T) {
-		chACK := make(chan bool)
+		chACK := make(chan struct{})
 		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func() error {
 			close(chACK)
 			return nil

@@ -120,10 +120,17 @@ func (manager *ETCDManager) init() error {
 	return manager.initErr
 }
 
+// Ping ensures the connection to etcd is alive
 func (manager *ETCDManager) Ping() error {
 	if err := manager.init(); err != nil {
 		return err
 	}
+
+	_, err := manager.Client.Cluster.MemberList(context.Background())
+	if err != nil {
+		return fmt.Errorf("ping: get cluster member list: %w", err)
+	}
+
 	return nil
 }
 
@@ -134,7 +141,7 @@ func (manager *ETCDManager) prepareMode(raw []byte) servermode.ModeRequest {
 		return servermode.ModeError(fmt.Errorf("unmarshal mode request: %w", err))
 	}
 
-	mode := servermode.Mode(req.Mode)
+	mode := req.Mode
 	if !mode.Valid() {
 		return servermode.ModeError(fmt.Errorf("invalid mode: %s", mode))
 	}
@@ -146,9 +153,12 @@ func (manager *ETCDManager) prepareMode(raw []byte) servermode.ModeRequest {
 				Status: mode,
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("marshal ack value: %w", err)
 			}
 			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
+			if err != nil {
+				return fmt.Errorf("put value to ack key %q: %w", req.AckKey, err)
+			}
 			return err
 		})
 }
@@ -223,7 +233,7 @@ func (manager *ETCDManager) prepareWorkspace(raw []byte) workspace.WorkspacesReq
 				Status: "RELOADED",
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("marshal ack value: %w", err)
 			}
 			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
 			return err
@@ -274,6 +284,6 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.W
 
 func (manager *ETCDManager) Close() {
 	if manager.Client != nil {
-		manager.Client.Close()
+		_ = manager.Client.Close()
 	}
 }
