@@ -39,7 +39,7 @@ const (
 var _ cluster.ModeProvider = &ETCDManager{}
 
 type ETCDConfig struct {
-	ReleaseName          string
+	Namespace            string
 	ServerIndex          string
 	Endpoints            []string
 	dialKeepAliveTime    time.Duration
@@ -69,20 +69,20 @@ type workspacesAckValue struct {
 
 func EnvETCDConfig() *ETCDConfig {
 	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
-	releaseName := config.GetEnv("RELEASE_NAME", `multitenantv1`)
+	namespace := config.GetKubeNamespace()
 	serverIndex := config.GetInstanceID()
 
 	envConfigOnce.Do(func() {
-		config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, true, time.Second, "etcd.getTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, true, time.Second, "etcd.watchTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(30), &keepaliveTime, true, time.Second, "etcd.keepaliveTime")
-		config.RegisterDurationConfigVariable(time.Duration(10), &keepaliveTimeout, true, time.Second, "etcd.keepaliveTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(20), &dialTimeout, true, time.Second, "etcd.dialTimeout")
+		config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, false, time.Second, "etcd.getTimeout")
+		config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, false, time.Second, "etcd.watchTimeout")
+		config.RegisterDurationConfigVariable(time.Duration(30), &keepaliveTime, false, time.Second, "etcd.keepaliveTime")
+		config.RegisterDurationConfigVariable(time.Duration(10), &keepaliveTimeout, false, time.Second, "etcd.keepaliveTimeout")
+		config.RegisterDurationConfigVariable(time.Duration(20), &dialTimeout, false, time.Second, "etcd.dialTimeout")
 	})
 
 	return &ETCDConfig{
 		Endpoints:            endpoints,
-		ReleaseName:          releaseName,
+		Namespace:            namespace,
 		ServerIndex:          serverIndex,
 		etcdWatchTimeout:     etcdWatchTimeout,
 		dialTimeout:          dialTimeout,
@@ -175,7 +175,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Mo
 		return errChModeRequest(err)
 	}
 
-	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
+	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
 
 	resultChan := make(chan servermode.ModeRequest, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)
@@ -245,7 +245,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.W
 		return errChWorkspacesRequest(err)
 	}
 
-	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
+	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
 
 	resultChan := make(chan workspace.WorkspacesRequest, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)

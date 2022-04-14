@@ -111,11 +111,11 @@ func Test_ServerMode(t *testing.T) {
 	provider := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints:   etcdHosts,
-			ReleaseName: "test",
+			Namespace:   "test",
 			ServerIndex: "0",
 		},
 	}
-	modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.ReleaseName, provider.Config.ServerIndex)
+	modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.Namespace, provider.Config.ServerIndex)
 	defer provider.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -203,11 +203,11 @@ func Test_Workspaces(t *testing.T) {
 	provider := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints:   etcdHosts,
-			ReleaseName: "test",
+			Namespace:   "test",
 			ServerIndex: "0",
 		},
 	}
-	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.ReleaseName, provider.Config.ServerIndex)
+	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
 	defer provider.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
