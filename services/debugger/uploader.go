@@ -5,7 +5,6 @@ package debugger
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -76,7 +75,6 @@ func (uploader *Uploader) Start(ctx context.Context) {
 //RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
 func (uploader *Uploader) RecordEvent(data interface{}) {
-	fmt.Println("RecordEvent: passing new data to internal channel")
 	uploader.eventBatchChannel <- data
 }
 
@@ -146,14 +144,11 @@ func (uploader *Uploader) handleEvents(ctx context.Context) {
 
 func (uploader *Uploader) flushEvents(ctx context.Context) {
 	for {
-		fmt.Println("flushEvents waiting for cancel or interval: ", uploader.flushInterval)
 		select {
 		case <-ctx.Done(): {
-			fmt.Println("flushEvents notified that ctx is Done")
 			return
 		}
 		case <-time.After(uploader.flushInterval):
-			fmt.Println("flushEvents notified by uploader.flushInterval timer")
 		}
 		uploader.eventBufferLock.Lock()
 
