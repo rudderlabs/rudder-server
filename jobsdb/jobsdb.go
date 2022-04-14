@@ -914,8 +914,8 @@ func (jd *HandleT) initDBWriters(ctx context.Context) {
 }
 
 func (jd *HandleT) dbWriter(ctx context.Context) {
-	for writeReq := range jd.writeChannel {
-		writeReq.response <- writeReq.execute()
+	for req := range jd.writeChannel {
+		req.response <- req.execute()
 	}
 }
 
@@ -931,8 +931,8 @@ func (jd *HandleT) initDBReaders(ctx context.Context) {
 }
 
 func (jd *HandleT) dbReader(ctx context.Context) {
-	for writeReq := range jd.readChannel {
-		writeReq.response <- writeReq.execute()
+	for req := range jd.readChannel {
+		req.response <- req.execute()
 	}
 }
 
