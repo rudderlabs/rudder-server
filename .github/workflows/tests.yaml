@@ -131,5 +131,6 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: make enterprise-cleanup
     - run: make enterprise-init
     - run: make test
