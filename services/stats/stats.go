@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=../../mocks/services/stats/mock_stats.go -package mock_stats github.com/rudderlabs/rudder-server/services/stats Stats,RudderStats
 package stats
 
 import (

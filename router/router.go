@@ -383,7 +383,13 @@ func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.De
 func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	inputJobsLength := len(routerJobs)
 	worker.rt.batchInputCountStat.Count(inputJobsLength)
-	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	destinationJobs := worker.rt.transformer.Transform(
+		transformer.BATCH,
+		&types.TransformMessageT{
+			Data:     routerJobs,
+			DestType: strings.ToLower(worker.rt.destName),
+		},
+	)
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 	worker.recordStatsForFailedTransforms("batch", destinationJobs)
 
@@ -700,7 +706,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
-				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
@@ -731,19 +736,25 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.localResultSet.timeAlloted = resultSet.timeAlloted
 				}
 
-				//Assuming twice the overhead - defensive: 30% was just fine though
-				//And Infact , the timeout should be more than the maximum latency allowed by these workers.
-				//Assuming 10s maximum latency
-				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
-					respStatusCode, respBody = types.RouterTimedOutStatusCode, "1113 Jobs took more time than expected. Will be retried"
-					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
+				// Assuming twice the overhead - defensive: 30% was just fine though
+				// In fact, the timeout should be more than the maximum latency allowed by these workers.
+				// Assuming 10s maximum latency
+				elapsed := time.Since(worker.localResultSet.resultSetBeginTime)
+				threshold := time.Duration(2.0 * math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second)))
+				if elapsed > threshold {
+					respStatusCode = types.RouterTimedOutStatusCode
+					respBody = fmt.Sprintf("%d Jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
+					worker.rt.logger.Debugf(
+						"Will drop with %d because of time expiry %v",
+						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
+					)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if destinationID != destinationJobMetadata.DestinationID {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
