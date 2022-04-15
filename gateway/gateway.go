@@ -436,17 +436,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				continue
 			}
 
-			if enableRateLimit {
-				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
-				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- response.GetStatus(response.TooManyRequests)
-					preDbStoreCount++
-					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
-					continue
-				}
-			}
-
 			gateway.requestSizeStat.Observe(float64(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
@@ -464,6 +453,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
+			}
+
+			if enableRateLimit {
+				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				if gateway.rateLimiter.LimitReached(restrictorKey) {
+					req.done <- response.GetStatus(response.TooManyRequests)
+					preDbStoreCount++
+					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
+					continue
+				}
 			}
 
 			// set anonymousId if not set in payload
