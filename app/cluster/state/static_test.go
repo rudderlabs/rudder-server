@@ -10,9 +10,7 @@ import (
 )
 
 func TestStatic_ServerMode(t *testing.T) {
-	s := &state.StaticProvider{
-		Mode: servermode.Mode(servermode.DegradedMode),
-	}
+	s := state.NewStaticProvider(servermode.DegradedMode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -31,9 +29,7 @@ func TestStatic_ServerMode(t *testing.T) {
 }
 
 func TestStatic_WorkspaceIDs(t *testing.T) {
-	s := &state.StaticProvider{
-		Mode: servermode.Mode(servermode.DegradedMode),
-	}
+	s := state.NewStaticProvider(servermode.DegradedMode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

@@ -19,23 +19,23 @@ import (
 )
 
 type mockModeProvider struct {
-	modeCh      chan servermode.ModeRequest
-	workspaceCh chan workspace.WorkspacesRequest
+	modeCh      chan servermode.ChangeEvent
+	workspaceCh chan workspace.ChangeEvent
 }
 
-func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ModeRequest {
+func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ChangeEvent {
 	return m.modeCh
 }
 
-func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.WorkspacesRequest {
+func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.ChangeEvent {
 	return m.workspaceCh
 }
 
-func (m *mockModeProvider) SendMode(newMode servermode.ModeRequest) {
+func (m *mockModeProvider) SendMode(newMode servermode.ChangeEvent) {
 	m.modeCh <- newMode
 }
 
-func (m *mockModeProvider) SendWorkspaceIDs(ws workspace.WorkspacesRequest) {
+func (m *mockModeProvider) SendWorkspaceIDs(ws workspace.ChangeEvent) {
 	m.workspaceCh <- ws
 }
 
@@ -83,8 +83,8 @@ func TestDynamicCluster(t *testing.T) {
 	Init()
 
 	provider := &mockModeProvider{
-		modeCh:      make(chan servermode.ModeRequest),
-		workspaceCh: make(chan workspace.WorkspacesRequest),
+		modeCh:      make(chan servermode.ChangeEvent),
+		workspaceCh: make(chan workspace.ChangeEvent),
 	}
 
 	callCount := uint64(0)
@@ -127,7 +127,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewModeRequest(servermode.NormalMode, func() error {
+		provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func() error {
 			close(chACK)
 			return nil
 		}))
@@ -160,7 +160,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewModeRequest(servermode.DegradedMode, func() error {
+		provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func() error {
 			close(chACK)
 			return nil
 		}))

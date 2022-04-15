@@ -7,35 +7,35 @@ const (
 	DegradedMode Mode = "DEGRADED"
 )
 
-type ModeRequest struct {
+type ChangeEvent struct {
 	err  error
 	ack  func() error
 	mode Mode
 }
 
-func (m ModeRequest) Ack() error {
-	return m.ack()
-}
-
-func (m ModeRequest) Mode() Mode {
-	return m.mode
-}
-
-func (m ModeRequest) Err() error {
-	return m.err
-}
-
-func NewModeRequest(mode Mode, ack func() error) ModeRequest {
-	return ModeRequest{
+func NewChangeEvent(mode Mode, ack func() error) ChangeEvent {
+	return ChangeEvent{
 		mode: mode,
 		ack:  ack,
 	}
 }
 
-func ModeError(err error) ModeRequest {
-	return ModeRequest{
+func ChangeEventError(err error) ChangeEvent {
+	return ChangeEvent{
 		err: err,
 	}
+}
+
+func (m ChangeEvent) Ack() error {
+	return m.ack()
+}
+
+func (m ChangeEvent) Mode() Mode {
+	return m.mode
+}
+
+func (m ChangeEvent) Err() error {
+	return m.err
 }
 
 func (mode Mode) Valid() bool {

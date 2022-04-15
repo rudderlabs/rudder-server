@@ -21,8 +21,8 @@ var (
 )
 
 type ModeProvider interface {
-	ServerMode(ctx context.Context) <-chan servermode.ModeRequest
-	WorkspaceIDs(ctx context.Context) <-chan workspace.WorkspacesRequest
+	ServerMode(ctx context.Context) <-chan servermode.ChangeEvent
+	WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent
 }
 
 type lifecycle interface {
