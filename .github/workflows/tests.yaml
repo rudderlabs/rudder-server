@@ -27,7 +27,7 @@ jobs:
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
   integration-enterprise:
-    name: Service Integration Enterprise
+    name: Service Integration [Enterprise]
     runs-on: 'ubuntu-18.04'
 
     steps:
@@ -56,7 +56,7 @@ jobs:
     - run: make enterprise-init
     - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
   integration-enterprise-multitenant:
-    name: Service Integration Enterprise Multitenant
+    name: Service Integration [Enterprise Multitenant]
     runs-on: 'ubuntu-18.04'
 
     steps:
@@ -83,27 +83,6 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: make enterprise-init
-    - run: RSERVER_ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
-
-  integration-multitenant:
-    name: Service Integration Multitenant
-    runs-on: 'ubuntu-18.04'
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-go@v2
-      with:
-        go-version: '~1.17.8'
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-    - run: go version
-    - run: go mod download # Not required, used to segregate module download vs test times
     - run: RSERVER_ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
   unit:
     name: Unit & Component Integration
