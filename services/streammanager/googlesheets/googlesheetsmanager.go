@@ -114,9 +114,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	}
 
-	messageList := getSheetsDataRow(valueList)
-
-	err := insertRowDataToSheet(sheetsClient, spreadSheetId, spreadSheet, messageList)
+	err := insertRowDataToSheet(sheetsClient, spreadSheetId, spreadSheet, valueList)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -189,7 +187,7 @@ func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sp
 // source is the json object from transformer and we are iterating the json as a map
 // and we are storing the data into designated position in array based on transformer
 // mappings.
-// Example payload we have from transformer:
+// Example payload we have from transformer without batching:
 // {
 //		message:{
 //			1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
@@ -197,12 +195,35 @@ func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sp
 //			..
 // 		}
 // }
-func parseTransformedData(source gjson.Result) ([][]string, error) {
-	messages := source.Get("batch")
-	var valueList [][]string
-	for _, messageElement := range messages.Array() {
+// Example Payload we have from transformer with batching:
+// {
+// 		btach:[
+//			{
+//				message: {
+//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//					2: { attributeKey: "Product Value, attributeValue: "5900"}
+//					..
+// 				}
+//			},
+//			{
+//				message: {
+//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//					2: { attributeKey: "Product Value, attributeValue: "5900"}
+//					..
+// 				}
+//			}
+// 		]
+// }
+func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
+	batch := source.Get("batch")
+	messages := batch.Array()
+	if messages != nil && len(messages) == 0 {
+		messages = append(messages, source)
+	}
+	var valueList [][]interface{}
+	for _, messageElement := range messages {
 		messagefields := messageElement.Get("message")
-		values := make([]string, len(messagefields.Map()))
+		values := make([]interface{}, len(messagefields.Map()))
 		var pos int
 		var err error
 		if messagefields.IsObject() {
@@ -211,27 +232,20 @@ func parseTransformedData(source gjson.Result) ([][]string, error) {
 				if err != nil {
 					return nil, err
 				}
-				values[pos] = v.Get("attributeValue").String()
+				// Adding support for numeric type data
+				if v.Get("attributeValue").Type.String() == "Number" {
+					values[pos] = v.Get("attributeValue").Float()
+				} else {
+					values[pos] = v.Get("attributeValue").String()
+				}
+
+				fmt.Print()
 			}
 		}
 		valueList = append(valueList, values)
 	}
 
 	return valueList, nil
-}
-
-// Func used to parse a string array to an interface array for compatibility
-// with sheets-api
-func getSheetsDataRow(typedata [][]string) [][]interface{} {
-	var dataList [][]interface{}
-	for _, v := range typedata {
-		data := make([]interface{}, len(v))
-		for key, value := range v {
-			data[key] = value
-		}
-		dataList = append(dataList, data)
-	}
-	return dataList
 }
 
 func getSheetsData(typedata []string) []interface{} {
