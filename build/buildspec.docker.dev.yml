@@ -4,7 +4,6 @@ env:
     # The SSH deploy key with enterprise rudder server repo
     ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
-    CODECOV_TOKEN: "/codebuild/codecov-token"
     BIGQUERY_INTEGRATION_TEST_USER_CRED: "/codebuild/integration/tests/bigquery"
 
 phases:
@@ -23,8 +22,6 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - (cd && go get github.com/onsi/ginkgo/ginkgo)
-      - (cd && go get github.com/golang/mock/mockgen)
       - go mod download
 
   build:
@@ -39,10 +36,6 @@ phases:
   post_build:
     commands:
       - docker push rudderlabs/develop-rudder-server:$VERSION
-reports:
-  GinkgoUnitTestReports:
-    files:
-      - "**/junit_*.xml"
 artifacts:
   files:
     - "**/*"
