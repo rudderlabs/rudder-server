@@ -124,6 +124,7 @@ jobs:
       with:
         repository: rudderlabs/rudder-server-enterprise
         path: enterprise
+        ref: master
     - uses: actions/setup-go@v2
       with:
         go-version: '~1.17.8'
