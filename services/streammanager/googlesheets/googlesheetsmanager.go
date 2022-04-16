@@ -238,8 +238,6 @@ func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 				} else {
 					values[pos] = v.Get("attributeValue").String()
 				}
-
-				fmt.Print()
 			}
 		}
 		valueList = append(valueList, values)
