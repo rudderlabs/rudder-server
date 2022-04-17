@@ -1933,20 +1933,49 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := jd.getDSList(true)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
-			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspace_id as workspace from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
-		),
-		x as (
-			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID
-										 ORDER BY joined.statusID DESC) AS rank
-			  FROM joined
-		),
-		y as (
-			SELECT * FROM x WHERE rank = 1
-		)
-		select count(*), customVal, workspace from y group by customVal, workspace;`, ds.JobTable, ds.JobStatusTable)
+			select
+			  j.job_id as jobID,
+			  j.custom_val as customVal,
+			  s.id as statusID,
+			  s.job_state as jobState,
+			  j.workspace_id as workspace
+			from
+			  %[1]s j
+			  left join (
+				select * from (select
+					  *,
+					  ROW_NUMBER() OVER(
+						PARTITION BY rs.job_id
+						ORDER BY
+						  rs.id DESC
+					  ) AS row_no
+					FROM
+					  %[2]s as rs) nq1
+				  where
+				  nq1.row_no = 1
+
+			  ) s on j.job_id = s.job_id
+			where
+			  (
+				s.job_state not in (
+				  'executing', 'aborted', 'succeeded',
+				  'migrated'
+				)
+				or s.job_id is null
+			  )
+		  )
+		  select
+			count(*),
+			customVal,
+			workspace
+		  from
+			joined
+		  group by
+			customVal,
+			workspace;`, ds.JobTable, ds.JobStatusTable)
 		rows, err := jd.dbHandle.Query(queryString)
 		jd.assertError(err)
 
