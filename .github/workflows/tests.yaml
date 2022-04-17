@@ -25,7 +25,7 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
+    - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration integration -bigqueryintegration -count 1
   integration-enterprise:
     name: Service Integration [Enterprise]
     runs-on: 'ubuntu-18.04'
@@ -54,7 +54,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: make enterprise-init
-    - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
+    - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration integration -bigqueryintegration -count 1
   integration-enterprise-multitenant:
     name: Service Integration [Enterprise Multitenant]
     runs-on: 'ubuntu-18.04'
@@ -83,7 +83,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: make enterprise-init
-    - run: RSERVER_ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
+    - run: RSERVER_ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration integration -bigqueryintegration -count 1
   unit:
     name: Unit & Component Integration
     runs-on: 'ubuntu-18.04'
@@ -107,7 +107,7 @@ jobs:
     - run: make test
 
   unit-enterprise:
-    name: Unit & Component Integration Enterprise
+    name: Unit & Component Integration [Enterprise]
     runs-on: 'ubuntu-18.04'
 
     steps:
