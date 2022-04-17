@@ -68,7 +68,7 @@ func (s *configMock) StartWithIDs(workspaces string) {
 func (s *configMock) Stop() {
 	s.stopPollingCalled = true
 }
-func (s *configMock) WaitForConfig(ctx context.Context) error {
+func (s *configMock) WaitForConfig(_ context.Context) error {
 	s.waitForConfigCalled = true
 	return nil
 }
