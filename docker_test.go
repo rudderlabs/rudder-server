@@ -14,11 +14,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/config"
-	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"math/rand"
@@ -34,6 +29,12 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	redigo "github.com/gomodule/redigo/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/tidwall/gjson"
 
 	"github.com/joho/godotenv"
 
@@ -1030,6 +1031,7 @@ func TestWHBigQuery(t *testing.T) {
 	}
 	//Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
+	config.SetInt("BatchRouter.uploadFreqInS", 1)
 	bq.Init()
 	bqTest := wht.Test.BQTest
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
@@ -1089,6 +1091,8 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	sendWHEvents(whDestTest)
+	time.Sleep(time.Second * 2)
+	sendWHEvents(whDestTest)
 
 	whDestTest.EventsCountMap = wht.EventsCountMap{
 		"identifies":    2,
@@ -1104,6 +1108,7 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	whDestinationTest(t, whDestTest)
+	config.SetInt("BatchRouter.uploadFreqInS", 30)
 
 }
 
