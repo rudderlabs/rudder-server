@@ -325,7 +325,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 			primaryKey = column
 		}
 
-		partitionKey := `"id"`
+		partitionKey := "id"
 		if column, ok := partitionKeyMap[tableName]; ok {
 			partitionKey = column
 		}
@@ -604,7 +604,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", true) || isUsersTableDedupEnabled
+	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false) || isUsersTableDedupEnabled
 }
 
 func Init() {
