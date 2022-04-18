@@ -194,7 +194,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 			code = resp.statusCode
 		}
 		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.err)
-    http.Error(w, resp.err, code)
+		http.Error(w, resp.err, code)
 	} else {
 		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
