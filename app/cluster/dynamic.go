@@ -20,7 +20,7 @@ var (
 	controllertype string = "Dynamic"
 )
 
-type ModeProvider interface {
+type ChangeEventProvider interface {
 	ServerMode(ctx context.Context) <-chan servermode.ChangeEvent
 	WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent
 }
@@ -37,7 +37,7 @@ type configLifecycle interface {
 }
 
 type Dynamic struct {
-	Provider ModeProvider
+	Provider ChangeEventProvider
 
 	GatewayDB     lifecycle
 	RouterDB      lifecycle

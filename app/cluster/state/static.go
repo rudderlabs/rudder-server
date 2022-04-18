@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
-var _ cluster.ModeProvider = &StaticProvider{}
+var _ cluster.ChangeEventProvider = &StaticProvider{}
 
 type StaticProvider struct {
 	mode servermode.Mode
@@ -21,7 +21,7 @@ func NewStaticProvider(Mode servermode.Mode) *StaticProvider {
 	}
 }
 
-// ServerMode returns a channel with a single server mode, the one provided in the constructor.
+// ServerMode returns a channel with a single message containing this static provider's mode.
 func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.ChangeEvent {
 	ch := make(chan servermode.ChangeEvent, 1)
 	ch <- servermode.NewChangeEvent(servermode.Mode(s.mode), func() error {

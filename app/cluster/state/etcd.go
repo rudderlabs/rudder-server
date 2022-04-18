@@ -36,7 +36,7 @@ const (
 	workspacesRequestsKeyPattern = `/%s/server/%s/workspaces` // /<releaseName>/server/<serverIndex>/workspaces
 )
 
-var _ cluster.ModeProvider = &ETCDManager{}
+var _ cluster.ChangeEventProvider = &ETCDManager{}
 
 type ETCDConfig struct {
 	Namespace            string
@@ -134,7 +134,7 @@ func (manager *ETCDManager) Ping() error {
 	return nil
 }
 
-func (manager *ETCDManager) prepareMode(raw []byte) servermode.ChangeEvent {
+func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 	var req modeRequestValue
 	err := json.Unmarshal(raw, &req)
 	if err != nil {
@@ -187,7 +187,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 		return errChModeRequest(errors.New("no workspace found"))
 	}
 
-	resultChan <- manager.prepareMode(resp.Kvs[0].Value)
+	resultChan <- manager.unmarshalMode(resp.Kvs[0].Value)
 
 	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
 	go func() {
@@ -200,7 +200,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					resultChan <- manager.prepareMode(event.Kv.Value)
+					resultChan <- manager.unmarshalMode(event.Kv.Value)
 				default:
 					resultChan <- servermode.ChangeEventError(fmt.Errorf("unknown event type %q", event.Type))
 				}
@@ -219,7 +219,7 @@ func errChWorkspacesRequest(err error) <-chan workspace.ChangeEvent {
 	return ch
 }
 
-func (manager *ETCDManager) prepareWorkspace(raw []byte) workspace.ChangeEvent {
+func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent {
 	var req workspacesRequestsValue
 	err := json.Unmarshal(raw, &req)
 	if err != nil {
@@ -257,7 +257,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(errors.New("no workspace found"))
 	}
 
-	resultChan <- manager.prepareWorkspace(resp.Kvs[0].Value)
+	resultChan <- manager.unmarshalWorkspace(resp.Kvs[0].Value)
 	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
 
 	go func() {
@@ -270,7 +270,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					resultChan <- manager.prepareWorkspace(event.Kv.Value)
+					resultChan <- manager.unmarshalWorkspace(event.Kv.Value)
 				default:
 					resultChan <- workspace.ChangeEventError(fmt.Errorf("unknown event type %q", event.Type))
 				}

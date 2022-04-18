@@ -97,7 +97,7 @@ var _ = Describe("workspace-config", func() {
 		})
 		It("Expect to make the correct actions if fail to create the request: Multitenant", func() {
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[testToken]&fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
-			mockLogger.EXPECT().Errorf("[[MultiTenant-Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
@@ -106,7 +106,7 @@ var _ = Describe("workspace-config", func() {
 		It("Expect to make the correct actions if fail to send the request: Multitenant", func() {
 			testRequest, _ := http.NewRequest("GET", "", nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[testToken]&fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
-			mockLogger.EXPECT().Errorf("[[MultiTenant-Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
