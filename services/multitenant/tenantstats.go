@@ -63,7 +63,7 @@ func (multitenantStat *MultitenantStatsT) Start() {
 		multitenantStat.RouterDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
-				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
+				metric.AddToPendingEventsMeasurement(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
 			}
 		}
 	}
@@ -94,7 +94,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 		routerDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
-				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
+				metric.AddToPendingEventsMeasurement(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
 			}
 		}
 	}
@@ -164,7 +164,7 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 				multitenantStat.routerInputRates[dbPrefix][key][destType] = metric.NewMovingAverage()
 			}
 			multitenantStat.routerInputRates[dbPrefix][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
-			metric.GetPendingEventsMeasurement(dbPrefix, key, destType).Add(float64(stats[key][destType]))
+			metric.AddToPendingEventsMeasurement(dbPrefix, key, destType, float64(stats[key][destType]))
 		}
 	}
 	for workspaceKey := range multitenantStat.routerInputRates[dbPrefix] {
