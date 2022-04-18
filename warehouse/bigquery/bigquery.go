@@ -317,7 +317,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		}
 
 		if !skipTempTableDelete {
-			// defer bq.dropStagingTable(stagingTableName)
+			defer bq.dropStagingTable(stagingTableName)
 		}
 
 		primaryKey := "id"
