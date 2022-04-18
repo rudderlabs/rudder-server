@@ -391,13 +391,18 @@ var dbErrorMap = map[string]string{
 	"Invalid Escape Character": "22019",
 }
 
-// return backup settings depending on jobdb type
-// the gateway, the router and the processor
-// BackupEnabled = true => all the jobsdb are eligible for backup
-// instanceBackupEnabled[table_prefix] = true => the individual jobsdb too is eligible for backup
+// registers the backup settings depending on jobdb type the gateway, the router and the processor
+// masterBackupEnabled = true => all the jobsdb are eligible for backup
+// instanceBackupEnabled = true => the individual jobsdb too is eligible for backup
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
-func (jd *HandleT) getBackUpSettings() {
+func (jd *HandleT) registerBackUpSettings() {
+	jd.BackupSettings = &BackupSettingsT{
+		masterBackupEnabled: true,
+		instanceBackupEnabled: true,
+		FailedOnly: false,
+		PathPrefix: "",
+	}
 	config.RegisterBoolConfigVariable(true, &jd.BackupSettings.masterBackupEnabled, true, "JobsDB.backup.enabled")
 	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
@@ -748,7 +753,7 @@ func (jd *HandleT) workersAndAuxSetup() {
 		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
 
-	jd.getBackUpSettings()
+	jd.registerBackUpSettings()
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
