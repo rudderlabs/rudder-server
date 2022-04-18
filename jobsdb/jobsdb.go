@@ -57,9 +57,14 @@ import (
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type BackupSettingsT struct {
-	BackupEnabled func(string) bool
-	FailedOnly    bool
-	PathPrefix    string
+	masterBackupEnabled   bool
+	instanceBackupEnabled bool
+	FailedOnly            bool
+	PathPrefix            string
+}
+
+func (b *BackupSettingsT) IsBackupEnabled() bool {
+	return b.masterBackupEnabled && b.instanceBackupEnabled
 }
 
 // GetQueryParamsT is a struct to hold jobsdb query params.
@@ -138,8 +143,6 @@ const (
 )
 
 var globalDBHandle *sql.DB
-var masterBackupEnabled, instanceBackupFailedAndAborted = new(bool), new(bool)
-var instanceBackupEnabled = make(map[string]*bool)
 var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
@@ -394,30 +397,12 @@ var dbErrorMap = map[string]string{
 // instanceBackupEnabled[table_prefix] = true => the individual jobsdb too is eligible for backup
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
-func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
-	config.RegisterBoolConfigVariable(true, masterBackupEnabled, true, "JobsDB.backup.enabled")
-	if val, ok := instanceBackupEnabled[fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix)]; !ok || val == nil {
-		instanceBackupEnabled[fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix)] = new(bool)
-	}
-	config.RegisterBoolConfigVariable(false, instanceBackupEnabled[fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix)], true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
-	config.RegisterBoolConfigVariable(false, instanceBackupFailedAndAborted, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+func (jd *HandleT) getBackUpSettings() {
+	config.RegisterBoolConfigVariable(true, &jd.BackupSettings.masterBackupEnabled, true, "JobsDB.backup.enabled")
+	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-
-	backupSettings := BackupSettingsT{
-		BackupEnabled: isBackupEnabled,
-		FailedOnly:    *instanceBackupFailedAndAborted,
-		PathPrefix:    strings.TrimSpace(pathPrefix),
-	}
-
-	return &backupSettings
-}
-
-func isBackupEnabled(tablePrefix string) bool {
-	fmt.Println("isBackupEnabled Called")
-	if val, ok := instanceBackupEnabled[fmt.Sprintf("JobsDB.backup.%v.enabled", tablePrefix)]; ok {
-		return *masterBackupEnabled && *val
-	}
-	return false
+	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
 //Some helper functions
@@ -458,7 +443,7 @@ func (jd *HandleT) Status() interface{} {
 	statusObj := map[string]interface{}{
 		"dataset-list":    jd.getDSList(false),
 		"dataset-ranges":  jd.getDSRangeList(false),
-		"backups-enabled": jd.BackupSettings.BackupEnabled,
+		"backups-enabled": jd.BackupSettings.IsBackupEnabled(),
 	}
 	emptyResults := make(map[string]interface{})
 	for ds, entry := range jd.dsEmptyResultCache {
@@ -763,7 +748,7 @@ func (jd *HandleT) workersAndAuxSetup() {
 		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
 
-	jd.BackupSettings = jd.getBackUpSettings()
+	jd.getBackUpSettings()
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
@@ -1775,7 +1760,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.BackupSettings.BackupEnabled(jd.tablePrefix) && isBackupConfigured() {
+		if jd.BackupSettings.IsBackupEnabled() && isBackupConfigured() {
 			jd.renameDS(ds, false)
 		} else {
 			jd.dropDS(ds, false)
@@ -2772,7 +2757,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
-			if !jd.BackupSettings.BackupEnabled(jd.tablePrefix) {
+			if !jd.BackupSettings.IsBackupEnabled() {
 				continue
 			}
 		case <-ctx.Done():
@@ -3294,7 +3279,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		//Some of the source datasets would have been
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
-			if jd.BackupSettings.BackupEnabled(jd.tablePrefix) {
+			if jd.BackupSettings.IsBackupEnabled() {
 				jd.renameDS(ds, true)
 			} else {
 				jd.dropDS(ds, true)
