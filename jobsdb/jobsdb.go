@@ -57,14 +57,14 @@ import (
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type BackupSettingsT struct {
-	masterBackupEnabled   bool
 	instanceBackupEnabled bool
 	FailedOnly            bool
 	PathPrefix            string
+	once                  sync.Once
 }
 
 func (b *BackupSettingsT) IsBackupEnabled() bool {
-	return b.masterBackupEnabled && b.instanceBackupEnabled
+	return masterBackupEnabled && b.instanceBackupEnabled
 }
 
 // GetQueryParamsT is a struct to hold jobsdb query params.
@@ -143,6 +143,7 @@ const (
 )
 
 var globalDBHandle *sql.DB
+var masterBackupEnabled bool
 var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
@@ -397,17 +398,18 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) registerBackUpSettings() {
-	jd.BackupSettings = &BackupSettingsT{
-		masterBackupEnabled: true,
-		instanceBackupEnabled: true,
-		FailedOnly: false,
-		PathPrefix: "",
-	}
-	config.RegisterBoolConfigVariable(true, &jd.BackupSettings.masterBackupEnabled, true, "JobsDB.backup.enabled")
-	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
-	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
-	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
+	jd.BackupSettings.once.Do(func() {
+		jd.BackupSettings = &BackupSettingsT{
+			instanceBackupEnabled: true,
+			FailedOnly:            false,
+			PathPrefix:            "",
+		}
+		config.RegisterBoolConfigVariable(true, &masterBackupEnabled, true, "JobsDB.backup.enabled")
+		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+		config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
+		jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
+	})
 }
 
 //Some helper functions
