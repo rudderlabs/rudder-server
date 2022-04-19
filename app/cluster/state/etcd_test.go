@@ -186,16 +186,27 @@ func Test_ServerMode(t *testing.T) {
 		_, ok := <-ch
 		require.False(t, ok)
 	}
+	cancel()
 
-	t.Log("error if key is missing")
-	{
-		ctx, cancel := context.WithCancel(context.Background())
+	t.Run("key is missing initially", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
 		ch := provider.ServerMode(ctx)
+
+		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
 		m, ok := <-ch
+
 		require.True(t, ok)
-		require.Error(t, m.Err())
-		cancel()
-	}
+		require.NoError(t, m.Err())
+		require.Equal(t, servermode.DegradedMode, m.Mode())
+		m.Ack()
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
+
+	})
 
 }
 

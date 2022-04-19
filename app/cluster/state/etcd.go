@@ -176,6 +176,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 	}
 
 	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
+	revision := int64(0)
 
 	resultChan := make(chan servermode.ChangeEvent, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)
@@ -183,13 +184,12 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 		return errChModeRequest(err)
 	}
 
-	if len(resp.Kvs) == 0 {
-		return errChModeRequest(errors.New("no workspace found"))
+	if len(resp.Kvs) != 0 {
+		resultChan <- manager.unmarshalMode(resp.Kvs[0].Value)
+		revision = resp.Header.Revision + 1
 	}
 
-	resultChan <- manager.unmarshalMode(resp.Kvs[0].Value)
-
-	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(revision))
 	go func() {
 		for watchResp := range etcdWatchChan {
 			if watchResp.Err() != nil {
