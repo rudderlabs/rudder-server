@@ -1,7 +1,7 @@
 test:
 - any: ['**/*_test.go']
 
-server:
+server-team:
 - any: ['**/*.go']
   all: ['!warehouse/**/*']
 
