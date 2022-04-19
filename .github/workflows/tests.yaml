@@ -25,13 +25,28 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: RSERVER_ENABLE_MULTITENANCY=false go test -v ./docker_test.go -integration -count 1
-  integration-multitenant:
-    name: Service Integration Multitenant
-    runs-on: 'ubuntu-18.04'
+    - name: Integration test
+      run: go test -v ./docker_test.go -integration -bigqueryintegration -count 1
+      env:
+        RSERVER_ENABLE_MULTITENANCY: false
+        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
 
+  integration-enterprise:
+    name: Service Integration [Enterprise]
+    runs-on: 'ubuntu-18.04'
+    strategy:
+      matrix:
+        MULTITENANCY: [true, false]
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Checkout enterprise 
+      uses: actions/checkout@v3
+      with:
+        repository: rudderlabs/rudder-server-enterprise
+        path: enterprise
+        ref: master
+        token: ${{ secrets.GH_PAT }}
     - uses: actions/setup-go@v2
       with:
         go-version: '~1.17.8'
@@ -45,7 +60,13 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: RSERVER_ENABLE_MULTITENANCY=true go test -v ./docker_test.go -integration -count 1
+    - run: make enterprise-init
+    - name: Integration test
+      run: go test -v ./docker_test.go -integration -bigqueryintegration -count 1
+      env:
+        RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
+
   unit:
     name: Unit & Component Integration
     runs-on: 'ubuntu-18.04'
@@ -67,3 +88,35 @@ jobs:
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
     - run: make test
+
+  unit-enterprise:
+    name: Unit & Component Integration [Enterprise]
+    runs-on: 'ubuntu-18.04'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Checkout enterprise 
+      uses: actions/checkout@v3
+      with:
+        repository: rudderlabs/rudder-server-enterprise
+        path: enterprise
+        ref: master
+        token: ${{ secrets.GH_PAT }}
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '~1.17.8'
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - run: go version
+    - run: go mod download # Not required, used to segregate module download vs test times
+    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: make enterprise-init
+    - run: make test
+    - uses: codecov/codecov-action@v2

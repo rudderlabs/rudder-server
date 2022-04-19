@@ -9,13 +9,13 @@ import (
 /*
 	loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
- */
+*/
 func (cache *Cache) loadCacheConfig() {
 	if cache.Size == 0 {
 		config.RegisterIntConfigVariable(3, &cache.Size, true, 1, "LiveEvent.cache.size")
 	}
 	if cache.KeyTTL == 0 {
-		config.RegisterDurationConfigVariable(time.Duration(720), &cache.KeyTTL, true, time.Hour,	"LiveEvent.cache.ttl") // default keyTTL is 30 days
+		config.RegisterDurationConfigVariable(time.Duration(720), &cache.KeyTTL, true, time.Hour, "LiveEvent.cache.ttl") // default keyTTL is 30 days
 	}
 	if cache.CleanupFreq == 0 {
 		config.RegisterDurationConfigVariable(time.Duration(15), &cache.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
@@ -43,7 +43,7 @@ type Cache struct {
 /*
 This method initiates the cache object. To initiate, this sets certain properties of the cache like keyTTL,
 cleanupFreq, size, empty cacheMap
- */
+*/
 func (cache *Cache) init() {
 	cache.once.Do(func() {
 		cache.loadCacheConfig()
@@ -68,7 +68,7 @@ func (cache *Cache) init() {
 
 /*
 	Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
- */
+*/
 func (cache *Cache) Update(key string, value []byte) {
 	cache.init()
 	cache.lock.Lock()
@@ -90,7 +90,7 @@ func (cache *Cache) Update(key string, value []byte) {
 	ReadAndPopData reads the data by taking a string key,
 if there is any data available corresponding to the given key then it removes the data from the cache and returns it
 in the form of []byte
- */
+*/
 func (cache *Cache) ReadAndPopData(key string) [][]byte {
 	cache.init()
 	var historicEventsDelivery [][]byte
