@@ -5,5 +5,5 @@ server:
 - any: ['**/*.go']
   all: ['!warehouse/**/*']
 
-warehouse:
+warehouse-team:
 - any: ['warehouse/**/*']
