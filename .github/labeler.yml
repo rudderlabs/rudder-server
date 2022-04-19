@@ -1,0 +1,9 @@
+test:
+- any: ['**/*_test.go']
+
+server:
+- any: ['**/*.go']
+  all: ['!warehouse/**/*']
+
+warehouse:
+- any: ['warehouse/**/*']
