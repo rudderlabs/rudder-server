@@ -8,5 +8,6 @@ ADD build/regulation-worker /
 ADD build/wait-for /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
+COPY scripts/generate-event /
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server-with-race"]
