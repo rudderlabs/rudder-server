@@ -399,11 +399,6 @@ var dbErrorMap = map[string]string{
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) registerBackUpSettings() {
 	jd.BackupSettings.once.Do(func() {
-		jd.BackupSettings = &BackupSettingsT{
-			instanceBackupEnabled: true,
-			FailedOnly:            false,
-			PathPrefix:            "",
-		}
 		config.RegisterBoolConfigVariable(true, &masterBackupEnabled, true, "JobsDB.backup.enabled")
 		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
@@ -754,7 +749,7 @@ func (jd *HandleT) workersAndAuxSetup() {
 	if jd.registerStatusHandler {
 		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
 	}
-
+	jd.BackupSettings = &BackupSettingsT{}
 	jd.registerBackUpSettings()
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
@@ -2765,11 +2760,13 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
 			if !jd.BackupSettings.IsBackupEnabled() {
+				jd.logger.Debugf("backupDSLoop backup disabled %s", jd.tablePrefix)
 				continue
 			}
 		case <-ctx.Done():
 			return
 		}
+		jd.logger.Debugf("backupDSLoop backup enabled %s", jd.tablePrefix)
 		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
