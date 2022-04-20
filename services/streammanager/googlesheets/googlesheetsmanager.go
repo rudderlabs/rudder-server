@@ -197,7 +197,7 @@ func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sp
 // }
 // Example Payload we have from transformer with batching:
 // {
-// 		btach:[
+// 		batch:[
 //			{
 //				message: {
 //					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
