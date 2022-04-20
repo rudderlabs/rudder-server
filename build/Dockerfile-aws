@@ -7,7 +7,7 @@ ADD build/wait-for /
 ADD build/regulation-worker /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
-COPY scripts/generate-event /
-COPY scripts/batch.json /
+COPY scripts/generate-event /scripts
+COPY scripts/batch.json /scripts
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server"]

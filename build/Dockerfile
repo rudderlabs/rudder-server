@@ -7,5 +7,7 @@ COPY go.sum .
 RUN go mod download
 COPY . .
 RUN go install
+COPY scripts/generate-event /scripts
+COPY scripts/batch.json /scripts
 ENTRYPOINT [ "rudder-server" ]
 EXPOSE 8080
