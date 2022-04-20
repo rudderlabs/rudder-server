@@ -60,7 +60,6 @@ type BackupSettingsT struct {
 	instanceBackupEnabled bool
 	FailedOnly            bool
 	PathPrefix            string
-	once                  sync.Once
 }
 
 func (b *BackupSettingsT) IsBackupEnabled() bool {
@@ -398,14 +397,12 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) registerBackUpSettings() {
-	jd.BackupSettings.once.Do(func() {
-		config.RegisterBoolConfigVariable(true, &masterBackupEnabled, true, "JobsDB.backup.enabled")
-		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
-		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
-		config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-		config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
-		jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
-	})
+	config.RegisterBoolConfigVariable(true, &masterBackupEnabled, true, "JobsDB.backup.enabled")
+	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
+	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
+	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
 //Some helper functions
