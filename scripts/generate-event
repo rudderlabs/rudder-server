@@ -1,14 +1,16 @@
 #!/bin/bash
 
-if [ $# != 2 ]
-then
-  echo "Usage: ./generate-event <write_key> <end_point>"
-  echo "Example: ./generate-event 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
-  exit
+if [[ $# != 2 ]]; then
+	echo "Usage: ./generate-event <write_key> <end_point>"
+	echo "Example: ./generate-event 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
+	exit
 fi
 
-dir=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+dir=$(
+	cd "$(dirname "${BASH_SOURCE[0]}")" || exit
+	pwd -P
+)
 
 #curl -u $1: -X POST http://$2:8080/v1/track -d @$dir/track.json --header "Content-Type: application/json"
 #curl -u $1: -X POST $2 -d @$dir/track.json --header "Content-Type: application/json"
-curl -u $1: -X POST $2 -d @$dir/batch.json --header "Content-Type: application/json" # give absolute path for batch.json to test on local machine
+curl -u "$1": -X POST "$2" -d @"${dir}"/batch.json --header "Content-Type: application/json" # give absolute path for batch.json to test on local machine
