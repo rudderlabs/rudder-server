@@ -254,7 +254,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	}()
 
 	chACK := make(chan bool)
-	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func() error {
+	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
 	}))

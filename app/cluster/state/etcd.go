@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -23,8 +23,6 @@ var (
 )
 
 var (
-	etcdGetTimeout   time.Duration
-	etcdWatchTimeout time.Duration
 	keepaliveTime    time.Duration
 	keepaliveTimeout time.Duration
 	dialTimeout      time.Duration
@@ -34,6 +32,8 @@ var (
 const (
 	modeRequestKeyPattern        = `/%s/server/%s/mode`       // /<releaseName>/server/<serverIndex>/mode
 	workspacesRequestsKeyPattern = `/%s/server/%s/workspaces` // /<releaseName>/server/<serverIndex>/workspaces
+
+	defaultACKTimeout = 15 * time.Second
 )
 
 var _ cluster.ChangeEventProvider = &ETCDManager{}
@@ -44,8 +44,7 @@ type ETCDConfig struct {
 	Endpoints            []string
 	dialKeepAliveTime    time.Duration
 	dialKeepAliveTimeout time.Duration
-	etcdWatchTimeout     time.Duration
-	etcdGetTimeout       time.Duration
+	ACKTimeout           time.Duration
 	dialTimeout          time.Duration
 }
 
@@ -71,10 +70,10 @@ func EnvETCDConfig() *ETCDConfig {
 	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	namespace := config.GetKubeNamespace()
 	serverIndex := config.GetInstanceID()
+	var ackTimeout time.Duration
 
 	envConfigOnce.Do(func() {
-		config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, false, time.Second, "etcd.getTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, false, time.Second, "etcd.watchTimeout")
+		config.RegisterDurationConfigVariable(time.Duration(15), &ackTimeout, false, time.Second, "etcd.ackTimeout")
 		config.RegisterDurationConfigVariable(time.Duration(30), &keepaliveTime, false, time.Second, "etcd.keepaliveTime")
 		config.RegisterDurationConfigVariable(time.Duration(10), &keepaliveTimeout, false, time.Second, "etcd.keepaliveTimeout")
 		config.RegisterDurationConfigVariable(time.Duration(20), &dialTimeout, false, time.Second, "etcd.dialTimeout")
@@ -84,19 +83,20 @@ func EnvETCDConfig() *ETCDConfig {
 		Endpoints:            endpoints,
 		Namespace:            namespace,
 		ServerIndex:          serverIndex,
-		etcdWatchTimeout:     etcdWatchTimeout,
+		ACKTimeout:           ackTimeout,
 		dialTimeout:          dialTimeout,
 		dialKeepAliveTime:    keepaliveTime,
 		dialKeepAliveTimeout: keepaliveTimeout,
-		etcdGetTimeout:       etcdGetTimeout,
 	}
 }
 
 type ETCDManager struct {
-	Config  *ETCDConfig
-	Client  *clientv3.Client
-	once    sync.Once
-	initErr error
+	Config     *ETCDConfig
+	Client     *clientv3.Client
+	once       sync.Once
+	initErr    error
+	logger     logger.LoggerI
+	ackTimeout time.Duration
 }
 
 func (manager *ETCDManager) init() error {
@@ -115,6 +115,14 @@ func (manager *ETCDManager) init() error {
 			return
 		}
 		manager.Client = cli
+		if manager.logger == nil {
+			manager.logger = logger.NewLogger().Child("etcd")
+		}
+
+		manager.ackTimeout = manager.Config.ACKTimeout
+		if manager.ackTimeout == 0 {
+			manager.ackTimeout = defaultACKTimeout
+		}
 	})
 
 	return manager.initErr
@@ -148,14 +156,17 @@ func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 
 	return servermode.NewChangeEvent(
 		mode,
-		func() error {
+		func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
+			defer cancel()
+
 			ackValue, err := json.MarshalToString(modeAckValue{
 				Status: mode,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
+			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			if err != nil {
 				return fmt.Errorf("put value to ack key %q: %w", req.AckKey, err)
 			}
@@ -200,9 +211,12 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					resultChan <- manager.unmarshalMode(event.Kv.Value)
+					select {
+					case resultChan <- manager.unmarshalMode(event.Kv.Value):
+					case <-ctx.Done():
+					}
 				default:
-					resultChan <- servermode.ChangeEventError(fmt.Errorf("unknown event type %q", event.Type))
+					manager.logger.Warnf("unknown event type %s", event.Type)
 				}
 			}
 		}
@@ -228,14 +242,17 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 
 	return workspace.NewWorkspacesRequest(
 		strings.Split(req.Workspaces, ","),
-		func() error {
+		func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
+			defer cancel()
+
 			ackValue, err := json.MarshalToString(workspacesAckValue{
 				Status: "RELOADED",
 			})
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			_, err = manager.Client.Put(context.Background(), req.AckKey, ackValue)
+			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			return err
 		})
 }
@@ -253,12 +270,13 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(err)
 	}
 
-	if len(resp.Kvs) == 0 {
-		return errChWorkspacesRequest(errors.New("no workspace found"))
+	revision := int64(0)
+	if len(resp.Kvs) != 0 {
+		resultChan <- manager.unmarshalWorkspace(resp.Kvs[0].Value)
+		revision = resp.Header.Revision + 1
 	}
 
-	resultChan <- manager.unmarshalWorkspace(resp.Kvs[0].Value)
-	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(resp.Header.Revision+1))
+	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(revision))
 
 	go func() {
 		for watchResp := range etcdWatchChan {
@@ -270,9 +288,12 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					resultChan <- manager.unmarshalWorkspace(event.Kv.Value)
+					select {
+					case resultChan <- manager.unmarshalWorkspace(event.Kv.Value):
+					case <-ctx.Done():
+					}
 				default:
-					resultChan <- workspace.ChangeEventError(fmt.Errorf("unknown event type %q", event.Type))
+					manager.logger.Warnf("unknown event type %s", event.Type)
 				}
 			}
 		}

@@ -1,5 +1,7 @@
 package servermode
 
+import "context"
+
 type Mode string
 
 const (
@@ -9,11 +11,11 @@ const (
 
 type ChangeEvent struct {
 	err  error
-	ack  func() error
+	ack  func(context.Context) error
 	mode Mode
 }
 
-func NewChangeEvent(mode Mode, ack func() error) ChangeEvent {
+func NewChangeEvent(mode Mode, ack func(context.Context) error) ChangeEvent {
 	return ChangeEvent{
 		mode: mode,
 		ack:  ack,
@@ -26,8 +28,8 @@ func ChangeEventError(err error) ChangeEvent {
 	}
 }
 
-func (m ChangeEvent) Ack() error {
-	return m.ack()
+func (m ChangeEvent) Ack(ctx context.Context) error {
+	return m.ack(ctx)
 }
 
 func (m ChangeEvent) Mode() Mode {

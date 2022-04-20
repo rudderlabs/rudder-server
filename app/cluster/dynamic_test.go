@@ -127,7 +127,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func() error {
+		provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 			close(chACK)
 			return nil
 		}))
@@ -160,7 +160,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func() error {
+		provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 			close(chACK)
 			return nil
 		}))
@@ -193,7 +193,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("Update workspaceIDs", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func() error {
+		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func(_ context.Context) error {
 			close(chACK)
 			return nil
 		}))

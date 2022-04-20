@@ -20,7 +20,7 @@ func TestStatic_ServerMode(t *testing.T) {
 	require.NoError(t, req.Err())
 	require.Equal(t, servermode.DegradedMode, req.Mode())
 
-	require.NoError(t, req.Ack())
+	require.NoError(t, req.Ack(ctx))
 
 	t.Log("cancel context should close channel")
 	cancel()

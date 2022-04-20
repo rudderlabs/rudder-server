@@ -109,7 +109,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 			d.logger.Debugf("Acknowledging the mode change")
 
-			if err := req.Ack(); err != nil {
+			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack mode change: %w", err)
 			}
 		case req := <-workspaceIDsChan:
@@ -125,7 +125,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 			d.logger.Debugf("Acknowledging the workspaceIDs change")
 
-			if err := req.Ack(); err != nil {
+			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack workspaceIDs change: %w", err)
 			}
 		}

@@ -13,6 +13,9 @@ import (
 
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
 	etcd "go.etcd.io/etcd/client/v3"
@@ -94,6 +97,12 @@ func blockOnHold() {
 	<-c
 }
 
+func Init() {
+	config.Load()
+	stats.Setup()
+	logger.Init()
+}
+
 func Test_Ping(t *testing.T) {
 	etcd := state.ETCDManager{
 		Config: &state.ETCDConfig{
@@ -108,6 +117,8 @@ func Test_Ping(t *testing.T) {
 }
 
 func Test_ServerMode(t *testing.T) {
+	Init()
+
 	provider := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints:   etcdHosts,
@@ -117,6 +128,51 @@ func Test_ServerMode(t *testing.T) {
 	}
 	modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.Namespace, provider.Config.ServerIndex)
 	defer provider.Close()
+
+	t.Run("key is missing initially", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		ch := provider.ServerMode(ctx)
+
+		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		m, ok := <-ch
+
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, servermode.DegradedMode, m.Mode())
+		m.Ack(ctx)
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
+
+	})
+
+	t.Run("ack timeout", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		provider := state.ETCDManager{
+			Config: &state.ETCDConfig{
+				Endpoints:   etcdHosts,
+				Namespace:   "test_ack_timeout",
+				ServerIndex: "0",
+				ACKTimeout:  time.Duration(1),
+			},
+		}
+		modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.Namespace, provider.Config.ServerIndex)
+
+		ch := provider.ServerMode(ctx)
+
+		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		m, ok := <-ch
+
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+
+		require.ErrorAs(t, m.Ack(ctx), &context.DeadlineExceeded)
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -131,7 +187,7 @@ func Test_ServerMode(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, servermode.DegradedMode, m.Mode())
-		m.Ack()
+		m.Ack(ctx)
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -146,7 +202,7 @@ func Test_ServerMode(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, servermode.NormalMode, m.Mode())
-		m.Ack()
+		m.Ack(ctx)
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
@@ -171,15 +227,6 @@ func Test_ServerMode(t *testing.T) {
 		require.Error(t, m.Err())
 	}
 
-	t.Log("delete key should return error")
-	{
-		etcdClient.Delete(ctx, modeRequestKey)
-
-		m, ok := <-ch
-		require.True(t, ok)
-		require.Error(t, m.Err())
-	}
-
 	t.Log("channel should close after context cancelation")
 	cancel()
 	{
@@ -188,29 +235,37 @@ func Test_ServerMode(t *testing.T) {
 	}
 	cancel()
 
-	t.Run("key is missing initially", func(t *testing.T) {
+}
+
+func Test_Workspaces(t *testing.T) {
+	Init()
+	t.Run("ack timeout", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancel()
 
-		ch := provider.ServerMode(ctx)
+		provider := state.ETCDManager{
+			Config: &state.ETCDConfig{
+				Endpoints:   etcdHosts,
+				Namespace:   "test_ack_timeout",
+				ServerIndex: "0",
+				ACKTimeout:  time.Duration(1),
+			},
+		}
+		defer provider.Close()
 
-		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
+
+		ch := provider.WorkspaceIDs(ctx)
+
+		etcdClient.Put(ctx, requestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
 		m, ok := <-ch
 
 		require.True(t, ok)
 		require.NoError(t, m.Err())
-		require.Equal(t, servermode.DegradedMode, m.Mode())
-		m.Ack()
 
-		resp, err := etcdClient.Get(ctx, "test-ack/1")
-		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
-
+		require.ErrorAs(t, m.Ack(ctx), &context.DeadlineExceeded)
 	})
 
-}
-
-func Test_Workspaces(t *testing.T) {
 	provider := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints:   etcdHosts,
@@ -218,8 +273,28 @@ func Test_Workspaces(t *testing.T) {
 			ServerIndex: "0",
 		},
 	}
-	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
 	defer provider.Close()
+
+	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
+
+	t.Run("key is missing initially", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		ch := provider.WorkspaceIDs(ctx)
+
+		etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+		m, ok := <-ch
+
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
+		m.Ack(ctx)
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -234,7 +309,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		m.Ack()
+		m.Ack(ctx)
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -249,7 +324,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2", "5"}, m.WorkspaceIDs())
-		m.Ack()
+		m.Ack(ctx)
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
@@ -259,15 +334,6 @@ func Test_Workspaces(t *testing.T) {
 	t.Log("error if update with invalid JSON ")
 	{
 		etcdClient.Put(ctx, requestKey, `{"mode''`)
-
-		m, ok := <-ch
-		require.True(t, ok)
-		require.Error(t, m.Err())
-	}
-
-	t.Log("error if key is deleted")
-	{
-		etcdClient.Delete(ctx, requestKey)
 
 		m, ok := <-ch
 		require.True(t, ok)
