@@ -403,6 +403,7 @@ func (jd *HandleT) registerBackUpSettings() {
 		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 		config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 		config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
+		config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 		jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 	})
 }
@@ -823,7 +824,9 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 	var err error
 	jd.jobsFileUploader, err = jd.getFileUploader()
-	jd.assertError(err)
+	if err != nil {
+		jd.logger.Errorf("failed to get a file uploader for %s", jd.tablePrefix)
+	}
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.backupDSLoop(ctx)
 		return nil
