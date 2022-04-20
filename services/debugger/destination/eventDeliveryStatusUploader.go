@@ -3,13 +3,14 @@ package destinationdebugger
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"sync"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -55,7 +56,7 @@ type EventDeliveryStatusUploader struct {
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 //which will be processed by handleJobs.
 func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
-	//if disableEventUploads is true, return;
+	//if disableEventDeliveryStatusUploads is true, return;
 	if disableEventDeliveryStatusUploads {
 		return false
 	}
@@ -136,7 +137,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := make(chan utils.DataEvent)
+	configChannel := make(chan pubsub.DataEvent)
 	backendConfig.Subscribe(configChannel, "backendConfig")
 	for config := range configChannel {
 		updateConfig(config.Data.(backendconfig.ConfigT))

@@ -16,7 +16,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %v", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 

@@ -12,9 +12,9 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 const (
@@ -34,7 +34,7 @@ var (
 
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
-	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string)
+	SendData(jsonData json.RawMessage, destID string) (int, string)
 }
 
 // CustomManagerT handles this module
@@ -123,7 +123,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 }
 
 // SendData gets the producer from streamDestinationsMap and sends data
-func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
+func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID string) (int, string) {
 	if disableEgress {
 		return 200, `200: outgoing disabled`
 	}
@@ -267,7 +267,7 @@ func New(destType string, o Opts) DestinationManager {
 }
 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch

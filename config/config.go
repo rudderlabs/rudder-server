@@ -75,7 +75,7 @@ func UpdateConfig() {
 func watchForConfigChange() {
 	defer func() {
 		if r := recover(); r != nil {
-			err := fmt.Errorf("failed while trying to update Config Variables with Error: %w", r)
+			err := fmt.Errorf("cannot update Config Variables: %v", r)
 			fmt.Println(err)
 		}
 	}()
@@ -776,7 +776,7 @@ func GetNamespaceIdentifier() string {
 	return "none"
 }
 
-// returns value stored in KUBE_NAMESPACE env var
+// GetKubeNamespace returns value stored in KUBE_NAMESPACE env var
 func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")
 }

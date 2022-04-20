@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -35,9 +37,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -48,8 +50,6 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
-	warehouseDestinations              []string
-	timeWindowDestinations             []string
 	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
@@ -89,6 +89,7 @@ type HandleT struct {
 	maxEventsInABatch              int
 	maxFailedCountForJob           int
 	asyncUploadTimeout             time.Duration
+	uploadIntervalMap              map[string]time.Duration
 	retryTimeWindow                time.Duration
 	reporting                      types.ReportingI
 	reportingEnabled               bool
@@ -165,7 +166,7 @@ type JobParametersT struct {
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	brt.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
@@ -179,6 +180,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == brt.destType {
 						if _, ok := brt.destinationsMap[destination.ID]; !ok {
 							brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							brt.uploadIntervalMap[destination.ID] = brt.parseUploadIntervalFromConfig(destination.Config)
 						}
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
@@ -691,7 +693,16 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
+
+	startTime := time.Now()
 	uploadOutput, err := uploader.Upload(context.TODO(), outputFile, keyPrefixes...)
+	uploadSuccess := err == nil
+	brtUploadTimeStat := stats.NewTaggedStat("brt_upload_time", stats.TimerType, map[string]string{
+		"success":     strconv.FormatBool(uploadSuccess),
+		"destType":    brt.destType,
+		"destination": batchJobs.BatchDestination.Destination.ID,
+	})
+	brtUploadTimeStat.Since(startTime)
 
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
@@ -804,6 +815,7 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 		case <-time.After(10 * time.Millisecond):
 			brt.configSubscriberLock.RLock()
 			destinationsMap := brt.destinationsMap
+			uploadIntervalMap := brt.uploadIntervalMap
 			brt.configSubscriberLock.RUnlock()
 
 			for destinationID := range destinationsMap {
@@ -814,9 +826,11 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > brt.asyncUploadTimeout) {
+
+				timeout := uploadIntervalMap[destinationID]
+				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					uploadResponse := asyncdestinationmanager.Upload(resolveURL(transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 					brt.asyncStructCleanUp(destinationID)
 					brt.setMultipleJobStatus(uploadResponse)
 				}
@@ -824,6 +838,38 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func resolveURL(base, relative string) string {
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		pkgLogger.Fatal(err)
+	}
+	relURL, err := url.Parse(relative)
+	if err != nil {
+		pkgLogger.Fatal(err)
+	}
+	destURL := baseURL.ResolveReference(relURL).String()
+	return destURL
+}
+
+func (brt *HandleT) parseUploadIntervalFromConfig(destinationConfig map[string]interface{}) time.Duration {
+	uploadInterval, ok := destinationConfig["uploadInterval"]
+	if !ok {
+		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
+	}
+	dur, ok := uploadInterval.(string)
+	if !ok {
+		brt.logger.Warnf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
+	}
+	parsedTime, err := strconv.ParseInt(dur, 10, 64)
+	if err != nil {
+		brt.logger.Warnf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		return brt.asyncUploadTimeout
+	}
+	return time.Duration(parsedTime * int64(time.Minute))
 }
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
@@ -979,7 +1025,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1164,7 +1210,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for workspace := range batchRouterWorkspaceJobStatusCount {
 		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			brt.multitenantI.RemoveFromInMemoryCount(workspace, destID, batchRouterWorkspaceJobStatusCount[workspace][destID], "batch_router")
+			metric.GetPendingEventsMeasurement("batch_rt", workspace, brt.destType).Sub(float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
 		}
 	}
 	//tracking batch router errors
@@ -1546,8 +1592,9 @@ func (worker *workerT) workerProcess() {
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
 						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
-							Count:   0,
-							Reasons: []string{},
+							Count:     0,
+							Reasons:   []string{},
+							Workspace: job.WorkspaceId,
 						}
 					}
 					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
@@ -1590,12 +1637,14 @@ func (worker *workerT) workerProcess() {
 				}
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-						"destType": brt.destType,
-						"destId":   destID,
-						"module":   "batchrouter",
-						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
+						"destType":  brt.destType,
+						"destId":    destID,
+						"module":    "batchrouter",
+						"reasons":   strings.Join(destDrainStat.Reasons, ", "),
+						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
+					metric.GetPendingEventsMeasurement("batch_rt", destDrainStat.Workspace, brt.destType).Sub(float64(drainStatsbyDest[destID].Count))
 				}
 			}
 			//Mark the jobs as executing
@@ -1644,7 +1693,7 @@ func (worker *workerT) workerProcess() {
 						}
 
 						destUploadStat.End()
-					case misc.ContainsString(warehouseDestinations, brt.destType):
+					case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -1914,6 +1963,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		err = downloader.Download(context.TODO(), jsonFile, objKey)
 		if err != nil {
 			brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
 			continue
 		}
 
@@ -1968,12 +2018,12 @@ func IsObjectStorageDestination(destType string) bool {
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.ContainsString(warehouseDestinations, destType)
+	return misc.ContainsString(warehouseutils.WarehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if !misc.ContainsString(timeWindowDestinations, brt.destType) {
+	if !misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
@@ -2044,8 +2094,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
@@ -2120,6 +2168,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
+	brt.uploadIntervalMap = map[string]time.Duration{}
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: netClientTimeout}

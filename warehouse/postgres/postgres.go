@@ -26,6 +26,7 @@ var (
 	stagingTablePrefix            string
 	pkgLogger                     logger.LoggerI
 	skipComputingUserLatestTraits bool
+	connectTimeout                time.Duration
 )
 
 const (
@@ -40,8 +41,6 @@ const (
 	clientSSLKey  = "clientKey"
 	verifyCA      = "verify-ca"
 )
-
-const PROVIDER = "POSTGRES"
 
 var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
@@ -99,13 +98,19 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred CredentialsT, timeout time.Duration) (*sql.DB, error) {
+	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v connect_timeout=%d",
 		cred.User,
 		cred.Password,
 		cred.Host,
 		cred.Port,
 		cred.DBName,
-		cred.SSLMode)
+		cred.SSLMode,
+		timeout/time.Second,
+	)
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
@@ -125,6 +130,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.postgres.connectTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -140,7 +146,7 @@ func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	}
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -517,7 +523,7 @@ func (pg *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -559,14 +565,20 @@ func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
+			pkgLogger.Error(sslKeyError.Error())
+			err = fmt.Errorf(sslKeyError.Error())
+			return
+		}
+	}
 	pg.Warehouse = warehouse
-	pg.Db, err = Connect(pg.getConnectionCredentials())
+	timeOut := warehouseutils.TestConnectionTimeout
+	pg.Db, err = connectWithTimeout(pg.getConnectionCredentials(), timeOut)
 	if err != nil {
 		return
 	}
 	defer pg.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -665,7 +677,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in processing fetched schema from redshift destination:%v", pg.Warehouse.Destination.ID)
+			pkgLogger.Errorf("PG: Error in processing fetched schema from clickhouse destination:%v", pg.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName.String]; !ok {
@@ -718,12 +730,34 @@ func (pg *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 }
 
 func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+			pkgLogger.Error(err.Error())
+			return client.Client{}, fmt.Errorf(err.Error())
+		}
+	}
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
+	pg.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.POSTGRES,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		pg.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
+	)
+	_, err = client.SQL.Exec(sqlStatement)
+	return
 }

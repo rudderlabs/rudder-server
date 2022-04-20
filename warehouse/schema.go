@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -29,7 +30,12 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = columnVal
 		}
 	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
-		newColumnVal = columnVal
+		intVal, ok := columnVal.(int64)
+		if !ok {
+			newColumnVal = nil
+		} else {
+			newColumnVal = float64(intVal)
+		}
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := columnVal.(float64)
 		if !ok {
@@ -86,6 +92,11 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	destID := sHandle.warehouse.Destination.ID
 	destType := sHandle.warehouse.Type
 	marshalledSchema, err := json.Marshal(updatedSchema)
+	defer func() {
+		if err != nil {
+			pkgLogger.Infof("Failed to update local schema for with error: %s", err.Error())
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -187,7 +198,7 @@ func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
 	}
 
 	// add loaded_at for bq to be segment compatible
-	if sh.warehouse.Type == "BQ" {
+	if sh.warehouse.Type == warehouseutils.BQ {
 		discards[sh.safeName("loaded_at")] = "datetime"
 	}
 	return discards
@@ -276,18 +287,20 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 	return consolidatedSchema
 }
 
-/*
-For Samples:
-WarehouseSchema: https://jsonformatter.org/ca43d2
-LocalSchema: https://jsonformatter.org/1c2dd2
-*/
+// hasSchemaChanged Default behaviour is to do the deep equals.
+// If we are skipping deep equals, then we are validating local schemas against warehouse schemas only.
+// Not the other way around.
 func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+	if !skipDeepEqualSchemas {
+		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
+		return !eq
+	}
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
 		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
 
-		// If warehouse does not contain the specified table return true.
+		// If warehouse does  not contain the specified table return true.
 		if !whColumnsExist {
 			return true
 		}

@@ -162,22 +162,22 @@ func init() {
 
 func setMaxParallelLoads() {
 	maxParallelLoads = map[string]int{
-		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
-		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
-		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
-		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
-		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
-		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
-		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
+		warehouseutils.BQ:         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
+		warehouseutils.RS:         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
+		warehouseutils.POSTGRES:   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		warehouseutils.MSSQL:      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
+		warehouseutils.SNOWFLAKE:  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
+		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountThresholds = map[string]int{
-		"AZURE_SYNAPSE": config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
-		"BQ":            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
-		"CLICKHOUSE":    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
-		"MSSQL":         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
-		"POSTGRES":      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
-		"RS":            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
-		"SNOWFLAKE":     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
+		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
 	}
 }
 
@@ -199,7 +199,7 @@ func (job *UploadJobT) identityMappingsTableName() string {
 
 func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		select {
 		case <-ch:
 			// do nothing
@@ -258,6 +258,7 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 
 	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
 	if schemaChanged {
+		pkgLogger.Infof("syncRemoteSchema: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
@@ -453,7 +454,7 @@ func (job *UploadJobT) run() (err error) {
 			var wg sync.WaitGroup
 			wg.Add(3)
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededUserTableCount int
 				for _, userTable := range userTables {
 					if _, ok := currentJobSucceededTables[userTable]; ok {
@@ -473,7 +474,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededIdentityTableCount int
 				for _, identityTable := range identityTables {
 					if _, ok := currentJobSucceededTables[identityTable]; ok {
@@ -493,7 +494,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				specialTables := append(userTables, identityTables...)
 				err = job.exportRegularTables(specialTables)
 				if err != nil {
@@ -878,7 +879,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		tName := tableName
 		loadChan <- struct{}{}
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
 				alteredSchemaInAtleastOneTable = true
@@ -896,6 +897,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	wg.Wait()
 
 	if alteredSchemaInAtleastOneTable {
+		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
@@ -1054,6 +1056,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 	errorMap := job.whManager.LoadUserTables()
 
 	if alteredIdentitySchema || alteredUserSchema {
+		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 	return job.processLoadTableResponse(errorMap)
@@ -1121,6 +1124,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	}
 
 	if alteredSchema {
+		pkgLogger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
@@ -1658,7 +1662,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
-			if misc.ContainsString(timeWindowDestinations, job.warehouse.Type) {
+			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 
@@ -1684,7 +1688,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		wg.Add(1)
 		batchStartIdx := i
 		batchEndIdx := j
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
 			var loadFiles []loadFileUploadOutputT

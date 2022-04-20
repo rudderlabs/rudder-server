@@ -37,6 +37,7 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
+	connectTimeout              time.Duration
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -56,7 +57,7 @@ const (
 	secure        = "secure"
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
-	cluster       = "cluster"
+	Cluster       = "cluster"
 )
 const partitionField = "received_at"
 
@@ -196,12 +197,16 @@ func Init() {
 
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
+	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
+}
+
+func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t&timeout=%d",
 		cred.Host,
 		cred.Port,
 		cred.User,
@@ -216,6 +221,7 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		readTimeout,
 		writeTimeout,
 		compress,
+		timeout/time.Second,
 	)
 
 	var err error
@@ -239,6 +245,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+
+	// Default timeout overrides the values to what ever we pass in dsn
+	// Setting connectTimeout value as clickhouse driver default timeout
+	config.RegisterDurationConfigVariable(clickhouse.DefaultConnTimeout, &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -276,8 +286,8 @@ func (ch *HandleT) getConnectionCredentials() CredentialsT {
 	return credentials
 }
 
-// columnsWithDataTypes creates columns and its datatype into sql format for creating table
-func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
+// ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
+func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
@@ -614,7 +624,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
 			gzipFile.Close()
@@ -738,7 +748,7 @@ func (ch *HandleT) createSchema() (err error) {
 		return err
 	}
 	defer dbHandle.Close()
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
@@ -760,13 +770,13 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "AggregatingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -800,13 +810,13 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -815,7 +825,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
@@ -841,13 +851,12 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
+	timeOut := warehouseutils.TestConnectionTimeout
+	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, timeOut)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
-
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -984,6 +993,11 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
+	ch.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.CLICKHOUSE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
+	)
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
@@ -997,4 +1011,42 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
+}
+
+func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	var columns []string
+	var recordInterface []interface{}
+
+	for key, value := range payloadMap {
+		recordInterface = append(recordInterface, value)
+		columns = append(columns, key)
+	}
+
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+		ch.Namespace,
+		stagingTableName,
+		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
+		generateArgumentString("?", len(columns)),
+	)
+	txn, err := client.SQL.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		return
+	}
+
+	if _, err = stmt.Exec(recordInterface...); err != nil {
+		return
+	}
+
+	if err = stmt.Close(); err != nil {
+		return
+	}
+	if err = txn.Commit(); err != nil {
+		return
+	}
+	return
 }

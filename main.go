@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"strconv"
 	"strings"
@@ -99,6 +102,7 @@ var (
 	IdleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
+	legacyAppHandler          bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -113,7 +117,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-
+	config.RegisterBoolConfigVariable(false, &legacyAppHandler, false, "LegacyAppHandler")
 }
 
 func Init() {
@@ -176,6 +180,7 @@ func runAllInit() {
 	warehouse.Init4()
 	warehouse.Init5()
 	warehouse.Init6()
+	configuration_testing.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
@@ -198,7 +203,7 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	operationmanager.Init()
 	operationmanager.Init2()
 	ratelimiter.Init()
@@ -256,18 +261,7 @@ func Run(ctx context.Context) {
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				}})
-
-			misc.RecordAppError(fmt.Errorf("%v", r))
-			pkgLogger.Fatal(r)
-			panic(r)
-		}
-	}()
+	defer misc.BugsnagNotify(ctx, "Core")()
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
@@ -282,7 +276,7 @@ func Run(ctx context.Context) {
 	}
 
 	backendconfig.Setup(configEnvHandler)
-
+	backendconfig.DefaultBackendConfig.StartPolling(backendconfig.GetWorkspaceToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -304,6 +298,9 @@ func Run(ctx context.Context) {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
+				if legacyAppHandler {
+					return appHandler.LegacyStart(ctx, options)
+				}
 				return appHandler.StartRudderCore(ctx, options)
 			}))
 		}
@@ -320,6 +317,12 @@ func Run(ctx context.Context) {
 	g.Go(func() error {
 		<-ctx.Done()
 		ctxDoneTime = time.Now()
+		return nil
+	})
+
+	g.Go(func() error {
+		<-ctx.Done()
+		backendconfig.DefaultBackendConfig.StopPolling()
 		return nil
 	})
 
@@ -340,7 +343,7 @@ func Run(ctx context.Context) {
 		if logger.Log != nil {
 			logger.Log.Sync()
 		}
-		stats.StopRuntimeStats()
+		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
@@ -362,7 +365,7 @@ func Run(ctx context.Context) {
 	if logger.Log != nil {
 		logger.Log.Sync()
 	}
-	stats.StopRuntimeStats()
+	stats.StopPeriodicStats()
 }
 
 func startStandbyWebHandler(ctx context.Context) error {

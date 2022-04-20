@@ -31,6 +31,7 @@ var (
 	setVarCharMax      bool
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	connectTimeout     time.Duration
 )
 
 func Init() {
@@ -41,6 +42,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {
@@ -62,8 +64,6 @@ const (
 	RSPassword          = "password"
 	rudderStringLength  = 512
 )
-
-const PROVIDER = "RS"
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean encode runlength",
@@ -116,7 +116,7 @@ var partitionKeyMap = map[string]string{
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	// TODO: do we need sorted order here?
 	keys := []string{}
 	for colName := range columns {
@@ -144,7 +144,7 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["id"]; ok {
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -510,12 +510,18 @@ type RedshiftCredentialsT struct {
 }
 
 func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred RedshiftCredentialsT, timeout time.Duration) (*sql.DB, error) {
+	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
 		cred.username,
 		cred.password,
 		cred.host,
 		cred.port,
-		cred.dbName)
+		cred.dbName,
+		timeout/time.Second,
+	)
 
 	var err error
 	var db *sql.DB
@@ -657,18 +663,18 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
+	timeOut := warehouseutils.TestConnectionTimeout
+	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	}, timeOut)
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -759,4 +765,43 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	if err != nil {
+		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
+		return
+	}
+
+	manifestS3Location, region := warehouseutils.GetS3Location(location)
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	var sqlStatement string
+	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		// copy statement for parquet load files
+		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+		)
+	} else {
+		// copy statement for csv load files
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+			region,
+		)
+	}
+
+	_, err = client.SQL.Exec(sqlStatement)
+	return
 }
