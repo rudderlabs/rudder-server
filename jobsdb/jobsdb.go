@@ -826,6 +826,7 @@ func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 	jd.jobsFileUploader, err = jd.getFileUploader()
 	if err != nil {
 		jd.logger.Errorf("failed to get a file uploader for %s", jd.tablePrefix)
+		return
 	}
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.backupDSLoop(ctx)
