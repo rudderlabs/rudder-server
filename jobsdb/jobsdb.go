@@ -33,6 +33,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -52,6 +53,8 @@ import (
 	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 )
+
+const preDropTablePrefix = "pre_drop_"
 
 // BackupSettingsT is for capturing the backup
 // configuration from the config/env files to
@@ -375,6 +378,7 @@ type HandleT struct {
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
+	preBackupHandlers             []prebackup.Handler
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
@@ -677,6 +681,13 @@ func WithStatusHandler() OptsFunc {
 	}
 }
 
+// WithPreBackupHandlers, sets pre-backup handlers
+func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
+	return func(jd *HandleT) {
+		jd.preBackupHandlers = preBackupHandlers
+	}
+}
+
 func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -718,7 +729,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler) {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
@@ -726,6 +737,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.migrationState.migrationMode = migrationMode
 	jd.registerStatusHandler = registerStatusHandler
 	jd.queryFilterKeys = queryFilterKeys
+	jd.preBackupHandlers = preBackupHandlers
 
 	jd.init()
 	jd.Start()
@@ -1622,10 +1634,10 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 
 func (jd *HandleT) invalidateCache(ds dataSetT) {
 	//Trimming pre_drop from the table name
-	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
+	if strings.HasPrefix(ds.JobTable, preDropTablePrefix) {
 		parentDS := dataSetT{
-			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
-			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
+			JobTable:       strings.ReplaceAll(ds.JobTable, preDropTablePrefix, ""),
+			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, preDropTablePrefix, ""),
 			Index:          ds.Index,
 		}
 		jd.dropDSFromCache(parentDS)
@@ -1634,27 +1646,66 @@ func (jd *HandleT) invalidateCache(ds dataSetT) {
 	}
 }
 
-//Rename a dataset
-func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
+//mustRenameDS renames a dataset
+func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 	var sqlStatement string
-	var renamedJobStatusTable = fmt.Sprintf(`pre_drop_%s`, ds.JobStatusTable)
-	var renamedJobTable = fmt.Sprintf(`pre_drop_%s`, ds.JobTable)
-
-	if allowMissing {
-		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
-	} else {
+	var renamedJobStatusTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
+	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
+	return jd.doInTransaction(func(tx *sql.Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
-	}
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	if allowMissing {
-		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
-	} else {
+		_, err := tx.Exec(sqlStatement)
+		if err != nil {
+			return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
+		}
 		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
-	}
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
+		_, err = tx.Exec(sqlStatement)
+		if err != nil {
+			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
+		}
+		for _, preBackupHandler := range jd.preBackupHandlers {
+			err = preBackupHandler.Handle(context.TODO(), tx, renamedJobTable, renamedJobStatusTable)
+			if err != nil {
+				return err
+			}
+		}
+		// if jobs table is left empty after prebackup handlers, drop the dataset
+		sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM "%s") THEN 1 ELSE 0 END`, renamedJobTable)
+		row := tx.QueryRow(sqlStatement)
+		var count int
+		if err = row.Scan(&count); err != nil {
+			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
+		}
+		if count == 0 {
+			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobStatusTable)); err != nil {
+				return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
+			}
+			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobTable)); err != nil {
+				return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
+			}
+		}
+		return nil
+	})
+}
+
+// renameDS renames a dataset if it exists
+func (jd *HandleT) renameDS(ds dataSetT) error {
+	var sqlStatement string
+	var renamedJobStatusTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
+	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
+	return jd.doInTransaction(func(tx *sql.Tx) error {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
+		_, err := jd.dbHandle.Exec(sqlStatement)
+		if err != nil {
+			return err
+		}
+
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (jd *HandleT) getBackupDSList() []dataSetT {
@@ -1667,7 +1718,7 @@ func (jd *HandleT) getBackupDSList() []dataSetT {
 
 	var dsList []dataSetT
 
-	tablePrefix := "pre_drop_" + jd.tablePrefix
+	tablePrefix := preDropTablePrefix + jd.tablePrefix
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, tablePrefix+"_jobs_") {
 			dnum := t[len(tablePrefix+"_jobs_"):]
@@ -1788,7 +1839,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
 		if jd.BackupSettings.IsBackupEnabled() && isBackupConfigured() {
-			jd.renameDS(ds, false)
+			jd.assertError(jd.mustRenameDS(ds))
 		} else {
 			jd.dropDS(ds, false)
 		}
@@ -3041,19 +3092,19 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	if jd.BackupSettings.FailedOnly {
 		jd.logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
-		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
 		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State)
 		// checked failed and aborted state
 		countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s" where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
 	} else {
 		if isJobStatusTable {
 			tableName = backupDSRange.ds.JobStatusTable
-			pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
 			path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
 			countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, tableName)
 		} else {
 			tableName = backupDSRange.ds.JobTable
-			pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
 			path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
 				tmpDirPath+backupPathDirName,
 				pathPrefix,
@@ -3183,8 +3234,8 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	//We check for job_status because that is renamed after job
 	dnumList := []string{}
 	for _, t := range tableNames {
-		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_jobs_") {
-			dnum := t[len("pre_drop_"+jd.tablePrefix+"_jobs_"):]
+		if strings.HasPrefix(t, preDropTablePrefix+jd.tablePrefix+"_jobs_") {
+			dnum := t[len(preDropTablePrefix+jd.tablePrefix+"_jobs_"):]
 			dnumList = append(dnumList, dnum)
 			continue
 		}
@@ -3196,8 +3247,8 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	sortDnumList(jd, dnumList)
 
 	backupDS = dataSetT{
-		JobTable:       fmt.Sprintf("pre_drop_%s_jobs_%s", jd.tablePrefix, dnumList[0]),
-		JobStatusTable: fmt.Sprintf("pre_drop_%s_job_status_%s", jd.tablePrefix, dnumList[0]),
+		JobTable:       fmt.Sprintf("%s%s_jobs_%s", preDropTablePrefix, jd.tablePrefix, dnumList[0]),
+		JobStatusTable: fmt.Sprintf("%s%s_job_status_%s", preDropTablePrefix, jd.tablePrefix, dnumList[0]),
 		Index:          dnumList[0],
 	}
 
@@ -3410,7 +3461,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
 			if jd.BackupSettings.IsBackupEnabled() {
-				jd.renameDS(ds, true)
+				jd.assertError(jd.renameDS(ds))
 			} else {
 				jd.dropDS(ds, true)
 			}

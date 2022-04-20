@@ -23,6 +23,7 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
@@ -124,7 +125,8 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	payloadLimit int64
+	payloadLimit     int64
+	transientSources transientsource.Service
 }
 
 type BatchDestinationDataT struct {
@@ -1214,7 +1216,11 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			}
 			sd, ok := statusDetailsMap[key]
 			if !ok {
-				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload, parameters.EventName, parameters.EventType)
+				sampleEvent := job.EventPayload
+				if brt.transientSources.Apply(parameters.SourceID) {
+					sampleEvent = []byte(`{}`)
+				}
+				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType)
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
@@ -2185,7 +2191,7 @@ func setQueryFilters() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
@@ -2200,6 +2206,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	brt.pollAsyncStatusPauseChannel = make(chan *PauseT)
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 	brt.multitenantI = multitenantStat
+	brt.transientSources = transientSources
 	//waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
