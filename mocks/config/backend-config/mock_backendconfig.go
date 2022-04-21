@@ -105,28 +105,28 @@ func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUp", reflect.TypeOf((*MockBackendConfig)(nil).SetUp))
 }
 
-// StartPolling mocks base method.
-func (m *MockBackendConfig) StartPolling(arg0 string) {
+// StartWithIDs mocks base method.
+func (m *MockBackendConfig) StartWithIDs(arg0 string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StartPolling", arg0)
+	m.ctrl.Call(m, "StartWithIDs", arg0)
 }
 
-// StartPolling indicates an expected call of StartPolling.
-func (mr *MockBackendConfigMockRecorder) StartPolling(arg0 interface{}) *gomock.Call {
+// StartWithIDs indicates an expected call of StartWithIDs.
+func (mr *MockBackendConfigMockRecorder) StartWithIDs(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartPolling", reflect.TypeOf((*MockBackendConfig)(nil).StartPolling), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockBackendConfig)(nil).StartWithIDs), arg0)
 }
 
-// StopPolling mocks base method.
-func (m *MockBackendConfig) StopPolling() {
+// Stop mocks base method.
+func (m *MockBackendConfig) Stop() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StopPolling")
+	m.ctrl.Call(m, "Stop")
 }
 
-// StopPolling indicates an expected call of StopPolling.
-func (mr *MockBackendConfigMockRecorder) StopPolling() *gomock.Call {
+// Stop indicates an expected call of Stop.
+func (mr *MockBackendConfigMockRecorder) Stop() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopPolling", reflect.TypeOf((*MockBackendConfig)(nil).StopPolling))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockBackendConfig)(nil).Stop))
 }
 
 // Subscribe mocks base method.

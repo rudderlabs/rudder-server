@@ -63,13 +63,10 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) Get(workspaces string) (Confi
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
-	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-	//TODO : Uncomment it and add tests once we have cluster managers ready
-	//To support existing multitenant behaviour
-	// url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
-	// workspacesString := ""
-	// url = url + workspacesString
-	// url = url + "&fetchAll=true"
+	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
+	workspacesString := ""
+	url = url + workspacesString
+	url = url + "&fetchAll=true"
 	var respBody []byte
 	var statusCode int
 
@@ -81,7 +78,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr strin
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -126,10 +123,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) makeHTTPRequest(url string) (
 	if err != nil {
 		return []byte{}, 400, err
 	}
-	//TODO : Uncomment it and add tests once we have cluster managers ready
-	// req.SetBasicAuth(multitenantWorkspaceSecret, "")
-	req.SetBasicAuth(multiWorkspaceSecret, "")
-	//To support existing multitenant behaviour
+	req.SetBasicAuth(multitenantWorkspaceSecret, "")
 
 	req.Header.Set("Content-Type", "application/json")
 

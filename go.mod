@@ -56,6 +56,9 @@ require (
 	github.com/tidwall/sjson v1.0.4
 	github.com/xdg/scram v1.0.3
 	github.com/xitongsys/parquet-go v1.6.1-0.20210531003158-8ed615220b7d
+	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
+	go.etcd.io/etcd/api/v3 v3.5.2
+	go.etcd.io/etcd/client/v3 v3.5.2
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/net v0.0.0-20211013171255-e13a2654a71e
@@ -87,6 +90,8 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/containerd/continuity v0.1.0 // indirect
+	github.com/coreos/go-semver v0.3.0 // indirect
+	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
@@ -154,7 +159,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/xdg/stringprep v1.0.0 // indirect
 	github.com/xitongsys/parquet-go-source v0.0.0-20200817004010-026bad9b25d0 // indirect
-	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.2 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
