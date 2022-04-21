@@ -127,7 +127,7 @@ type UploadJobT struct {
 	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
-	loadFilesTableMap   map[tableNameT]bool
+	loadFilesMap        map[tableNameT]bool
 }
 
 type UploadColumnT struct {
@@ -870,7 +870,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			wg.Done()
 			continue
 		}
-		hasLoadFiles := job.loadFilesTableMap[tableNameT(tableName)]
+		hasLoadFiles := job.loadFilesMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
@@ -1017,7 +1017,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		hasLoadFiles := job.loadFilesTableMap[tableNameT(tName)]
+		hasLoadFiles := job.loadFilesMap[tableNameT(tName)]
 		if hasLoadFiles {
 			// There is at least one table to load
 			break
@@ -1515,7 +1515,7 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 }
 
 func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
-	job.loadFilesTableMap = make(map[tableNameT]bool)
+	job.loadFilesMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
@@ -1545,7 +1545,7 @@ func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
 			pkgLogger.Errorf("[WH] Error occurred while processing load files table map with error: %s", err.Error())
 			return
 		}
-		job.loadFilesTableMap[tableNameT(tableName)] = true
+		job.loadFilesMap[tableNameT(tableName)] = true
 	}
 	return
 }
