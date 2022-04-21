@@ -1,5 +1,7 @@
 package servermode
 
+import "context"
+
 type Mode string
 
 const (
@@ -7,24 +9,35 @@ const (
 	DegradedMode Mode = "DEGRADED"
 )
 
-type Ack struct {
-	ack  func()
+type ChangeEvent struct {
+	err  error
+	ack  func(context.Context) error
 	mode Mode
 }
 
-func (m Ack) Ack() {
-	m.ack()
-}
-
-func (m Ack) Mode() Mode {
-	return m.mode
-}
-
-func WithACK(mode Mode, ack func()) Ack {
-	return Ack{
+func NewChangeEvent(mode Mode, ack func(context.Context) error) ChangeEvent {
+	return ChangeEvent{
 		mode: mode,
 		ack:  ack,
 	}
+}
+
+func ChangeEventError(err error) ChangeEvent {
+	return ChangeEvent{
+		err: err,
+	}
+}
+
+func (m ChangeEvent) Ack(ctx context.Context) error {
+	return m.ack(ctx)
+}
+
+func (m ChangeEvent) Mode() Mode {
+	return m.mode
+}
+
+func (m ChangeEvent) Err() error {
+	return m.err
 }
 
 func (mode Mode) Valid() bool {

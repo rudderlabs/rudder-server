@@ -276,7 +276,7 @@ func Run(ctx context.Context) {
 	}
 
 	backendconfig.Setup(configEnvHandler)
-	backendconfig.DefaultBackendConfig.StartPolling(backendconfig.GetWorkspaceToken())
+	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -322,7 +322,7 @@ func Run(ctx context.Context) {
 
 	g.Go(func() error {
 		<-ctx.Done()
-		backendconfig.DefaultBackendConfig.StopPolling()
+		backendconfig.DefaultBackendConfig.Stop()
 		return nil
 	})
 

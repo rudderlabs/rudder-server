@@ -63,7 +63,7 @@ func (multitenantStat *MultitenantStatsT) Start() {
 		multitenantStat.RouterDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
-				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
+				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
 			}
 		}
 	}
@@ -94,7 +94,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *MultitenantStatsT 
 		routerDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
-				metric.GetPendingEventsMeasurement(dbPrefix, workspace, destType).Add(float64(pileUpStatMap[workspace][destType]))
+				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
 			}
 		}
 	}
@@ -164,7 +164,7 @@ func (multitenantStat *MultitenantStatsT) ReportProcLoopAddStats(stats map[strin
 				multitenantStat.routerInputRates[dbPrefix][key][destType] = metric.NewMovingAverage()
 			}
 			multitenantStat.routerInputRates[dbPrefix][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
-			metric.GetPendingEventsMeasurement(dbPrefix, key, destType).Add(float64(stats[key][destType]))
+			metric.IncreasePendingEvents(dbPrefix, key, destType, float64(stats[key][destType]))
 		}
 	}
 	for workspaceKey := range multitenantStat.routerInputRates[dbPrefix] {
@@ -214,7 +214,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
 					//Adding BETA
-					if metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).Value() > 0 {
+					if metric.PendingEvents("rt", workspaceKey, destType).Value() > 0 {
 						usedLatencies[workspaceKey] = multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value()
 						workspacePickUpCount[workspaceKey] = 1
 					}
@@ -222,7 +222,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 				}
 				//TODO : Get rid of unReliableLatencyORInRate hack
 				unReliableLatencyORInRate := false
-				pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+				pendingEvents := metric.PendingEvents("rt", workspaceKey, destType).IntValue()
 				if multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value() != 0 {
 					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(multitenantStat.routerTenantLatencyStat[destType][workspaceKey].Value())))
 					if tmpPickCount < 1 {
@@ -254,7 +254,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, n
 	secondaryScores := multitenantStat.getSortedWorkspaceSecondaryScoreList(workspacesWithJobs, workspacePickUpCount, destType, multitenantStat.routerTenantLatencyStat[destType])
 	for _, scoredWorkspace := range secondaryScores {
 		workspaceKey := scoredWorkspace.workspaceId
-		pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+		pendingEvents := metric.PendingEvents("rt", workspaceKey, destType).IntValue()
 		if pendingEvents <= 0 {
 			continue
 		}
@@ -312,7 +312,7 @@ func (multitenantStat *MultitenantStatsT) getLastDrainedTimestamp(workspaceKey s
 func getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.MovingAverage) []string {
 	workspacesWithJobs := make([]string, 0)
 	for workspaceKey := range latencyMap {
-		val := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+		val := metric.PendingEvents("rt", workspaceKey, destType).IntValue()
 		if val > 0 {
 			workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
 		} else if val < 0 {
@@ -375,7 +375,7 @@ func (multitenantStat *MultitenantStatsT) getSortedWorkspaceSecondaryScoreList(w
 	for i, workspaceKey := range workspacesWithJobs {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = workspaceKey
-		pendingEvents := metric.GetPendingEventsMeasurement("rt", workspaceKey, destType).IntValue()
+		pendingEvents := metric.PendingEvents("rt", workspaceKey, destType).IntValue()
 		if pendingEvents-workspacePickUpCount[workspaceKey] <= 0 {
 			scores[i].score = math.MaxFloat64
 			scores[i].secondary_score = 0
