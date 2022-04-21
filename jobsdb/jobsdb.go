@@ -66,6 +66,10 @@ func (b *BackupSettingsT) IsBackupEnabled() bool {
 	return masterBackupEnabled && b.instanceBackupEnabled
 }
 
+func IsMasterBackupEnabled() bool {
+	return masterBackupEnabled
+}
+
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
 // JobCount puts an upper limit on the number of returned jobs,

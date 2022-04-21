@@ -93,7 +93,7 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func (st *HandleT) setupFileUploader() {
-	if errorStashEnabled {
+	if errorStashEnabled && jobsdb.IsMasterBackupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
