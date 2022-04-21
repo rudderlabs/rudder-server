@@ -15,14 +15,14 @@ type Measurement interface {
 const JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
 const ALL = "ALL"
 
-// IncreasePendingEvents increments two gauges, both the workspace-specific and the global
+// IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func IncreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Add(value)
 	PendingEvents(tablePrefix, ALL, destType).Add(value)
 	PendingEvents(ALL, ALL, destType).Add(value)
 }
 
-// DecreasePendingEvents increments two gauges, both the workspace-specific and the global
+// DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func DecreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Sub(value)
 	PendingEvents(tablePrefix, ALL, destType).Sub(value)
