@@ -870,8 +870,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			wg.Done()
 			continue
 		}
-		_, ok := job.loadFilesTableMap[tableNameT(tableName)]
-		if !ok {
+		hasLoadFiles := job.loadFilesTableMap[tableNameT(tableName)]
+		if !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
@@ -1017,8 +1017,8 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		_, ok := job.loadFilesTableMap[tableNameT(tName)]
-		if ok {
+		hasLoadFiles := job.loadFilesTableMap[tableNameT(tName)]
+		if hasLoadFiles {
 			// There is at least one table to load
 			break
 		}
