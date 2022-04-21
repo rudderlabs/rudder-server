@@ -103,8 +103,8 @@ var _ = Describe("tenantStats", func() {
 
 			tenantStats.ReportProcLoopAddStats(input, "rt")
 
-			Expect(metric.GetPendingEventsMeasurement("rt", workspaceID1, destType1).IntValue()).To(Equal(addJobWID1))
-			Expect(metric.GetPendingEventsMeasurement("rt", workspaceID2, destType1).IntValue()).To(Equal(addJobWID2))
+			Expect(metric.PendingEvents("rt", workspaceID1, destType1).IntValue()).To(Equal(addJobWID1))
+			Expect(metric.PendingEvents("rt", workspaceID2, destType1).IntValue()).To(Equal(addJobWID2))
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -162,7 +162,7 @@ func Benchmark_Counts(b *testing.B) {
 	b.ResetTimer()
 	metric.GetManager().Reset()
 	const writeRatio = 1000
-	gauge := metric.GetPendingEventsMeasurement("rt", workspaceID1, destType1)
+	gauge := metric.PendingEvents("rt", workspaceID1, destType1)
 	errgroup := errgroup.Group{}
 	errgroup.Go(func() error {
 		for i := 0; i < b.N; i++ {

@@ -1210,7 +1210,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for workspace := range batchRouterWorkspaceJobStatusCount {
 		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			metric.GetPendingEventsMeasurement("batch_rt", workspace, brt.destType).Sub(float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
+			metric.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
 		}
 	}
 	//tracking batch router errors
@@ -1644,7 +1644,7 @@ func (worker *workerT) workerProcess() {
 						"workspace": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
-					metric.GetPendingEventsMeasurement("batch_rt", destDrainStat.Workspace, brt.destType).Sub(float64(drainStatsbyDest[destID].Count))
+					metric.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(drainStatsbyDest[destID].Count))
 				}
 			}
 			//Mark the jobs as executing
