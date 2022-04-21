@@ -192,7 +192,7 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 				envVal := GetEnv(TransformKey(key), "")
 				if envVal != "" {
 					isSet = true
-					_value = GetDuration(key, configVal.defaultValue.(time.Duration), configVal.multiplier.(time.Duration))
+					_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
 					break
 				}
 			}
@@ -200,7 +200,7 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
-						_value = GetDuration(key, configVal.defaultValue.(time.Duration), configVal.multiplier.(time.Duration))
+						_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
 						break
 					}
 				}
@@ -460,7 +460,7 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 	}
 }
 
-func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
+func RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
@@ -468,7 +468,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		value:           ptr,
 		multiplier:      timeScale,
 		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
+		defaultValue:    defaultValueInTimescaleUnits,
 		keys:            keys,
 	}
 	if isHotReloadable {
@@ -479,7 +479,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
-			*ptr = GetDuration(key, defaultValue, timeScale)
+			*ptr = GetDuration(key, defaultValueInTimescaleUnits, timeScale)
 			break
 		}
 	}
@@ -488,14 +488,14 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		for _, key := range keys {
 			if viper.IsSet(key) {
 				isSet = true
-				*ptr = GetDuration(key, defaultValue, timeScale)
+				*ptr = GetDuration(key, defaultValueInTimescaleUnits, timeScale)
 				break
 			}
 		}
 	}
 
 	if !isSet {
-		*ptr = defaultValue * timeScale
+		*ptr = time.Duration(defaultValueInTimescaleUnits) * timeScale
 	}
 }
 
@@ -635,7 +635,7 @@ func GetStringSlice(key string, defaultValue []string) (value []string) {
 }
 
 // GetDuration is wrapper for viper's GetDuration
-func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration) (value time.Duration) {
+func GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) (value time.Duration) {
 	var envValue string
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
@@ -649,7 +649,7 @@ func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration
 	}
 
 	if !viper.IsSet(key) {
-		return defaultValue * timeScale
+		return time.Duration(defaultValueInTimescaleUnits) * timeScale
 	} else {
 		envValue = viper.GetString(key)
 		parseDuration, err := time.ParseDuration(envValue)
@@ -660,7 +660,7 @@ func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration
 			if err == nil {
 				return viper.GetDuration(key) * timeScale
 			} else {
-				return defaultValue * timeScale
+				return time.Duration(defaultValueInTimescaleUnits) * timeScale
 			}
 		}
 	}

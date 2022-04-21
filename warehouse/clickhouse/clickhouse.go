@@ -241,14 +241,14 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
-	config.RegisterDurationConfigVariable(time.Duration(600), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
-	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(600, &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 
 	// Default timeout overrides the values to what ever we pass in dsn
 	// Setting connectTimeout value as clickhouse driver default timeout
-	config.RegisterDurationConfigVariable(clickhouse.DefaultConnTimeout, &connectTimeout, true, 1, "Warehouse.clickhouse.connectTimeout")
+	config.RegisterDurationConfigVariable(int64(clickhouse.DefaultConnTimeout/time.Second), &connectTimeout, true, time.Second, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*

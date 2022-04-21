@@ -28,8 +28,8 @@ func Init3() {
 }
 
 func loadConfigScheduling() {
-	config.RegisterDurationConfigVariable(time.Duration(60), &minUploadBackoff, true, time.Second, []string{"Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(1800), &maxUploadBackoff, true, time.Second, []string{"Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS"}...)
+	config.RegisterDurationConfigVariable(60, &minUploadBackoff, true, time.Second, []string{"Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS"}...)
+	config.RegisterDurationConfigVariable(1800, &maxUploadBackoff, true, time.Second, []string{"Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS"}...)
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule

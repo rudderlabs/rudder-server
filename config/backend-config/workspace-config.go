@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type WorkspaceConfig struct {
@@ -122,7 +123,7 @@ func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string, workspaceTok
 	req.SetBasicAuth(workspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte{}, 400, err

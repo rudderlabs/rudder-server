@@ -70,8 +70,8 @@ func Init2() {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
+	config.RegisterDurationConfigVariable(0, &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
+	config.RegisterDurationConfigVariable(0, &routerDBRetention, false, time.Hour, "routerDBRetention")
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
