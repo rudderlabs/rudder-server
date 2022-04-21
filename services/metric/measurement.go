@@ -13,22 +13,24 @@ type Measurement interface {
 }
 
 const JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
-const ALL_WORKSPACES = "ALL"
+const ALL = "ALL"
 
-// AddToPendingEventsMeasurement increments two gauges, both the workspace-specific and the global
-func AddToPendingEventsMeasurement(tablePrefix string, workspace string, destType string, value float64) {
-	GetPendingEventsMeasurement(tablePrefix, workspace, destType).Add(value)
-	GetPendingEventsMeasurement(tablePrefix, ALL_WORKSPACES, destType).Add(value)
+// IncreasePendingEvents increments two gauges, both the workspace-specific and the global
+func IncreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
+	PendingEvents(tablePrefix, workspace, destType).Add(value)
+	PendingEvents(tablePrefix, ALL, destType).Add(value)
+	PendingEvents(ALL, ALL, destType).Add(value)
 }
 
-// SubFromPendingEventsMeasurement increments two gauges, both the workspace-specific and the global
-func SubFromPendingEventsMeasurement(tablePrefix string, workspace string, destType string, value float64) {
-	GetPendingEventsMeasurement(tablePrefix, workspace, destType).Sub(value)
-	GetPendingEventsMeasurement(tablePrefix, ALL_WORKSPACES, destType).Sub(value)
+// DecreasePendingEvents increments two gauges, both the workspace-specific and the global
+func DecreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
+	PendingEvents(tablePrefix, workspace, destType).Sub(value)
+	PendingEvents(tablePrefix, ALL, destType).Sub(value)
+	PendingEvents(ALL, ALL, destType).Sub(value)
 }
 
-// GetPendingEventsMeasurement gets the measurement for pending events metric
-func GetPendingEventsMeasurement(tablePrefix string, workspace string, destType string) Gauge {
+// PendingEvents gets the measurement for pending events metric
+func PendingEvents(tablePrefix string, workspace string, destType string) Gauge {
 	return GetManager().GetRegistry(PUBLISHED_METRICS).MustGetGauge(pendingEventsMeasurement{tablePrefix, workspace, destType})
 }
 

@@ -1607,7 +1607,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	defer func() {
 		for workspace := range routerWorkspaceJobStatusCount {
-			metric.SubFromPendingEventsMeasurement("rt", workspace, rt.destName, float64(routerWorkspaceJobStatusCount[workspace]))
+			metric.DecreasePendingEvents("rt", workspace, rt.destName, float64(routerWorkspaceJobStatusCount[workspace]))
 		}
 	}()
 
@@ -2022,7 +2022,7 @@ func (rt *HandleT) readAndProcess() int {
 				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
 			rt.drainedJobsStat.Count(destDrainStat.Count)
-			metric.SubFromPendingEventsMeasurement("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
+			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
 		}
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
