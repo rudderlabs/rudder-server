@@ -1017,7 +1017,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		hasLoadFiles := job.loadFilesMap[tableNameT(tName)]
+		hasLoadFiles = job.loadFilesMap[tableNameT(tName)]
 		if hasLoadFiles {
 			// There is at least one table to load
 			break
