@@ -96,15 +96,15 @@ func loadCertificate() {
 }
 
 func getDefaultConfiguration() *sarama.Config {
-	config := sarama.NewConfig()
-	config.Net.DialTimeout = kafkaDialTimeout
-	config.Net.WriteTimeout = kafkaWriteTimeout
-	config.Net.ReadTimeout = kafkaWriteTimeout
-	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
-	config.Version = sarama.V1_0_0_0
-	return config
+	conf := sarama.NewConfig()
+	conf.Net.DialTimeout = kafkaDialTimeout
+	conf.Net.WriteTimeout = kafkaWriteTimeout
+	conf.Net.ReadTimeout = kafkaWriteTimeout
+	conf.Producer.Partitioner = sarama.NewReferenceHashPartitioner
+	conf.Producer.RequiredAcks = sarama.WaitForAll
+	conf.Producer.Return.Successes = true
+	conf.Version = sarama.V1_0_0_0
+	return conf
 }
 
 // Boilerplate needed for SCRAM Authentication in Kafka
@@ -152,28 +152,28 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	}
 	isSslEnabled := destConfig.SslEnabled
 
-	config := getDefaultConfiguration()
-	config.Producer.Timeout = o.Timeout
+	conf := getDefaultConfiguration()
+	conf.Producer.Timeout = o.Timeout
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
-		config.Net.TLS.Enable = true
+		conf.Net.TLS.Enable = true
 		if caCertificate != "" {
 			tlsConfig := newTLSConfig(caCertificate)
 			if tlsConfig != nil {
-				config.Net.TLS.Config = tlsConfig
+				conf.Net.TLS.Config = tlsConfig
 			}
 		}
 		if destConfig.UseSASL {
 			// SASL is enabled only with SSL
-			err = setSASLConfig(config, destConfig)
+			err = setSASLConfig(conf, destConfig)
 			if err != nil {
 				return nil, fmt.Errorf("[Kafka] Error while setting SASL config :: %w", err)
 			}
 		}
 	}
 
-	return sarama.NewSyncProducer(hosts, config)
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 // Sets SASL authentication config for Kafka
@@ -224,22 +224,22 @@ func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := getDefaultConfiguration()
+	conf := getDefaultConfiguration()
 
-	config.Net.SASL.Enable = true
-	config.Net.SASL.User = azureEventHubUser
-	config.Net.SASL.Password = destConfig.EventHubsConnectionString
-	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	conf.Net.SASL.Enable = true
+	conf.Net.SASL.User = azureEventHubUser
+	conf.Net.SASL.Password = destConfig.EventHubsConnectionString
+	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
-	config.Net.TLS.Enable = true
-	config.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Enable = true
+	conf.Net.TLS.Config = &tls.Config{
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
 
-	config.Producer.Timeout = o.Timeout
+	conf.Producer.Timeout = o.Timeout
 
-	return sarama.NewSyncProducer(hosts, config)
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
@@ -258,22 +258,22 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := getDefaultConfiguration()
+	conf := getDefaultConfiguration()
 
-	config.Net.SASL.Enable = true
-	config.Net.SASL.User = destConfig.APIKey
-	config.Net.SASL.Password = destConfig.APISecret
-	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	conf.Net.SASL.Enable = true
+	conf.Net.SASL.User = destConfig.APIKey
+	conf.Net.SASL.Password = destConfig.APISecret
+	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
-	config.Net.TLS.Enable = true
-	config.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Enable = true
+	conf.Net.TLS.Config = &tls.Config{
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
 
-	config.Producer.Timeout = o.Timeout
+	conf.Producer.Timeout = o.Timeout
 
-	return sarama.NewSyncProducer(hosts, config)
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 func prepareMessage(topic string, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
@@ -344,17 +344,17 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	var config = Config{}
+	var conf = Config{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = json.Unmarshal(jsonConfig, &conf)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
 	}
 
-	topic := config.Topic
+	topic := conf.Topic
 
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(jsonData, kafkaProducer, topic)
