@@ -486,7 +486,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
-			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
+			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
@@ -1010,7 +1010,7 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
-			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
+			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),

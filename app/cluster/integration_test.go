@@ -163,7 +163,7 @@ func initJobsDB() {
 	archiver.Init()
 	stats.Setup()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
@@ -232,7 +232,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).AnyTimes()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
 		GatewayDB:     gwDB,
 		RouterDB:      rtDB,
@@ -254,8 +254,9 @@ func TestDynamicClusterManager(t *testing.T) {
 	}()
 
 	chACK := make(chan bool)
-	provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 		close(chACK)
+		return nil
 	}))
 
 	require.Eventually(t, func() bool {

@@ -164,16 +164,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	var modeProvider state.StaticProvider
+	var modeProvider *state.StaticProvider
 	// FIXME: hacky way to determine servermode
 	if enableProcessor && enableRouter {
-		modeProvider = state.StaticProvider{
-			Mode: servermode.NormalMode,
-		}
+		modeProvider = state.NewStaticProvider(servermode.NormalMode)
 	} else {
-		modeProvider = state.StaticProvider{
-			Mode: servermode.DegradedMode,
-		}
+		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
 	}
 
 	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
@@ -194,7 +190,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
-		Provider:        &modeProvider,
+		Provider:        modeProvider,
 		GatewayDB:       gwDBForProcessor,
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,

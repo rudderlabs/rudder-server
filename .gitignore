@@ -16,3 +16,5 @@ junit*.xml
 build/regulation-worker
 *.out.*
 *.out
+coverage.txt
+coverage.html

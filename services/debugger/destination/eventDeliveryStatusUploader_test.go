@@ -6,6 +6,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -204,6 +205,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			EventName:     `some_event_name`,
 			EventType:     `some_event_type`,
 		}
+		disableEventDeliveryStatusUploads = false
 	})
 
 	AfterEach(func() {
@@ -211,7 +213,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	})
 
 	Context("RecordEventDeliveryStatus", func() {
-		It("returns false if disableEventDeliveryStatusUploads is false", func() {
+		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
@@ -222,12 +224,13 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					}()
 				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
+			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				tFunc()
+			}).Return().Times(1)
 
-			time.Sleep(1 * time.Second)
+			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			disableEventDeliveryStatusUploads = true
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
-			disableEventDeliveryStatusUploads = false
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
@@ -241,9 +244,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					}()
 				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
+			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				tFunc()
+			}).Return().Times(1)
 
-			time.Sleep(1 * time.Second)
+			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
 		})
 
@@ -258,10 +263,13 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					}()
 				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
+			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				tFunc()
+			}).Return().Times(1)
 
-			time.Sleep(1 * time.Second)
-			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeTrue())
+			c.asyncHelper.WaitWithTimeout(5 * time.Second)
+			eventuallyFunc := func() bool { return RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
+			Eventually(eventuallyFunc).Should(BeTrue())
 		})
 
 		It("transforms payload properly", func() {
@@ -275,9 +283,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					}()
 				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
+			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				tFunc()
+			}).Return().Times(1)
 
-			time.Sleep(1 * time.Second)
+			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
 			rawJSON, err := edsUploader.Transform([]interface{}{&deliveryStatus})
 			Expect(err).To(BeNil())
@@ -296,9 +306,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					}()
 				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).Return().Times(1)
+			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				tFunc()
+			}).Return().Times(1)
 
-			time.Sleep(1 * time.Second)
+			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
 			rawJSON, err := edsUploader.Transform([]interface{}{&faultyData})
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))

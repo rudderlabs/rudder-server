@@ -207,8 +207,8 @@ type BackendConfig interface {
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan pubsub.DataEvent, topic Topic)
-	StopPolling()
-	StartPolling(workspaces string)
+	Stop()
+	StartWithIDs(workspaces string)
 }
 type CommonBackendConfig struct {
 	eb               pubsub.PublishSubscriber
@@ -407,7 +407,7 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
 
-func (bc *CommonBackendConfig) StartPolling(workspaces string) {
+func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -419,7 +419,7 @@ func (bc *CommonBackendConfig) StartPolling(workspaces string) {
 	})
 }
 
-func (bc *CommonBackendConfig) StopPolling() {
+func (bc *CommonBackendConfig) Stop() {
 	bc.cancel()
 	<-bc.blockChan
 	initializedLock.Lock()

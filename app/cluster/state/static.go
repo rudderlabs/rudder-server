@@ -1,29 +1,50 @@
 package state
 
 import (
+	"context"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"sync"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
-var _ cluster.ModeProvider = &StaticProvider{}
+var _ cluster.ChangeEventProvider = &StaticProvider{}
 
 type StaticProvider struct {
-	Mode   servermode.Mode
-	ch     chan servermode.Ack
-	chOnce sync.Once
+	mode servermode.Mode
+	// TODO: WorkspaceIDs
 }
 
-func (s *StaticProvider) ServerMode() (<-chan servermode.Ack, error) {
-	s.chOnce.Do(func() {
-		s.ch = make(chan servermode.Ack, 1)
-	})
-	s.ch <- servermode.WithACK(servermode.Mode(s.Mode), func() {})
-	return s.ch, nil
-}
-
-func (s *StaticProvider) Close() {
-	if s.ch != nil {
-		close(s.ch)
+func NewStaticProvider(Mode servermode.Mode) *StaticProvider {
+	return &StaticProvider{
+		mode: Mode,
 	}
+}
+
+// ServerMode returns a channel with a single message containing this static provider's mode.
+func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.ChangeEvent {
+	ch := make(chan servermode.ChangeEvent, 1)
+	ch <- servermode.NewChangeEvent(servermode.Mode(s.mode), func(ctx context.Context) error {
+		return nil
+	})
+
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+
+	return ch
+}
+
+// WorkspaceIDs returns an empty channel, since we don't expect workspaceIDs updates with static provider
+// TODO: This method should return proper workspaceIDs for backend config, even with static provide.
+func (s *StaticProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {
+	ch := make(chan workspace.ChangeEvent)
+
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+
+	return ch
 }
