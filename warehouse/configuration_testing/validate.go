@@ -16,7 +16,8 @@ import (
 )
 
 func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
-	ct.infoRequest = &infoRequest{}
+
+	ct.infoRequest = &DestinationValidationRequest{}
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
@@ -28,8 +29,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 	}
 	ct.warehouse = ct.warehouseAdapter()
 
-	resp := validationResponse{}
-
+	resp := DestinationValidationResponse{}
 	// check if req has specified a step in query params
 	if step != "" {
 		stepI, err := strconv.Atoi(step)
