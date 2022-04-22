@@ -325,7 +325,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 			primaryKey = column
 		}
 
-		partitionKey := `"id"`
+		partitionKey := "id"
 		if column, ok := partitionKeyMap[tableName]; ok {
 			partitionKey = column
 		}
@@ -582,14 +582,19 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 }
 
 type BQCredentialsT struct {
-	projectID   string
-	credentials string
+	ProjectID   string
+	Credentials string
+}
+
+func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
+	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
+	return client, err
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
-	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
+	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
 	bq.BQContext = context.Background()
-	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
+	client, err := Connect(bq.BQContext, &cred)
 	return client, err
 }
 
@@ -599,7 +604,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", true) || isUsersTableDedupEnabled
+	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false) || isUsersTableDedupEnabled
 }
 
 func Init() {
@@ -639,8 +644,8 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -695,8 +700,8 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -734,8 +739,8 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.BQContext = context.Background()
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	return err
 }
@@ -743,8 +748,8 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	bq.Warehouse = warehouse
 	bq.Db, err = bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -783,8 +788,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
@@ -1019,8 +1024,8 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
-		projectID:   bq.ProjectID,
-		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		ProjectID:   bq.ProjectID,
+		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return client.Client{}, err

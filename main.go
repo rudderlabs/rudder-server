@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"runtime/pprof"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
@@ -116,7 +117,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-	config.RegisterBoolConfigVariable(true, &legacyAppHandler, false, "LegacyAppHandler")
+	config.RegisterBoolConfigVariable(false, &legacyAppHandler, false, "LegacyAppHandler")
 }
 
 func Init() {
@@ -202,7 +203,7 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	operationmanager.Init()
 	operationmanager.Init2()
 	ratelimiter.Init()
@@ -275,7 +276,7 @@ func Run(ctx context.Context) {
 	}
 
 	backendconfig.Setup(configEnvHandler)
-	backendconfig.DefaultBackendConfig.StartPolling(backendconfig.GetWorkspaceToken())
+	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -297,7 +298,7 @@ func Run(ctx context.Context) {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
-				if legacyAppHandler{
+				if legacyAppHandler {
 					return appHandler.LegacyStart(ctx, options)
 				}
 				return appHandler.StartRudderCore(ctx, options)
@@ -321,7 +322,7 @@ func Run(ctx context.Context) {
 
 	g.Go(func() error {
 		<-ctx.Done()
-		backendconfig.DefaultBackendConfig.StopPolling()
+		backendconfig.DefaultBackendConfig.Stop()
 		return nil
 	})
 

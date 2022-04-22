@@ -14,3 +14,7 @@ junit*.xml
 **/profile.out
 .idea/*
 build/regulation-worker
+*.out.*
+*.out
+coverage.txt
+coverage.html

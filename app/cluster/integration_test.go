@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -162,7 +163,7 @@ func initJobsDB() {
 	archiver.Init()
 	stats.Setup()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 	processor.Init()
@@ -194,12 +195,12 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt": &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI)
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{})
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -231,16 +232,16 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).AnyTimes()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
 		GatewayDB:     gwDB,
 		RouterDB:      rtDB,
 		BatchRouterDB: brtDB,
 		ErrorDB:       errDB,
 
-		Processor: processor,
-		Router:    router,
-		Provider:  provider,
+		Processor:       processor,
+		Router:          router,
+		Provider:        provider,
 		MultiTenantStat: mtStat,
 	}
 
@@ -253,8 +254,9 @@ func TestDynamicClusterManager(t *testing.T) {
 	}()
 
 	chACK := make(chan bool)
-	provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 		close(chACK)
+		return nil
 	}))
 
 	require.Eventually(t, func() bool {
