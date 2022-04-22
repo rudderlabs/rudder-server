@@ -74,8 +74,14 @@ func Init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	config.RegisterDurationConfigVariable(10, &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(2, &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(
+		10, &kafkaDialTimeout, false, time.Second,
+		[]string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...,
+	)
+	config.RegisterDurationConfigVariable(
+		2, &kafkaWriteTimeout, false, time.Second,
+		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
+	)
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 }
 
@@ -131,7 +137,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Kafka] Error while marshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
@@ -178,10 +186,14 @@ func setSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 	case "plain":
 		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 	case "sha512":
-		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &xdgSCRAMClient{HashGeneratorFcn: SHA512} }
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &xdgSCRAMClient{HashGeneratorFcn: SHA512}
+		}
 		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
 	case "sha256":
-		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &xdgSCRAMClient{HashGeneratorFcn: SHA256} }
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &xdgSCRAMClient{HashGeneratorFcn: SHA256}
+		}
 		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
 	default:
 		return fmt.Errorf("[Kafka] invalid SASL type %s", destConfig.SaslType)
@@ -198,11 +210,15 @@ func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.
 	var destConfig = AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 
 	hostName := destConfig.BootstrapServer
@@ -271,7 +287,9 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 	return msg
 }
 
-func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
+func prepareBatchedMessage(
+	topic string, batch []map[string]interface{}, timestamp time.Time,
+) (batchMessage []*sarama.ProducerMessage, err error) {
 	var batchedMessage []*sarama.ProducerMessage
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
@@ -345,7 +363,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	return sendMessage(jsonData, kafkaProducer, topic)
 }
 
-func sendBatchedMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string) (int, string, string) {
+func sendBatchedMessage(
+	jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string,
+) (int, string, string) {
 	timestamp := time.Now()
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
