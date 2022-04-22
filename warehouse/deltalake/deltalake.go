@@ -663,7 +663,6 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 	// Drop staging tables
 	dl.dropStagingTables(filteredTablesNames)
-	return
 }
 
 // connectToWarehouse returns the database connection configured with CredentialsT
