@@ -150,7 +150,7 @@ var masterBackupEnabled bool
 var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
-func (jd *HandleT) initGlobalDBHandle() {
+func (*HandleT) initGlobalDBHandle() {
 	if globalDBHandle != nil {
 		return
 	}
@@ -165,7 +165,7 @@ func (jd *HandleT) initGlobalDBHandle() {
 }
 
 //BeginGlobalTransaction starts a transaction on the globalDBHandle to be used across jobsdb instances
-func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
+func (*HandleT) BeginGlobalTransaction() *sql.Tx {
 	txn, err := globalDBHandle.Begin()
 	if err != nil {
 		panic(err)
@@ -175,7 +175,7 @@ func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
 }
 
 //CommitTransaction commits the passed transaction
-func (jd *HandleT) CommitTransaction(txn *sql.Tx) {
+func (*HandleT) CommitTransaction(txn *sql.Tx) {
 	err := txn.Commit()
 	if err != nil {
 		panic(err)
@@ -2001,7 +2001,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	}
 }
 
-func (jd *HandleT) copyJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
+func (*HandleT) copyJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 
