@@ -306,7 +306,7 @@ type MigrationState struct {
 	dsForNewEvents             dataSetT
 	dsForImport                dataSetT
 	lastDsForExport            dataSetT
-	importLock                 sync.RWMutex
+	importLock                 *sync.RWMutex
 	migrationMode              string
 	fromVersion                int
 	toVersion                  int
@@ -677,6 +677,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 		// default values:
 		migrationState: MigrationState{
 			migrationMode: "",
+			importLock:    &sync.RWMutex{},
 		},
 		dsRetentionPeriod: 0,
 	}
