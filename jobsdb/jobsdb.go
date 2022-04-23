@@ -1966,7 +1966,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 			where
 			  (
 				s.job_state not in (
-				  'executing', 'aborted', 'succeeded',
+				  'aborted', 'succeeded',
 				  'migrated'
 				)
 				or s.job_id is null
