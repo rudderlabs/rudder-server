@@ -13,6 +13,7 @@ service Warehouse {
   rpc TriggerWHUpload (WHUploadRequest) returns (TriggerWhUploadsResponse);
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
+  rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
 }
 
 message Pagination {
@@ -86,4 +87,16 @@ message WHValidationRequest {
 message WHValidationResponse {
   string error = 1;
   string data = 2;
+}
+
+message RetryWHUploadsRequest{
+  string workspace_id = 1;
+  string destination_id = 2;
+  int64 intervalInHours = 3;
+  repeated int64 uploadIds = 4;
+}
+
+message RetryWHUploadsResponse {
+  string message = 1;
+  int32 status_code = 2;
 }
