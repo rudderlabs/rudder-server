@@ -180,9 +180,11 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	var modeProvider cluster.ChangeEventProvider
 	switch options.ClusterManager {
 	case servermode.ETCDClusterManager:
+		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
 	case servermode.StaticClusterManager:
 		// FIXME: hacky way to determine servermode
+		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
 			modeProvider = state.NewStaticProvider(servermode.NormalMode)
 		} else {
