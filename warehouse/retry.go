@@ -2,14 +2,10 @@ package warehouse
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/proto/warehouse"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
-	"time"
 )
 
 type RetryReq struct {
@@ -39,120 +35,61 @@ func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsRespon
 	}
 
 	// Generating query
-	query := retryReq.getQueryToRetry(`id, source_id, destination_id, metadata`)
-	retryReq.API.log.Debug(query)
-
-	// Getting corresponding uploads
-	uploadsToRetry, err := retryReq.getUploadsToRetry(query)
-	if err != nil {
-		return
-	}
-
-	// Checking if there are no upload jobs to be retried
-	if len(uploadsToRetry) == 0 {
-		err = nil
-		response = &proto.RetryWHUploadsResponse{
-			Message:    "No retried uploads to sync for this destination",
-			StatusCode: 200,
-		}
-		return
-	}
+	retryQuery := retryReq.queryToRetry()
 
 	// Retrying uploads
-	err = retryReq.retryUploads(uploadsToRetry)
+	uploadsRetried, err := retryReq.retryUploads(retryQuery)
 	if err != nil {
 		return
 	}
 
 	response = &proto.RetryWHUploadsResponse{
-		Message:    fmt.Sprintf("Retried successfully %d syncs", len(uploadsToRetry)),
+		Message:    retryReq.successMessage(uploadsRetried),
 		StatusCode: 200,
 	}
 	return
 }
 
-func (retryReq *RetryReq) getQueryToRetry(selectedFields string) string {
+func (retryReq *RetryReq) queryToRetry() (sqlStatement string) {
+	var whereClauses string
 	if len(retryReq.UploadIds) != 0 {
-		return fmt.Sprintf(`SELECT %s FROM %s WHERE id IN (%s)`,
-			selectedFields,
-			warehouseutils.WarehouseUploadsTable,
-			strings.Trim(strings.Replace(fmt.Sprint(retryReq.UploadIds), " ", ",", -1), "[]"),
-		)
+		whereClauses = fmt.Sprintf(`id IN (%s)`, strings.Trim(strings.Replace(fmt.Sprint(retryReq.UploadIds), " ", ",", -1), "[]"))
+	} else {
+		whereClauses = fmt.Sprintf(`destination_id = '%s' AND created_at > INTERVAL - %d HOUR`, retryReq.DestinationID, retryReq.IntervalInHours)
 	}
-	return fmt.Sprintf(`SELECT %s FROM %s WHERE destination_id = '%s' AND created_at > INTERVAL - %d HOUR`,
-		selectedFields, warehouseutils.WarehouseUploadsTable,
-		retryReq.DestinationID,
-		retryReq.IntervalInHours,
+	sqlStatement = fmt.Sprintf(`UPDATE wh_uploads
+		SET
+			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
+			status = 'waiting',
+			updated_at = NOW()
+		WHERE %s
+        RETURNING id`,
+		whereClauses,
 	)
-}
-
-func (retryReq *RetryReq) getUploadsToRetry(retryStatement string) (uploads []UploadJobT, err error) {
-	rows, err := retryReq.API.dbHandle.Query(retryStatement)
-	if err == sql.ErrNoRows {
-		err = nil
-		return
-	}
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var uploadJob UploadJobT
-		var upload UploadT
-
-		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
-		if err != nil {
-			return
-		}
-
-		uploadJob.upload = &upload
-		uploadJob.dbHandle = retryReq.API.dbHandle
-		uploads = append(uploads, uploadJob)
-	}
+	retryReq.API.log.Debug(sqlStatement)
 	return
 }
 
-func (retryReq *RetryReq) retryUploads(uploads []UploadJobT) (err error) {
-	// Begin transaction
-	txn, err := retryReq.API.dbHandle.Begin()
+func (retryReq *RetryReq) retryUploads(sqlStatement string) (rowsAffected int64, err error) {
+	var res sql.Result
+	res, err = retryReq.API.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		return
 	}
 
-	// Updating status, metadata, updated_at for retried jobs
-	for _, upload := range uploads {
-		upload.uploadLock.Lock()
-		defer upload.uploadLock.Unlock()
-
-		var metadata map[string]interface{}
-		unmarshallErr := json.Unmarshal(upload.upload.Metadata, &metadata)
-		if unmarshallErr != nil {
-			metadata = make(map[string]interface{})
-		}
-		metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
-		metadata["retried"] = true
-		metadata["priority"] = 50
-
-		metadataJSON, err := json.Marshal(metadata)
-		if err != nil {
-			return err
-		}
-
-		uploadColumns := []UploadColumnT{
-			{Column: "status", Value: Waiting},
-			{Column: "metadata", Value: metadataJSON},
-			{Column: "updated_at", Value: timeutil.Now()},
-		}
-		err = upload.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-		if err != nil {
-			return
-		}
+	// Getting rows affected
+	rowsAffected, err = res.RowsAffected()
+	if err != nil {
+		return
 	}
-
-	// Committing transaction
-	err = txn.Commit()
 	return
+}
+
+func (retryReq *RetryReq) successMessage(uploadsRetried int64) string {
+	if uploadsRetried == 0 {
+		return "No retried uploads to sync for this destination"
+	}
+	return fmt.Sprintf("Retried successfully %d syncs", uploadsRetried)
 }
 
 // Retry request should trigger on these cases.
