@@ -90,8 +90,8 @@ message WHValidationResponse {
 }
 
 message RetryWHUploadsRequest{
-  string workspace_id = 1;
-  string destination_id = 2;
+  string workspaceId = 1;
+  string destinationId = 2;
   int64 intervalInHours = 3;
   repeated int64 uploadIds = 4;
 }
