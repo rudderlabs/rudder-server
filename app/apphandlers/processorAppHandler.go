@@ -3,6 +3,7 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"net/http"
 	"strconv"
 	"time"
@@ -27,8 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
@@ -178,14 +177,21 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			})
 		}
 	}
-
-	var modeProvider *state.StaticProvider
-	// FIXME: hacky way to determine servermode
-	if enableProcessor && enableRouter {
-		modeProvider = state.NewStaticProvider(servermode.NormalMode)
-	} else {
-		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+	var modeProvider cluster.ChangeEventProvider
+	switch options.ClusterManager {
+	case servermode.ETCDClusterManager:
+		modeProvider = state.NewETCDDynamicProvider()
+	case servermode.StaticClusterManager:
+		// FIXME: hacky way to determine servermode
+		if enableProcessor && enableRouter {
+			modeProvider = state.NewStaticProvider(servermode.NormalMode)
+		} else {
+			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+		}
+	case "env":
+		return nil
 	}
+
 
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
 

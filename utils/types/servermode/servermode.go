@@ -7,6 +7,9 @@ type Mode string
 const (
 	NormalMode   Mode = "NORMAL"
 	DegradedMode Mode = "DEGRADED"
+
+	ETCDClusterManager = "ETCD"
+	StaticClusterManager = "Static"
 )
 
 type ChangeEvent struct {

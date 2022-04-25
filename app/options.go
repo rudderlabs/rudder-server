@@ -2,6 +2,7 @@ package app
 
 import (
 	"flag"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"os"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -9,13 +10,14 @@ import (
 
 // Options contains application's initialisation options
 type Options struct {
-	NormalMode    bool
-	DegradedMode  bool
-	MigrationMode string
-	ClearDB       bool
-	Cpuprofile    string
-	Memprofile    string
-	VersionFlag   bool
+	NormalMode     bool
+	DegradedMode   bool
+	MigrationMode  string
+	ClearDB        bool
+	Cpuprofile     string
+	Memprofile     string
+	VersionFlag    bool
+	ClusterManager string
 }
 
 // LoadOptions loads application's initialisation options based on command line flags and environment
@@ -34,6 +36,10 @@ func LoadOptions() *Options {
 	} else if serverMode == "degraded" {
 		*degradedMode = true
 	}
+	clusterManager := os.Getenv("RSERVER_CLUSTER_MANAGER")
+	if clusterManager == "" {
+		clusterManager = servermode.StaticClusterManager
+	}
 
 	flag.Parse()
 
@@ -45,6 +51,7 @@ func LoadOptions() *Options {
 		Cpuprofile:    *cpuprofile,
 		Memprofile:    *memprofile,
 		VersionFlag:   *versionFlag,
+		ClusterManager: clusterManager,
 	}
 }
 
