@@ -177,7 +177,7 @@ func TestProcessorManager(t *testing.T) {
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty := tempDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -227,7 +227,7 @@ func TestProcessorManager(t *testing.T) {
 		processor.Start()
 		defer processor.Stop()
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			return len(tempDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -252,14 +252,14 @@ func TestProcessorManager(t *testing.T) {
 		processor.Start()
 		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		unprocessedListEmpty = tempDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			return len(tempDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},

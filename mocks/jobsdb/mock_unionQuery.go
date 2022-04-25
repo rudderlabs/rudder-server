@@ -75,7 +75,7 @@ func (mr *MockMultiTenantJobsDBMockRecorder) CommitTransaction(arg0 interface{})
 }
 
 // DeleteExecuting mocks base method.
-func (m *MockMultiTenantJobsDB) DeleteExecuting(arg0 jobsdb.GetQueryParamsT) {
+func (m *MockMultiTenantJobsDB) DeleteExecuting(arg0 *jobsdb.GetQueryParamsT) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "DeleteExecuting", arg0)
 }
@@ -87,7 +87,7 @@ func (mr *MockMultiTenantJobsDBMockRecorder) DeleteExecuting(arg0 interface{}) *
 }
 
 // GetAllJobs mocks base method.
-func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 map[string]int, arg1 jobsdb.GetQueryParamsT, arg2 int) []*jobsdb.JobT {
+func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 map[string]int, arg1 *jobsdb.GetQueryParamsT, arg2 int) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAllJobs", arg0, arg1, arg2)
 	ret0, _ := ret[0].([]*jobsdb.JobT)

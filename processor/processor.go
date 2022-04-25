@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -71,6 +72,7 @@ type HandleT struct {
 	storeTimeout        time.Duration
 	statsFactory        stats.Stats
 	stats               processorStats
+	payloadLimit        int64
 }
 
 type processorStats struct {
@@ -300,6 +302,7 @@ func (proc *HandleT) Setup(
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 
@@ -2112,10 +2115,12 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	if !enableEventCount {
 		eventCount = 0
 	}
-	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	payloadLimit := proc.payloadLimit
+	unprocessedList := proc.gatewayDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
 		JobCount:         maxEventsToProcess,
 		EventCount:       eventCount,
+		PayloadLimit:     payloadLimit,
 	})
 	totalEvents := 0
 	totalPayloadBytes := 0
@@ -2441,7 +2446,7 @@ func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
+	proc.gatewayDB.DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

@@ -84,7 +84,7 @@ type GetQueryParamsT struct {
 	StateFilters                  []string
 	JobCount                      int
 	EventCount                    int
-	PayloadSize                   int64
+	PayloadLimit                  int64
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
 	Before                        time.Time
@@ -118,16 +118,16 @@ type JobsDB interface {
 	ReleaseUpdateJobStatusLocks()
 	GetPileUpCounts(statMap map[string]map[string]int)
 
-	GetToRetry(params GetQueryParamsT) []*JobT
-	GetWaiting(params GetQueryParamsT) []*JobT
-	GetProcessed(params GetQueryParamsT) []*JobT
-	GetUnprocessed(params GetQueryParamsT) []*JobT
-	GetExecuting(params GetQueryParamsT) []*JobT
-	GetImportingList(params GetQueryParamsT) []*JobT
+	GetToRetry(params *GetQueryParamsT) []*JobT
+	GetWaiting(params *GetQueryParamsT) []*JobT
+	GetProcessed(params *GetQueryParamsT) []*JobT
+	GetUnprocessed(params *GetQueryParamsT) []*JobT
+	GetExecuting(params *GetQueryParamsT) []*JobT
+	GetImportingList(params *GetQueryParamsT) []*JobT
 
 	Status() interface{}
 	GetIdentifier() string
-	DeleteExecuting(params GetQueryParamsT)
+	DeleteExecuting(params *GetQueryParamsT)
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalDeleteEntry(opID int64)
@@ -1732,11 +1732,11 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	defer jd.dsListLock.RUnlock()
 
 	//Unprocessed jobs
-	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, GetQueryParamsT{})
+	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, &GetQueryParamsT{})
 
 	//Jobs which haven't finished processing
 	retryList := jd.getProcessedJobsDS(srcDS, true,
-		0, GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
+		0, &GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	jobsToMigrate := append(unprocessedList, retryList...)
 	noJobsMigrated = len(jobsToMigrate)
 
@@ -2253,7 +2253,7 @@ limitCount == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, params *GetQueryParamsT) []*JobT {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -2307,7 +2307,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		sqlStatement := fmt.Sprintf(`SELECT
                                   jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
                                   jobs.created_at, jobs.expire_at, jobs.workspace_id,
+								  pg_column_size(jobs.event_payload) as payload_size,
 								  sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
+								  sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
                                   job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
@@ -2354,9 +2356,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 			args = append(args, params.EventCount)
 		}
 
-		if params.PayloadSize > 0 {
-			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size + 1 <= $%d`, len(args)+1))
-			args = append(args, params.PayloadSize)
+		if params.PayloadLimit > 0 {
+			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size <= $%d`, len(args)+1))
+			args = append(args, params.PayloadLimit)
 		}
 
 		if len(wrapQuery) > 0 {
@@ -2399,7 +2401,7 @@ count == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, params *GetQueryParamsT) []*JobT {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
@@ -2473,9 +2475,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		args = append(args, params.EventCount)
 	}
 
-	if params.PayloadSize > 0 {
-		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size + 1 <= $%d`, len(args)+1))
-		args = append(args, params.PayloadSize)
+	if params.PayloadLimit > 0 {
+		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size <= $%d`, len(args)+1))
+		args = append(args, params.PayloadLimit)
 	}
 
 	if len(wrapQuery) > 0 {
@@ -3577,7 +3579,7 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetUnprocessed(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3595,7 +3597,7 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getUnprocessed(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3627,8 +3629,10 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	}
 
 	limitByPayloadSize := false
-	if params.PayloadSize > 0 {
+	if params.PayloadLimit > 0 {
 		limitByPayloadSize = true
+	} else if params.PayloadLimit < 0 {
+		return outJobs
 	}
 
 	for _, ds := range dsList {
@@ -3656,9 +3660,9 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 			for _, j := range jobs {
 				sumPayloadSize += j.PayloadSize
 			}
-			params.PayloadSize -= sumPayloadSize
-			// received event count could exceed the requested event count, by the spillover of the last selected job
-			if params.PayloadSize <= 0 {
+			params.PayloadLimit -= sumPayloadSize
+			// stop if received payload sizes exceeds the requested payload limit
+			if params.PayloadLimit <= 0 {
 				break
 			}
 		}
@@ -3667,7 +3671,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	return outJobs
 }
 
-func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetImportingList(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3684,7 +3688,7 @@ func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
 getImportingList returns events which need are Importing.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getImportingList(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getImportingList(params *GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 
@@ -3693,7 +3697,7 @@ deleteJobStatus deletes the latest status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
-func (jd *HandleT) deleteJobStatus(params GetQueryParamsT) {
+func (jd *HandleT) deleteJobStatus(params *GetQueryParamsT) {
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
@@ -3708,7 +3712,7 @@ func (jd *HandleT) deleteJobStatus(params GetQueryParamsT) {
 if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTxn deletes the latest status of a batch of jobs
 */
-func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params GetQueryParamsT) error {
+func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params *GetQueryParamsT) error {
 	if params.JobCount == 0 {
 		return nil
 	}
@@ -3753,7 +3757,7 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params Get
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, params GetQueryParamsT) (int, error) {
+func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, params *GetQueryParamsT) (int, error) {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -3828,7 +3832,7 @@ realises on the caller to update it. That means that successive calls to GetProc
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetProcessed(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3862,8 +3866,10 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	}
 
 	limitByPayloadSize := false
-	if params.PayloadSize > 0 {
+	if params.PayloadLimit > 0 {
 		limitByPayloadSize = true
+	} else if params.PayloadLimit < 0 {
+		return outJobs
 	}
 
 	for _, ds := range dsList {
@@ -3894,9 +3900,9 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 			for _, j := range jobs {
 				sumPayloadSize += j.PayloadSize
 			}
-			params.PayloadSize -= sumPayloadSize
-			// received event count could exceed the requested event count, by the spillover of the last selected job
-			if params.PayloadSize <= 0 {
+			params.PayloadLimit -= sumPayloadSize
+			// stop if received payload sizes exceeds the requested payload limit
+			if params.PayloadLimit <= 0 {
 				break
 			}
 		}
@@ -3909,7 +3915,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetToRetry(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3927,7 +3933,7 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 getToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getToRetry(params *GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 
@@ -3935,7 +3941,7 @@ func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
 GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetWaiting(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3952,11 +3958,11 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getWaiting(params *GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 
-func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetExecuting(params *GetQueryParamsT) []*JobT {
 	if params.JobCount == 0 {
 		return []*JobT{}
 	}
@@ -3972,7 +3978,7 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 /*
 getExecuting returns events which  in executing state
 */
-func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getExecuting(params *GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 
@@ -3980,7 +3986,7 @@ func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
+func (jd *HandleT) DeleteExecuting(params *GetQueryParamsT) {
 	if params.JobCount == 0 {
 		return
 	}

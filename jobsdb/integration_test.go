@@ -161,7 +161,7 @@ func TestJobsDB(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
-	unprocessedListEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -171,7 +171,7 @@ func TestJobsDB(t *testing.T) {
 	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
-	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -193,7 +193,7 @@ func TestJobsDB(t *testing.T) {
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 
-	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList = jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -216,7 +216,7 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		t.Log("GetUnprocessed with job count limit")
-		JobLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		JobLimitList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -224,7 +224,7 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, jobCount, len(JobLimitList))
 
 		t.Log("GetUnprocessed with event count limit")
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 			EventCount:       eventsPerJob * 20,
@@ -237,7 +237,7 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		t.Log("Repeat read")
-		eventLimitListRepeat := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitListRepeat := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 			EventCount:       eventsPerJob * 20,
@@ -266,14 +266,14 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Log("GetUnprocessed with job count limit")
-		retryJobLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+		retryJobLimitList := jobDB.GetToRetry(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 		})
 		require.Equal(t, jobCount, len(retryJobLimitList))
 
 		t.Log("GetToRetry with event count limit")
-		retryEventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+		retryEventLimitList := jobDB.GetToRetry(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 			EventCount:       eventsPerJob * 20,
@@ -319,7 +319,7 @@ func TestJobsDB(t *testing.T) {
 		t.Log("Using event count that will cause spill-over, not exact for ds1, but remainder suitable for ds2")
 		trickyEventCount := (eventsPerJob_ds1 * (jobCountPerDS - 1)) + eventsPerJob_ds2
 
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobCount:         100,
 			EventCount:       trickyEventCount,
@@ -330,7 +330,7 @@ func TestJobsDB(t *testing.T) {
 
 		t.Log("Prepare GetToRetry")
 		{
-			allJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			allJobs := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         1000,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -357,7 +357,7 @@ func TestJobsDB(t *testing.T) {
 
 		t.Log("Test spill over with GetToRetry")
 		{
-			eventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+			eventLimitList := jobDB.GetToRetry(&jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobCount:         100,
 				EventCount:       trickyEventCount,
@@ -367,6 +367,43 @@ func TestJobsDB(t *testing.T) {
 			require.Equal(t, jobCountPerDS, len(eventLimitList))
 		}
 
+	})
+
+	t.Run("limit by total payload size", func(t *testing.T) {
+		customVal := "MOCKDS"
+
+		triggerAddNewDS := make(chan time.Time)
+
+		maxDSSize := 2
+		jobDB := jobsdb.HandleT{
+			MaxDSSize: &maxDSSize,
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+		}
+
+		jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+		defer jobDB.TearDown()
+
+		payload_size := int64(len(genJobs(customVal, 2, 1)[0].EventPayload))
+		require.NoError(t, jobDB.Store(genJobs(customVal, 2, 1)))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		require.NoError(t, jobDB.Store(genJobs(customVal, 2, 1)))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		payload_limit := 3 * payload_size
+		eventLimitList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobCount:         100,
+			PayloadLimit:     payload_limit,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+
+		requireSequential(t, eventLimitList)
+		require.Equal(t, 3, len(eventLimitList))
 	})
 }
 
@@ -413,7 +450,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	for _, val := range err {
 		require.Equal(t, "", val)
 	}
-	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobCount:         1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -469,7 +506,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		timeout := time.After(time.Second * time.Duration(len(expectedJobs)))
 		g.Go(func() error {
 			for {
-				unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				unprocessedList := jobDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal},
 					JobCount:         1,
 				})
@@ -563,7 +600,7 @@ func BenchmarkLifecycle(b *testing.B) {
 func consume(t testing.TB, db *jobsdb.HandleT, count int) {
 	t.Helper()
 
-	unprocessedList := db.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList := db.GetUnprocessed(&jobsdb.GetQueryParamsT{
 		JobCount: count,
 	})
 
