@@ -105,6 +105,7 @@ func NewTransformer() *HandleT {
 var (
 	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
 	retrySleep                                                           time.Duration
+	timeoutDuration                                                      time.Duration
 	pkgLogger                                                            logger.LoggerI
 )
 
@@ -120,6 +121,7 @@ func loadConfig() {
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
 }
 
 type TransformerResponseT struct {
@@ -156,6 +158,7 @@ func (trans *HandleT) Setup() {
 				MaxIdleConnsPerHost: maxHTTPIdleConnections,
 				IdleConnTimeout:     time.Minute,
 			},
+			Timeout: timeoutDuration,
 		}
 	}
 }
