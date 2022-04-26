@@ -11,8 +11,10 @@ const (
 )
 
 const (
-	defaultDialTimeout = 10 * time.Second
-	defaultOpTimeout   = 2 * time.Second
+	defaultDialTimeout  = 10 * time.Second
+	defaultBatchTimeout = 10 * time.Second
+	defaultWriteTimeout = 10 * time.Second
+	defaultReadTimeout  = 10 * time.Second
 )
 
 // Option is an abstraction used to allow the configuration of a client
@@ -25,18 +27,26 @@ type withOption struct{ setup func(*config) }
 func (w withOption) apply(c *config) { w.setup(c) }
 
 type config struct {
-	dialTimeout time.Duration
-	opTimeout   time.Duration
-	tlsConfig   *tlsConfig
-	saslConfig  *saslConfig
+	dialTimeout  time.Duration
+	batchTimeout time.Duration
+	writeTimeout time.Duration
+	readTimeout  time.Duration
+	tlsConfig    *tlsConfig
+	saslConfig   *saslConfig
 }
 
 func (c *config) defaults() {
 	if c.dialTimeout < 1 {
 		c.dialTimeout = defaultDialTimeout
 	}
-	if c.opTimeout < 1 {
-		c.opTimeout = defaultOpTimeout
+	if c.batchTimeout < 1 {
+		c.batchTimeout = defaultBatchTimeout
+	}
+	if c.writeTimeout < 1 {
+		c.writeTimeout = defaultWriteTimeout
+	}
+	if c.readTimeout < 1 {
+		c.readTimeout = defaultReadTimeout
 	}
 }
 
@@ -58,10 +68,24 @@ func WithDialTimeout(t time.Duration) Option {
 	}}
 }
 
-// WithOpTimeout sets the maximum amount of time for operations to complete (e.g. read, write, wait for batches)
-func WithOpTimeout(t time.Duration) Option {
+// WithBatchTimeout sets the maximum amount of time for batch operations to complete
+func WithBatchTimeout(t time.Duration) Option {
 	return withOption{setup: func(c *config) {
-		c.opTimeout = t
+		c.batchTimeout = t
+	}}
+}
+
+// WithWriteTimeout sets the maximum amount of time for write operations to complete
+func WithWriteTimeout(t time.Duration) Option {
+	return withOption{setup: func(c *config) {
+		c.writeTimeout = t
+	}}
+}
+
+// WithReadTimeout sets the maximum amount of time for read operations to complete
+func WithReadTimeout(t time.Duration) Option {
+	return withOption{setup: func(c *config) {
+		c.readTimeout = t
 	}}
 }
 

@@ -18,9 +18,9 @@ func (c *client) NewProducer(topic string) *Producer {
 		writer: &kafka.Writer{
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{},
-			BatchTimeout:           c.config.opTimeout,
-			ReadTimeout:            c.config.opTimeout,
-			WriteTimeout:           c.config.opTimeout,
+			BatchTimeout:           c.config.batchTimeout,
+			WriteTimeout:           c.config.writeTimeout,
+			ReadTimeout:            c.config.readTimeout,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,

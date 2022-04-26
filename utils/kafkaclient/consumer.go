@@ -45,7 +45,7 @@ func (c *client) NewConsumer(topic string, opts ...ConsumerOption) *Consumer {
 
 	conf.Topic = topic
 	conf.Dialer = c.dialer
-	conf.MaxWait = c.config.opTimeout
+	conf.MaxWait = c.config.batchTimeout
 
 	return &Consumer{
 		reader: kafka.NewReader(conf),
