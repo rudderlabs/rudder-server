@@ -97,6 +97,14 @@ func New(network, address string, opts ...Option) (*client, error) {
 	}, nil
 }
 
+// Network returns name of the network (for example, "tcp", "udp")
+// see net.Addr interface
+func (c *client) Network() string { return c.network }
+
+// String returns string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
+// see net.Addr interface
+func (c *client) String() string { return c.address }
+
 // Ping is used to check the connectivity only, then it discards the connection
 func (c *client) Ping(ctx context.Context) error {
 	conn, err := c.dialer.DialContext(ctx, c.network, c.address)

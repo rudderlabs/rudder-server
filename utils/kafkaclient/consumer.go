@@ -43,6 +43,7 @@ func (c *client) NewConsumer(topic string, opts ...ConsumerOption) *Consumer {
 		opt.apply(&conf)
 	}
 
+	conf.Brokers = []string{c.address}
 	conf.Topic = topic
 	conf.Dialer = c.dialer
 	conf.MaxWait = c.config.batchTimeout

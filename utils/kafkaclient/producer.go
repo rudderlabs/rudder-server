@@ -16,6 +16,7 @@ type Producer struct {
 func (c *client) NewProducer(topic string) *Producer {
 	return &Producer{
 		writer: &kafka.Writer{
+			Addr:                   c,
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{},
 			BatchTimeout:           c.config.batchTimeout,
