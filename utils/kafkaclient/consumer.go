@@ -2,8 +2,18 @@ package kafkaclient
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/segmentio/kafka-go"
+)
+
+type ConsumerStartOffset int64
+
+const (
+	// LastOffset is the most recent offset available for a partition
+	LastOffset ConsumerStartOffset = iota
+	// FirstOffset is the least recent offset available for a partition
+	FirstOffset
 )
 
 // ConsumerOption is an abstraction used to allow the configuration of consumers
@@ -28,6 +38,23 @@ func WithConsumerGroup(group string) ConsumerOption {
 func WithPartition(partition int) ConsumerOption {
 	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
 		c.Partition = partition
+	}}
+}
+
+// WithStartOffset determines from whence the consumer group should begin consuming when it finds a partition without a
+// committed offset.
+// If non-zero, it must be set to one of FirstOffset or LastOffset.
+// Only used when WithConsumerGroup is set.
+func WithStartOffset(offset ConsumerStartOffset) ConsumerOption {
+	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
+		switch offset {
+		case LastOffset:
+			c.StartOffset = kafka.LastOffset
+		case FirstOffset:
+			c.StartOffset = kafka.FirstOffset
+		default:
+			panic(fmt.Errorf("consumer start offset %+v out of the known domain", offset))
+		}
 	}}
 }
 
