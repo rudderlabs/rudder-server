@@ -74,6 +74,7 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 		WorkspaceID:     req.WorkspaceId,
 		DestinationID:   req.DestinationId,
 		IntervalInHours: req.IntervalInHours,
+		ForceRetry:      req.ForceRetry,
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}

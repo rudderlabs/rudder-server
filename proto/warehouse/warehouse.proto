@@ -93,7 +93,8 @@ message RetryWHUploadsRequest{
   string workspaceId = 1;
   string destinationId = 2;
   int64 intervalInHours = 3;
-  repeated int64 uploadIds = 4;
+  bool forceRetry = 4;
+  repeated int64 uploadIds = 5;
 }
 
 message RetryWHUploadsResponse {

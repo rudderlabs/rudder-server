@@ -15,7 +15,8 @@ type RetryReq struct {
 	IntervalInHours int64   // Optional, if provided we will retry based on the interval provided
 	UploadIds       []int64 // Optional, if provided we will retry the upload ids provided
 
-	API UploadAPIT
+	API        UploadAPIT
+	ForceRetry bool
 }
 
 func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsResponse, err error) {
@@ -23,7 +24,7 @@ func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsRespon
 	err = retryReq.validateReq()
 	defer func() {
 		if err != nil {
-			retryReq.API.log.Errorf("WH: Error occurred while retrying upload jobs with error: ", err.Error())
+			retryReq.API.log.Errorf("WH: Error occurred while retrying upload jobs with error: %s", err.Error())
 			response = &proto.RetryWHUploadsResponse{
 				Message:    err.Error(),
 				StatusCode: 400,
@@ -51,22 +52,28 @@ func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsRespon
 }
 
 func (retryReq *RetryReq) queryToRetry() (sqlStatement string) {
-	var whereClauses string
+	var retryClause, statusClause string
 	if len(retryReq.UploadIds) != 0 {
-		whereClauses = fmt.Sprintf(`id IN (%s)`, strings.Trim(strings.Replace(fmt.Sprint(retryReq.UploadIds), " ", ",", -1), "[]"))
+		retryClause = fmt.Sprintf(`id IN (%s)`, strings.Trim(strings.Replace(fmt.Sprint(retryReq.UploadIds), " ", ",", -1), "[]"))
 	} else {
-		whereClauses = fmt.Sprintf(`destination_id = '%s' AND created_at > INTERVAL - %d HOUR`, retryReq.DestinationID, retryReq.IntervalInHours)
+		retryClause = fmt.Sprintf(`destination_id = '%s' AND created_at > NOW() - INTERVAL '%d HOUR'`, retryReq.DestinationID, retryReq.IntervalInHours)
 	}
-	sqlStatement = fmt.Sprintf(`UPDATE wh_uploads
+	if !retryReq.ForceRetry {
+		statusClause = fmt.Sprintf("AND status != '%s'", ExportedData)
+	}
+
+	sqlStatement = fmt.Sprintf(`
+		UPDATE wh_uploads
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
 			status = 'waiting',
 			updated_at = NOW()
-		WHERE %s
+		WHERE %[1]s %[2]s
         RETURNING id`,
-		whereClauses,
+		retryClause,
+		statusClause,
 	)
-	retryReq.API.log.Debug(sqlStatement)
+	retryReq.API.log.Info(sqlStatement)
 	return
 }
 
