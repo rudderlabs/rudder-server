@@ -19,10 +19,6 @@ const (
 	ScramSHA512
 )
 
-const (
-	defaultDialTimeout = 10 * time.Second
-)
-
 // Option is an abstraction used to allow the configuration of a client
 type Option interface {
 	apply(*config)
@@ -41,7 +37,7 @@ type config struct {
 
 func (c *config) defaults() {
 	if c.dialTimeout < 1 {
-		c.dialTimeout = defaultDialTimeout
+		c.dialTimeout = 10 * time.Second
 	}
 }
 
@@ -98,7 +94,7 @@ func (c *saslConfig) build() (mechanism sasl.Mechanism, err error) {
 	}
 }
 
-// WithClientID is used to set a unique identifier for client connections established by this client Dialer
+// WithClientID is used to set a unique identifier for client connections established by this client's Dialer
 func WithClientID(clientID string) Option {
 	return withOption{setup: func(c *config) {
 		c.clientID = &clientID

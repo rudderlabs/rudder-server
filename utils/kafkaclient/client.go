@@ -38,8 +38,8 @@ func New(network, address string, opts ...Option) (*client, error) {
 	for _, opt := range opts {
 		opt.apply(&conf)
 	}
-
 	conf.defaults()
+
 	dialer := kafka.Dialer{
 		DualStack: true,
 		Timeout:   conf.dialTimeout,
