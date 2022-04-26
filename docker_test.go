@@ -326,7 +326,7 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup, &logger{})
 	if err != nil {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
@@ -1632,3 +1632,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		}
 	}
 }
+
+type logger struct{}
+
+func (l *logger) Log(args ...interface{}) { log.Println(args...) }

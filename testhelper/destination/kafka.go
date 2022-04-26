@@ -15,13 +15,24 @@ import (
 
 type KafkaResource struct {
 	Port string
+
+	pool      *dockertest.Pool
+	container *dockertest.Resource
+}
+
+func (k *KafkaResource) Destroy() error {
+	return k.pool.Purge(k.container)
+}
+
+type logger interface {
+	Log(...interface{})
 }
 
 type deferer interface {
 	Defer(func() error)
 }
 
-func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
+func SetupKafka(pool *dockertest.Pool, d deferer, l logger) (*KafkaResource, error) {
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if err != nil {
 		return nil, fmt.Errorf("could not create docker network: %w", err)
@@ -58,25 +69,24 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 		return nil
 	})
 
-	log.Println("KAFKA_ZOOKEEPER_CONNECT: localhost:", zookeeperContainer.GetPort("2181/tcp"))
+	l.Log("KAFKA_ZOOKEEPER_CONNECT: localhost:", zookeeperContainer.GetPort("2181/tcp"))
 	brokerPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
+
 	brokerPort := fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
-	log.Println("broker Port:", brokerPort)
+	l.Log("broker Port:", brokerPort)
 
 	localhostPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
 	localhostPort := fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
-	log.Printf("localhost Port: %s \n", localhostPort)
+	l.Log("localhost Port:", localhostPort)
 
-	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%d", localhostPortInt)
-	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
-
-	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
+	advertisedListeners := fmt.Sprintf("INTERNAL://broker:9090,EXTERNAL://localhost:%d", localhostPortInt)
+	l.Log("KAFKA_ADVERTISED_LISTENERS", advertisedListeners)
 
 	kafkaContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
@@ -90,8 +100,8 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 		Env: []string{
 			"KAFKA_BROKER_ID=1",
 			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
-			KAFKA_ADVERTISED_LISTENERS,
-			KAFKA_LISTENERS,
+			"KAFKA_ADVERTISED_LISTENERS=" + advertisedListeners,
+			"KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092",
 			"KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
 			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
 		},
@@ -105,9 +115,12 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Println("Kafka PORT:- ", kafkaContainer.GetPort("9092/tcp"))
+	l.Log("Kafka PORT: ", kafkaContainer.GetPort("9092/tcp"))
 
 	return &KafkaResource{
 		Port: kafkaContainer.GetPort("9092/tcp"),
+
+		pool:      pool,
+		container: kafkaContainer,
 	}, nil
 }
