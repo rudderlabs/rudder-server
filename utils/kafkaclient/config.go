@@ -20,10 +20,7 @@ const (
 )
 
 const (
-	defaultDialTimeout  = 10 * time.Second
-	defaultBatchTimeout = 10 * time.Second
-	defaultWriteTimeout = 10 * time.Second
-	defaultReadTimeout  = 10 * time.Second
+	defaultDialTimeout = 10 * time.Second
 )
 
 // Option is an abstraction used to allow the configuration of a client
@@ -36,26 +33,15 @@ type withOption struct{ setup func(*config) }
 func (w withOption) apply(c *config) { w.setup(c) }
 
 type config struct {
-	dialTimeout  time.Duration
-	batchTimeout time.Duration
-	writeTimeout time.Duration
-	readTimeout  time.Duration
-	tlsConfig    *tlsConfig
-	saslConfig   *saslConfig
+	clientID    *string
+	dialTimeout time.Duration
+	tlsConfig   *tlsConfig
+	saslConfig  *saslConfig
 }
 
 func (c *config) defaults() {
 	if c.dialTimeout < 1 {
 		c.dialTimeout = defaultDialTimeout
-	}
-	if c.batchTimeout < 1 {
-		c.batchTimeout = defaultBatchTimeout
-	}
-	if c.writeTimeout < 1 {
-		c.writeTimeout = defaultWriteTimeout
-	}
-	if c.readTimeout < 1 {
-		c.readTimeout = defaultReadTimeout
 	}
 }
 
@@ -112,31 +98,17 @@ func (c *saslConfig) build() (mechanism sasl.Mechanism, err error) {
 	}
 }
 
+// WithClientID is used to set a unique identifier for client connections established by this client Dialer
+func WithClientID(clientID string) Option {
+	return withOption{setup: func(c *config) {
+		c.clientID = &clientID
+	}}
+}
+
 // WithDialTimeout sets the maximum amount of time a dial will wait for a connect to complete
 func WithDialTimeout(t time.Duration) Option {
 	return withOption{setup: func(c *config) {
 		c.dialTimeout = t
-	}}
-}
-
-// WithBatchTimeout sets the maximum amount of time for batch operations to complete
-func WithBatchTimeout(t time.Duration) Option {
-	return withOption{setup: func(c *config) {
-		c.batchTimeout = t
-	}}
-}
-
-// WithWriteTimeout sets the maximum amount of time for write operations to complete
-func WithWriteTimeout(t time.Duration) Option {
-	return withOption{setup: func(c *config) {
-		c.writeTimeout = t
-	}}
-}
-
-// WithReadTimeout sets the maximum amount of time for read operations to complete
-func WithReadTimeout(t time.Duration) Option {
-	return withOption{setup: func(c *config) {
-		c.readTimeout = t
 	}}
 }
 

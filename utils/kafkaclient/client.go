@@ -45,6 +45,9 @@ func New(network, address string, opts ...Option) (*client, error) {
 		Timeout:   conf.dialTimeout,
 	}
 
+	if conf.clientID != nil {
+		dialer.ClientID = *conf.clientID
+	}
 	if conf.tlsConfig != nil {
 		var err error
 		dialer.TLS, err = conf.tlsConfig.build()
