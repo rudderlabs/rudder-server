@@ -2,14 +2,12 @@ package kafkaclient
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/sasl/plain"
-	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
 // MessageHeader is a key/value pair type representing headers set on records
@@ -48,44 +46,18 @@ func New(network, address string, opts ...Option) (*client, error) {
 	}
 
 	if conf.tlsConfig != nil {
-		certificate, err := tls.X509KeyPair(conf.tlsConfig.cert, conf.tlsConfig.key)
+		var err error
+		dialer.TLS, err = conf.tlsConfig.build()
 		if err != nil {
-			return nil, fmt.Errorf("could not get TLS certificate: %w", err)
-		}
-
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM(conf.tlsConfig.caCertificate); !ok {
-			return nil, fmt.Errorf("could not append certs from PEM")
-		}
-
-		dialer.TLS = &tls.Config{
-			Certificates: []tls.Certificate{certificate},
-			RootCAs:      caCertPool,
-		}
-		if conf.tlsConfig.insecureSkipVerify {
-			dialer.TLS.InsecureSkipVerify = true
+			return nil, err
 		}
 	}
 
 	if conf.saslConfig != nil {
-		switch conf.saslConfig.scramHashGen {
-		case ScramPlainText:
-			dialer.SASLMechanism = plain.Mechanism{
-				Username: conf.saslConfig.username,
-				Password: conf.saslConfig.password,
-			}
-		case ScramSHA256, ScramSHA512:
-			algo := scram.SHA256
-			if conf.saslConfig.scramHashGen == ScramSHA512 {
-				algo = scram.SHA512
-			}
-			mechanism, err := scram.Mechanism(algo, conf.saslConfig.username, conf.saslConfig.password)
-			if err != nil {
-				return nil, fmt.Errorf("could not create scram mechanism: %w", err)
-			}
-			dialer.SASLMechanism = mechanism
-		default:
-			return nil, fmt.Errorf("scram hash generator out of the known domain: %v", conf.saslConfig.scramHashGen)
+		var err error
+		dialer.SASLMechanism, err = conf.saslConfig.build()
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -119,4 +91,67 @@ func (c *client) Ping(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func (c *client) createTopic(
+	ctx context.Context, topic string, numPartitions, replicationFactor int,
+) error {
+	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
+	if err != nil {
+		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
+	}
+
+	defer func() {
+		go func() { // close asynchronously, if we block we might not respect the context
+			_ = conn.Close()
+		}()
+	}()
+
+	broker, err := conn.Controller()
+	if err != nil {
+		return fmt.Errorf("could not get controller: %w", err)
+	}
+	if broker.Host == "" {
+		return fmt.Errorf("create topic: empty host")
+	}
+
+	controllerConn, err := kafka.DialContext(ctx, c.network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
+	if err != nil {
+		return fmt.Errorf("could not dial via controller: %w", err)
+	}
+	defer func() {
+		go func() { // close asynchronously, if we block we might not respect the context
+			_ = controllerConn.Close()
+		}()
+	}()
+
+	return controllerConn.CreateTopics(kafka.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     numPartitions,
+		ReplicationFactor: replicationFactor,
+	})
+}
+
+func (c *client) listTopics(ctx context.Context) ([]string, error) {
+	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
+	if err != nil {
+		return nil, fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
+	}
+
+	defer func() {
+		go func() { // close asynchronously, if we block we might not respect the context
+			_ = conn.Close()
+		}()
+	}()
+
+	partitions, err := conn.ReadPartitions() // @TODO does not honour context
+	if err != nil {
+		return nil, fmt.Errorf("could not read partitions: %w", err)
+	}
+
+	var topics []string
+	for _, p := range partitions {
+		topics = append(topics, p.Topic)
+	}
+	return topics, nil
 }
