@@ -1,6 +1,15 @@
 package kafkaclient
 
-import "time"
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"time"
+
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
+)
 
 type ScramHashGenerator uint8
 
@@ -56,9 +65,51 @@ type tlsConfig struct {
 	insecureSkipVerify bool
 }
 
+func (c *tlsConfig) build() (*tls.Config, error) {
+	certificate, err := tls.X509KeyPair(c.cert, c.key)
+	if err != nil {
+		return nil, fmt.Errorf("could not get TLS certificate: %w", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(c.caCertificate); !ok {
+		return nil, fmt.Errorf("could not append certs from PEM")
+	}
+
+	conf := &tls.Config{
+		Certificates: []tls.Certificate{certificate},
+		RootCAs:      caCertPool,
+	}
+	if c.insecureSkipVerify {
+		conf.InsecureSkipVerify = true
+	}
+
+	return conf, nil
+}
+
 type saslConfig struct {
 	scramHashGen       ScramHashGenerator
 	username, password string
+}
+
+func (c *saslConfig) build() (mechanism sasl.Mechanism, err error) {
+	switch c.scramHashGen {
+	case ScramPlainText:
+		mechanism = plain.Mechanism{
+			Username: c.username,
+			Password: c.password,
+		}
+		return
+	case ScramSHA256, ScramSHA512:
+		algo := scram.SHA256
+		if c.scramHashGen == ScramSHA512 {
+			algo = scram.SHA512
+		}
+		mechanism, err = scram.Mechanism(algo, c.username, c.password)
+		return
+	default:
+		return nil, fmt.Errorf("scram hash generator out of the known domain: %v", c.scramHashGen)
+	}
 }
 
 // WithDialTimeout sets the maximum amount of time a dial will wait for a connect to complete
