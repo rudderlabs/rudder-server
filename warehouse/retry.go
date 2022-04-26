@@ -59,7 +59,7 @@ func (retryReq *RetryReq) queryToRetry() (sqlStatement string) {
 		retryClause = fmt.Sprintf(`destination_id = '%s' AND created_at > NOW() - INTERVAL '%d HOUR'`, retryReq.DestinationID, retryReq.IntervalInHours)
 	}
 	if !retryReq.ForceRetry {
-		statusClause = fmt.Sprintf("AND status != '%s'", ExportedData)
+		statusClause = fmt.Sprintf("AND status = '%s'", Aborted)
 	}
 
 	sqlStatement = fmt.Sprintf(`
