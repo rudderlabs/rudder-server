@@ -119,12 +119,7 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 		return nil
 	})
 
-	c.logger.Log("KAFKA_ZOOKEEPER_CONNECT: localhost:", zookeeperContainer.GetPort("2181/tcp"))
-	brokerPort, err := freeport.GetFreePort()
-	if err != nil {
-		return nil, err
-	}
-	c.logger.Log("broker Port:", brokerPort)
+	c.logger.Log("Zookeeper localhost port", zookeeperContainer.GetPort("2181/tcp"))
 
 	bootstrapServers := ""
 	for i := uint(1); i <= c.brokers; i++ {
@@ -140,7 +135,7 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 			return nil, err
 		}
 		localhostPort := fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
-		c.logger.Log("Localhost Port:", localhostPort)
+		c.logger.Log("Kafka broker localhost port", i+1, localhostPort)
 
 		nodeID := fmt.Sprintf("%d", i+1)
 		hostname := "kafka" + nodeID
@@ -173,7 +168,6 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 			}
 			return nil
 		})
-		c.logger.Log("Kafka PORT: ", containers[i].GetPort("9092/tcp"))
 	}
 
 	return &KafkaResource{
