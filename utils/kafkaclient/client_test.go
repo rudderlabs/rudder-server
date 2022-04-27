@@ -83,7 +83,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	producerOpts := []ProducerOption{
 		WithProducerClientID("producer-01"),
 		WithProducerBatchTimeout(time.Second),
-		WithProducerWriteTimeout(5 * time.Second),
+		WithProducerReadTimeout(5 * time.Second),
 		WithProducerWriteTimeout(5 * time.Second),
 	}
 	if testing.Verbose() {
