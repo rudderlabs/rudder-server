@@ -308,6 +308,14 @@ func TestConsumer_Partition(t *testing.T) {
 	t.Logf("Messages consumed by c02: %d", atomic.LoadInt32(&c02Count))
 }
 
+func TestWithTLS(t *testing.T) {
+	t.Skip("TODO")
+}
+
+func TestWithSASL(t *testing.T) {
+	t.Skip("TODO")
+}
+
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
 	t.Helper()
 	t.Cleanup(func() {
