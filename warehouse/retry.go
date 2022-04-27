@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/proto/warehouse"
 	"strings"
 )
 
@@ -19,13 +18,18 @@ type RetryReq struct {
 	ForceRetry bool
 }
 
-func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsResponse, err error) {
+type RetryRes struct {
+	Message    string
+	StatusCode int32
+}
+
+func (retryReq *RetryReq) RetryWHUploads() (response RetryRes, err error) {
 	// Request validation
 	err = retryReq.validateReq()
 	defer func() {
 		if err != nil {
 			retryReq.API.log.Errorf("WH: Error occurred while retrying upload jobs with error: %s", err.Error())
-			response = &proto.RetryWHUploadsResponse{
+			response = RetryRes{
 				Message:    err.Error(),
 				StatusCode: 400,
 			}
@@ -44,7 +48,7 @@ func (retryReq *RetryReq) RetryWHUploads() (response *proto.RetryWHUploadsRespon
 		return
 	}
 
-	response = &proto.RetryWHUploadsResponse{
+	response = RetryRes{
 		Message:    retryReq.successMessage(uploadsRetried),
 		StatusCode: 200,
 	}

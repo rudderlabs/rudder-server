@@ -69,7 +69,7 @@ func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationReq
 	return handleT.Validating(req)
 }
 
-func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (*proto.RetryWHUploadsResponse, error) {
+func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	retryReq := &RetryReq{
 		WorkspaceID:     req.WorkspaceId,
 		DestinationID:   req.DestinationId,
@@ -78,5 +78,10 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
-	return retryReq.RetryWHUploads()
+	r, err := retryReq.RetryWHUploads()
+	response = &proto.RetryWHUploadsResponse{
+		Message:    r.Message,
+		StatusCode: r.StatusCode,
+	}
+	return
 }
