@@ -234,9 +234,7 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 		trans.guardConcurrency <- struct{}{}
 		go func() {
 			trace.WithRegion(ctx, "request", func() {
-				reqTime := time.Now()
 				transformResponse[i] = trans.request(ctx, url, clientEvents[from:to])
-				stats.NewTaggedStat("transformer_per_req_time", stats.TimerType, sTags).Since(reqTime)
 			})
 			<-trans.guardConcurrency
 			wg.Done()
