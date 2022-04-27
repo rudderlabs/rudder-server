@@ -48,11 +48,27 @@ func WithProducerReadTimeout(t time.Duration) ProducerOption {
 	}}
 }
 
+// WithProducerLogger specifies a logger used to report debugging information within the producer
+func WithProducerLogger(l Logger) ProducerOption {
+	return withProducerOption{setup: func(c *producerConfig) {
+		c.logger = l
+	}}
+}
+
+// WithProducerErrorLogger specifies a logger used to report errors within the producer
+func WithProducerErrorLogger(l Logger) ProducerOption {
+	return withProducerOption{setup: func(c *producerConfig) {
+		c.errorLogger = l
+	}}
+}
+
 type producerConfig struct {
 	clientID string
 	batchTimeout,
 	writeTimeout,
 	readTimeout time.Duration
+	logger      Logger
+	errorLogger Logger
 }
 
 func (c *producerConfig) defaults() {

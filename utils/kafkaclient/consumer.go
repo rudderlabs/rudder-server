@@ -22,11 +22,6 @@ type ConsumerOption interface {
 	apply(*kafka.ReaderConfig)
 }
 
-// ConsumerLogger specifies a logger used to report internal changes within the consumer
-type ConsumerLogger interface {
-	Printf(format string, args ...interface{})
-}
-
 type withConsumerOption struct{ setup func(*kafka.ReaderConfig) }
 
 func (w withConsumerOption) apply(c *kafka.ReaderConfig) { w.setup(c) }
@@ -73,14 +68,14 @@ func WithConsumerCommitInterval(t time.Duration) ConsumerOption {
 }
 
 // WithConsumerLogger specifies a logger used to report debugging information within the consumer
-func WithConsumerLogger(l ConsumerLogger) ConsumerOption {
+func WithConsumerLogger(l Logger) ConsumerOption {
 	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
 		c.Logger = l
 	}}
 }
 
 // WithConsumerErrorLogger specifies a logger used to report errors within the consumer
-func WithConsumerErrorLogger(l ConsumerLogger) ConsumerOption {
+func WithConsumerErrorLogger(l Logger) ConsumerOption {
 	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
 		c.ErrorLogger = l
 	}}

@@ -10,7 +10,10 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// TODO: add logger
+// Logger specifies a logger used to report internal changes within the consumer
+type Logger interface {
+	Printf(format string, args ...interface{})
+}
 
 // MessageHeader is a key/value pair type representing headers set on records
 type MessageHeader struct {

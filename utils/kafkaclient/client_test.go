@@ -80,7 +80,19 @@ func TestClient_ProducerBatch_ConsumerGroup(t *testing.T) {
 	}, topics)
 
 	// Produce X messages in a single batch
-	p, err := c.NewProducer(t.Name())
+	producerOpts := []ProducerOption{
+		WithProducerClientID("producer-01"),
+		WithProducerBatchTimeout(10 * time.Second),
+		WithProducerWriteTimeout(3 * time.Second),
+		WithProducerWriteTimeout(3 * time.Second),
+	}
+	if testing.Verbose() {
+		producerOpts = append(producerOpts,
+			WithProducerLogger(&testLogger{t}),
+			WithProducerErrorLogger(&testLogger{t}),
+		)
+	}
+	p, err := c.NewProducer(t.Name(), producerOpts...)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
