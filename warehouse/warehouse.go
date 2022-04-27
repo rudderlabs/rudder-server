@@ -715,10 +715,8 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
-		// We will be measuring the overall lag
-		// as part of the process.
-		whSchedulerLag := stats.DefaultStats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
-		whSchedulerLag.Start()
+		whTotalSchedulingStats := stats.DefaultStats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		whTotalSchedulingStats.Start()
 
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
@@ -739,7 +737,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wh.configSubscriberLock.RUnlock()
 		wg.Wait()
 
-		whSchedulerLag.End()
+		whTotalSchedulingStats.End()
 		select {
 		case <-ctx.Done():
 			return
