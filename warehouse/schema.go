@@ -23,8 +23,8 @@ type SchemaHandleT struct {
 
 func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
-		// only stringify if the previous type is non-string/text
-		if columnType != "string" && columnType != "text" {
+		// only stringify if the previous type is non-string/text/json
+		if columnType != "string" && columnType != "text" && columnType != "json" {
 			newColumnVal = fmt.Sprintf("%v", columnVal)
 		} else {
 			newColumnVal = columnVal
