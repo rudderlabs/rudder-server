@@ -93,7 +93,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 
 	// *** Adding the header ***
 	// Inserting header to the sheet
-	err = insertDataToSheet(service, config.SheetId, config.SheetName, headerRow, true)
+	err = insertHeaderDataToSheet(service, config.SheetId, config.SheetName, headerRow)
 
 	return service, err
 }
@@ -101,10 +101,15 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
 	sheetsClient := producer.(*sheets.Service)
+	if sheetsClient == nil {
+		respStatus = "Failure"
+		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
+		return 400, respStatus, responseMessage
+	}
 	parsedJSON := gjson.ParseBytes(jsonData)
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheet := parsedJSON.Get("spreadSheet").String()
-	values, parseErr := parseTransformedData(parsedJSON)
+	valueList, parseErr := parseTransformedData(parsedJSON)
 
 	if parseErr != nil {
 		respStatus = "Failure"
@@ -114,9 +119,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	}
 
-	message := getSheetsData(values)
-
-	err := insertDataToSheet(sheetsClient, spreadSheetId, spreadSheet, message, false)
+	err := insertRowDataToSheet(sheetsClient, spreadSheetId, spreadSheet, valueList)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -147,9 +150,9 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 	return sheetService, err
 }
 
-// Wrapper func to insert headerData or rowData based on boolean flag.
+// Wrapper func to insert headerData
 // Returns error for failure cases of API calls otherwise returns nil
-func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool) error {
+func insertHeaderDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -161,12 +164,21 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
 
-	if isHeader {
-		_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+	_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
-	} else {
-		_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
-	}
+	return err
+}
+
+// Wrapper func to append row data list,
+// Returns error for failure cases of API calls otherwise returns nil
+func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, dataList [][]interface{}) error {
+	// Creating value range for inserting row into sheet
+	var vr sheets.ValueRange
+	vr.MajorDimension = "ROWS"
+	vr.Range = spreadSheetTab + "!A1"
+	vr.Values = dataList
+	var err error
+	_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	return err
 }
 
@@ -174,7 +186,7 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 // source is the json object from transformer and we are iterating the json as a map
 // and we are storing the data into designated position in array based on transformer
 // mappings.
-// Example payload we have from transformer:
+// Example payload we have from transformer without batching:
 // {
 //		message:{
 //			1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
@@ -182,21 +194,58 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 //			..
 // 		}
 // }
-func parseTransformedData(source gjson.Result) ([]string, error) {
-	messagefields := source.Get("message")
-	values := make([]string, len(messagefields.Map()))
-	var pos int
-	var err error
-	if messagefields.IsObject() {
-		for k, v := range messagefields.Map() {
-			pos, err = strconv.Atoi(k)
-			if err != nil {
-				return values, err
-			}
-			values[pos] = v.Get("attributeValue").String()
-		}
+// Example Payload we have from transformer with batching:
+// {
+// 		batch:[
+//			{
+//				message: {
+//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//					2: { attributeKey: "Product Value, attributeValue: "5900"}
+//					..
+// 				}
+//			},
+//			{
+//				message: {
+//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//					2: { attributeKey: "Product Value, attributeValue: "5900"}
+//					..
+// 				}
+//			}
+// 		]
+// }
+func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
+	batch := source.Get("batch")
+	messages := batch.Array()
+	if len(messages) == 0 {
+		messages = append(messages, source)
 	}
-	return values, err
+	var valueList [][]interface{}
+	for _, messageElement := range messages {
+		messagefields := messageElement.Get("message")
+		values := make([]interface{}, len(messagefields.Map()))
+		var pos int
+		var err error
+		if messagefields.IsObject() {
+			for k, v := range messagefields.Map() {
+				pos, err = strconv.Atoi(k)
+				if err != nil {
+					return nil, err
+				}
+				// Adding support for numeric type data
+				attrValue := v.Get("attributeValue")
+				switch attrValue.Type {
+				case gjson.Number:
+					values[pos] = attrValue.Float()
+				default:
+					values[pos] = attrValue.String()
+				}
+
+			}
+		}
+		valueList = append(valueList, values)
+	}
+
+	return valueList, nil
 }
 
 // Func used to parse a string array to an interface array for compatibility
