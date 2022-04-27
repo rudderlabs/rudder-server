@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
 	"io"
 	"net/url"
 	"os"
@@ -16,6 +15,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/config"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	uuid "github.com/gofrs/uuid"
@@ -159,7 +160,7 @@ func loadConfig() {
 
 	// Default timeout overrides the values to what ever we pass in dsn
 	// Setting connectTimeout value as mssql driver default timeout
-	config.RegisterDurationConfigVariable(warehouseutils.TestConnectionTimeout, &connectTimeout, true, 1, "Warehouse.azure_synapse.connectTimeout")
+	config.RegisterDurationConfigVariable(int64(warehouseutils.TestConnectionTimeout/time.Second), &connectTimeout, true, time.Second, "Warehouse.azure_synapse.connectTimeout")
 }
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
