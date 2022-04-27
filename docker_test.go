@@ -326,7 +326,7 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup, &logger{})
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&logger{}))
 	if err != nil {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
