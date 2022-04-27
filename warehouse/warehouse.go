@@ -630,17 +630,16 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	uploadStartAfter := getUploadStartAfterTime()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
-	setLastProcessedMarker(warehouse, uploadStartAfter)
-
 	uploadJobCreationStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
 	uploadJobCreationStat.Start()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority)
-	setLastProcessedMarker(warehouse)
+
+	uploadStartAfter := getUploadStartAfterTime()
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
+	setLastProcessedMarker(warehouse, uploadStartAfter)
+
 	uploadJobCreationStat.End()
 
 	return nil
