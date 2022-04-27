@@ -3,6 +3,7 @@ package kafkaclient
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -21,6 +22,11 @@ type ConsumerOption interface {
 	apply(*kafka.ReaderConfig)
 }
 
+// ConsumerLogger specifies a logger used to report internal changes within the consumer
+type ConsumerLogger interface {
+	Printf(format string, args ...interface{})
+}
+
 type withConsumerOption struct{ setup func(*kafka.ReaderConfig) }
 
 func (w withConsumerOption) apply(c *kafka.ReaderConfig) { w.setup(c) }
@@ -33,19 +39,19 @@ func WithConsumerGroup(group string) ConsumerOption {
 	}}
 }
 
-// WithPartition sets the partition for the consumer (cannot be used together with the consumer group since they are
-// mutually exclusive).
-func WithPartition(partition int) ConsumerOption {
+// WithConsumerPartition sets the partition for the consumer (cannot be used together with the consumer group since
+// they are mutually exclusive).
+func WithConsumerPartition(partition int) ConsumerOption {
 	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
 		c.Partition = partition
 	}}
 }
 
-// WithStartOffset determines from whence the consumer group should begin consuming when it finds a partition without a
-// committed offset.
+// WithConsumerStartOffset determines from whence the consumer group should begin consuming when it finds a partition
+// without a committed offset.
 // If non-zero, it must be set to one of FirstOffset or LastOffset.
 // Only used when WithConsumerGroup is set.
-func WithStartOffset(offset ConsumerStartOffset) ConsumerOption {
+func WithConsumerStartOffset(offset ConsumerStartOffset) ConsumerOption {
 	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
 		switch offset {
 		case LastOffset:
@@ -55,6 +61,36 @@ func WithStartOffset(offset ConsumerStartOffset) ConsumerOption {
 		default:
 			panic(fmt.Errorf("consumer start offset %+v out of the known domain", offset))
 		}
+	}}
+}
+
+// WithConsumerCommitInterval indicates the interval at which offsets are committed to the broker.
+// If 0, commits will be handled synchronously.
+func WithConsumerCommitInterval(t time.Duration) ConsumerOption {
+	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
+		c.CommitInterval = t
+	}}
+}
+
+// WithConsumerLogger specifies a logger used to report debugging information within the consumer
+func WithConsumerLogger(l ConsumerLogger) ConsumerOption {
+	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
+		c.Logger = l
+	}}
+}
+
+// WithConsumerErrorLogger specifies a logger used to report errors within the consumer
+func WithConsumerErrorLogger(l ConsumerLogger) ConsumerOption {
+	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
+		c.ErrorLogger = l
+	}}
+}
+
+// WithConsumerFetchBatchesMaxWait sets the maximum amount of time to wait for new data to come when fetching batches
+// of messages from Kafka
+func WithConsumerFetchBatchesMaxWait(t time.Duration) ConsumerOption {
+	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
+		c.MaxWait = t
 	}}
 }
 
@@ -73,7 +109,6 @@ func (c *client) NewConsumer(topic string, opts ...ConsumerOption) *Consumer {
 	conf.Brokers = []string{c.address}
 	conf.Topic = topic
 	conf.Dialer = c.dialer
-	conf.MaxWait = c.config.batchTimeout
 
 	return &Consumer{
 		reader: kafka.NewReader(conf),
