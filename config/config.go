@@ -19,8 +19,8 @@ var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 var (
 	whSchemaVersion        string
-	hotReloadableConfig    map[string]*ConfigVar
-	nonHotReloadableConfig map[string]*ConfigVar
+	hotReloadableConfig    map[string][]*ConfigVar
+	nonHotReloadableConfig map[string][]*ConfigVar
 	configVarLock          sync.RWMutex
 )
 
@@ -30,6 +30,20 @@ type ConfigVar struct {
 	isHotReloadable bool
 	defaultValue    interface{}
 	keys            []string
+}
+
+func newConfigVar(value, multiplier, defaultValue interface{}, isHotReloadable bool, keys []string) *ConfigVar {
+	return &ConfigVar{
+		value:           value,
+		multiplier:      multiplier,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
+}
+
+func getConfigValue(configVar *ConfigVar) interface{} {
+	return configVar.value
 }
 
 // Rudder server supported config constants
@@ -53,8 +67,8 @@ func Load() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
-	hotReloadableConfig = make(map[string]*ConfigVar)
-	nonHotReloadableConfig = make(map[string]*ConfigVar)
+	hotReloadableConfig = make(map[string][]*ConfigVar)
+	nonHotReloadableConfig = make(map[string][]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig() // Find and read the config file
@@ -88,192 +102,194 @@ func watchForConfigChange() {
 	}
 }
 
-func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged bool) {
-	for key, configVal := range configMap {
-		value := configVal.value
-		switch value := value.(type) {
-		case *int:
-			var _value int
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = cast.ToInt(envVal)
-					break
+func checkAndHotReloadConfig(configMap map[string][]*ConfigVar) (hasConfigChanged bool) {
+	for key, configValArr := range configMap {
+		for _, configVal := range configValArr {
+			value := configVal.value
+			switch value := value.(type) {
+			case *int:
+				var _value int
+				var isSet bool
+				for _, key := range configVal.keys {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
+						isSet = true
+						_value = cast.ToInt(envVal)
+						break
+					}
 				}
-			}
 
-			if !isSet {
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetInt(key, configVal.defaultValue.(int))
+							break
+						}
+					}
+				}
+				if !isSet {
+					_value = configVal.defaultValue.(int)
+				}
+				_value = _value * configVal.multiplier.(int)
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
+						*value = _value
+					}
+				}
+			case *int64:
+				var _value int64
+				var isSet bool
 				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
 						isSet = true
-						_value = GetInt(key, configVal.defaultValue.(int))
+						_value = cast.ToInt64(envVal)
 						break
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(int)
-			}
-			_value = _value * configVal.multiplier.(int)
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-					*value = _value
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetInt64(key, configVal.defaultValue.(int64))
+							break
+						}
+					}
 				}
-			}
-		case *int64:
-			var _value int64
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = cast.ToInt64(envVal)
-					break
+				if !isSet {
+					_value = configVal.defaultValue.(int64)
 				}
-			}
-			if !isSet {
+				_value = _value * configVal.multiplier.(int64)
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
+						*value = _value
+					}
+				}
+			case *string:
+				var _value string
+				var isSet bool
 				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
 						isSet = true
-						_value = GetInt64(key, configVal.defaultValue.(int64))
+						_value = cast.ToString(envVal)
 						break
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(int64)
-			}
-			_value = _value * configVal.multiplier.(int64)
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-					*value = _value
-				}
-			}
-		case *string:
-			var _value string
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = cast.ToString(envVal)
-					break
-				}
-			}
-			if !isSet {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetString(key, configVal.defaultValue.(string))
-						break
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetString(key, configVal.defaultValue.(string))
+							break
+						}
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(string)
-			}
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-					*value = _value
+				if !isSet {
+					_value = configVal.defaultValue.(string)
 				}
-			}
-		case *time.Duration:
-			var _value time.Duration
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
-					break
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+						*value = _value
+					}
 				}
-			}
-			if !isSet {
+			case *time.Duration:
+				var _value time.Duration
+				var isSet bool
 				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
 						isSet = true
 						_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
 						break
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
-			}
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-					*value = _value
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
+							break
+						}
+					}
 				}
-			}
-		case *bool:
-			var _value bool
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = cast.ToBool(envVal)
-					break
+				if !isSet {
+					_value = time.Duration(configVal.defaultValue.(int64)) * configVal.multiplier.(time.Duration)
 				}
-			}
-			if !isSet {
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+						*value = _value
+					}
+				}
+			case *bool:
+				var _value bool
+				var isSet bool
 				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
 						isSet = true
-						_value = GetBool(key, configVal.defaultValue.(bool))
+						_value = cast.ToBool(envVal)
 						break
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(bool)
-			}
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-					*value = _value
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetBool(key, configVal.defaultValue.(bool))
+							break
+						}
+					}
 				}
-			}
-		case *float64:
-			var _value float64
-			var isSet bool
-			for _, key := range configVal.keys {
-				envVal := GetEnv(TransformKey(key), "")
-				if envVal != "" {
-					isSet = true
-					_value = cast.ToFloat64(envVal)
-					break
+				if !isSet {
+					_value = configVal.defaultValue.(bool)
 				}
-			}
-			if !isSet {
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+						*value = _value
+					}
+				}
+			case *float64:
+				var _value float64
+				var isSet bool
 				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
+					envVal := GetEnv(TransformKey(key), "")
+					if envVal != "" {
 						isSet = true
-						_value = GetFloat64(key, configVal.defaultValue.(float64))
+						_value = cast.ToFloat64(envVal)
 						break
 					}
 				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(float64)
-			}
-			_value = _value * configVal.multiplier.(float64)
-			if _value != *value {
-				hasConfigChanged = true
-				if configVal.isHotReloadable {
-					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-					*value = _value
+				if !isSet {
+					for _, key := range configVal.keys {
+						if viper.IsSet(key) {
+							isSet = true
+							_value = GetFloat64(key, configVal.defaultValue.(float64))
+							break
+						}
+					}
+				}
+				if !isSet {
+					_value = configVal.defaultValue.(float64)
+				}
+				_value = _value * configVal.multiplier.(float64)
+				if _value != *value {
+					hasConfigChanged = true
+					if configVal.isHotReloadable {
+						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+						*value = _value
+					}
 				}
 			}
 		}
@@ -309,6 +325,20 @@ func GetInt(key string, defaultValue int) (value int) {
 	return viper.GetInt(key)
 }
 
+func appendVarToConfigMaps(isHotReloadable bool, key string, configVar *ConfigVar) {
+	if isHotReloadable {
+		if _, ok := hotReloadableConfig[key]; !ok {
+			hotReloadableConfig[key] = make([]*ConfigVar, 0)
+		}
+		hotReloadableConfig[key] = append(hotReloadableConfig[key], configVar)
+	} else {
+		if _, ok := nonHotReloadableConfig[key]; !ok {
+			nonHotReloadableConfig[key] = make([]*ConfigVar, 0)
+		}
+		nonHotReloadableConfig[key] = append(nonHotReloadableConfig[key], configVar)
+	}
+}
+
 func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
@@ -320,11 +350,9 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -357,11 +385,9 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -395,11 +421,9 @@ func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotRelo
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -433,11 +457,9 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -471,11 +493,9 @@ func RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *tim
 		defaultValue:    defaultValueInTimescaleUnits,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -509,11 +529,9 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
@@ -546,11 +564,9 @@ func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isH
 		defaultValue:    defaultValue,
 		keys:            keys,
 	}
-	if isHotReloadable {
-		hotReloadableConfig[keys[0]] = &configVar
-	} else {
-		nonHotReloadableConfig[keys[0]] = &configVar
-	}
+
+	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+
 	for _, key := range keys {
 		if IsTransformedEnvSet(key) {
 			isSet = true
