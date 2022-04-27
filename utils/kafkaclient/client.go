@@ -101,26 +101,42 @@ func (c *client) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (c *client) createTopic(
-	ctx context.Context, topic string, numPartitions, replicationFactor int,
-) error {
+func (c *client) createTopic(ctx context.Context, topic string, numPartitions, replicationFactor int) error {
 	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
 	if err != nil {
 		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
 	}
 
 	defer func() {
-		go func() { // close asynchronously, if we block we might not respect the context
-			_ = conn.Close()
-		}()
+		// close asynchronously, if we block we might not respect the context
+		go func() { _ = conn.Close() }()
 	}()
 
-	broker, err := conn.Controller()
-	if err != nil {
-		return fmt.Errorf("could not get controller: %w", err)
-	}
-	if broker.Host == "" {
-		return fmt.Errorf("create topic: empty host")
+	var (
+		errors  = make(chan error, 1)
+		brokers = make(chan kafka.Broker, 1)
+	)
+
+	go func() { // doing it asynchronously because conn.Controller() does not honour the context
+		b, err := conn.Controller()
+		if err != nil {
+			errors <- fmt.Errorf("could not get controller: %w", err)
+			return
+		}
+		if b.Host == "" {
+			errors <- fmt.Errorf("create topic: empty host")
+			return
+		}
+		brokers <- b
+	}()
+
+	var broker kafka.Broker
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err = <-errors:
+		return err
+	case broker = <-brokers:
 	}
 
 	controllerConn, err := kafka.DialContext(ctx, c.network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
@@ -128,16 +144,24 @@ func (c *client) createTopic(
 		return fmt.Errorf("could not dial via controller: %w", err)
 	}
 	defer func() {
-		go func() { // close asynchronously, if we block we might not respect the context
-			_ = controllerConn.Close()
-		}()
+		// close asynchronously, if we block we might not respect the context
+		go func() { _ = controllerConn.Close() }()
 	}()
 
-	return controllerConn.CreateTopics(kafka.TopicConfig{
-		Topic:             topic,
-		NumPartitions:     numPartitions,
-		ReplicationFactor: replicationFactor,
-	})
+	go func() { // doing it asynchronously because controllerConn.CreateTopics() does not honour the context
+		errors <- controllerConn.CreateTopics(kafka.TopicConfig{
+			Topic:             topic,
+			NumPartitions:     numPartitions,
+			ReplicationFactor: replicationFactor,
+		})
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err = <-errors:
+		return err
+	}
 }
 
 func (c *client) listTopics(ctx context.Context) ([]string, error) {
@@ -147,19 +171,33 @@ func (c *client) listTopics(ctx context.Context) ([]string, error) {
 	}
 
 	defer func() {
-		go func() { // close asynchronously, if we block we might not respect the context
-			_ = conn.Close()
-		}()
+		// close asynchronously, if we block we might not respect the context
+		go func() { _ = conn.Close() }()
 	}()
 
-	partitions, err := conn.ReadPartitions() // @TODO does not honour context
-	if err != nil {
-		return nil, fmt.Errorf("could not read partitions: %w", err)
-	}
+	var (
+		done   = make(chan []kafka.Partition, 1)
+		errors = make(chan error, 1)
+	)
+	go func() { // doing it asynchronously because conn.ReadPartitions() does not honour the context
+		partitions, err := conn.ReadPartitions()
+		if err != nil {
+			errors <- err
+		} else {
+			done <- partitions
+		}
+	}()
 
-	var topics []string
-	for _, p := range partitions {
-		topics = append(topics, fmt.Sprintf("%s [partition %d]", p.Topic, p.ID))
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case err = <-errors:
+		return nil, fmt.Errorf("could not read partitions: %w", err)
+	case partitions := <-done:
+		var topics []string
+		for _, p := range partitions {
+			topics = append(topics, fmt.Sprintf("%s [partition %d]", p.Topic, p.ID))
+		}
+		return topics, nil
 	}
-	return topics, nil
 }
