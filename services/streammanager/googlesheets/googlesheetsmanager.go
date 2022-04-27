@@ -101,6 +101,11 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
 	sheetsClient := producer.(*sheets.Service)
+	if sheetsClient == nil {
+		respStatus = "Failure"
+		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
+		return 400, respStatus, responseMessage
+	}
 	parsedJSON := gjson.ParseBytes(jsonData)
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheet := parsedJSON.Get("spreadSheet").String()
@@ -173,13 +178,7 @@ func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sp
 	vr.Range = spreadSheetTab + "!A1"
 	vr.Values = dataList
 	var err error
-
-	if sheetsClient == nil {
-		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
-	}
-
 	_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
-
 	return err
 }
 
@@ -217,7 +216,7 @@ func insertRowDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sp
 func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 	batch := source.Get("batch")
 	messages := batch.Array()
-	if messages != nil && len(messages) == 0 {
+	if len(messages) == 0 {
 		messages = append(messages, source)
 	}
 	var valueList [][]interface{}
@@ -233,11 +232,14 @@ func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 					return nil, err
 				}
 				// Adding support for numeric type data
-				if v.Get("attributeValue").Type.String() == "Number" {
-					values[pos] = v.Get("attributeValue").Float()
-				} else {
-					values[pos] = v.Get("attributeValue").String()
+				attrValue := v.Get("attributeValue")
+				switch attrValue.Type {
+				case gjson.Number:
+					values[pos] = attrValue.Float()
+				default:
+					values[pos] = attrValue.String()
 				}
+
 			}
 		}
 		valueList = append(valueList, values)
@@ -246,6 +248,8 @@ func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 	return valueList, nil
 }
 
+// Func used to parse a string array to an interface array for compatibility
+// with sheets-api
 func getSheetsData(typedata []string) []interface{} {
 	data := make([]interface{}, len(typedata))
 	for key, value := range typedata {
