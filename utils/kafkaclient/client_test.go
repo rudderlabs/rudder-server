@@ -82,9 +82,9 @@ func TestClient_ProducerBatch_ConsumerGroup(t *testing.T) {
 	// Produce X messages in a single batch
 	producerOpts := []ProducerOption{
 		WithProducerClientID("producer-01"),
-		WithProducerBatchTimeout(10 * time.Second),
-		WithProducerWriteTimeout(3 * time.Second),
-		WithProducerWriteTimeout(3 * time.Second),
+		WithProducerBatchTimeout(time.Second),
+		WithProducerWriteTimeout(5 * time.Second),
+		WithProducerWriteTimeout(5 * time.Second),
 	}
 	if testing.Verbose() {
 		producerOpts = append(producerOpts,
@@ -108,6 +108,7 @@ func TestClient_ProducerBatch_ConsumerGroup(t *testing.T) {
 	consumerOpts := []ConsumerOption{
 		WithConsumerGroup("group-01"),
 		WithConsumerStartOffset(FirstOffset),
+		WithConsumerFetchBatchesMaxWait(10 * time.Second),
 		WithConsumerCommitInterval(time.Second), // to make the test faster instead of committing each single message
 	}
 	if testing.Verbose() {
