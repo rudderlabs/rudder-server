@@ -47,7 +47,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost)
+	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
 	require.NoError(t, err)
 
 	var (
@@ -186,7 +186,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost)
+	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
 	require.NoError(t, err)
 
 	var (

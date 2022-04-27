@@ -29,7 +29,7 @@ type withOption struct{ setup func(*config) }
 func (w withOption) apply(c *config) { w.setup(c) }
 
 type config struct {
-	clientID    *string
+	clientID    string
 	dialTimeout time.Duration
 	tlsConfig   *tlsConfig
 	saslConfig  *saslConfig
@@ -97,7 +97,7 @@ func (c *saslConfig) build() (mechanism sasl.Mechanism, err error) {
 // WithClientID is used to set a unique identifier for client connections established by this client's Dialer
 func WithClientID(clientID string) Option {
 	return withOption{setup: func(c *config) {
-		c.clientID = &clientID
+		c.clientID = clientID
 	}}
 }
 

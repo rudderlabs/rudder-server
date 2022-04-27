@@ -105,6 +105,8 @@ func (c *client) NewProducer(topic string, opts ...ProducerOption) (p *Producer,
 	}
 	if producerConf.clientID != "" {
 		transport.ClientID = producerConf.clientID
+	} else if c.config.clientID != "" {
+		transport.ClientID = c.config.clientID
 	}
 	if c.config.tlsConfig != nil {
 		transport.TLS, err = c.config.tlsConfig.build()
