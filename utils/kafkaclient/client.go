@@ -10,6 +10,8 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+// TODO: add logger
+
 // MessageHeader is a key/value pair type representing headers set on records
 type MessageHeader struct {
 	Key   string
@@ -154,7 +156,7 @@ func (c *client) listTopics(ctx context.Context) ([]string, error) {
 
 	var topics []string
 	for _, p := range partitions {
-		topics = append(topics, p.Topic)
+		topics = append(topics, fmt.Sprintf("%s [partition %d]", p.Topic, p.ID))
 	}
 	return topics, nil
 }
