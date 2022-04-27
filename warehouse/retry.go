@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+	"github.com/lib/pq"
 )
 
 type RetryReq struct {
@@ -39,11 +39,8 @@ func (retryReq *RetryReq) RetryWHUploads() (response RetryRes, err error) {
 		return
 	}
 
-	// Generating query
-	retryQuery := retryReq.queryToRetry()
-
 	// Retrying uploads
-	uploadsRetried, err := retryReq.retryUploads(retryQuery)
+	uploadsRetried, err := retryReq.retryUploads()
 	if err != nil {
 		return
 	}
@@ -55,35 +52,35 @@ func (retryReq *RetryReq) RetryWHUploads() (response RetryRes, err error) {
 	return
 }
 
-func (retryReq *RetryReq) queryToRetry() (sqlStatement string) {
+func (retryReq *RetryReq) retryUploads() (rowsAffected int64, err error) {
 	var retryClause, statusClause string
 	if len(retryReq.UploadIds) != 0 {
-		retryClause = fmt.Sprintf(`id IN (%s)`, strings.Trim(strings.Replace(fmt.Sprint(retryReq.UploadIds), " ", ",", -1), "[]"))
+		retryClause = `id = ANY($1)`
 	} else {
-		retryClause = fmt.Sprintf(`destination_id = '%s' AND created_at > NOW() - INTERVAL '%d HOUR'`, retryReq.DestinationID, retryReq.IntervalInHours)
+		retryClause = `destination_id = $1 AND created_at > NOW() - $2 * INTERVAL '1 HOUR'`
 	}
 	if !retryReq.ForceRetry {
 		statusClause = fmt.Sprintf("AND status = '%s'", Aborted)
 	}
 
-	sqlStatement = fmt.Sprintf(`
+	sqlPreparedStatement := fmt.Sprintf(`
 		UPDATE wh_uploads
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
 			status = 'waiting',
 			updated_at = NOW()
-		WHERE %[1]s %[2]s
-        RETURNING id`,
+		WHERE %[1]s %[2]s`,
 		retryClause,
 		statusClause,
 	)
-	retryReq.API.log.Info(sqlStatement)
-	return
-}
+	retryReq.API.log.Info(sqlPreparedStatement)
 
-func (retryReq *RetryReq) retryUploads(sqlStatement string) (rowsAffected int64, err error) {
 	var res sql.Result
-	res, err = retryReq.API.dbHandle.Exec(sqlStatement)
+	if len(retryReq.UploadIds) != 0 {
+		res, err = retryReq.API.dbHandle.Exec(sqlPreparedStatement, pq.Array(retryReq.UploadIds))
+	} else {
+		res, err = retryReq.API.dbHandle.Exec(sqlPreparedStatement, retryReq.DestinationID, retryReq.IntervalInHours)
+	}
 	if err != nil {
 		return
 	}
