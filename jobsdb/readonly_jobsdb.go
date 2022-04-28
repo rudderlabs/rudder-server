@@ -97,7 +97,7 @@ func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
-	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", time.Duration(10), time.Second))
+	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", 10, time.Second))
 	defer cancel()
 
 	err = jd.DbHandle.PingContext(ctx)

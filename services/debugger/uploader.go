@@ -52,14 +52,14 @@ func (uploader *Uploader) Setup() {
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")
 	config.RegisterIntConfigVariable(1024, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
-	config.RegisterDurationConfigVariable(time.Duration(2), &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
-	config.RegisterDurationConfigVariable(time.Duration(100), &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
+	config.RegisterDurationConfigVariable(2, &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
+	config.RegisterDurationConfigVariable(100, &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
 }
 
 func New(url string, transformer Transformer) UploaderI {
 	eventBatchChannel := make(chan interface{})
 	eventBuffer := make([]interface{}, 0)
-	client := &http.Client{}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 
 	uploader := &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
 	uploader.Setup()

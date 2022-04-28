@@ -45,7 +45,7 @@ func Init() {
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	maxRetry = config.GetInt("DestinationConnectionTester.maxRetry", 3)
-	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
+	config.RegisterDurationConfigVariable(100, &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
 	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 
@@ -70,7 +70,7 @@ func makePostRequest(url string, payload interface{}) error {
 		pkgLogger.Errorf("[Destination Connection Tester] Failed to marshal payload. Err: %v", err)
 		return err
 	}
-	client := &http.Client{}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	retryCount := 0
 	var resp *http.Response
 	//Sending destination connection test response to Config Backend

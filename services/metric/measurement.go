@@ -19,14 +19,14 @@ const ALL = "ALL"
 func IncreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Add(value)
 	PendingEvents(tablePrefix, ALL, destType).Add(value)
-	PendingEvents(ALL, ALL, destType).Add(value)
+	PendingEvents(tablePrefix, ALL, ALL).Add(value)
 }
 
 // DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func DecreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Sub(value)
 	PendingEvents(tablePrefix, ALL, destType).Sub(value)
-	PendingEvents(ALL, ALL, destType).Sub(value)
+	PendingEvents(tablePrefix, ALL, ALL).Sub(value)
 }
 
 // PendingEvents gets the measurement for pending events metric

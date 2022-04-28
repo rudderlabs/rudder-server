@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -27,7 +29,7 @@ func (ops *PagerDuty) Alert(message string) {
 	}
 
 	eventJSON, _ := json.Marshal(event)
-	client := &http.Client{}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Post(pagerDutyEndPoint, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops
 	if err != nil {
