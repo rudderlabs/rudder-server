@@ -336,6 +336,7 @@ func testClientOptions(config *Config) []option.ClientOption {
 		AccessToken:  config.TestConfig.AccessToken,
 		RefreshToken: config.TestConfig.RefreshToken,
 	}
+	// skipcq: GO-S1020
 	tlsConfig := &tls.Config{
 		// skipcq: GSC-G402
 		InsecureSkipVerify: true,
