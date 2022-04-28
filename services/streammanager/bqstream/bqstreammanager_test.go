@@ -1,6 +1,7 @@
 package bqstream
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -9,24 +10,31 @@ import (
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 )
 
+type BigQueryCredentials struct {
+	ProjectID   string            `json:"projectID"`
+	Credentials map[string]string `json:"credentials"`
+}
+
 func TestTimeout(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
-	credentialsFile := os.Getenv("TEST_BQ_CREDENTIALS_FILE")
-	if credentialsFile == "" {
+	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
+	if cred == "" {
 		t.Skip("Skipping bigquery test, since no credentials are available in the environment")
 	}
-	credentials, err := os.ReadFile(credentialsFile)
+	var bqCredentials BigQueryCredentials
+	var err error
+	err = json.Unmarshal([]byte(cred), &bqCredentials)
 	if err != nil {
-		t.Fatalf("cannot read credentials file: %v", err)
+		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
-
+	credentials, _ := json.Marshal(bqCredentials.Credentials)
 	config := Config{
 		Credentials: string(credentials),
-		ProjectId:   "big-query-integration-poc",
+		ProjectId:   bqCredentials.ProjectID,
 	}
 	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
