@@ -19,4 +19,3 @@ build/regulation-worker
 coverage.txt
 coverage.html
 *.orig
-build/wait-for-go/wait-for-go
