@@ -150,6 +150,7 @@ func SetupTestGoogleSheets(pool *dockertest.Pool, d deferer) (*TestConfig, error
 		AccessToken:  config.AccessToken,
 		RefreshToken: config.RefreshToken,
 	}
+	// skipcq: GO-S1020
 	tlsConfig := &tls.Config{
 		// skipcq: GSC-G402
 		InsecureSkipVerify: true,
