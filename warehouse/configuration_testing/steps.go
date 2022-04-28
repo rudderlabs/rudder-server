@@ -7,7 +7,7 @@ import (
 )
 
 func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.RawMessage, error) {
-	ct.infoRequest = &infoRequest{}
+	ct.infoRequest = &DestinationValidationRequest{}
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
@@ -17,17 +17,19 @@ func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.Ra
 	})
 }
 
-// validationSteps returns validation step for a Destination
-func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
-	steps = append(steps, &validationStep{
+// validationSteps returns series of validation steps for
+// a particular destination.
+func (ct *CTHandleT) validationSteps() []*validationStep {
+
+	steps := []*validationStep{{
 		ID:        1,
 		Name:      "Verifying Object Storage",
 		Validator: ct.verifyingObjectStorage,
-	})
+	}}
 
 	// Time window destination contains only object storage verification
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
-		return
+		return steps
 	}
 
 	steps = append(steps,
@@ -52,5 +54,6 @@ func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 			Validator: ct.verifyingLoadTable,
 		},
 	)
-	return
+
+	return steps
 }

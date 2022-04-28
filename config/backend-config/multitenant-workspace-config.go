@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type MultiTenantWorkspaceConfig struct {
@@ -127,7 +128,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) makeHTTPRequest(url string) (
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte{}, 400, err

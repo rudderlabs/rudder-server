@@ -42,7 +42,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
+	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {

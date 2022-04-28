@@ -85,7 +85,7 @@ var HTTPTimeout time.Duration
 var pkgLogger logger.LoggerI
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
+	config.RegisterDurationConfigVariable(600, &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
 func Init() {

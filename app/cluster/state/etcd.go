@@ -73,10 +73,10 @@ func EnvETCDConfig() *ETCDConfig {
 	var ackTimeout time.Duration
 
 	envConfigOnce.Do(func() {
-		config.RegisterDurationConfigVariable(time.Duration(15), &ackTimeout, false, time.Second, "etcd.ackTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(30), &keepaliveTime, false, time.Second, "etcd.keepaliveTime")
-		config.RegisterDurationConfigVariable(time.Duration(10), &keepaliveTimeout, false, time.Second, "etcd.keepaliveTimeout")
-		config.RegisterDurationConfigVariable(time.Duration(20), &dialTimeout, false, time.Second, "etcd.dialTimeout")
+		config.RegisterDurationConfigVariable(15, &ackTimeout, false, time.Second, "etcd.ackTimeout")
+		config.RegisterDurationConfigVariable(30, &keepaliveTime, false, time.Second, "etcd.keepaliveTime")
+		config.RegisterDurationConfigVariable(10, &keepaliveTimeout, false, time.Second, "etcd.keepaliveTimeout")
+		config.RegisterDurationConfigVariable(20, &dialTimeout, false, time.Second, "etcd.dialTimeout")
 	})
 
 	return &ETCDConfig{
