@@ -67,7 +67,10 @@ func (c *tlsConfig) build() (*tls.Config, error) {
 		return nil, fmt.Errorf("invalid TLS configuration, either provide certificates or skip validation")
 	}
 
-	conf := &tls.Config{}
+	conf := &tls.Config{
+		MinVersion: tls.VersionTLS11,
+		MaxVersion: tls.VersionTLS12,
+	}
 	if c.insecureSkipVerify {
 		conf.InsecureSkipVerify = true
 	}
