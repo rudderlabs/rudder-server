@@ -401,7 +401,7 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Publish error: %v", err)
 				}
 				return err == nil
-			}, 30*time.Second, 100*time.Millisecond, "Could not publish within timeout")
+			}, 60*time.Second, 100*time.Millisecond, "Could not publish within timeout")
 		})
 	}
 }
