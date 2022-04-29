@@ -10,8 +10,8 @@ import (
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
-	"github.com/ory/dockertest"
-	dc "github.com/ory/dockertest/docker"
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/phayes/freeport"
 )
 
