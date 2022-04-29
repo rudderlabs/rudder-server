@@ -38,7 +38,7 @@ type client struct {
 }
 
 // New returns a new Kafka client
-func New(network, address string, opts ...Option) (*client, error) {
+func New(network, address string, opts ...Option) (*client, error) { // skipcq: RVV-B0011
 	conf := config{}
 	for _, opt := range opts {
 		opt.apply(&conf)
