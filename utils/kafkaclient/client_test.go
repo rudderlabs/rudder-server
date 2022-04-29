@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -403,6 +404,54 @@ func TestWithSASL(t *testing.T) {
 			}, 30*time.Second, 100*time.Millisecond, "Could not publish within timeout")
 		})
 	}
+}
+
+func TestWithSASLBadCredentials(t *testing.T) {
+	t.Parallel()
+
+	// Prepare cluster - Zookeeper and one Kafka broker
+	path, err := os.Getwd()
+	require.NoError(t, err)
+
+	saslConfiguration := destination.SASLConfig{
+		BrokerUser: destination.User{Username: "kafka1", Password: "password"},
+		Users: []destination.User{
+			{Username: "client1", Password: "password"},
+		},
+		CertificatePassword: "password",
+		KeyStorePath:        filepath.Join(path, "/testdata/keystore/kafka.keystore.jks"),
+		TrustStorePath:      filepath.Join(path, "/testdata/truststore/kafka.truststore.jks"),
+	}
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	containerOptions := []destination.Option{
+		destination.WithBrokers(1),
+		destination.WithSASLPlain(saslConfiguration),
+	}
+	if testing.Verbose() {
+		containerOptions = append(containerOptions, destination.WithLogger(t))
+	}
+	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, containerOptions...)
+	require.NoError(t, err)
+
+	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+	c, err := New("tcp", kafkaHost,
+		WithClientID("some-client"),
+		WithDialTimeout(10*time.Second),
+		WithSASL(ScramPlainText, "A BAD USER", "A BAD PASSWORD"),
+		WithTLS(nil, nil, nil, true),
+	)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		err := c.Ping(context.Background())
+		if err != nil {
+			t.Logf("Ping error: %v", err)
+		}
+		return strings.Contains(err.Error(), "SASL Authentication failed")
+	}, 30*time.Second, 250*time.Millisecond)
 }
 
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
