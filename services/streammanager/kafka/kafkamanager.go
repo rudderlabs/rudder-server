@@ -232,7 +232,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.
 	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
 	conf.Net.TLS.Enable = true
-	conf.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Config = &tls.Config{ // skipcq: GO-S1020
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
@@ -266,7 +266,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama
 	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
 	conf.Net.TLS.Enable = true
-	conf.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Config = &tls.Config{ // skipcq: GO-S1020
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
