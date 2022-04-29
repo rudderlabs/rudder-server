@@ -337,6 +337,7 @@ func TestWithSASL(t *testing.T) {
 
 	hashTypes := []ScramHashGenerator{ScramPlainText, ScramSHA256, ScramSHA512}
 	for _, hashType := range hashTypes {
+		saslConfiguration := saslConfiguration // to avoid data race
 		t.Run(hashType.String(), func(t *testing.T) {
 			t.Parallel()
 
