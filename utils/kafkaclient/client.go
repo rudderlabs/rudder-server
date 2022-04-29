@@ -93,9 +93,8 @@ func (c *client) Ping(ctx context.Context) error {
 	}
 
 	defer func() {
-		go func() { // close asynchronously, if we block we might not respect the context
-			_ = conn.Close()
-		}()
+		// close asynchronously, if we block we might not respect the context
+		go func() { _ = conn.Close() }()
 	}()
 
 	return nil
