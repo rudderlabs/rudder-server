@@ -45,6 +45,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	t.Parallel()
 
 	// Prepare cluster - Zookeeper + 3 Kafka brokers
+	// We need more than one broker, or we'll be stuck with a "GROUP_COORDINATOR_NOT_AVAILABLE" error
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
