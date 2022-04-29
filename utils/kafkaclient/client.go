@@ -195,8 +195,8 @@ func (c *client) listTopics(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("could not read partitions: %w", err)
 	case partitions := <-done:
 		var topics []string
-		for _, p := range partitions {
-			topics = append(topics, fmt.Sprintf("%s [partition %d]", p.Topic, p.ID))
+		for i := range partitions {
+			topics = append(topics, fmt.Sprintf("%s [partition %d]", partitions[i].Topic, partitions[i].ID))
 		}
 		return topics, nil
 	}
