@@ -19,6 +19,8 @@ import (
 )
 
 func TestClient_Ping(t *testing.T) {
+	t.Parallel()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -39,6 +41,8 @@ func TestClient_Ping(t *testing.T) {
 }
 
 func TestProducerBatchConsumerGroup(t *testing.T) {
+	t.Parallel()
+
 	// Prepare cluster - Zookeeper + 3 Kafka brokers
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -178,6 +182,8 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 }
 
 func TestConsumer_Partition(t *testing.T) {
+	t.Parallel()
+
 	// Prepare cluster - Zookeeper and one Kafka broker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -310,73 +316,93 @@ func TestConsumer_Partition(t *testing.T) {
 	t.Logf("Messages consumed by c02: %d", atomic.LoadInt32(&c02Count))
 }
 
-func TestWithSASLPlain(t *testing.T) {
+func TestWithSASL(t *testing.T) {
+	t.Parallel()
+
 	// Prepare cluster - Zookeeper and one Kafka broker
 	path, err := os.Getwd()
 	require.NoError(t, err)
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-		destination.WithLogger(t),
-		destination.WithBrokers(1),
-		destination.WithSASLPlain(
-			destination.User{Username: "kafka1", Password: "password"},
-			[]destination.User{
-				{Username: "client1", Password: "password"},
-			},
-			"password",
-			filepath.Join(path, "/testdata/keystore/kafka.keystore.jks"),
-			filepath.Join(path, "/testdata/truststore/kafka.truststore.jks"),
-		))
-	require.NoError(t, err)
-
-	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost,
-		WithClientID("some-client"),
-		WithDialTimeout(10*time.Second),
-		WithSASL(ScramPlainText, "client1", "password"),
-		WithTLS(nil, nil, nil, true),
-	)
-	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
-		err := c.Ping(context.Background())
-		if err != nil {
-			t.Logf("Ping error: %v", err)
-		}
-		return err == nil
-	}, 30*time.Second, 250*time.Millisecond)
-
-	var producerOpts []ProducerOption
-	if testing.Verbose() {
-		producerOpts = append(producerOpts,
-			WithProducerLogger(&testLogger{t}),
-			WithProducerErrorLogger(&testLogger{t}),
-		)
+	saslConfiguration := destination.SASLConfig{
+		BrokerUser: destination.User{Username: "kafka1", Password: "password"},
+		Users: []destination.User{
+			{Username: "client1", Password: "password"},
+		},
+		CertificatePassword: "password",
+		KeyStorePath:        filepath.Join(path, "/testdata/keystore/kafka.keystore.jks"),
+		TrustStorePath:      filepath.Join(path, "/testdata/truststore/kafka.truststore.jks"),
 	}
-	p, err := c.NewProducer(t.Name(), producerOpts...)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := p.Close(ctx); err != nil {
-			t.Logf("Error closing producer: %v", err)
-		}
-	})
 
-	// We will now try to publish for 30s because the cluster could still be in a "Leader Not Available" state
-	require.Eventually(t, func() bool {
-		err := p.Publish(context.Background(), Message{
-			Key:   []byte("hello"),
-			Value: []byte("ciao"),
+	hashTypes := []ScramHashGenerator{ScramPlainText, ScramSHA256, ScramSHA512}
+	for _, hashType := range hashTypes {
+		t.Run(hashType.String(), func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			containerOptions := []destination.Option{destination.WithBrokers(1)}
+			if testing.Verbose() {
+				containerOptions = append(containerOptions, destination.WithLogger(t))
+			}
+			switch hashType {
+			case ScramPlainText:
+				containerOptions = append(containerOptions, destination.WithSASLPlain(saslConfiguration))
+			case ScramSHA256:
+				containerOptions = append(containerOptions, destination.WithSASLScramSHA256(saslConfiguration))
+			case ScramSHA512:
+				containerOptions = append(containerOptions, destination.WithSASLScramSHA512(saslConfiguration))
+			}
+			kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, containerOptions...)
+			require.NoError(t, err)
+
+			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+			c, err := New("tcp", kafkaHost,
+				WithClientID("some-client"),
+				WithDialTimeout(10*time.Second),
+				WithSASL(hashType, "client1", "password"),
+				WithTLS(nil, nil, nil, true),
+			)
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				err := c.Ping(context.Background())
+				if err != nil {
+					t.Logf("Ping error: %v", err)
+				}
+				return err == nil
+			}, 30*time.Second, 250*time.Millisecond)
+
+			var producerOpts []ProducerOption
+			if testing.Verbose() {
+				producerOpts = append(producerOpts,
+					WithProducerLogger(&testLogger{t}),
+					WithProducerErrorLogger(&testLogger{t}),
+				)
+			}
+			p, err := c.NewProducer("some-topic", producerOpts...)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := p.Close(ctx); err != nil {
+					t.Logf("Error closing producer: %v", err)
+				}
+			})
+
+			// We will now try to publish for 30s because the cluster could still be in a "Leader Not Available" state
+			require.Eventually(t, func() bool {
+				err := p.Publish(context.Background(), Message{
+					Key:   []byte("hello"),
+					Value: []byte("ciao"),
+				})
+				if err != nil {
+					t.Logf("Publish error: %v", err)
+				}
+				return err == nil
+			}, 30*time.Second, 100*time.Millisecond, "Could not publish within timeout")
 		})
-		if err != nil {
-			t.Logf("Publish error: %v", err)
-		}
-		return err == nil
-	}, 30*time.Second, 100*time.Millisecond, "Could not publish within timeout")
+	}
 }
 
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {

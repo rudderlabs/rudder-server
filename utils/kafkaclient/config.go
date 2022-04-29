@@ -19,6 +19,19 @@ const (
 	ScramSHA512
 )
 
+func (s ScramHashGenerator) String() string {
+	switch s {
+	case ScramPlainText:
+		return "plain"
+	case ScramSHA256:
+		return "sha-256"
+	case ScramSHA512:
+		return "sha-512"
+	default:
+		panic(fmt.Errorf("scram hash generator out of the known domain %d", s))
+	}
+}
+
 // Option is an abstraction used to allow the configuration of a client
 type Option interface {
 	apply(*config)
