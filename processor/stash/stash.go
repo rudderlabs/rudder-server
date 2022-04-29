@@ -36,7 +36,7 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterDurationConfigVariable(time.Duration(30), &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
+	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
@@ -93,7 +93,7 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func (st *HandleT) setupFileUploader() {
-	if errorStashEnabled {
+	if errorStashEnabled && jobsdb.IsMasterBackupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
@@ -229,6 +229,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
+			if !(errorStashEnabled && jobsdb.IsMasterBackupEnabled()) {
+				continue
+			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			toQuery := errDBReadBatchSize
 			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})

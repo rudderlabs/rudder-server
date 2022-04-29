@@ -5,6 +5,8 @@ enableProcessor: true
 enableRouter: true
 enableStats: true
 statsTagsFormat: influxdb
+HttpClient:
+  timeout: 30s
 Http:
   ReadTimeout: 0s
   ReadHeaderTimeout: 0s
@@ -182,7 +184,6 @@ Processor:
   maxHTTPIdleConnections: 50
   maxRetry: 30
   retrySleep: 100ms
-  timeoutDuration: 30s
   errReadLoopSleep: 30s
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
