@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/multitenant"
-
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/config"
@@ -29,15 +29,14 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -145,7 +144,7 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
+				Destinations: []backendConfig.DestinationT{{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
 		},
@@ -249,7 +248,10 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	wait := make(chan bool)
 	go func() {
-		dCM.Run(ctx)
+		err := dCM.Run(ctx)
+		if err != nil {
+			t.Logf("cluster runner stopped: %v", err)
+		}
 		close(wait)
 	}()
 

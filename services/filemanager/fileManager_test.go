@@ -19,12 +19,13 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/minio/minio-go/v6"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/option"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/api/option"
 )
 
 var (

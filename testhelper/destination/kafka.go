@@ -8,8 +8,8 @@ import (
 
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
-	dc "github.com/ory/dockertest/docker"
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/phayes/freeport"
 )
 
@@ -24,11 +24,11 @@ type deferer interface {
 func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if err != nil {
-		return nil, fmt.Errorf("Could not create docker network: %w", err)
+		return nil, fmt.Errorf("could not create docker network: %w", err)
 	}
 	d.Defer(func() error {
 		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			return fmt.Errorf("Could not remove kafka network: %w \n", err)
+			return fmt.Errorf("could not remove kafka network: %w", err)
 		}
 		return nil
 	})
@@ -98,7 +98,7 @@ func SetupKafka(pool *dockertest.Pool, d deferer) (*KafkaResource, error) {
 	})
 	d.Defer(func() error {
 		if err := pool.Purge(kafkaContainer); err != nil {
-			return fmt.Errorf("Could not purge Kafka resource: %w \n", err)
+			return fmt.Errorf("could not purge Kafka resource: %w", err)
 		}
 		return nil
 	})
