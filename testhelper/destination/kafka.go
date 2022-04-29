@@ -295,4 +295,4 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 
 type nopLogger struct{}
 
-func (_ *nopLogger) Log(...interface{}) {}
+func (*nopLogger) Log(...interface{}) {}

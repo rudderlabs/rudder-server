@@ -1635,4 +1635,4 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 
 type logger struct{}
 
-func (_ *logger) Log(args ...interface{}) { log.Println(args...) }
+func (*logger) Log(args ...interface{}) { log.Println(args...) }
