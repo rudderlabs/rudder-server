@@ -14,6 +14,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type scramHashGenerator uint8
+
+const (
+	scramPlainText scramHashGenerator = iota
+	scramSHA256
+	scramSHA512
+)
+
+type User struct {
+	Username, Password string
+}
+
 type Option interface {
 	apply(*config)
 }
@@ -22,27 +34,10 @@ type withOption struct{ setup func(*config) }
 
 func (w withOption) apply(c *config) { w.setup(c) }
 
-type KafkaResource struct {
-	Port string
-
-	pool       *dockertest.Pool
-	containers []*dockertest.Resource
-}
-
-func (k *KafkaResource) Destroy() error {
-	g := errgroup.Group{}
-	for i := range k.containers {
-		i := i
-		g.Go(func() error {
-			return k.pool.Purge(k.containers[i])
-		})
-	}
-	return g.Wait()
-}
-
 type config struct {
-	logger  logger
-	brokers uint
+	logger     logger
+	brokers    uint
+	saslConfig *saslConfig
 }
 
 func (c *config) defaults() {
@@ -52,6 +47,14 @@ func (c *config) defaults() {
 	if c.brokers < 1 {
 		c.brokers = 1
 	}
+}
+
+type saslConfig struct {
+	hashType                     scramHashGenerator
+	brokerUser                   User
+	users                        []User
+	certificatePassword          string
+	keyStorePath, trustStorePath string
 }
 
 type logger interface {
@@ -74,6 +77,40 @@ func WithBrokers(noOfBrokers uint) Option {
 	return withOption{setup: func(c *config) {
 		c.brokers = noOfBrokers
 	}}
+}
+
+// WithSASLPlain is used to configure SASL authentication (PLAIN)
+func WithSASLPlain(
+	brokerUser User, users []User, certificatePassword, keyStorePath, trustStorePath string,
+) Option {
+	return withOption{setup: func(c *config) {
+		c.saslConfig = &saslConfig{
+			hashType:            scramPlainText,
+			brokerUser:          brokerUser,
+			users:               users,
+			certificatePassword: certificatePassword,
+			keyStorePath:        keyStorePath,
+			trustStorePath:      trustStorePath,
+		}
+	}}
+}
+
+type KafkaResource struct {
+	Port string
+
+	pool       *dockertest.Pool
+	containers []*dockertest.Resource
+}
+
+func (k *KafkaResource) Destroy() error {
+	g := errgroup.Group{}
+	for i := range k.containers {
+		i := i
+		g.Go(func() error {
+			return k.pool.Purge(k.containers[i])
+		})
+	}
+	return g.Wait()
 }
 
 func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResource, error) {
@@ -100,14 +137,14 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 	}
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
 	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "confluentinc/cp-zookeeper",
+		Repository: "bitnami/zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
 		},
-		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
+		Env: []string{"ALLOW_ANONYMOUS_LOGIN=yes"},
 	})
 	if err != nil {
 		return nil, err
@@ -127,6 +164,74 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 	}
 	bootstrapServers = bootstrapServers[:len(bootstrapServers)-1] // removing trailing comma
 
+	envVariables := []string{
+		"KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181",
+		"KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL",
+		"ALLOW_PLAINTEXT_LISTENER=yes",
+		"BOOTSTRAP_SERVERS=" + bootstrapServers,
+	}
+
+	var mounts []string
+	if c.saslConfig != nil {
+		if c.saslConfig.brokerUser.Username == "" {
+			return nil, fmt.Errorf("SASL broker user must be provided")
+		}
+		if len(c.saslConfig.users) < 1 {
+			return nil, fmt.Errorf("SASL users must be provided")
+		}
+		if c.saslConfig.certificatePassword == "" {
+			return nil, fmt.Errorf("SASL certificate password cannot be empty")
+		}
+		if c.saslConfig.keyStorePath == "" {
+			return nil, fmt.Errorf("SASL keystore path cannot be empty")
+		}
+		if c.saslConfig.trustStorePath == "" {
+			return nil, fmt.Errorf("SASL truststore path cannot be empty")
+		}
+
+		mounts = []string{
+			c.saslConfig.keyStorePath + ":/opt/bitnami/kafka/config/certs/kafka.keystore.jks",
+			c.saslConfig.trustStorePath + ":/opt/bitnami/kafka/config/certs/kafka.truststore.jks",
+		}
+
+		var users, passwords string
+		for _, user := range c.saslConfig.users {
+			users += user.Username + ","
+			passwords += user.Password + ","
+		}
+
+		switch c.saslConfig.hashType {
+		case scramPlainText:
+			envVariables = append(envVariables,
+				"KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN",
+				"KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN",
+				"KAFKA_CFG_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM=",
+			)
+		case scramSHA256: // TODO
+			return nil, fmt.Errorf("scram.SHA256 not supported yet")
+		case scramSHA512: // TODO
+			return nil, fmt.Errorf("scram.SHA512 not supported yet")
+		default:
+			return nil, fmt.Errorf("scram algorithm out of the known domain")
+		}
+
+		envVariables = append(envVariables,
+			"KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:SASL_SSL,CLIENT:SASL_SSL",
+			"KAFKA_CLIENT_USERS="+users[:len(users)-1],             // removing trailing comma
+			"KAFKA_CLIENT_PASSWORDS="+passwords[:len(passwords)-1], // removing trailing comma
+			"KAFKA_INTER_BROKER_USER="+c.saslConfig.brokerUser.Username,
+			"KAFKA_INTER_BROKER_PASSWORD="+c.saslConfig.brokerUser.Password,
+			"KAFKA_CERTIFICATE_PASSWORD="+c.saslConfig.certificatePassword,
+			"KAFKA_CFG_TLS_TYPE=JKS",
+			"KAFKA_CFG_TLS_CLIENT_AUTH=none",
+			"KAFKA_ZOOKEEPER_TLS_VERIFY_HOSTNAME=false",
+		)
+	} else {
+		envVariables = append(envVariables,
+			"KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,CLIENT:PLAINTEXT",
+		)
+	}
+
 	containers := make([]*dockertest.Resource, c.brokers)
 	for i := uint(0); i < c.brokers; i++ {
 		i := i
@@ -140,24 +245,21 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 		nodeID := fmt.Sprintf("%d", i+1)
 		hostname := "kafka" + nodeID
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
-			Repository: "confluentinc/cp-kafka",
-			Tag:        "7.0.0",
+			Repository: "bitnami/kafka",
+			Tag:        "latest",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
 			PortBindings: map[dc.Port][]dc.PortBinding{
 				"9092/tcp": {{HostIP: "localhost", HostPort: localhostPort}},
 			},
-			Env: []string{
+			Mounts: mounts,
+			Env: append(envVariables, []string{
 				"KAFKA_BROKER_ID=" + nodeID,
-				"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
-				"KAFKA_ADVERTISED_LISTENERS=" + fmt.Sprintf(
-					"INTERNAL://%s:9090,EXTERNAL://localhost:%d", hostname, localhostPortInt,
+				"KAFKA_CFG_ADVERTISED_LISTENERS=" + fmt.Sprintf(
+					"INTERNAL://%s:9090,CLIENT://localhost:%d", hostname, localhostPortInt,
 				),
-				"KAFKA_LISTENERS=" + fmt.Sprintf("INTERNAL://%s:9090,EXTERNAL://:9092", hostname),
-				"KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
-				"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
-				"BOOTSTRAP_SERVERS=" + bootstrapServers,
-			},
+				"KAFKA_CFG_LISTENERS=" + fmt.Sprintf("INTERNAL://%s:9090,CLIENT://:9092", hostname),
+			}...),
 		})
 		if err != nil {
 			return nil, err

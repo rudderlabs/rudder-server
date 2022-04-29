@@ -48,22 +48,30 @@ type tlsConfig struct {
 }
 
 func (c *tlsConfig) build() (*tls.Config, error) {
-	certificate, err := tls.X509KeyPair(c.cert, c.key)
-	if err != nil {
-		return nil, fmt.Errorf("could not get TLS certificate: %w", err)
+	loadCerts := len(c.cert) > 0 && len(c.key) > 0 && len(c.caCertificate) > 0
+
+	if !loadCerts && !c.insecureSkipVerify {
+		return nil, fmt.Errorf("invalid TLS configuration, either provide certificates or skip validation")
 	}
 
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(c.caCertificate); !ok {
-		return nil, fmt.Errorf("could not append certs from PEM")
-	}
-
-	conf := &tls.Config{
-		Certificates: []tls.Certificate{certificate},
-		RootCAs:      caCertPool,
-	}
+	conf := &tls.Config{}
 	if c.insecureSkipVerify {
 		conf.InsecureSkipVerify = true
+	}
+
+	if loadCerts {
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(c.caCertificate); !ok {
+			return nil, fmt.Errorf("could not append certs from PEM")
+		}
+
+		certificate, err := tls.X509KeyPair(c.cert, c.key)
+		if err != nil {
+			return nil, fmt.Errorf("could not get TLS certificate: %w", err)
+		}
+
+		conf.RootCAs = caCertPool
+		conf.Certificates = []tls.Certificate{certificate}
 	}
 
 	return conf, nil
