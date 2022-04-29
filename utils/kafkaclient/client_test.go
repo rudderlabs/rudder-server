@@ -348,11 +348,11 @@ func TestWithSASL(t *testing.T) {
 			}
 			switch hashType {
 			case ScramPlainText:
-				containerOptions = append(containerOptions, destination.WithSASLPlain(saslConfiguration))
+				containerOptions = append(containerOptions, destination.WithSASLPlain(&saslConfiguration))
 			case ScramSHA256:
-				containerOptions = append(containerOptions, destination.WithSASLScramSHA256(saslConfiguration))
+				containerOptions = append(containerOptions, destination.WithSASLScramSHA256(&saslConfiguration))
 			case ScramSHA512:
-				containerOptions = append(containerOptions, destination.WithSASLScramSHA512(saslConfiguration))
+				containerOptions = append(containerOptions, destination.WithSASLScramSHA512(&saslConfiguration))
 			}
 			kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, containerOptions...)
 			require.NoError(t, err)
@@ -428,7 +428,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 
 	containerOptions := []destination.Option{
 		destination.WithBrokers(1),
-		destination.WithSASLPlain(saslConfiguration),
+		destination.WithSASLPlain(&saslConfiguration),
 	}
 	if testing.Verbose() {
 		containerOptions = append(containerOptions, destination.WithLogger(t))

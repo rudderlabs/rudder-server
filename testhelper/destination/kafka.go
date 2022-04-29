@@ -81,24 +81,24 @@ func WithBrokers(noOfBrokers uint) Option {
 }
 
 // WithSASLPlain is used to configure SASL authentication (PLAIN)
-func WithSASLPlain(conf SASLConfig) Option {
+func WithSASLPlain(conf *SASLConfig) Option {
 	return withSASL(scramPlainText, conf)
 }
 
 // WithSASLScramSHA256 is used to configure SASL authentication (Scram SHA-256)
-func WithSASLScramSHA256(conf SASLConfig) Option {
+func WithSASLScramSHA256(conf *SASLConfig) Option {
 	return withSASL(scramSHA256, conf)
 }
 
 // WithSASLScramSHA512 is used to configure SASL authentication (Scram SHA-512)
-func WithSASLScramSHA512(conf SASLConfig) Option {
+func WithSASLScramSHA512(conf *SASLConfig) Option {
 	return withSASL(scramSHA512, conf)
 }
 
-func withSASL(hashType scramHashGenerator, conf SASLConfig) Option {
+func withSASL(hashType scramHashGenerator, conf *SASLConfig) Option {
 	conf.hashType = hashType
 	return withOption{setup: func(c *config) {
-		c.saslConfig = &conf
+		c.saslConfig = conf
 	}}
 }
 
