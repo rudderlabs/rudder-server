@@ -2240,12 +2240,6 @@ func (brt *HandleT) Start() {
 
 		return nil
 	}))
-
-	brm, err := GetBatchRoutersManager()
-	if err != nil {
-		panic("Batch Routers manager is nil. Shouldn't happen. Go Debug")
-	}
-	brm.AddBatchRouter(brt)
 }
 
 func (brt *HandleT) Shutdown() {
@@ -2255,65 +2249,4 @@ func (brt *HandleT) Shutdown() {
 		close(worker.resumeChannel)
 	}
 	brt.backgroundWait()
-}
-
-//
-//Pause will pause the batch router
-//To completely pause the router, we should pause all the workers
-func (brt *HandleT) Pause() {
-	brt.pauseLock.Lock()
-	defer brt.pauseLock.Unlock()
-
-	if brt.paused {
-		return
-	}
-
-	//Pause poll status worker
-	respChannel := make(chan bool)
-	brt.pollAsyncStatusPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Pause async upload worker
-	respChannel = make(chan bool)
-	brt.asyncUploadWorkerPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Pause workers
-	var wg sync.WaitGroup
-	for _, worker := range brt.workers {
-		_worker := worker
-		wg.Add(1)
-		rruntime.Go(func() {
-			respChannel := make(chan bool)
-			_worker.pauseChannel <- &PauseT{respChannel: respChannel, wg: &wg, waitForResume: true}
-			<-respChannel
-		})
-	}
-	wg.Wait()
-
-	brt.crashRecover()
-	brt.asyncDestinationStruct = make(map[string]*asyncdestinationmanager.AsyncDestinationStruct)
-
-	brt.paused = true
-}
-
-//Resume will resume the batch router
-//Resuming all the workers
-func (brt *HandleT) Resume() {
-	brt.pauseLock.Lock()
-	defer brt.pauseLock.Unlock()
-
-	if !brt.paused {
-		return
-	}
-
-	//Resume workers
-	for _, worker := range brt.workers {
-		worker.resumeChannel <- true
-	}
-
-	brt.pollAsyncStatusResumeChannel <- true
-	brt.asyncUploadWorkerResumeChannel <- true
-
-	brt.paused = false
 }

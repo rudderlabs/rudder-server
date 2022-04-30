@@ -55,8 +55,6 @@ func (r *LifecycleManager) Stop() {
 // New creates a new Router instance
 func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	backendConfig backendconfig.BackendConfig) *LifecycleManager {
-	router.RoutersManagerSetup()
-	batchrouter.BatchRoutersManagerSetup()
 
 	return &LifecycleManager{
 		rt:            rtFactory,
@@ -114,16 +112,6 @@ loop:
 						}
 					}
 				}
-			}
-
-			rm, err := router.GetRoutersManager()
-			if rm != nil && err == nil {
-				rm.SetRoutersReady()
-			}
-
-			brm, err := batchrouter.GetBatchRoutersManager()
-			if brm != nil && err == nil {
-				brm.SetBatchRoutersReady()
 			}
 		}
 	}
