@@ -70,8 +70,6 @@ var (
 )
 
 type HandleT struct {
-	paused                         bool
-	pauseLock                      sync.Mutex
 	destType                       string
 	destinationsMap                map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
@@ -97,7 +95,6 @@ type HandleT struct {
 	drainedJobsStat                stats.RudderStats
 	backendConfig                  backendconfig.BackendConfig
 	fileManagerFactory             filemanager.FileManagerFactory
-	maxFileUploadSize              int
 	inProgressMap                  map[string]bool
 	inProgressMapLock              sync.RWMutex
 	lastExecMap                    map[string]int64
@@ -593,14 +590,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		if isDestInterrupted {
 			if _, ok = interruptedEventsMap[eventID]; !ok {
 				eventsFound = true
-				gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
+				_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 			}
 		} else {
 			eventsFound = true
-			gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
+			_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 		}
 	}
-	gzWriter.CloseGZ()
+	_ = gzWriter.CloseGZ()
 	if !eventsFound {
 		brt.logger.Infof("BRT: No events in this batch for upload to %s. Events are either de-deuplicated or skipped", provider)
 		return StorageUploadOutput{
@@ -1178,13 +1175,14 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		if brt.reporting != nil && brt.reportingEnabled {
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
+			var cd *types.ConnectionDetails
 			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
 			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
 			if !ok {
 				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
 			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
-			cd, ok := connectionDetailsMap[key]
+			_, ok = connectionDetailsMap[key]
 			if !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
@@ -1754,13 +1752,12 @@ func (brt *HandleT) initWorkers() {
 		}))
 	}
 
-	g.Wait()
+	_ = g.Wait()
 }
 
 type PauseT struct {
-	respChannel   chan bool
-	wg            *sync.WaitGroup
-	waitForResume bool
+	respChannel chan bool
+	wg          *sync.WaitGroup
 }
 
 type workerT struct {
@@ -2248,5 +2245,5 @@ func (brt *HandleT) Shutdown() {
 	for _, worker := range brt.workers {
 		close(worker.resumeChannel)
 	}
-	brt.backgroundWait()
+	_ = brt.backgroundWait()
 }

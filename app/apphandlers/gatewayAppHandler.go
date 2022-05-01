@@ -25,7 +25,7 @@ type GatewayApp struct {
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
-func (gatewayApp *GatewayApp) GetAppType() string {
+func (*GatewayApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.GATEWAY)
 }
 
@@ -85,6 +85,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	return g.Wait()
 }
 
-func (gateway *GatewayApp) HandleRecovery(options *app.Options) {
+func (*GatewayApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
 }

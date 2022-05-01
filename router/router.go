@@ -73,8 +73,6 @@ type HandleDestOAuthRespParamsT struct {
 //HandleT is the handle to this module.
 type HandleT struct {
 	pausingWorkers                         bool
-	paused                                 bool
-	pauseLock                              sync.Mutex
 	generatorPauseChannel                  chan *PauseT
 	generatorResumeChannel                 chan bool
 	statusLoopPauseChannel                 chan *PauseT

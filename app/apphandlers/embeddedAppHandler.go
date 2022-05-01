@@ -38,7 +38,7 @@ type EmbeddedApp struct {
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
-func (embedded *EmbeddedApp) GetAppType() string {
+func (*EmbeddedApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
@@ -247,6 +247,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	return g.Wait()
 }
 
-func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {
+func (*EmbeddedApp) HandleRecovery(options *app.Options) {
 	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
 }
