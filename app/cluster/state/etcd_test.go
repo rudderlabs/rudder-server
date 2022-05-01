@@ -11,15 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	etcd "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/stretchr/testify/require"
-	etcd "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 )
 
 var (

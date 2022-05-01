@@ -929,9 +929,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//Only one job is marked failed and the rest are marked waiting
 				//Job order logic requires that at any point of time, we should have only one failed job per user
 				//This is introduced to ensure the above statement
-				resp := fmt.Sprintf(`{"blocking_id":"%d", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
+				resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", prevFailedJobID)
+				resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", destinationJobMetadata.UserID)
+				resp = misc.UpdateJSONWithNewKeyVal(resp, "moreinfo", "attempted to send in a batch")
+
 				status.JobState = jobsdb.Waiting.State
-				status.ErrorResponse = []byte(resp)
+				status.ErrorResponse = resp
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 				continue
 			} else {
@@ -1264,14 +1267,15 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 	// job is behind in queue of failed job from same user
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
-		resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
+		resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", previousFailedJobID)
+		resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			JobState:      jobsdb.Waiting.State,
-			ErrorResponse: []byte(resp), // check
+			ErrorResponse: resp, // check
 			Parameters:    []byte(`{}`),
 			WorkspaceId:   job.WorkspaceId,
 		}
