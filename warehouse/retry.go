@@ -87,9 +87,6 @@ func (retryReq *RetryReq) retryUploads() (rowsAffected int64, err error) {
 
 	// Getting rows affected
 	rowsAffected, err = res.RowsAffected()
-	if err != nil {
-		return
-	}
 	return
 }
 
@@ -111,7 +108,7 @@ func (retryReq RetryReq) validateReq() (err error) {
 
 	// Checking for either IntervalInHours or UploadIds present.
 	if retryReq.IntervalInHours == 0 && len(retryReq.UploadIds) == 0 {
-		err = errors.New("please verify either uploadIDs or retryIntervalInHours is provided in the request")
+		err = errors.New("please verify either uploadIds or retry intervalInHours is provided in the request")
 		return
 	}
 
