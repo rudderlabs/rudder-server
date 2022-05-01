@@ -238,7 +238,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 }
 
 func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
 func startHealthWebHandler(ctx context.Context) error {

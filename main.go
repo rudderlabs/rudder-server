@@ -11,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
-	"strconv"
 	"strings"
 
 	"net/http"
@@ -22,7 +21,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/gorilla/mux"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -283,26 +281,18 @@ func Run(ctx context.Context) {
 	})
 
 	misc.AppStartTime = time.Now().Unix()
-	//If the server is standby mode, then no major services (gateway, processor, routers...) run
-	if options.StandByMode {
+	if canStartServer() {
 		appHandler.HandleRecovery(options)
-		g.Go(func() error {
-			return startStandbyWebHandler(ctx)
-		})
-	} else {
-		if canStartServer() {
-			appHandler.HandleRecovery(options)
-			g.Go(misc.WithBugsnag(func() error {
-				return appHandler.StartRudderCore(ctx, options)
-			}))
-		}
+		g.Go(misc.WithBugsnag(func() error {
+			return appHandler.StartRudderCore(ctx, options)
+		}))
+	}
 
-		// initialize warehouse service after core to handle non-normal recovery modes
-		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			g.Go(misc.WithBugsnag(func() error {
-				return startWarehouseService(ctx, application)
-			}))
-		}
+	// initialize warehouse service after core to handle non-normal recovery modes
+	if appTypeStr != app.GATEWAY && canStartWarehouse() {
+		g.Go(misc.WithBugsnag(func() error {
+			return startWarehouseService(ctx, application)
+		}))
 	}
 
 	var ctxDoneTime time.Time
@@ -360,36 +350,6 @@ func Run(ctx context.Context) {
 	stats.StopPeriodicStats()
 }
 
-func startStandbyWebHandler(ctx context.Context) error {
-	webPort := getWebPort()
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", standbyHealthHandler)
-	srvMux.HandleFunc("/", standbyHealthHandler)
-	srvMux.HandleFunc("/version", versionHandler)
-
-	// route everything else to defaultHandler:
-	srvMux.PathPrefix("/").HandlerFunc(standbyDefaultHandler)
-
-	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(webPort),
-		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       ReadTimeout,
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    MaxHeaderBytes,
-	}
-	func() {
-		<-ctx.Done()
-		srv.Shutdown(context.Background())
-	}()
-
-	if err := srv.ListenAndServe(); err != nil {
-		return fmt.Errorf("web server: %w", err)
-	}
-	return nil
-}
-
 func getWebPort() int {
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	switch appTypeStr {
@@ -402,16 +362,4 @@ func getWebPort() int {
 	}
 
 	panic(errors.New("invalid app type"))
-}
-
-//StandbyHealthHandler is the http handler for health endpoint
-func standbyHealthHandler(w http.ResponseWriter, r *http.Request) {
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	healthVal := fmt.Sprintf(`{"appType": "%s", "mode":"%s"}`, appTypeStr, strings.ToUpper(db.CurrentMode))
-	w.Write([]byte(healthVal))
-}
-
-//StandbyDefaultHandler is the http handler for health endpoint
-func standbyDefaultHandler(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Server is in standby mode. Please retry after sometime", 500)
 }
