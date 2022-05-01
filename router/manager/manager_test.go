@@ -16,7 +16,8 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
