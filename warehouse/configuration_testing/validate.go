@@ -20,6 +20,11 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
+	pkgLogger.Infof("Validating destination configuration for destinationId: %s, destinationType: %s, step: %s",
+		ct.infoRequest.Destination.ID,
+		ct.GetDestinationType(),
+		step,
+	)
 
 	// Getting warehouse manager
 	var err error
@@ -61,7 +66,12 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		stepError := s.Validator()
 		if stepError != nil {
 			resp.Steps[idx].Error = stepError.Error()
-			pkgLogger.Error(fmt.Errorf("error occurred while validation for destinationType: %s, step: %s with error: %s", ct.GetDestinationType(), s.Name, stepError.Error()))
+			pkgLogger.Errorf("error occurred while destination configuration validation for destinationId: %s, destinationType: %s, step: %s with error: %s",
+				ct.infoRequest.Destination.ID,
+				ct.GetDestinationType(),
+				s.Name,
+				stepError.Error(),
+			)
 		} else {
 			resp.Steps[idx].Success = true
 		}
