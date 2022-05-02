@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	backendConfig BackendConfig
+	backendConfig                         BackendConfig
 	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
@@ -219,6 +219,8 @@ type CommonBackendConfig struct {
 }
 
 func loadConfig() {
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
