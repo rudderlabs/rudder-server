@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -51,7 +52,7 @@ func Run(ctx context.Context) {
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
-		panic("error while getting workspaceId")
+		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
 
 	svc := service.JobSvc{
