@@ -57,13 +57,14 @@ func (c *config) defaults() {
 type tlsConfig struct {
 	cert, key,
 	caCertificate []byte
+	withSystemCertPool,
 	insecureSkipVerify bool
 }
 
 func (c *tlsConfig) build() (*tls.Config, error) {
-	loadCerts := len(c.cert) > 0 && len(c.key) > 0 && len(c.caCertificate) > 0
+	loadCerts := len(c.cert) > 0 && len(c.key) > 0
 
-	if !loadCerts && !c.insecureSkipVerify {
+	if !loadCerts && !c.insecureSkipVerify && !c.withSystemCertPool {
 		return nil, fmt.Errorf("invalid TLS configuration, either provide certificates or skip validation")
 	}
 
@@ -71,22 +72,35 @@ func (c *tlsConfig) build() (*tls.Config, error) {
 		MinVersion: tls.VersionTLS11,
 		MaxVersion: tls.VersionTLS12,
 	}
+
 	if c.insecureSkipVerify {
 		conf.InsecureSkipVerify = true // skipcq: GSC-G402
 	}
 
-	if loadCerts {
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM(c.caCertificate); !ok {
-			return nil, fmt.Errorf("could not append certs from PEM")
+	if c.withSystemCertPool {
+		caCertPool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, fmt.Errorf("could not copy of the system cert pool: %w", err)
 		}
 
+		conf.RootCAs = caCertPool
+	}
+
+	if len(c.caCertificate) > 0 {
+		if conf.RootCAs == nil {
+			conf.RootCAs = x509.NewCertPool()
+		}
+		if ok := conf.RootCAs.AppendCertsFromPEM(c.caCertificate); !ok {
+			return nil, fmt.Errorf("could not append certs from PEM")
+		}
+	}
+
+	if loadCerts {
 		certificate, err := tls.X509KeyPair(c.cert, c.key)
 		if err != nil {
 			return nil, fmt.Errorf("could not get TLS certificate: %w", err)
 		}
 
-		conf.RootCAs = caCertPool
 		conf.Certificates = []tls.Certificate{certificate}
 	}
 
@@ -133,12 +147,13 @@ func WithDialTimeout(t time.Duration) Option {
 }
 
 // WithTLS adds TLS support
-func WithTLS(cert, key, caCertificate []byte, insecureSkipVerify bool) Option {
+func WithTLS(cert, key, caCertificate []byte, withSystemCertPool, insecureSkipVerify bool) Option {
 	return withOption{setup: func(c *config) {
 		c.tlsConfig = &tlsConfig{
 			cert:               cert,
 			key:                key,
 			caCertificate:      caCertificate,
+			withSystemCertPool: withSystemCertPool,
 			insecureSkipVerify: insecureSkipVerify,
 		}
 	}}
