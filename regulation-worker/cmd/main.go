@@ -47,7 +47,7 @@ func main() {
 func Run(ctx context.Context) {
 
 	dest := &destination.DestMiddleware{
-		Dest: &backendconfig.WorkspaceConfig{},
+		Dest: &backendconfig.SingleWorkspaceConfig{},
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
