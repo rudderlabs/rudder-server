@@ -18,3 +18,4 @@ build/regulation-worker
 *.out
 coverage.txt
 coverage.html
+*.orig
