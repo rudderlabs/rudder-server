@@ -456,6 +456,76 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	}, 30*time.Second, 250*time.Millisecond)
 }
 
+func TestProducer_Timeout(t *testing.T) {
+	t.Parallel()
+
+	// Prepare cluster - Zookeeper and one Kafka broker
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
+		destination.WithLogger(t),
+		destination.WithBrokers(1))
+	require.NoError(t, err)
+
+	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
+	require.NoError(t, c.Ping(ctx))
+	require.Eventually(t, func() bool {
+		err := c.createTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
+		if err != nil {
+			t.Logf("Could not create topic: %v", err)
+		}
+		return err == nil
+	}, 60*time.Second, time.Second)
+
+	// Check that the topic has been created with the right number of partitions
+	topics, err := c.listTopics(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{t.Name() + " [partition 0]"}, topics)
+
+	// Produce X messages in a single batch
+	producerOpts := []ProducerOption{WithProducerClientID("producer-01")}
+	if testing.Verbose() {
+		producerOpts = append(producerOpts,
+			WithProducerLogger(&testLogger{t}),
+			WithProducerErrorLogger(&testLogger{t}),
+		)
+	}
+	p, err := c.NewProducer(t.Name(), producerOpts...)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.Close(ctx); err != nil {
+			t.Logf("Error closing producer: %v", err)
+		}
+	})
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	err = p.Publish(pubCtx, Message{
+		Key:   []byte("hello"),
+		Value: []byte("world"),
+	})
+	pubCancel()
+	require.NoError(t, err)
+
+	pubCtx, pubCancel = context.WithTimeout(ctx, time.Nanosecond)
+	err = p.Publish(pubCtx, Message{
+		Key:   []byte("hello"),
+		Value: []byte("world"),
+	})
+	defer pubCancel()
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
 	t.Helper()
 	t.Cleanup(func() {
