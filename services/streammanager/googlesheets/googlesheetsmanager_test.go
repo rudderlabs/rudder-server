@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"golang.org/x/oauth2"

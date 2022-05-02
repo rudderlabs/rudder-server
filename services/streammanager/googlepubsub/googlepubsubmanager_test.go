@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
