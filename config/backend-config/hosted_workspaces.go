@@ -16,6 +16,7 @@ import (
 //HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type HostedWorkspacesConfig struct {
 	CommonBackendConfig
+	Token                    string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceIDToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -32,6 +33,13 @@ type WorkspacesT struct {
 //SetUp sets up MultiWorkspaceConfig
 func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
+	if multiWorkspaceConfig.Token == "" {
+		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_WORKSPACE_SECRET", "password")
+	}
+}
+
+func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
+	return multiWorkspaceConfig.Token
 }
 
 //GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
@@ -127,7 +135,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) 
 		return []byte{}, 400, err
 	}
 
-	req.SetBasicAuth(multiWorkspaceSecret, "")
+	req.SetBasicAuth(multiWorkspaceConfig.Token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}

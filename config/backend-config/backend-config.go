@@ -24,11 +24,8 @@ import (
 )
 
 var (
-	backendConfig                         BackendConfig
-	isMultiWorkspace                      bool
-	multiWorkspaceSecret                  string
-	multitenantWorkspaceSecret            string
-	configBackendURL, workspaceToken      string
+	backendConfig BackendConfig
+	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
 	configJSONPath                        string
@@ -203,6 +200,7 @@ type TrackingPlanT struct {
 
 type BackendConfig interface {
 	SetUp()
+	AccessToken() string
 	Get(string) (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
@@ -221,14 +219,6 @@ type CommonBackendConfig struct {
 }
 
 func loadConfig() {
-	// Rudder supporting multiple workspaces. false by default
-	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
-	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
-	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	workspaceToken = config.GetWorkspaceToken()
-
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
@@ -459,13 +449,5 @@ func GetConfigBackendURL() string {
 
 // Gets the workspace token data for a single workspace or multi workspace case
 func GetWorkspaceToken() (workspaceToken string) {
-	workspaceToken = config.GetWorkspaceToken()
-	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if misc.IsMultiTenant() && isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-	} else if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	}
-
-	return workspaceToken
+	return DefaultBackendConfig.AccessToken()
 }

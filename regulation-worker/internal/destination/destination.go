@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -24,14 +25,14 @@ type DestMiddleware struct {
 
 func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 	pkgLogger.Debugf("getting destination Id")
-	config, err := d.getDestDetails(ctx)
+	destConfig, err := d.getDestDetails(ctx)
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details from backend config: %v", err)
 		return "", err
 	}
-	if config.WorkspaceID != "" {
-		pkgLogger.Debugf("workspaceId=", config.WorkspaceID)
-		return config.WorkspaceID, nil
+	if destConfig.WorkspaceID != "" {
+		pkgLogger.Debugf("workspaceId=", destConfig.WorkspaceID)
+		return destConfig.WorkspaceID, nil
 	}
 
 	pkgLogger.Error("workspaceId not found in config")
@@ -43,13 +44,13 @@ func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
 	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
-	config, err := d.getDestDetails(ctx)
+	destConf, err := d.getDestDetails(ctx)
 	if err != nil {
 		return model.Destination{}, err
 	}
 
 	destDetail := model.Destination{}
-	for _, source := range config.Sources {
+	for _, source := range destConf.Sources {
 		for _, dest := range source.Destinations {
 			if dest.ID == destID {
 				destDetail.Config = dest.Config
@@ -75,12 +76,12 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
-	var config backendconfig.ConfigT
+	var destConf backendconfig.ConfigT
 	var ok bool
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
-		config, ok = d.Dest.Get(backendconfig.GetWorkspaceToken())
+		destConf, ok = d.Dest.Get(config.GetWorkspaceToken())
 		if !ok {
 			return fmt.Errorf("error while getting destination details")
 		}
@@ -92,5 +93,5 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 		}
 
 	}
-	return config, nil
+	return destConf, nil
 }

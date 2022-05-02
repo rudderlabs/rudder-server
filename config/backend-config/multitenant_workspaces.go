@@ -13,6 +13,7 @@ import (
 
 type MultiTenantWorkspacesConfig struct {
 	CommonBackendConfig
+	Token                    string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -21,6 +22,14 @@ type MultiTenantWorkspacesConfig struct {
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
+	
+	if workspaceConfig.Token == "" {
+		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
+	}
+}
+
+func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
+	return workspaceConfig.Token
 }
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
@@ -124,7 +133,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 	if err != nil {
 		return []byte{}, 400, err
 	}
-	req.SetBasicAuth(multitenantWorkspaceSecret, "")
+	req.SetBasicAuth(workspaceConfig.Token, "")
 
 	req.Header.Set("Content-Type", "application/json")
 

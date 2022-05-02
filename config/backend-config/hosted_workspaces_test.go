@@ -52,7 +52,7 @@ var _ = Describe("workspace-config", func() {
 			Http = mockHttp
 		})
 		It("Expect to execute request with the correct body and headers and return successfull response", func() {
-			multiWorkspaceSecret = "multiworkspaceSecret"
+			backendConfig.(*HostedWorkspacesConfig).Token = "multiworkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("multiworkspaceSecret"))
@@ -69,7 +69,7 @@ var _ = Describe("workspace-config", func() {
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			workspaceToken = "testToken"
+			// workspaceToken = "testToken"
 			config, ok := backendConfig.Get("testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
@@ -80,7 +80,7 @@ var _ = Describe("workspace-config", func() {
 		})
 
 		It("Expect to execute request with the correct body and headers and return successfull response", func() {
-			multiWorkspaceSecret = "multiworkspaceSecret"
+			backendConfig.(*HostedWorkspacesConfig).Token = "multiworkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")
@@ -91,7 +91,7 @@ var _ = Describe("workspace-config", func() {
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			workspaceToken = "testToken"
+			// workspaceToken = "testToken"
 			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
 			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))

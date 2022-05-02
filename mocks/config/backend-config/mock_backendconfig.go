@@ -36,6 +36,20 @@ func (m *MockBackendConfig) EXPECT() *MockBackendConfigMockRecorder {
 	return m.recorder
 }
 
+// AccessToken mocks base method.
+func (m *MockBackendConfig) AccessToken() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AccessToken")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// AccessToken indicates an expected call of AccessToken.
+func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccessToken", reflect.TypeOf((*MockBackendConfig)(nil).AccessToken))
+}
+
 // Get mocks base method.
 func (m *MockBackendConfig) Get(arg0 string) (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()

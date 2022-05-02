@@ -14,11 +14,20 @@ import (
 type SingleWorkspaceConfig struct {
 	CommonBackendConfig
 	workspaceID               string
+	Token 					  string
+
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceIDLock           sync.RWMutex
 }
 
 func (workspaceConfig *SingleWorkspaceConfig) SetUp() {
+	if workspaceConfig.Token == "" {
+		workspaceConfig.Token = config.GetWorkspaceToken()
+	}
+}
+
+func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
+	return workspaceConfig.Token
 }
 
 func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {

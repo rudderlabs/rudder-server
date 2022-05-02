@@ -52,7 +52,6 @@ var _ = Describe("workspace-config", func() {
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			workspaceToken = "testToken"
 			config, ok := backendConfig.Get("testToken")
 			Expect(ok).To(BeTrue())
 			Expect(config).To(Equal(SampleBackendConfig))
