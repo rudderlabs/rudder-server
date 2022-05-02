@@ -374,7 +374,7 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Ping error: %v", err)
 				}
 				return err == nil
-			}, 30*time.Second, 250*time.Millisecond)
+			}, 60*time.Second, 250*time.Millisecond)
 
 			var producerOpts []ProducerOption
 			if testing.Verbose() {
