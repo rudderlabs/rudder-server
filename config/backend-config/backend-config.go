@@ -401,9 +401,9 @@ func NewForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			},
 		}
 	case deployment.HostedType:
-		backendConfig = &HostedWorkspaceConfig{}
+		backendConfig = &HostedWorkspacesConfig{}
 	case deployment.MultiTenantType:
-		backendConfig = &MultiTenantWorkspaceConfig{
+		backendConfig = &MultiTenantWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
 			},

@@ -20,7 +20,7 @@ var SampleWorkspaceSources = map[string]ConfigT{
 }
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
-		backendConfig = &HostedWorkspaceConfig{
+		backendConfig = &HostedWorkspacesConfig{
 			writeKeyToWorkspaceIDMap: map[string]string{"testKey": "testWordSpaceId"},
 		}
 		ctrl = gomock.NewController(GinkgoT())

@@ -111,7 +111,7 @@ var _ = Describe("NewForDeployment", func() {
 		config, err := NewForDeployment(deployment.HostedType, nil)
 
 		Expect(err).To(BeNil())
-		_, ok := config.(*HostedWorkspaceConfig)
+		_, ok := config.(*HostedWorkspacesConfig)
 		Expect(ok).To(BeTrue())
 	})
 
@@ -119,7 +119,7 @@ var _ = Describe("NewForDeployment", func() {
 		config, err := NewForDeployment(deployment.MultiTenantType, nil)
 
 		Expect(err).To(BeNil())
-		_, ok := config.(*MultiTenantWorkspaceConfig)
+		_, ok := config.(*MultiTenantWorkspacesConfig)
 		Expect(ok).To(BeTrue())
 	})
 

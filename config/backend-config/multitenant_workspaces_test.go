@@ -19,7 +19,7 @@ var SampleWorkspaceSourcesMultitenant = map[string]ConfigT{
 }
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
-		backendConfig = &MultiTenantWorkspaceConfig{
+		backendConfig = &MultiTenantWorkspacesConfig{
 			writeKeyToWorkspaceIDMap: map[string]string{"testKey": "testWorkSpaceId"},
 		}
 		ctrl = gomock.NewController(GinkgoT())

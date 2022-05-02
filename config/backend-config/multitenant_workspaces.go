@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-type MultiTenantWorkspaceConfig struct {
+type MultiTenantWorkspacesConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
@@ -19,11 +19,11 @@ type MultiTenantWorkspaceConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspaceConfig) SetUp() {
+func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 }
 
-func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
@@ -34,7 +34,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForWriteKey(wri
 	return ""
 }
 
-func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForSourceID(source string) string {
+func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
 	//TODO use another map later
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -47,7 +47,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForSourceID(sou
 }
 
 //GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
@@ -58,12 +58,12 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceLibrariesForWorks
 }
 
 //Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspaceConfig) Get(workspaces string) (ConfigT, bool) {
+func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (ConfigT, bool) {
 	return workspaceConfig.getFromAPI(workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
+func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
 	workspacesString := ""
 	url = url + workspacesString
@@ -119,7 +119,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI(workspaceArr strin
 	return sourcesJSON, true
 }
 
-func (workspaceConfig *MultiTenantWorkspaceConfig) makeHTTPRequest(url string) ([]byte, int, error) {
+func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
