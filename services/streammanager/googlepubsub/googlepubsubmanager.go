@@ -13,6 +13,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -63,7 +64,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 			return nil, err
 		}
 	} else if config.TestConfig.Endpoint != "" { // Test configuration requires a custom endpoint
-		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithInsecure()), option.WithEndpoint(config.TestConfig.Endpoint)); err != nil {
+		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())), option.WithEndpoint(config.TestConfig.Endpoint)); err != nil {
 			return nil, err
 		}
 	} else { // No configuration

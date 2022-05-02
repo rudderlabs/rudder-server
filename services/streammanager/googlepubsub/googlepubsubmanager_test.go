@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
@@ -123,11 +124,12 @@ func SetupTestGooglePubSub(pool *dockertest.Pool, d deferer) (*TestConfig, error
 		return nil
 	})
 	testConfig.Endpoint = fmt.Sprintf("127.0.0.1:%s", pubsubContainer.GetPort("8681/tcp"))
+
 	client, err := pubsub.NewClient(
 		context.Background(),
 		projectId,
 		option.WithoutAuthentication(),
-		option.WithGRPCDialOption(grpc.WithInsecure()),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		option.WithEndpoint(testConfig.Endpoint))
 	if err != nil {
 		return nil, err
