@@ -3,10 +3,12 @@ package apphandlers
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
 	"golang.org/x/sync/errgroup"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
@@ -178,11 +181,18 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 	var modeProvider cluster.ChangeEventProvider
-	switch options.ClusterManager {
-	case servermode.ETCDClusterManager:
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	switch deploymentType {
+	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case servermode.StaticClusterManager:
+	case deployment.HostedType, deployment.DedicatedType:
 		// FIXME: hacky way to determine servermode
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
@@ -190,10 +200,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		} else {
 			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
 		}
-	case "env":
-		return nil
+	default:
+		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
-
 
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
 

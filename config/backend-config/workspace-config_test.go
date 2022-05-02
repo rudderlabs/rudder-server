@@ -17,7 +17,7 @@ import (
 var originalBackendConfig = backendConfig
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
-		backendConfig = &WorkspaceConfig{}
+		backendConfig = &SingleWorkspaceConfig{}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
 		pkgLogger = mockLogger

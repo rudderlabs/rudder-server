@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
@@ -96,11 +97,45 @@ func initBackendConfig() {
 	Init()
 }
 
+var _ = Describe("NewForDeployment", func() {
+
+	It("supports single workspace config", func() {
+		config, err := NewForDeployment(deployment.DedicatedType, nil)
+
+		Expect(err).To(BeNil())
+		_, ok := config.(*SingleWorkspaceConfig)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("supports hosted workspace config", func() {
+		config, err := NewForDeployment(deployment.HostedType, nil)
+
+		Expect(err).To(BeNil())
+		_, ok := config.(*HostedWorkspaceConfig)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("supports hosted workspace config", func() {
+		config, err := NewForDeployment(deployment.MultiTenantType, nil)
+
+		Expect(err).To(BeNil())
+		_, ok := config.(*MultiTenantWorkspaceConfig)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("return err for unsupported type", func() {
+		config, err := NewForDeployment("UNSUPPORTED_TYPE", nil)
+
+		Expect(err).To(MatchError("Deployment type \"UNSUPPORTED_TYPE\" not supported"))
+		Expect(config).To(BeNil())
+	})
+})
+
 var _ = Describe("BackendConfig", func() {
 	initBackendConfig()
 
 	BeforeEach(func() {
-		backendConfig = &WorkspaceConfig{CommonBackendConfig: CommonBackendConfig{eb: originalMockPubSub}}
+		backendConfig = &SingleWorkspaceConfig{CommonBackendConfig: CommonBackendConfig{eb: originalMockPubSub}}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
 		pkgLogger = mockLogger
@@ -174,10 +209,10 @@ var _ = Describe("BackendConfig", func() {
 		var mockPubSub *mock_pubsub.MockPublishSubscriber
 		BeforeEach(func() {
 			mockPubSub = mock_pubsub.NewMockPublishSubscriber(ctrl)
-			backendConfig.(*WorkspaceConfig).eb = mockPubSub
+			backendConfig.(*SingleWorkspaceConfig).eb = mockPubSub
 		})
 		AfterEach(func() {
-			backendConfig.(*WorkspaceConfig).eb = originalMockPubSub
+			backendConfig.(*SingleWorkspaceConfig).eb = originalMockPubSub
 		})
 		It("Expect make the correct actions for processConfig topic", func() {
 			ch := make(chan pubsub.DataEvent)
@@ -187,7 +222,7 @@ var _ = Describe("BackendConfig", func() {
 			mockPubSub.EXPECT().Publish(string(TopicProcessConfig), gomock.Any()).Times(1)
 			mockPubSub.EXPECT().Subscribe(string(TopicProcessConfig), gomock.AssignableToTypeOf(ch)).Times(1)
 			filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-			backendConfig.(*WorkspaceConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+			backendConfig.(*SingleWorkspaceConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 			backendConfig.Subscribe(ch, TopicProcessConfig)
 
 		})

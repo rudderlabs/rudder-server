@@ -267,7 +267,11 @@ func Run(ctx context.Context) {
 		configEnvHandler = application.Features().ConfigEnv.Setup()
 	}
 
-	backendconfig.Setup(configEnvHandler)
+	if err := backendconfig.Setup(configEnvHandler); err != nil {
+		pkgLogger.Errorf("Unable to setup backend config: %s", err)
+		return
+	}
+
 	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {

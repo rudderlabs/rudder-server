@@ -4,6 +4,7 @@ package backendconfig
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
@@ -388,23 +390,47 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	return nil
 }
 
-// Setup backend config
-func Setup(configEnvHandler types.ConfigEnvI) {
-	if isMultiWorkspace && misc.IsMultiTenant() {
-		backendConfig = new(MultiTenantWorkspaceConfig)
-		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
-	} else if isMultiWorkspace {
-		backendConfig = new(MultiWorkspaceConfig)
-	} else {
-		backendConfig = new(WorkspaceConfig)
-		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
+func NewForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+	var backendConfig BackendConfig
+
+	switch deploymentType {
+	case deployment.DedicatedType:
+		backendConfig = &SingleWorkspaceConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	case deployment.HostedType:
+		backendConfig = &HostedWorkspaceConfig{}
+	case deployment.MultiTenantType:
+		backendConfig = &MultiTenantWorkspaceConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	// Fallback to dedicated
+	default:
+		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
 	}
 
 	backendConfig.SetUp()
 
+	return backendConfig, nil
+}
+
+// Setup backend config
+func Setup(configEnvHandler types.ConfigEnvI) (err error) {
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("deployment type from env: %w", err)
+	}
+
+	backendConfig, err = NewForDeployment(deploymentType, configEnvHandler)
+
 	DefaultBackendConfig = backendConfig
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+	return nil
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
