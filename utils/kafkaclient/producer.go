@@ -11,7 +11,6 @@ import (
 
 type ProducerConfig struct {
 	ClientID string
-	BatchTimeout,
 	WriteTimeout,
 	ReadTimeout time.Duration
 	Logger      Logger
@@ -19,9 +18,6 @@ type ProducerConfig struct {
 }
 
 func (c *ProducerConfig) defaults() {
-	if c.BatchTimeout < 1 {
-		c.BatchTimeout = time.Second
-	}
 	if c.WriteTimeout < 1 {
 		c.WriteTimeout = 10 * time.Second
 	}
@@ -69,7 +65,6 @@ func (c *client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 			Addr:                   c,
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{},
-			BatchTimeout:           producerConf.BatchTimeout,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
 			RequiredAcks:           kafka.RequireAll,

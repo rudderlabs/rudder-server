@@ -91,7 +91,6 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	// Produce X messages in a single batch
 	producerConf := ProducerConfig{
 		ClientID:     "producer-01",
-		BatchTimeout: time.Second,
 		WriteTimeout: 5 * time.Second,
 		ReadTimeout:  5 * time.Second,
 	}
