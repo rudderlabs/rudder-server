@@ -2,6 +2,7 @@ package kafkaclient
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/internal/buildtag"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -364,7 +366,7 @@ func TestWithSASL(t *testing.T) {
 				WithClientID("some-client"),
 				WithDialTimeout(10*time.Second),
 				WithSASL(hashType, "client1", "password"),
-				WithTLS(nil, nil, nil, true),
+				WithTLS(nil, nil, nil, false, true),
 			)
 			require.NoError(t, err)
 
@@ -443,7 +445,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 		WithClientID("some-client"),
 		WithDialTimeout(10*time.Second),
 		WithSASL(ScramPlainText, "A BAD USER", "A BAD PASSWORD"),
-		WithTLS(nil, nil, nil, true),
+		WithTLS(nil, nil, nil, false, true),
 	)
 	require.NoError(t, err)
 
@@ -524,6 +526,36 @@ func TestProducer_Timeout(t *testing.T) {
 	defer pubCancel()
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestConfluentAzureCloud(t *testing.T) {
+	t.Parallel()
+
+	if !buildtag.Cloud {
+		t.Skip("Cloud tests are not enabled, skipping...")
+	}
+
+	kafkaHost := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_HOST")
+	confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
+	confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
+
+	if confluentCloudKey == "" || confluentCloudSecret == "" {
+		t.Skip("Skipping because credentials are not provided")
+	}
+
+	c, err := New("tcp", kafkaHost,
+		WithClientID("some-client"),
+		WithDialTimeout(45*time.Second),
+		WithSASL(ScramPlainText, confluentCloudKey, confluentCloudSecret),
+		WithTLS(nil, nil, nil, true, false),
+	)
+	require.NoError(t, err)
+
+	rootCAs, err := x509.SystemCertPool()
+	require.NoError(t, err)
+
+	c.dialer.TLS.RootCAs = rootCAs
+	require.NoError(t, c.Ping(context.Background()))
 }
 
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
