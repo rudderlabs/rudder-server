@@ -2,7 +2,6 @@ package kafkaclient
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -559,12 +558,24 @@ func TestConfluentAzureCloud(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-
-	rootCAs, err := x509.SystemCertPool()
-	require.NoError(t, err)
-
-	c.dialer.TLS.RootCAs = rootCAs
 	require.NoError(t, c.Ping(context.Background()))
+
+	c, err = New("tcp", kafkaHost, Config{
+		ClientID:    "some-client",
+		DialTimeout: 45 * time.Second,
+		SASL: &SASL{
+			ScramHashGen: ScramPlainText,
+			Username:     "BAD KEY",
+			Password:     confluentCloudSecret,
+		},
+		TLS: &TLS{
+			WithSystemCertPool: true,
+		},
+	})
+	require.NoError(t, err)
+	err = c.Ping(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SASL Authentication failed")
 }
 
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
