@@ -544,17 +544,9 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := New("tcp", kafkaHost, Config{
+	c, err := NewConfluentCloud(kafkaHost, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
-		SASL: &SASL{
-			ScramHashGen: ScramPlainText,
-			Username:     confluentCloudKey,
-			Password:     confluentCloudSecret,
-		},
-		TLS: &TLS{
-			WithSystemCertPool: true,
-		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, c.Ping(context.Background()))
@@ -578,17 +570,9 @@ func TestConfluentAzureCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = New("tcp", kafkaHost, Config{
+	c, err = NewConfluentCloud(kafkaHost, "A BAD KEY", confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
-		SASL: &SASL{
-			ScramHashGen: ScramPlainText,
-			Username:     "BAD KEY",
-			Password:     confluentCloudSecret,
-		},
-		TLS: &TLS{
-			WithSystemCertPool: true,
-		},
 	})
 	require.NoError(t, err)
 	err = c.Ping(context.Background())

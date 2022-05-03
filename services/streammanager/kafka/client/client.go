@@ -73,6 +73,19 @@ func New(network, address string, conf Config) (*client, error) { // skipcq: RVV
 	}, nil
 }
 
+// NewConfluentCloud returns a Kafka client pre-configured to connect to Confluent Cloud
+func NewConfluentCloud(address, key, secret string, conf Config) (*client, error) { // skipcq: RVV-B0011
+	conf.SASL = &SASL{
+		ScramHashGen: ScramPlainText,
+		Username:     key,
+		Password:     secret,
+	}
+	conf.TLS = &TLS{
+		WithSystemCertPool: true,
+	}
+	return New("tcp", address, conf)
+}
+
 // Network returns name of the network (for example, "tcp", "udp")
 // see net.Addr interface
 func (c *client) Network() string { return c.network }
