@@ -237,15 +237,14 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1))
 
-			callBeginTransaction := c.mockBatchRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
-			callAcquireLocks := c.mockBatchRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
-			callUpdateStatus := c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).After(callAcquireLocks).
+			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil)
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(nil, gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
-			callCommitTransaction := c.mockBatchRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockBatchRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
 
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 

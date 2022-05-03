@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1626,30 +1627,32 @@ func (proc *HandleT) Store(in storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
-	txn := proc.gatewayDB.BeginGlobalTransaction()
-	proc.gatewayDB.AcquireUpdateJobStatusLocks()
-	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil)
+	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+
+		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+			return err
+		}
+		if proc.isReportingEnabled() {
+			proc.reporting.Report(in.reportMetrics, tx.Tx())
+		}
+
+		if enableDedup {
+			proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
+			if len(in.uniqueMessageIds) > 0 {
+				var dedupedMessageIdsAcrossJobs []string
+				for k := range in.uniqueMessageIds {
+					dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+				}
+				proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
-	if proc.isReportingEnabled() {
-		proc.reporting.Report(in.reportMetrics, txn)
-	}
-
-	if enableDedup {
-		proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
-		if len(in.uniqueMessageIds) > 0 {
-			var dedupedMessageIdsAcrossJobs []string
-			for k := range in.uniqueMessageIds {
-				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
-			}
-			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
-		}
-	}
-
-	proc.gatewayDB.CommitTransaction(txn)
-	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.stats.statDBW.Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
 	//DB write throughput per second.
@@ -2049,9 +2052,13 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 		for _, failedJob := range failedJobs {
 			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
-		txn := proc.errorDB.BeginGlobalTransaction()
-		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
-		proc.errorDB.CommitTransaction(txn)
+
+		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
+			// TODO: error propagation
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
+			return nil
+		})
+
 	}
 }
 
