@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/internal/buildtag"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -65,6 +66,11 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
+		tc                  = testutil.Client{
+			Dialer:  c.dialer,
+			Network: c.network,
+			Address: c.address,
+		}
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -73,7 +79,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 	require.Eventually(t, func() bool {
-		err := c.createTopic(ctx, t.Name(), 2, 3) // partitions = 2, replication factor = 3
+		err := tc.CreateTopic(ctx, t.Name(), 2, 3) // partitions = 2, replication factor = 3
 		if err != nil {
 			t.Logf("Could not create topic: %v", err)
 		}
@@ -81,7 +87,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	}, 30*time.Second, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
-	topics, err := c.listTopics(ctx)
+	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		t.Name() + " [partition 0]",
@@ -201,6 +207,11 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
+		tc                  = testutil.Client{
+			Dialer:  c.dialer,
+			Network: c.network,
+			Address: c.address,
+		}
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -209,7 +220,7 @@ func TestConsumer_Partition(t *testing.T) {
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 	require.Eventually(t, func() bool {
-		err := c.createTopic(ctx, t.Name(), 2, 1) // partitions = 2, replication factor = 1
+		err := tc.CreateTopic(ctx, t.Name(), 2, 1) // partitions = 2, replication factor = 1
 		if err != nil {
 			t.Logf("Could not create topic: %v", err)
 		}
@@ -217,7 +228,7 @@ func TestConsumer_Partition(t *testing.T) {
 	}, 30*time.Second, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
-	topics, err := c.listTopics(ctx)
+	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		t.Name() + " [partition 0]",
@@ -480,10 +491,16 @@ func TestProducer_Timeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
+	tc := testutil.Client{
+		Dialer:  c.dialer,
+		Network: c.network,
+		Address: c.address,
+	}
+
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 	require.Eventually(t, func() bool {
-		err := c.createTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
+		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
 		if err != nil {
 			t.Logf("Could not create topic: %v", err)
 		}
@@ -491,7 +508,7 @@ func TestProducer_Timeout(t *testing.T) {
 	}, 60*time.Second, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
-	topics, err := c.listTopics(ctx)
+	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{t.Name() + " [partition 0]"}, topics)
 
