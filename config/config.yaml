@@ -63,6 +63,7 @@ TransformationDebugger:
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
+  fairPickup: true
   jobDoneMigrateThres: 0.8
   jobStatusMigrateThres: 5
   maxDSSize: 100000

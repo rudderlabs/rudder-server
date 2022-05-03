@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -112,7 +111,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
-	if config.GetBool("EnableMultitenancy", false) {
+	if misc.UseFairPickup() {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,

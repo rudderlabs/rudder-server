@@ -1390,8 +1390,9 @@ func ReverseInt(s []int) []int {
 	return s
 }
 
-func IsMultiTenant() bool {
-	return config.GetBool("EnableMultitenancy", false)
+func UseFairPickup() bool {
+	return config.GetBool("JobsDB.fairPickup", false) ||
+		config.GetBool("EnableMultitenancy", false) // Backwards compatibility
 }
 
 // lookup map recursively and return value
