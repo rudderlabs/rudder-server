@@ -540,8 +540,8 @@ func TestConfluentAzureCloud(t *testing.T) {
 	confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
 	confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
 
-	if confluentCloudKey == "" || confluentCloudSecret == "" {
-		t.Skip("Skipping because credentials are not provided")
+	if kafkaHost == "" || confluentCloudKey == "" || confluentCloudSecret == "" {
+		t.Skip("Skipping because credentials or host are not provided")
 	}
 
 	c, err := New("tcp", kafkaHost, Config{
@@ -585,6 +585,70 @@ func TestConfluentAzureCloud(t *testing.T) {
 			ScramHashGen: ScramPlainText,
 			Username:     "BAD KEY",
 			Password:     confluentCloudSecret,
+		},
+		TLS: &TLS{
+			WithSystemCertPool: true,
+		},
+	})
+	require.NoError(t, err)
+	err = c.Ping(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SASL Authentication failed")
+}
+
+func TestAzureEventHubsCloud(t *testing.T) {
+	t.Parallel()
+
+	if !buildtag.Cloud {
+		t.Skip("Cloud tests are not enabled, skipping...")
+	}
+
+	kafkaHost := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST")
+	azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
+	azureEventHubsConnString := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING")
+
+	if kafkaHost == "" || azureEventHubsConnString == "" {
+		t.Skip("Skipping because credentials or host are not provided")
+	}
+
+	c, err := New("tcp", kafkaHost, Config{
+		ClientID:    "some-client",
+		DialTimeout: 45 * time.Second,
+		SASL: &SASL{
+			ScramHashGen: ScramPlainText,
+			Username:     "$ConnectionString",
+			Password:     azureEventHubsConnString,
+		},
+		TLS: &TLS{
+			InsecureSkipVerify: true,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.Ping(context.Background()))
+
+	producerConf := ProducerConfig{
+		ClientID:     "producer-01",
+		WriteTimeout: 30 * time.Second,
+	}
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer(azureEventHubName, producerConf)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
+	cancel()
+	require.NoError(t, err)
+
+	c, err = New("tcp", kafkaHost, Config{
+		ClientID:    "some-client",
+		DialTimeout: 45 * time.Second,
+		SASL: &SASL{
+			ScramHashGen: ScramPlainText,
+			Username:     "$ConnectionString",
+			Password:     "BAD CONNECTION STRING",
 		},
 		TLS: &TLS{
 			WithSystemCertPool: true,
