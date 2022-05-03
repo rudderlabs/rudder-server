@@ -595,17 +595,9 @@ func TestAzureEventHubsCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := New("tcp", kafkaHost, Config{
+	c, err := NewAzureEventHubs(kafkaHost, azureEventHubsConnString, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
-		SASL: &SASL{
-			ScramHashGen: ScramPlainText,
-			Username:     "$ConnectionString",
-			Password:     azureEventHubsConnString,
-		},
-		TLS: &TLS{
-			InsecureSkipVerify: true,
-		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, c.Ping(context.Background()))
@@ -626,17 +618,9 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = New("tcp", kafkaHost, Config{
+	c, err = NewAzureEventHubs(kafkaHost, "A BAD CONNECTION STRING", Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
-		SASL: &SASL{
-			ScramHashGen: ScramPlainText,
-			Username:     "$ConnectionString",
-			Password:     "BAD CONNECTION STRING",
-		},
-		TLS: &TLS{
-			WithSystemCertPool: true,
-		},
 	})
 	require.NoError(t, err)
 	err = c.Ping(context.Background())

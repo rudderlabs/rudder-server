@@ -86,6 +86,19 @@ func NewConfluentCloud(address, key, secret string, conf Config) (*client, error
 	return New("tcp", address, conf)
 }
 
+// NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
+func NewAzureEventHubs(address, connectionString string, conf Config) (*client, error) { // skipcq: RVV-B0011
+	conf.SASL = &SASL{
+		ScramHashGen: ScramPlainText,
+		Username:     "$ConnectionString",
+		Password:     connectionString,
+	}
+	conf.TLS = &TLS{
+		WithSystemCertPool: true,
+	}
+	return New("tcp", address, conf)
+}
+
 // Network returns name of the network (for example, "tcp", "udp")
 // see net.Addr interface
 func (c *client) Network() string { return c.network }
