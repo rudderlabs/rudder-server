@@ -1,4 +1,4 @@
-package kafkaclient
+package client
 
 import (
 	"crypto/tls"
