@@ -32,7 +32,7 @@ type Consumer struct {
 }
 
 // NewConsumer instantiates a new consumer.
-func (c *client) NewConsumer(topic string, conf ConsumerConfig) *Consumer {
+func (c *client) NewConsumer(topic string, conf ConsumerConfig) *Consumer { // skipcq: CRT-P0003
 	var readerConf kafka.ReaderConfig
 
 	readerConf.Brokers = []string{c.address}
