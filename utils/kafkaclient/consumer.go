@@ -2,7 +2,6 @@ package kafkaclient
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -17,76 +16,14 @@ const (
 	FirstOffset
 )
 
-// ConsumerOption is an abstraction used to allow the configuration of consumers
-type ConsumerOption interface {
-	apply(*kafka.ReaderConfig)
-}
-
-type withConsumerOption struct{ setup func(*kafka.ReaderConfig) }
-
-func (w withConsumerOption) apply(c *kafka.ReaderConfig) { w.setup(c) }
-
-// WithConsumerGroup sets the groupID for the consumer (cannot be used together with the partition since they are
-// mutually exclusive).
-func WithConsumerGroup(group string) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.GroupID = group
-	}}
-}
-
-// WithConsumerPartition sets the partition for the consumer (cannot be used together with the consumer group since
-// they are mutually exclusive).
-func WithConsumerPartition(partition int) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.Partition = partition
-	}}
-}
-
-// WithConsumerStartOffset determines from whence the consumer group should begin consuming when it finds a partition
-// without a committed offset.
-// If non-zero, it must be set to one of FirstOffset or LastOffset.
-// Only used when WithConsumerGroup is set.
-func WithConsumerStartOffset(offset ConsumerStartOffset) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		switch offset {
-		case LastOffset:
-			c.StartOffset = kafka.LastOffset
-		case FirstOffset:
-			c.StartOffset = kafka.FirstOffset
-		default:
-			panic(fmt.Errorf("consumer start offset %+v out of the known domain", offset))
-		}
-	}}
-}
-
-// WithConsumerCommitInterval indicates the interval at which offsets are committed to the broker.
-// If 0, commits will be handled synchronously.
-func WithConsumerCommitInterval(t time.Duration) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.CommitInterval = t
-	}}
-}
-
-// WithConsumerLogger specifies a logger used to report debugging information within the consumer
-func WithConsumerLogger(l Logger) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.Logger = l
-	}}
-}
-
-// WithConsumerErrorLogger specifies a logger used to report errors within the consumer
-func WithConsumerErrorLogger(l Logger) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.ErrorLogger = l
-	}}
-}
-
-// WithConsumerFetchBatchesMaxWait sets the maximum amount of time to wait for new data to come when fetching batches
-// of messages from Kafka
-func WithConsumerFetchBatchesMaxWait(t time.Duration) ConsumerOption {
-	return withConsumerOption{setup: func(c *kafka.ReaderConfig) {
-		c.MaxWait = t
-	}}
+type ConsumerConfig struct {
+	GroupID             string
+	Partition           int
+	StartOffset         ConsumerStartOffset
+	CommitInterval      time.Duration
+	FetchBatchesMaxWait time.Duration
+	Logger              Logger
+	ErrorLogger         Logger
 }
 
 // Consumer provides a high-level API for reading messages from Kafka
@@ -95,18 +32,27 @@ type Consumer struct {
 }
 
 // NewConsumer instantiates a new consumer.
-func (c *client) NewConsumer(topic string, opts ...ConsumerOption) *Consumer {
-	var conf kafka.ReaderConfig
-	for _, opt := range opts {
-		opt.apply(&conf)
+func (c *client) NewConsumer(topic string, conf ConsumerConfig) *Consumer {
+	var readerConf kafka.ReaderConfig
+
+	readerConf.Brokers = []string{c.address}
+	readerConf.Topic = topic
+	readerConf.Dialer = c.dialer
+
+	readerConf.GroupID = conf.GroupID
+	readerConf.Partition = conf.Partition
+	readerConf.CommitInterval = conf.CommitInterval
+	readerConf.MaxWait = conf.FetchBatchesMaxWait
+	readerConf.StartOffset = kafka.FirstOffset
+	if conf.StartOffset == LastOffset {
+		readerConf.StartOffset = kafka.LastOffset
 	}
 
-	conf.Brokers = []string{c.address}
-	conf.Topic = topic
-	conf.Dialer = c.dialer
+	readerConf.Logger = conf.Logger
+	readerConf.ErrorLogger = conf.ErrorLogger
 
 	return &Consumer{
-		reader: kafka.NewReader(conf),
+		reader: kafka.NewReader(readerConf),
 	}
 }
 

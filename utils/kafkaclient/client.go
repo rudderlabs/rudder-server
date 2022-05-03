@@ -34,36 +34,32 @@ type Message struct {
 type client struct {
 	network, address string
 	dialer           *kafka.Dialer
-	config           *config
+	config           *Config
 }
 
 // New returns a new Kafka client
-func New(network, address string, opts ...Option) (*client, error) { // skipcq: RVV-B0011
-	conf := config{}
-	for _, opt := range opts {
-		opt.apply(&conf)
-	}
+func New(network, address string, conf Config) (*client, error) { // skipcq: RVV-B0011
 	conf.defaults()
 
 	dialer := kafka.Dialer{
 		DualStack: true,
-		Timeout:   conf.dialTimeout,
+		Timeout:   conf.DialTimeout,
 	}
 
-	if conf.clientID != "" {
-		dialer.ClientID = conf.clientID
+	if conf.ClientID != "" {
+		dialer.ClientID = conf.ClientID
 	}
-	if conf.tlsConfig != nil {
+	if conf.TLS != nil {
 		var err error
-		dialer.TLS, err = conf.tlsConfig.build()
+		dialer.TLS, err = conf.TLS.build()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if conf.saslConfig != nil {
+	if conf.SASL != nil {
 		var err error
-		dialer.SASLMechanism, err = conf.saslConfig.build()
+		dialer.SASLMechanism, err = conf.SASL.build()
 		if err != nil {
 			return nil, err
 		}

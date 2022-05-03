@@ -32,39 +32,30 @@ func (s ScramHashGenerator) String() string {
 	}
 }
 
-// Option is an abstraction used to allow the configuration of a client
-type Option interface {
-	apply(*config)
+type Config struct {
+	ClientID    string
+	DialTimeout time.Duration
+	TLS         *TLS
+	SASL        *SASL
 }
 
-type withOption struct{ setup func(*config) }
-
-func (w withOption) apply(c *config) { w.setup(c) }
-
-type config struct {
-	clientID    string
-	dialTimeout time.Duration
-	tlsConfig   *tlsConfig
-	saslConfig  *saslConfig
-}
-
-func (c *config) defaults() {
-	if c.dialTimeout < 1 {
-		c.dialTimeout = 10 * time.Second
+func (c *Config) defaults() {
+	if c.DialTimeout < 1 {
+		c.DialTimeout = 10 * time.Second
 	}
 }
 
-type tlsConfig struct {
-	cert, key,
-	caCertificate []byte
-	withSystemCertPool,
-	insecureSkipVerify bool
+type TLS struct {
+	Cert, Key,
+	CACertificate []byte
+	WithSystemCertPool,
+	InsecureSkipVerify bool
 }
 
-func (c *tlsConfig) build() (*tls.Config, error) {
-	loadCerts := len(c.cert) > 0 && len(c.key) > 0
+func (c *TLS) build() (*tls.Config, error) {
+	loadCerts := len(c.Cert) > 0 && len(c.Key) > 0
 
-	if !loadCerts && !c.insecureSkipVerify && !c.withSystemCertPool {
+	if !loadCerts && !c.InsecureSkipVerify && !c.WithSystemCertPool {
 		return nil, fmt.Errorf("invalid TLS configuration, either provide certificates or skip validation")
 	}
 
@@ -73,11 +64,11 @@ func (c *tlsConfig) build() (*tls.Config, error) {
 		MaxVersion: tls.VersionTLS12,
 	}
 
-	if c.insecureSkipVerify {
+	if c.InsecureSkipVerify {
 		conf.InsecureSkipVerify = true // skipcq: GSC-G402
 	}
 
-	if c.withSystemCertPool {
+	if c.WithSystemCertPool {
 		caCertPool, err := x509.SystemCertPool()
 		if err != nil {
 			return nil, fmt.Errorf("could not copy of the system cert pool: %w", err)
@@ -86,17 +77,17 @@ func (c *tlsConfig) build() (*tls.Config, error) {
 		conf.RootCAs = caCertPool
 	}
 
-	if len(c.caCertificate) > 0 {
+	if len(c.CACertificate) > 0 {
 		if conf.RootCAs == nil {
 			conf.RootCAs = x509.NewCertPool()
 		}
-		if ok := conf.RootCAs.AppendCertsFromPEM(c.caCertificate); !ok {
+		if ok := conf.RootCAs.AppendCertsFromPEM(c.CACertificate); !ok {
 			return nil, fmt.Errorf("could not append certs from PEM")
 		}
 	}
 
 	if loadCerts {
-		certificate, err := tls.X509KeyPair(c.cert, c.key)
+		certificate, err := tls.X509KeyPair(c.Cert, c.Key)
 		if err != nil {
 			return nil, fmt.Errorf("could not get TLS certificate: %w", err)
 		}
@@ -107,65 +98,27 @@ func (c *tlsConfig) build() (*tls.Config, error) {
 	return conf, nil
 }
 
-type saslConfig struct {
-	scramHashGen       ScramHashGenerator
-	username, password string
+type SASL struct {
+	ScramHashGen       ScramHashGenerator
+	Username, Password string
 }
 
-func (c *saslConfig) build() (mechanism sasl.Mechanism, err error) {
-	switch c.scramHashGen {
+func (c *SASL) build() (mechanism sasl.Mechanism, err error) {
+	switch c.ScramHashGen {
 	case ScramPlainText:
 		mechanism = plain.Mechanism{
-			Username: c.username,
-			Password: c.password,
+			Username: c.Username,
+			Password: c.Password,
 		}
 		return
 	case ScramSHA256, ScramSHA512:
 		algo := scram.SHA256
-		if c.scramHashGen == ScramSHA512 {
+		if c.ScramHashGen == ScramSHA512 {
 			algo = scram.SHA512
 		}
-		mechanism, err = scram.Mechanism(algo, c.username, c.password)
+		mechanism, err = scram.Mechanism(algo, c.Username, c.Password)
 		return
 	default:
-		return nil, fmt.Errorf("scram hash generator out of the known domain: %v", c.scramHashGen)
+		return nil, fmt.Errorf("scram hash generator out of the known domain: %v", c.ScramHashGen)
 	}
-}
-
-// WithClientID is used to set a unique identifier for client connections established by this client's Dialer
-func WithClientID(clientID string) Option {
-	return withOption{setup: func(c *config) {
-		c.clientID = clientID
-	}}
-}
-
-// WithDialTimeout sets the maximum amount of time a dial will wait for a connect to complete
-func WithDialTimeout(t time.Duration) Option {
-	return withOption{setup: func(c *config) {
-		c.dialTimeout = t
-	}}
-}
-
-// WithTLS adds TLS support
-func WithTLS(cert, key, caCertificate []byte, withSystemCertPool, insecureSkipVerify bool) Option {
-	return withOption{setup: func(c *config) {
-		c.tlsConfig = &tlsConfig{
-			cert:               cert,
-			key:                key,
-			caCertificate:      caCertificate,
-			withSystemCertPool: withSystemCertPool,
-			insecureSkipVerify: insecureSkipVerify,
-		}
-	}}
-}
-
-// WithSASL adds SASL support
-func WithSASL(hg ScramHashGenerator, username, password string) Option {
-	return withOption{setup: func(c *config) {
-		c.saslConfig = &saslConfig{
-			scramHashGen: hg,
-			username:     username,
-			password:     password,
-		}
-	}}
 }

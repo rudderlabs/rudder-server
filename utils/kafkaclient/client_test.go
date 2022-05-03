@@ -31,7 +31,7 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost)
+	c, err := New("tcp", kafkaHost, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -57,7 +57,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
+	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -90,19 +90,17 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	}, topics)
 
 	// Produce X messages in a single batch
-	producerOpts := []ProducerOption{
-		WithProducerClientID("producer-01"),
-		WithProducerBatchTimeout(time.Second),
-		WithProducerReadTimeout(5 * time.Second),
-		WithProducerWriteTimeout(5 * time.Second),
+	producerConf := ProducerConfig{
+		ClientID:     "producer-01",
+		BatchTimeout: time.Second,
+		WriteTimeout: 5 * time.Second,
+		ReadTimeout:  5 * time.Second,
 	}
 	if testing.Verbose() {
-		producerOpts = append(producerOpts,
-			WithProducerLogger(&testLogger{t}),
-			WithProducerErrorLogger(&testLogger{t}),
-		)
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerOpts...)
+	p, err := c.NewProducer(t.Name(), producerConf)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -115,17 +113,15 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		tickerReset = 10 * time.Second
 		ticker      = time.NewTicker(30 * time.Second)
 	)
-	consumerOpts := []ConsumerOption{
-		WithConsumerGroup("group-01"),
-		WithConsumerStartOffset(FirstOffset),
-		WithConsumerFetchBatchesMaxWait(10 * time.Second),
-		WithConsumerCommitInterval(time.Second), // to make the test faster instead of committing each single message
+	consumerConf := ConsumerConfig{
+		GroupID:             "group-01",
+		StartOffset:         FirstOffset,
+		CommitInterval:      time.Second, // to make the test faster instead of committing each single message
+		FetchBatchesMaxWait: 10 * time.Second,
 	}
 	if testing.Verbose() {
-		consumerOpts = append(consumerOpts,
-			WithConsumerLogger(&testLogger{t}),
-			WithConsumerErrorLogger(&testLogger{t}),
-		)
+		consumerConf.Logger = &testLogger{t}
+		consumerConf.ErrorLogger = consumerConf.Logger
 	}
 	consume := func(c *Consumer, id string, count *int32) {
 		defer gracefulTermination.Done()
@@ -154,12 +150,12 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		}
 	}
 
-	c01 := c.NewConsumer(t.Name(), consumerOpts...)
+	c01 := c.NewConsumer(t.Name(), consumerConf)
 	t.Cleanup(closeConsumer(c01, "c01"))
 	gracefulTermination.Add(1)
 	go consume(c01, "c01", &c01Count)
 
-	c02 := c.NewConsumer(t.Name(), consumerOpts...)
+	c02 := c.NewConsumer(t.Name(), consumerConf)
 	t.Cleanup(closeConsumer(c02, "c02"))
 	gracefulTermination.Add(1)
 	go consume(c02, "c02", &c02Count)
@@ -198,7 +194,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
+	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -231,14 +227,14 @@ func TestConsumer_Partition(t *testing.T) {
 	}, topics)
 
 	// Produce X messages in a single batch
-	producerOpts := []ProducerOption{WithProducerClientID("producer-01")}
-	if testing.Verbose() {
-		producerOpts = append(producerOpts,
-			WithProducerLogger(&testLogger{t}),
-			WithProducerErrorLogger(&testLogger{t}),
-		)
+	producerConf := ProducerConfig{
+		ClientID: "producer-01",
 	}
-	p, err := c.NewProducer(t.Name(), producerOpts...)
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer(t.Name(), producerConf)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -251,16 +247,14 @@ func TestConsumer_Partition(t *testing.T) {
 		tickerReset = 10 * time.Second
 		ticker      = time.NewTicker(30 * time.Second)
 	)
-	consumerOpts := []ConsumerOption{
-		WithConsumerStartOffset(FirstOffset),
-		WithConsumerFetchBatchesMaxWait(10 * time.Second),
-		WithConsumerCommitInterval(time.Second), // to make the test faster instead of committing each single message
+	consumerConf := ConsumerConfig{
+		StartOffset:         FirstOffset,
+		CommitInterval:      time.Second, // to make the test faster instead of committing each single message
+		FetchBatchesMaxWait: 10 * time.Second,
 	}
 	if testing.Verbose() {
-		consumerOpts = append(consumerOpts,
-			WithConsumerLogger(&testLogger{t}),
-			WithConsumerErrorLogger(&testLogger{t}),
-		)
+		consumerConf.Logger = &testLogger{t}
+		consumerConf.ErrorLogger = consumerConf.Logger
 	}
 	consume := func(c *Consumer, id string, count *int32) {
 		defer gracefulTermination.Done()
@@ -289,12 +283,13 @@ func TestConsumer_Partition(t *testing.T) {
 		}
 	}
 
-	c01 := c.NewConsumer(t.Name(), append(consumerOpts, WithConsumerPartition(0))...)
+	c01 := c.NewConsumer(t.Name(), consumerConf)
 	t.Cleanup(closeConsumer(c01, "c01"))
 	gracefulTermination.Add(1)
 	go consume(c01, "c01", &c01Count)
 
-	c02 := c.NewConsumer(t.Name(), append(consumerOpts, WithConsumerPartition(1))...)
+	consumerConf.Partition = 1
+	c02 := c.NewConsumer(t.Name(), consumerConf)
 	t.Cleanup(closeConsumer(c02, "c02"))
 	gracefulTermination.Add(1)
 	go consume(c02, "c02", &c02Count)
@@ -362,12 +357,18 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", kafkaHost,
-				WithClientID("some-client"),
-				WithDialTimeout(10*time.Second),
-				WithSASL(hashType, "client1", "password"),
-				WithTLS(nil, nil, nil, false, true),
-			)
+			c, err := New("tcp", kafkaHost, Config{
+				ClientID:    "some-client",
+				DialTimeout: 10 * time.Second,
+				SASL: &SASL{
+					ScramHashGen: hashType,
+					Username:     "client1",
+					Password:     "password",
+				},
+				TLS: &TLS{
+					InsecureSkipVerify: true,
+				},
+			})
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
@@ -378,14 +379,12 @@ func TestWithSASL(t *testing.T) {
 				return err == nil
 			}, 60*time.Second, 250*time.Millisecond)
 
-			var producerOpts []ProducerOption
+			var producerConf ProducerConfig
 			if testing.Verbose() {
-				producerOpts = append(producerOpts,
-					WithProducerLogger(&testLogger{t}),
-					WithProducerErrorLogger(&testLogger{t}),
-				)
+				producerConf.Logger = &testLogger{t}
+				producerConf.ErrorLogger = producerConf.Logger
 			}
-			p, err := c.NewProducer("some-topic", producerOpts...)
+			p, err := c.NewProducer("some-topic", producerConf)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -441,12 +440,18 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost,
-		WithClientID("some-client"),
-		WithDialTimeout(10*time.Second),
-		WithSASL(ScramPlainText, "A BAD USER", "A BAD PASSWORD"),
-		WithTLS(nil, nil, nil, false, true),
-	)
+	c, err := New("tcp", kafkaHost, Config{
+		ClientID:    "some-client",
+		DialTimeout: 10 * time.Second,
+		SASL: &SASL{
+			ScramHashGen: ScramPlainText,
+			Username:     "A BAD USER",
+			Password:     "A BAD PASSWORD",
+		},
+		TLS: &TLS{
+			InsecureSkipVerify: true,
+		},
+	})
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
@@ -471,7 +476,7 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, WithClientID("some-client"), WithDialTimeout(5*time.Second))
+	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -493,14 +498,12 @@ func TestProducer_Timeout(t *testing.T) {
 	require.Equal(t, []string{t.Name() + " [partition 0]"}, topics)
 
 	// Produce X messages in a single batch
-	producerOpts := []ProducerOption{WithProducerClientID("producer-01")}
+	producerConf := ProducerConfig{ClientID: "producer-01"}
 	if testing.Verbose() {
-		producerOpts = append(producerOpts,
-			WithProducerLogger(&testLogger{t}),
-			WithProducerErrorLogger(&testLogger{t}),
-		)
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerOpts...)
+	p, err := c.NewProducer(t.Name(), producerConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -543,12 +546,18 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials are not provided")
 	}
 
-	c, err := New("tcp", kafkaHost,
-		WithClientID("some-client"),
-		WithDialTimeout(45*time.Second),
-		WithSASL(ScramPlainText, confluentCloudKey, confluentCloudSecret),
-		WithTLS(nil, nil, nil, true, false),
-	)
+	c, err := New("tcp", kafkaHost, Config{
+		ClientID:    "some-client",
+		DialTimeout: 45 * time.Second,
+		SASL: &SASL{
+			ScramHashGen: ScramPlainText,
+			Username:     confluentCloudKey,
+			Password:     confluentCloudSecret,
+		},
+		TLS: &TLS{
+			WithSystemCertPool: true,
+		},
+	})
 	require.NoError(t, err)
 
 	rootCAs, err := x509.SystemCertPool()

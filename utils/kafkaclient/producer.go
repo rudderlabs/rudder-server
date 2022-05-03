@@ -9,77 +9,24 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// ProducerOption is an abstraction used to allow the configuration of consumers
-type ProducerOption interface {
-	apply(*producerConfig)
+type ProducerConfig struct {
+	ClientID string
+	BatchTimeout,
+	WriteTimeout,
+	ReadTimeout time.Duration
+	Logger      Logger
+	ErrorLogger Logger
 }
 
-type withProducerOption struct{ setup func(*producerConfig) }
-
-func (w withProducerOption) apply(c *producerConfig) { w.setup(c) }
-
-// WithProducerClientID sets a unique identifier that the transport communicates to the brokers when it
-// sends requests.
-func WithProducerClientID(clientID string) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.clientID = clientID
-	}}
-}
-
-// WithProducerBatchTimeout sets the time limit on how often incomplete message batches will be flushed to
-//	// kafka.
-func WithProducerBatchTimeout(t time.Duration) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.batchTimeout = t
-	}}
-}
-
-// WithProducerWriteTimeout sets the timeout for write operations performed by the Writer
-func WithProducerWriteTimeout(t time.Duration) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.writeTimeout = t
-	}}
-}
-
-// WithProducerReadTimeout sets the timeout for write operations performed by the Writer
-func WithProducerReadTimeout(t time.Duration) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.readTimeout = t
-	}}
-}
-
-// WithProducerLogger specifies a logger used to report debugging information within the producer
-func WithProducerLogger(l Logger) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.logger = l
-	}}
-}
-
-// WithProducerErrorLogger specifies a logger used to report errors within the producer
-func WithProducerErrorLogger(l Logger) ProducerOption {
-	return withProducerOption{setup: func(c *producerConfig) {
-		c.errorLogger = l
-	}}
-}
-
-type producerConfig struct {
-	clientID string
-	batchTimeout,
-	writeTimeout,
-	readTimeout time.Duration
-	logger      Logger
-	errorLogger Logger
-}
-
-func (c *producerConfig) defaults() {
-	if c.batchTimeout < 1 {
-		c.batchTimeout = time.Second
+func (c *ProducerConfig) defaults() {
+	if c.BatchTimeout < 1 {
+		c.BatchTimeout = time.Second
 	}
-	if c.writeTimeout < 1 {
-		c.writeTimeout = 10 * time.Second
+	if c.WriteTimeout < 1 {
+		c.WriteTimeout = 10 * time.Second
 	}
-	if c.readTimeout < 1 {
-		c.readTimeout = 10 * time.Second
+	if c.ReadTimeout < 1 {
+		c.ReadTimeout = 10 * time.Second
 	}
 }
 
@@ -89,33 +36,29 @@ type Producer struct {
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *client) NewProducer(topic string, opts ...ProducerOption) (p *Producer, err error) {
-	producerConf := producerConfig{}
-	for _, opt := range opts {
-		opt.apply(&producerConf)
-	}
+func (c *client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) {
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
-		Timeout: c.config.dialTimeout,
+		Timeout: c.config.DialTimeout,
 	}
 	transport := &kafka.Transport{
-		DialTimeout: c.config.dialTimeout,
+		DialTimeout: c.config.DialTimeout,
 		Dial:        dialer.DialContext,
 	}
-	if producerConf.clientID != "" {
-		transport.ClientID = producerConf.clientID
-	} else if c.config.clientID != "" {
-		transport.ClientID = c.config.clientID
+	if producerConf.ClientID != "" {
+		transport.ClientID = producerConf.ClientID
+	} else if c.config.ClientID != "" {
+		transport.ClientID = c.config.ClientID
 	}
-	if c.config.tlsConfig != nil {
-		transport.TLS, err = c.config.tlsConfig.build()
+	if c.config.TLS != nil {
+		transport.TLS, err = c.config.TLS.build()
 		if err != nil {
 			return nil, fmt.Errorf("could not build TLS configuration: %w", err)
 		}
 	}
-	if c.config.saslConfig != nil {
-		transport.SASL, err = c.config.saslConfig.build()
+	if c.config.SASL != nil {
+		transport.SASL, err = c.config.SASL.build()
 		if err != nil {
 			return nil, fmt.Errorf("could not build SASL configuration: %w", err)
 		}
@@ -126,9 +69,9 @@ func (c *client) NewProducer(topic string, opts ...ProducerOption) (p *Producer,
 			Addr:                   c,
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{},
-			BatchTimeout:           producerConf.batchTimeout,
-			WriteTimeout:           producerConf.writeTimeout,
-			ReadTimeout:            producerConf.readTimeout,
+			BatchTimeout:           producerConf.BatchTimeout,
+			WriteTimeout:           producerConf.WriteTimeout,
+			ReadTimeout:            producerConf.ReadTimeout,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
