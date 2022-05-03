@@ -53,11 +53,11 @@ const (
 type dbRequest struct {
 	reqType dbReqType
 	name    string
-	tags    *StatTagsT
+	tags    *statTags
 	command func() interface{}
 }
 
-func newReadDbRequest(name string, tags *StatTagsT, command func() interface{}) *dbRequest {
+func newReadDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {
 	return &dbRequest{
 		reqType: readReqType,
 		name:    name,
@@ -66,7 +66,7 @@ func newReadDbRequest(name string, tags *StatTagsT, command func() interface{}) 
 	}
 }
 
-func newWriteDbRequest(name string, tags *StatTagsT, command func() interface{}) *dbRequest {
+func newWriteDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {
 	return &dbRequest{
 		reqType: writeReqType,
 		name:    name,

@@ -158,6 +158,7 @@ func benchmarkRegistryGetCounterAndInc(b *testing.B, concurrency int) {
 	end.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		go func() {
+			start.Wait()
 			for i := 0; i < n; i++ {
 				counter := registry.MustGetCounter(key)
 				counter.Inc()

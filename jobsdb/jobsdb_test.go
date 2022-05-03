@@ -252,9 +252,6 @@ var sampleTestJob = JobT{
 	CustomVal:    "MOCKDS",
 }
 
-type tContext struct {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -270,9 +267,6 @@ var _ = Describe("jobsdb", func() {
 	BeforeEach(func() {
 		// setup static requirements of dependencies
 		stats.Setup()
-	})
-
-	AfterEach(func() {
 	})
 
 	Context("getDSList", func() {
