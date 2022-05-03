@@ -559,6 +559,25 @@ func TestConfluentAzureCloud(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, c.Ping(context.Background()))
 
+	producerConf := ProducerConfig{
+		ClientID:     "producer-01",
+		WriteTimeout: 30 * time.Second,
+	}
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer(
+		t.Name(), // the topic needs to be created beforehand via the ConfluentCloud admin panel
+		producerConf,
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
+	cancel()
+	require.NoError(t, err)
+
 	c, err = New("tcp", kafkaHost, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
