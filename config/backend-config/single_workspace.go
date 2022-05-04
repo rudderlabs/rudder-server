@@ -13,8 +13,8 @@ import (
 
 type SingleWorkspaceConfig struct {
 	CommonBackendConfig
-	workspaceID               string
-	Token 					  string
+	workspaceID string
+	Token       string
 
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceIDLock           sync.RWMutex
@@ -30,14 +30,14 @@ func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
 	return workspaceConfig.Token
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 
 	return workspaceConfig.workspaceID
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(sourceID string) string {
+func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 
@@ -107,7 +107,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (Conf
 }
 
 // getFromFile reads the workspace config from JSON file
-func (workspaceConfig *SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
+func (_ *SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
@@ -123,7 +123,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 	return configJSON, true
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
+func (_ *SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err

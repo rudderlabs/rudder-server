@@ -418,6 +418,9 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	}
 
 	backendConfig, err = NewForDeployment(deploymentType, configEnvHandler)
+	if err != nil {
+		return err
+	}
 
 	DefaultBackendConfig = backendConfig
 

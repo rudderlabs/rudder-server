@@ -13,7 +13,7 @@ import (
 
 type MultiTenantWorkspacesConfig struct {
 	CommonBackendConfig
-	Token                    string
+	Token                     string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -22,7 +22,7 @@ type MultiTenantWorkspacesConfig struct {
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-	
+
 	if workspaceConfig.Token == "" {
 		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	}

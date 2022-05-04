@@ -16,7 +16,7 @@ import (
 //HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type HostedWorkspacesConfig struct {
 	CommonBackendConfig
-	Token                    string
+	Token                     string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceIDToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -78,7 +78,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 //Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(workspaceArr string) (ConfigT, bool) {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
