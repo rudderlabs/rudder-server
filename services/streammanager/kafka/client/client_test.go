@@ -664,10 +664,14 @@ func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessage
 	}
 
 	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+
+	start := time.Now()
 	err := p.Publish(pubCtx, messages...)
+	end := time.Since(start)
+
 	pubCancel()
 	require.NoError(t, err)
-	t.Logf("Messages published (%d)", noOfMessages)
+	t.Logf("Messages published (%d) in %s", noOfMessages, end)
 }
 
 type testLogger struct{ *testing.T }

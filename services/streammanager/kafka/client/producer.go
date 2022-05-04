@@ -65,6 +65,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 			Addr:                   c,
 			Topic:                  topic,
 			Balancer:               &kafka.Hash{},
+			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
 			RequiredAcks:           kafka.RequireAll,
