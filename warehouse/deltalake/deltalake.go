@@ -22,13 +22,15 @@ import (
 
 // Database configuration
 const (
-	DLHost          = "host"
-	DLPort          = "port"
-	DLPath          = "path"
-	DLToken         = "token"
-	AWSTokens       = "useSTSTokens"
-	AWSAccessKey    = "accessKey"
-	AWSAccessSecret = "accessKeyID"
+	DLHost                 = "host"
+	DLPort                 = "port"
+	DLPath                 = "path"
+	DLToken                = "token"
+	AWSTokens              = "useSTSTokens"
+	AWSAccessKey           = "accessKey"
+	AWSAccessSecret        = "accessKeyID"
+	EnableExternalLocation = "enableExternalLocation"
+	ExternalLocation       = "externalLocation"
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -58,6 +60,7 @@ var dataTypesMap = map[string]string{
 	"float":    "DOUBLE",
 	"string":   "STRING",
 	"datetime": "TIMESTAMP",
+	"date":     "DATE",
 }
 
 // Delta Lake mapping with rudder data types mappings.
@@ -72,7 +75,7 @@ var dataTypesMapToRudder = map[string]string{
 	"DOUBLE":    "float",
 	"BOOLEAN":   "boolean",
 	"STRING":    "string",
-	"DATE":      "datetime",
+	"DATE":      "date",
 	"TIMESTAMP": "datetime",
 	"tinyint":   "int",
 	"smallint":  "int",
@@ -83,7 +86,7 @@ var dataTypesMapToRudder = map[string]string{
 	"double":    "float",
 	"boolean":   "boolean",
 	"string":    "string",
-	"date":      "datetime",
+	"date":      "date",
 	"timestamp": "datetime",
 }
 
@@ -132,6 +135,18 @@ func getDeltaLakeDataType(columnType string) string {
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
+		// Since event_date is an auto generated column in order to support partitioning.
+		// We need to ignore it during query generation.
+		if name == "event_date" {
+			return ""
+		}
+
+		// Since we need to support partitioning for based on event_date
+		if name == "received_at" {
+			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
+			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
+		}
+
 		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
@@ -577,8 +592,15 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+
+	tableLocationSql := dl.getTableLocationSql(fmt.Sprintf("%[1]s.%[2]s",
+		dl.Namespace,
+		stagingTableName,
+	))
+	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
+
 	// Creating create table sql statement for staging users table
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s %[8]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
@@ -598,6 +620,8 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		quotedUserColNames,
+		tableLocationSql,
+		tablePropertiesSql,
 	)
 
 	// Executing create sql statement
@@ -642,6 +666,25 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	return
+}
+
+// getExternalLocation returns external location where we need to create the tables
+func (dl *HandleT) getExternalLocation() (externalLocation string) {
+	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.Warehouse)
+	if enableExternalLocation == "true" {
+		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.Warehouse)
+		return externalLocation
+	}
+	return
+}
+
+// getTableLocationSql returns external external table location
+func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) {
+	externalLocation := dl.getExternalLocation()
+	if externalLocation == "" {
+		return
+	}
+	return fmt.Sprintf("LOCATION '%s/%s'", externalLocation, tableName)
 }
 
 // dropDanglingStagingTables drop dandling staging tables.
@@ -692,7 +735,20 @@ func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databr
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, ColumnsWithDataTypes(columns, ""))
+
+	tableLocationSql := dl.getTableLocationSql(name)
+	var partitionedSql string
+	if _, ok := columns["received_at"]; ok {
+		partitionedSql = `PARTITIONED BY(event_date)`
+	}
+	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
+
+	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
+	if len(tableLocationSql) != 0 {
+		createTableClauseSql = "CREATE OR REPLACE TABLE"
+	}
+
+	sqlStatement := fmt.Sprintf(`%s %s ( %v ) USING DELTA %s %s %s;`, createTableClauseSql, name, ColumnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql, tablePropertiesSql)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
@@ -787,6 +843,11 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 		// Populating the schema for the table
 		for _, item := range fetchTableAttributesResponse.GetAttributes() {
+			// Since it is an auto generated column, we can ignore it.
+			if item.GetColName() == "event_date" {
+				continue
+			}
+
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(map[string]string)
 			}
