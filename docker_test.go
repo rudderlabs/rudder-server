@@ -318,6 +318,10 @@ func run(m *testing.M) (int, error) {
 			fmt.Printf("--- Teardown done (%s)\n", time.Since(tearDownStart))
 		}
 	}()
+
+	config.Load()
+	logger.Init()
+
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -327,7 +331,9 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&testLogger{logger.NewLogger()}))
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&testLogger{
+		logger.NewLogger().Child("kafka"),
+	}))
 	if err != nil {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
@@ -1634,6 +1640,6 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 	}
 }
 
-type testLogger struct{ *logger.LoggerT }
+type testLogger struct{ logger.LoggerI }
 
-func (t *testLogger) Log(args ...interface{}) { t.Log(args...) }
+func (t *testLogger) Log(args ...interface{}) { t.Debug(args...) }
