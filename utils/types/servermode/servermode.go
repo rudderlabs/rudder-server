@@ -7,7 +7,6 @@ type Mode string
 const (
 	NormalMode   Mode = "NORMAL"
 	DegradedMode Mode = "DEGRADED"
-
 )
 
 type ChangeEvent struct {

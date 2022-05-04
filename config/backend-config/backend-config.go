@@ -451,5 +451,8 @@ func GetConfigBackendURL() string {
 
 // Gets the workspace token data for a single workspace or multi workspace case
 func GetWorkspaceToken() (workspaceToken string) {
+	if DefaultBackendConfig == nil {
+		Setup(nil)
+	}
 	return DefaultBackendConfig.AccessToken()
 }
