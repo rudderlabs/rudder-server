@@ -73,8 +73,6 @@ type HandleDestOAuthRespParamsT struct {
 //HandleT is the handle to this module.
 type HandleT struct {
 	pausingWorkers                         bool
-	paused                                 bool
-	pauseLock                              sync.Mutex
 	generatorPauseChannel                  chan *PauseT
 	generatorResumeChannel                 chan bool
 	statusLoopPauseChannel                 chan *PauseT
@@ -2205,12 +2203,6 @@ func (rt *HandleT) Start() {
 		rt.generatorLoop(ctx)
 		return nil
 	})
-
-	rm, err := GetRoutersManager()
-	if err != nil {
-		panic("Routers manager is nil. Shouldn't happen. Go Debug")
-	}
-	rm.AddRouter(rt)
 }
 
 func (rt *HandleT) Shutdown() {
@@ -2258,101 +2250,6 @@ func (rt *HandleT) backendConfigSubscriber() {
 		}
 		rt.configSubscriberLock.Unlock()
 	}
-}
-
-//Pause will pause the router
-//To completely pause the router, we should follow the steps in order
-//1. pause generator
-//2. drain all the worker channels
-//3. drain status insert loop queue
-func (rt *HandleT) Pause() {
-	rt.pauseLock.Lock()
-	defer rt.pauseLock.Unlock()
-
-	if rt.paused {
-		return
-	}
-
-	//Pre Pause workers
-	//Ideally this is not necessary.
-	//But when generatorLoop is blocked on worker channels,
-	//then pausing generatorLoop takes time.
-	//Pre-pausing workers will help unblock generator.
-	//To prevent generator to push again to workers, using pausingWorkers flag
-	rt.pausingWorkers = true
-	var wg sync.WaitGroup
-	for _, worker := range rt.workers {
-		_worker := worker
-		wg.Add(1)
-		rruntime.Go(func() {
-			respChannel := make(chan bool)
-			_worker.pauseChannel <- &PauseT{respChannel: respChannel, wg: &wg, waitForResume: false}
-			<-respChannel
-		})
-	}
-	wg.Wait()
-
-	//Pause generator
-	respChannel := make(chan bool)
-	rt.generatorPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Pause workers
-	for _, worker := range rt.workers {
-		_worker := worker
-		wg.Add(1)
-		rruntime.Go(func() {
-			respChannel := make(chan bool)
-			_worker.pauseChannel <- &PauseT{respChannel: respChannel, wg: &wg, waitForResume: true}
-			<-respChannel
-		})
-	}
-	wg.Wait()
-	rt.pausingWorkers = false
-
-	//Pause statusInsertLoop
-	respChannel = make(chan bool)
-	rt.statusLoopPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Clean up dangling statuses and in memory maps.
-	//Delete dangling executing
-	rt.crashRecover()
-	rt.toClearFailJobIDMap = make(map[int][]string)
-	for _, worker := range rt.workers {
-		worker.failedJobIDMap = make(map[string]int64)
-		worker.retryForJobMap = make(map[int64]time.Time)
-		worker.abortedUserIDMap = make(map[string]int)
-	}
-
-	rt.paused = true
-}
-
-//Resume will resume the router
-//Resuming all the router components in the reverse order in which they were paused.
-//1. resume status insert loop queue
-//2. resume all the worker channels
-//3. resume generator
-func (rt *HandleT) Resume() {
-	rt.pauseLock.Lock()
-	defer rt.pauseLock.Unlock()
-
-	if !rt.paused {
-		return
-	}
-
-	//Resume statusInsertLoop
-	rt.statusLoopResumeChannel <- true
-
-	//Resume workers
-	for _, worker := range rt.workers {
-		worker.resumeChannel <- true
-	}
-
-	//Resume generator
-	rt.generatorResumeChannel <- true
-
-	rt.paused = false
 }
 
 func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (int, string) {

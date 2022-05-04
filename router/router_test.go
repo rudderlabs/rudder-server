@@ -134,7 +134,6 @@ var _ = Describe("Router", func() {
 		c.Setup()
 		// setup static requirements of dependencies
 		stats.Setup()
-		RoutersManagerSetup()
 	})
 
 	AfterEach(func() {

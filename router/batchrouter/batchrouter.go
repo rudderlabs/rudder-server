@@ -70,8 +70,6 @@ var (
 )
 
 type HandleT struct {
-	paused                         bool
-	pauseLock                      sync.Mutex
 	destType                       string
 	destinationsMap                map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
@@ -97,7 +95,6 @@ type HandleT struct {
 	drainedJobsStat                stats.RudderStats
 	backendConfig                  backendconfig.BackendConfig
 	fileManagerFactory             filemanager.FileManagerFactory
-	maxFileUploadSize              int
 	inProgressMap                  map[string]bool
 	inProgressMapLock              sync.RWMutex
 	lastExecMap                    map[string]int64
@@ -593,14 +590,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		if isDestInterrupted {
 			if _, ok = interruptedEventsMap[eventID]; !ok {
 				eventsFound = true
-				gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
+				_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 			}
 		} else {
 			eventsFound = true
-			gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
+			_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 		}
 	}
-	gzWriter.CloseGZ()
+	_ = gzWriter.CloseGZ()
 	if !eventsFound {
 		brt.logger.Infof("BRT: No events in this batch for upload to %s. Events are either de-deuplicated or skipped", provider)
 		return StorageUploadOutput{
@@ -1178,13 +1175,14 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		if brt.reporting != nil && brt.reportingEnabled {
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
+			var cd *types.ConnectionDetails
 			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
 			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
 			if !ok {
 				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
 			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
-			cd, ok := connectionDetailsMap[key]
+			_, ok = connectionDetailsMap[key]
 			if !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
@@ -1754,13 +1752,12 @@ func (brt *HandleT) initWorkers() {
 		}))
 	}
 
-	g.Wait()
+	_ = g.Wait()
 }
 
 type PauseT struct {
-	respChannel   chan bool
-	wg            *sync.WaitGroup
-	waitForResume bool
+	respChannel chan bool
+	wg          *sync.WaitGroup
 }
 
 type workerT struct {
@@ -2240,12 +2237,6 @@ func (brt *HandleT) Start() {
 
 		return nil
 	}))
-
-	brm, err := GetBatchRoutersManager()
-	if err != nil {
-		panic("Batch Routers manager is nil. Shouldn't happen. Go Debug")
-	}
-	brm.AddBatchRouter(brt)
 }
 
 func (brt *HandleT) Shutdown() {
@@ -2254,66 +2245,5 @@ func (brt *HandleT) Shutdown() {
 	for _, worker := range brt.workers {
 		close(worker.resumeChannel)
 	}
-	brt.backgroundWait()
-}
-
-//
-//Pause will pause the batch router
-//To completely pause the router, we should pause all the workers
-func (brt *HandleT) Pause() {
-	brt.pauseLock.Lock()
-	defer brt.pauseLock.Unlock()
-
-	if brt.paused {
-		return
-	}
-
-	//Pause poll status worker
-	respChannel := make(chan bool)
-	brt.pollAsyncStatusPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Pause async upload worker
-	respChannel = make(chan bool)
-	brt.asyncUploadWorkerPauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-
-	//Pause workers
-	var wg sync.WaitGroup
-	for _, worker := range brt.workers {
-		_worker := worker
-		wg.Add(1)
-		rruntime.Go(func() {
-			respChannel := make(chan bool)
-			_worker.pauseChannel <- &PauseT{respChannel: respChannel, wg: &wg, waitForResume: true}
-			<-respChannel
-		})
-	}
-	wg.Wait()
-
-	brt.crashRecover()
-	brt.asyncDestinationStruct = make(map[string]*asyncdestinationmanager.AsyncDestinationStruct)
-
-	brt.paused = true
-}
-
-//Resume will resume the batch router
-//Resuming all the workers
-func (brt *HandleT) Resume() {
-	brt.pauseLock.Lock()
-	defer brt.pauseLock.Unlock()
-
-	if !brt.paused {
-		return
-	}
-
-	//Resume workers
-	for _, worker := range brt.workers {
-		worker.resumeChannel <- true
-	}
-
-	brt.pollAsyncStatusResumeChannel <- true
-	brt.asyncUploadWorkerResumeChannel <- true
-
-	brt.paused = false
+	_ = brt.backgroundWait()
 }

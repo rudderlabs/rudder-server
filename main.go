@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
@@ -102,7 +101,6 @@ var (
 	IdleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
-	legacyAppHandler          bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -117,7 +115,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-	config.RegisterBoolConfigVariable(false, &legacyAppHandler, false, "LegacyAppHandler")
 }
 
 func Init() {
@@ -204,8 +201,6 @@ func runAllInit() {
 	routertransformer.Init()
 	router.Init()
 	router.InitRouterAdmin()
-	operationmanager.Init()
-	operationmanager.Init2()
 	ratelimiter.Init()
 	sourcedebugger.Init()
 	gateway.Init()
@@ -298,9 +293,6 @@ func Run(ctx context.Context) {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
 			g.Go(misc.WithBugsnag(func() error {
-				if legacyAppHandler {
-					return appHandler.LegacyStart(ctx, options)
-				}
 				return appHandler.StartRudderCore(ctx, options)
 			}))
 		}
