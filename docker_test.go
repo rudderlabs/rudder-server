@@ -45,6 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
@@ -326,7 +327,7 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&logger{}))
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&testLogger{logger.NewLogger()}))
 	if err != nil {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
@@ -1633,6 +1634,6 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 	}
 }
 
-type logger struct{}
+type testLogger struct{ *logger.LoggerT }
 
-func (*logger) Log(args ...interface{}) { log.Println(args...) }
+func (t *testLogger) Log(args ...interface{}) { t.Log(args...) }
