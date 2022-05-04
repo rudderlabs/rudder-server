@@ -29,14 +29,14 @@ type Message struct {
 	Timestamp  time.Time
 }
 
-type client struct {
+type Client struct {
 	network, address string
 	dialer           *kafka.Dialer
 	config           *Config
 }
 
 // New returns a new Kafka client
-func New(network, address string, conf Config) (*client, error) { // skipcq: RVV-B0011
+func New(network, address string, conf Config) (*Client, error) {
 	conf.defaults()
 
 	dialer := kafka.Dialer{
@@ -63,7 +63,7 @@ func New(network, address string, conf Config) (*client, error) { // skipcq: RVV
 		}
 	}
 
-	return &client{
+	return &Client{
 		network: network,
 		address: address,
 		dialer:  &dialer,
@@ -72,7 +72,7 @@ func New(network, address string, conf Config) (*client, error) { // skipcq: RVV
 }
 
 // NewConfluentCloud returns a Kafka client pre-configured to connect to Confluent Cloud
-func NewConfluentCloud(address, key, secret string, conf Config) (*client, error) { // skipcq: RVV-B0011
+func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     key,
@@ -85,7 +85,7 @@ func NewConfluentCloud(address, key, secret string, conf Config) (*client, error
 }
 
 // NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
-func NewAzureEventHubs(address, connectionString string, conf Config) (*client, error) { // skipcq: RVV-B0011
+func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     "$ConnectionString",
@@ -99,14 +99,14 @@ func NewAzureEventHubs(address, connectionString string, conf Config) (*client, 
 
 // Network returns name of the network (for example, "tcp", "udp")
 // see net.Addr interface
-func (c *client) Network() string { return c.network }
+func (c *Client) Network() string { return c.network }
 
 // String returns string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
 // see net.Addr interface
-func (c *client) String() string { return c.address }
+func (c *Client) String() string { return c.address }
 
 // Ping is used to check the connectivity only, then it discards the connection
-func (c *client) Ping(ctx context.Context) error {
+func (c *Client) Ping(ctx context.Context) error {
 	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
 	if err != nil {
 		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)

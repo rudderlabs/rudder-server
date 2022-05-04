@@ -32,7 +32,7 @@ type Producer struct {
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) {
+func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) {
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
