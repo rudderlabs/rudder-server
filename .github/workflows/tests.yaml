@@ -87,7 +87,6 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: (cd /tmp && go get -u github.com/onsi/ginkgo/v2)
-    - run: ginkgo version
     - run: make test
 
   unit-enterprise:
