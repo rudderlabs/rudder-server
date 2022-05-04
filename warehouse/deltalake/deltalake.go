@@ -744,7 +744,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 
 	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
-	if len(tableLocationSql) != 0 {
+	if tableLocationSql == "" {
 		createTableClauseSql = "CREATE OR REPLACE TABLE"
 	}
 
