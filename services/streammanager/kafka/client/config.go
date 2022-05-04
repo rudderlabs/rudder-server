@@ -53,9 +53,7 @@ type TLS struct {
 }
 
 func (c *TLS) build() (*tls.Config, error) {
-	loadCerts := len(c.Cert) > 0 && len(c.Key) > 0
-
-	if !loadCerts && !c.InsecureSkipVerify && !c.WithSystemCertPool {
+	if len(c.CACertificate) == 0 && !c.InsecureSkipVerify && !c.WithSystemCertPool {
 		return nil, fmt.Errorf("invalid TLS configuration, either provide certificates or skip validation")
 	}
 
@@ -86,7 +84,7 @@ func (c *TLS) build() (*tls.Config, error) {
 		}
 	}
 
-	if loadCerts {
+	if len(c.Cert) > 0 && len(c.Key) > 0 {
 		certificate, err := tls.X509KeyPair(c.Cert, c.Key)
 		if err != nil {
 			return nil, fmt.Errorf("could not get TLS certificate: %w", err)
