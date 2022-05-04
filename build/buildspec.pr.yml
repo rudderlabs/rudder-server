@@ -22,7 +22,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - (cd && go get github.com/onsi/ginkgo/ginkgo)
+      - (cd && go get github.com/onsi/ginkgo/ginkgo/v2)
       - (cd && go get github.com/golang/mock/mockgen)
       - docker pull confluentinc/cp-zookeeper:latest
       - docker pull confluentinc/cp-kafka:latest

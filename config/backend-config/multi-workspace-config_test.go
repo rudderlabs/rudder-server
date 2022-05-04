@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"

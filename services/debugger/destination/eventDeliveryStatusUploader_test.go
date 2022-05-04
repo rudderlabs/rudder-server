@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -172,10 +172,6 @@ func (c *eventDeliveryStatusUploaderContext) Setup() {
 	Setup(c.mockBackendConfig)
 }
 
-func (c *eventDeliveryStatusUploaderContext) Finish() {
-	c.mockCtrl.Finish()
-}
-
 func initEventDeliveryStatusUploader() {
 	config.Load()
 	logger.Init()
@@ -209,7 +205,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	})
 
 	AfterEach(func() {
-		c.Finish()
+		c.mockCtrl.Finish()
 	})
 
 	Context("RecordEventDeliveryStatus", func() {
