@@ -184,6 +184,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	var (
 		c              *eventDeliveryStatusUploaderContext
 		deliveryStatus DeliveryStatusT
+		mockCall       *gomock.Call
 	)
 
 	BeforeEach(func() {
@@ -202,6 +203,15 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			EventType:     `some_event_type`,
 		}
 		disableEventDeliveryStatusUploads = false
+		mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+			Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+				// on Subscribe, emulate a backend configuration event
+				go func() {
+					channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+					c.configInitialised = true
+					close(channel)
+				}()
+			})
 	})
 
 	AfterEach(func() {
@@ -210,15 +220,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-					// on Subscribe, emulate a backend configuration event
-					go func() {
-						channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-						c.configInitialised = true
-						close(channel)
-					}()
-				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
 			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 				tFunc()
@@ -230,15 +231,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-					// on Subscribe, emulate a backend configuration event
-					go func() {
-						channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-						c.configInitialised = true
-						close(channel)
-					}()
-				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
 			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 				tFunc()
@@ -249,15 +241,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("records events", func() {
-			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-					// on Subscribe, emulate a backend configuration event
-					go func() {
-						channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-						c.configInitialised = true
-						close(channel)
-					}()
-				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
 			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 				tFunc()
@@ -269,15 +252,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-					// on Subscribe, emulate a backend configuration event
-					go func() {
-						channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-						c.configInitialised = true
-						close(channel)
-					}()
-				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
 			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 				tFunc()
@@ -292,15 +266,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("sends empty json if transformation fails", func() {
-			mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-				Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-					// on Subscribe, emulate a backend configuration event
-					go func() {
-						channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-						c.configInitialised = true
-						close(channel)
-					}()
-				})
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
 			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 				tFunc()
