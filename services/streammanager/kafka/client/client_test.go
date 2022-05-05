@@ -16,7 +16,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/internal/buildtag"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -549,10 +548,6 @@ func TestProducer_Timeout(t *testing.T) {
 func TestConfluentAzureCloud(t *testing.T) {
 	t.Parallel()
 
-	if !buildtag.Cloud {
-		t.Skip("Cloud tests are not enabled, skipping...")
-	}
-
 	kafkaHost := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_HOST")
 	confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
 	confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
@@ -599,10 +594,6 @@ func TestConfluentAzureCloud(t *testing.T) {
 
 func TestAzureEventHubsCloud(t *testing.T) {
 	t.Parallel()
-
-	if !buildtag.Cloud {
-		t.Skip("Cloud tests are not enabled, skipping...")
-	}
 
 	kafkaHost := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST")
 	azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
