@@ -35,6 +35,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
+	sources "github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -44,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -177,9 +180,9 @@ type HandleT struct {
 	netHandle                                                  *http.Client
 	httpTimeout                                                time.Duration
 	httpWebServer                                              *http.Server
-
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
+	SourcesAPI                                                 api.Source
+	backgroundCancel                                           context.CancelFunc
+	backgroundWait                                             func() error
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -1415,6 +1418,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.stat(gateway.fetchFailedEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.stat(gateway.clearFailedEventsHandler)).Methods("POST")
 
+	//rudder-sources new APIs
+	srvMux.HandleFunc("/v1/job-status/{job_id}", gateway.SourcesAPI.GetStatus).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_id}", gateway.SourcesAPI.Delete).Methods("DELETE")
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -1619,6 +1626,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gatewayAdmin := GatewayAdmin{handle: gateway}
 	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
 
+	gateway.SourcesAPI = sources.Source{}
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
