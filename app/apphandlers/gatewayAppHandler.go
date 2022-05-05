@@ -86,5 +86,5 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 }
 
 func (*GatewayApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
 }
