@@ -710,6 +710,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
+				delTimeStart := time.Now()
 				worker.deliveryTimeStat.Start()
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
@@ -772,7 +773,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								if worker.rt.transformerProxy {
 									rtl_time := time.Now()
 									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
-									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+									proxyDuration := time.Since(rtl_time)
+									worker.routerProxyStat.SendTiming(proxyDuration)
+									pkgLogger.Errorf("[NwLayer Latency], %v, router_proxy_latency, %v, %v", time.Now().Format("2017-09-07 17:06:04.000000000"), worker.rt.destName, proxyDuration.Milliseconds())
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -819,7 +822,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				attemptedToSendTheJob = true
 
+				delTimeDuration := time.Since(delTimeStart)
 				worker.deliveryTimeStat.End()
+
+				pkgLogger.Errorf("[NwLayer Latency], %v, router_delivery_time, %v, %v",
+					time.Now().Format("2017-09-07 17:06:04.000000000"),
+					worker.rt.destName,
+					delTimeDuration.Milliseconds(),
+				)
 				deliveryLatencyStat.End()
 
 				// END: request to destination endpoint
