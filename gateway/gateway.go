@@ -1330,7 +1330,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	//todo: remove in next release
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/clear", gateway.ClearHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
@@ -1381,8 +1380,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.ContentType(),
 	)
-	srvMux.HandleFunc("/v1/clear", gateway.ClearHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/clear", gateway.OperationStatusHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
 
 	srv := &http.Server{
