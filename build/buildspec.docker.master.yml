@@ -35,6 +35,8 @@ phases:
       - docker pull minio/minio:latest
       - docker pull mcr.microsoft.com/azure-storage/azurite:latest
       - docker pull fsouza/fake-gcs-server:latest
+      - docker pull atzoum/simulator-google-sheets:latest
+      - docker pull messagebird/gcloud-pubsub-emulator:latest
       - go mod download
   build:
     commands:
