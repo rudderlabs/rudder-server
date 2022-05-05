@@ -43,6 +43,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(10, &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+	//default values is '0', which means disabled. So, if `maxActiveClients` is not set. We consider it to be disabled.
+	config.RegisterIntConfigVariable(0, &maxConcurrentRequests, false, 1, "Gateway.maxConcurrentRequests")
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
