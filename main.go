@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime/pprof"
 
@@ -348,18 +347,4 @@ func Run(ctx context.Context) {
 		logger.Log.Sync()
 	}
 	stats.StopPeriodicStats()
-}
-
-func getWebPort() int {
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	switch appTypeStr {
-	case app.GATEWAY:
-		return config.GetInt("Gateway.webPort", 8080)
-	case app.PROCESSOR:
-		return config.GetInt("Processor.webPort", 8086)
-	case app.EMBEDDED:
-		return config.GetInt("Gateway.webPort", 8080)
-	}
-
-	panic(errors.New("invalid app type"))
 }
