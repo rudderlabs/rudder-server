@@ -56,11 +56,11 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	workspaceCountMap := make(map[string]int)
 	workspaceCountMap[testWID] = 1
 	payloadLimit := 100 * bytesize.MB
-	unprocessedListEmpty := jobDB.GetAllJobs(workspaceCountMap, &GetQueryParamsT{
+	unprocessedListEmpty := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        1,
 		ParameterFilters: []ParameterFilterT{},
-		PayloadLimit:     payloadLimit,
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 
 	require.Equal(t, 0, len(unprocessedListEmpty))
@@ -69,11 +69,11 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 
 	payloadLimit = 100 * bytesize.MB
 	workspaceCountMap[testWID] = 3
-	unprocessedList := jobDB.GetAllJobs(workspaceCountMap, &GetQueryParamsT{
+	unprocessedList := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         3,
+		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
-		PayloadLimit:     payloadLimit,
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 	require.Equal(t, 3, len(unprocessedList))
 
@@ -105,11 +105,11 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 
 	payloadLimit = 100 * bytesize.MB
 	workspaceCountMap[testWID] = 3
-	jobs := jobDB.GetAllJobs(workspaceCountMap, &GetQueryParamsT{
+	jobs := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         3,
+		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
-		PayloadLimit:     payloadLimit,
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 	require.Equal(t, 3, len(jobs))
 }

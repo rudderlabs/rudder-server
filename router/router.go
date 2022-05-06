@@ -1915,13 +1915,12 @@ func (rt *HandleT) readAndProcess() int {
 	rt.workspaceCount = pickupMap
 	rt.timeGained = 0
 	rt.logger.Debugf("pickupMap: %+v", pickupMap)
-	payloadLimit := rt.payloadLimit
 	combinedList := rt.jobsDB.GetAllJobs(
 		rt.workspaceCount,
-		&jobsdb.GetQueryParamsT{
+		jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{rt.destName},
-			PayloadLimit:     payloadLimit,
-			JobCount:         totalPickupCount,
+			PayloadSizeLimit: rt.payloadLimit,
+			JobsLimit:        totalPickupCount,
 		},
 		rt.maxDSQuerySize,
 	)

@@ -4,17 +4,17 @@ type MultiTenantLegacy struct {
 	*HandleT
 }
 
-func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params *GetQueryParamsT, _ int) []*JobT {
+func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, _ int) []*JobT {
 	toQuery := 0
 	for workspace := range workspaceCount {
 		toQuery += workspaceCount[workspace]
 	}
-	params.JobCount = toQuery
+	params.JobsLimit = toQuery
 
 	retryList := mj.GetToRetry(params)
-	params.JobCount -= len(retryList)
+	params.JobsLimit -= len(retryList)
 	waitList := mj.GetWaiting(params)
-	params.JobCount -= len(waitList)
+	params.JobsLimit -= len(waitList)
 	unprocessedList := mj.GetUnprocessed(params)
 
 	var list []*JobT

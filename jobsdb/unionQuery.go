@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -15,13 +14,8 @@ type MultiTenantHandleT struct {
 	*HandleT
 }
 
-type JobsDBStatusCache struct {
-	once sync.Once
-	a    HandleT
-}
-
 type MultiTenantJobsDB interface {
-	GetAllJobs(map[string]int, *GetQueryParamsT, int) []*JobT
+	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 
 	BeginGlobalTransaction() *sql.Tx
 	CommitTransaction(*sql.Tx)
@@ -31,7 +25,7 @@ type MultiTenantJobsDB interface {
 	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
-	DeleteExecuting(params *GetQueryParamsT)
+	DeleteExecuting(customValFilters ...string)
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
@@ -71,7 +65,7 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, co
 
 //All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params *GetQueryParamsT, maxDSQuerySize int) []*JobT {
+func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -84,14 +78,14 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params *
 	dsList := mj.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
-	if params.PayloadLimit < 0 {
+	if params.PayloadSizeLimit < 0 {
 		return outJobs
 	}
 
 	workspacePayloadLimitMap := make(map[string]int64)
 	for workspace, count := range workspaceCount {
-		percentage := float64(count) / float64(params.JobCount)
-		payloadLimit := percentage * float64(params.PayloadLimit)
+		percentage := float64(count) / float64(params.JobsLimit)
+		payloadLimit := percentage * float64(params.PayloadSizeLimit)
 		workspacePayloadLimitMap[workspace] = int64(payloadLimit)
 	}
 
@@ -120,7 +114,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params *
 	return outJobs
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, params *GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, params GetQueryParamsT) []*JobT {
 	var jobList []*JobT
 	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, params)
 
@@ -226,7 +220,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 	return jobList
 }
 
-func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, params *GetQueryParamsT) (string, []string) {
+func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, workspacesToQuery []string
 	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, params, workspaceCount)
 
@@ -245,7 +239,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params *GetQueryParamsT, workspaceCount map[string]int) string {
+func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params GetQueryParamsT, workspaceCount map[string]int) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	stateFilters := params.StateFilters

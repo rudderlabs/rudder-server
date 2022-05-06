@@ -288,7 +288,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
@@ -301,7 +301,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
@@ -311,7 +311,7 @@ var _ = Describe("Processor", func() {
 		var clearDB = false
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
@@ -325,7 +325,7 @@ var _ = Describe("Processor", func() {
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 
 			payloadLimit := processor.payloadLimit
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize, PayloadLimit: payloadLimit}).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(emptyJobsList).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
@@ -448,11 +448,11 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:         c.dbReadBatchSize,
-				EventCount:       c.processEventSize,
-				PayloadLimit:     payloadLimit,
+				JobsLimit:        c.dbReadBatchSize,
+				EventsLimit:      c.processEventSize,
+				PayloadSizeLimit: payloadLimit,
 			}).Return(unprocessedJobsList).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -624,11 +624,11 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:         c.dbReadBatchSize,
-				EventCount:       c.processEventSize,
-				PayloadLimit:     payloadLimit,
+				JobsLimit:        c.dbReadBatchSize,
+				EventsLimit:      c.processEventSize,
+				PayloadSizeLimit: payloadLimit,
 			}).Return(unprocessedJobsList).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -881,17 +881,17 @@ var _ = Describe("Processor", func() {
 				Expect(message.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
 			}
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:         c.dbReadBatchSize,
-				EventCount:       c.processEventSize,
-				PayloadLimit:     payloadLimit,
+				JobsLimit:        c.dbReadBatchSize,
+				EventsLimit:      c.processEventSize,
+				PayloadSizeLimit: payloadLimit,
 			}).Return(unprocessedJobsList).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1015,17 +1015,17 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:         c.dbReadBatchSize,
-				EventCount:       c.processEventSize,
-				PayloadLimit:     payloadLimit,
+				JobsLimit:        c.dbReadBatchSize,
+				EventsLimit:      c.processEventSize,
+				PayloadSizeLimit: payloadLimit,
 			}).Return(unprocessedJobsList).Times(1)
 
 			// Test transformer failure
@@ -1080,7 +1080,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 
@@ -1106,7 +1106,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 			defer processor.Shutdown()
@@ -1114,7 +1114,7 @@ var _ = Describe("Processor", func() {
 
 			processor.readLoopSleep = time.Millisecond
 
-			c.mockProcErrorsDB.EXPECT().DeleteExecuting(&jobsdb.GetQueryParamsT{JobCount: -1})
+			c.mockProcErrorsDB.EXPECT().DeleteExecuting()
 			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).Return(nil).AnyTimes()
 			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(nil).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)

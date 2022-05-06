@@ -2115,12 +2115,12 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	if !enableEventCount {
 		eventCount = 0
 	}
-	payloadLimit := proc.payloadLimit
-	unprocessedList := proc.gatewayDB.GetUnprocessed(&jobsdb.GetQueryParamsT{
+
+	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
-		JobCount:         maxEventsToProcess,
-		EventCount:       eventCount,
-		PayloadLimit:     payloadLimit,
+		JobsLimit:        maxEventsToProcess,
+		EventsLimit:      eventCount,
+		PayloadSizeLimit: proc.payloadLimit,
 	})
 	totalEvents := 0
 	totalPayloadBytes := 0
@@ -2446,7 +2446,7 @@ func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(&jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
+	proc.gatewayDB.DeleteExecuting(GWCustomVal)
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

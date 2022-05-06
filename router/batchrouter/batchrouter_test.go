@@ -225,8 +225,8 @@ var _ = Describe("BatchRouter", func() {
 			}
 
 			payloadLimit := batchrouter.payloadLimit
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(&jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize, PayloadLimit: payloadLimit}).Return(toRetryJobsList).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(&jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize - len(toRetryJobsList), PayloadLimit: payloadLimit}).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(toRetryJobsList).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
