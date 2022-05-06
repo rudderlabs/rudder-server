@@ -155,7 +155,8 @@ func (ct *CTHandleT) verifyingCreateTable() (err error) {
 	}
 
 	// Alter table
-	return ct.alterTable()
+	err = ct.alterTable()
+	return
 }
 
 func (ct *CTHandleT) verifyingFetchSchema() (err error) {
@@ -351,7 +352,7 @@ func (ct *CTHandleT) createTable() (err error) {
 }
 
 func (ct *CTHandleT) alterTable() (err error) {
-	// Creating create table query and running over the warehouse
+	// Creating alter table query and running over the warehouse
 	if ct.GetDestinationType() == warehouseutils.BQ {
 		bqHandle := ct.GetBigQueryHandle()
 		for columnName, columnType := range AlterColumnMap {
