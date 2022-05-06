@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Opts struct {
@@ -47,6 +47,16 @@ type confluentCloudConfig struct {
 	APISecret       string
 }
 
+type producer interface {
+	Close(context.Context) error
+	Publish(context.Context, ...client.Message) error
+}
+
+type logger interface {
+	Error(args ...interface{})
+	Errorf(format string, args ...interface{})
+}
+
 var (
 	clientCert, clientKey      []byte
 	kafkaDialTimeout           time.Duration
@@ -55,7 +65,7 @@ var (
 	kafkaProducerMaxRetries    int
 	kafkaBatchingEnabled       bool
 
-	pkgLogger logger.LoggerI
+	pkgLogger logger
 )
 
 func Init() {
@@ -88,7 +98,7 @@ func Init() {
 	config.RegisterIntConfigVariable(10, &kafkaProducerMaxRetries, false, 1, "Router.kafkaProducerMaxRetries")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 
-	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
+	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 }
 
 // NewProducer creates a producer based on destination config
@@ -233,34 +243,47 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 ) {
 	var messages []client.Message
 	for _, data := range batch {
-		message, err := json.Marshal(data["message"])
+		message, ok := data["message"]
+		if !ok {
+			// TODO bump metric
+			pkgLogger.Errorf("batch from topic %s is missing the message attribute", topic)
+			continue
+		}
+		userID, ok := data["userId"].(string)
+		if !ok {
+			// TODO bump metric
+			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
+			continue
+		}
+
+		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
 			return nil, err
 		}
-		userId, _ := data["userId"].(string)
-		messages = append(messages, prepareMessage(topic, userId, message, timestamp))
+		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
 	}
 	return messages, nil
 }
 
 // CloseProducer closes a given producer
-func CloseProducer(producer interface{}) error {
-	kafkaProducer, ok := producer.(*client.Producer)
-	if ok {
-		ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
-		err := kafkaProducer.Close(ctx)
-		cancel()
-		if err != nil {
-			pkgLogger.Errorf("error in closing Kafka producer: %s", err.Error())
-		}
-		return err
+func CloseProducer(ctx context.Context, pi interface{}) error {
+	p, ok := pi.(producer)
+	if !ok {
+		return fmt.Errorf("error while closing producer")
 	}
-	return fmt.Errorf("error while closing producer")
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err := p.Close(ctx)
+	cancel()
+	if err != nil {
+		pkgLogger.Errorf("error in closing Kafka producer: %v", err)
+	}
+	return err
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-	kafkaProducer, ok := producer.(*client.Producer)
+func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (int, string, string) {
+	p, ok := pi.(producer)
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
@@ -276,15 +299,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(jsonData, kafkaProducer, conf.Topic)
+		return sendBatchedMessage(jsonData, p, conf.Topic)
 	}
 
-	return sendMessage(jsonData, kafkaProducer, conf.Topic)
+	return sendMessage(jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(
-	jsonData json.RawMessage, kafkaProducer *client.Producer, topic string,
-) (int, string, string) {
+func sendBatchedMessage(jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -297,7 +318,7 @@ func sendBatchedMessage(
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
 
-	err = kafkaProducer.Publish(context.TODO(), batchOfMessages...)
+	err = p.Publish(context.TODO(), batchOfMessages...)
 	if err != nil {
 		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 	}
@@ -306,7 +327,7 @@ func sendBatchedMessage(
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(jsonData json.RawMessage, kafkaProducer *client.Producer, topic string) (int, string, string) {
+func sendMessage(jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
@@ -317,7 +338,7 @@ func sendMessage(jsonData json.RawMessage, kafkaProducer *client.Producer, topic
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value, timestamp)
-	if err = kafkaProducer.Publish(context.TODO(), message); err != nil {
+	if err = p.Publish(context.TODO(), message); err != nil {
 		return makeErrorResponse(err)
 	}
 

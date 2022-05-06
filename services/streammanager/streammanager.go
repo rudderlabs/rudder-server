@@ -1,6 +1,7 @@
 package streammanager
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -68,14 +69,14 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 }
 
 // CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
-func CloseProducer(producer interface{}, destType string) error {
+func CloseProducer(producer interface{}, destType string) error { // TODO check if it's possible to pass a context
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
 	case "BQSTREAM":
 		return bqstream.CloseProducer(producer)
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
-		return kafka.CloseProducer(producer)
+		return kafka.CloseProducer(context.TODO(), producer)
 	case "GOOGLEPUBSUB":
 		return googlepubsub.CloseProducer(producer)
 	default:

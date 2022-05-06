@@ -95,7 +95,10 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 func (p *Producer) Close(ctx context.Context) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- p.writer.Close()
+		if p.writer != nil {
+			done <- p.writer.Close()
+		}
+		close(done)
 	}()
 
 	select {
