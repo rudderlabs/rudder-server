@@ -48,16 +48,8 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
 }
 
-type PauseT struct {
-	respChannel chan bool
-}
-
 //HandleT is a handle to this object used in main.go
 type HandleT struct {
-	paused              bool
-	pauseLock           sync.Mutex
-	pauseChannel        chan *PauseT
-	resumeChannel       chan bool
 	backendConfig       backendconfig.BackendConfig
 	transformer         transformer.Transformer
 	lastJobID           int64
@@ -294,9 +286,6 @@ func (proc *HandleT) Setup(
 	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI,
 ) {
-	proc.pauseChannel = make(chan *PauseT)
-	proc.resumeChannel = make(chan bool)
-	//TODO : Remove this
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -419,7 +408,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 			return err
 		}
 		if enablePipelining {
-			proc.pipelineWithPause(ctx, proc.mainPipeline)
+			proc.mainPipeline(ctx)
 		} else {
 			proc.mainLoop(ctx)
 		}
@@ -2231,13 +2220,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case pause := <-proc.pauseChannel:
-			pkgLogger.Info("Processor is paused.")
-			proc.paused = true
-			pause.respChannel <- true
-			<-proc.resumeChannel
 		case <-time.After(mainLoopTimeout):
-			proc.paused = false
 			if isUnLocked {
 				found := proc.handlePendingGatewayJobs()
 				if found {
@@ -2254,31 +2237,6 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 				time.Sleep(fixedLoopSleep)
 			}
 		}
-	}
-}
-
-func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.Context)) {
-	for {
-		var pause *PauseT
-
-		ctxPausable, cancel := context.WithCancel(ctx)
-		go func() {
-			pause = <-proc.pauseChannel
-			cancel()
-		}()
-		fn(ctxPausable)
-		// stop due to parent context cancellation
-		if ctx.Err() != nil {
-			return
-		}
-
-		// handle pause
-		if pause == nil {
-			panic("`pause` should not be nil")
-		}
-		proc.paused = true
-		pause.respChannel <- true
-		<-proc.resumeChannel
 	}
 }
 
@@ -2482,33 +2440,6 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
 	}
-}
-
-//Pause is a blocking call.
-//Pause returns after the processor is paused.
-func (proc *HandleT) Pause() {
-	proc.pauseLock.Lock()
-	defer proc.pauseLock.Unlock()
-
-	if proc.paused {
-		return
-	}
-
-	respChannel := make(chan bool)
-	proc.pauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-}
-
-func (proc *HandleT) Resume() {
-	proc.pauseLock.Lock()
-	defer proc.pauseLock.Unlock()
-
-	if !proc.paused {
-		return
-	}
-	proc.paused = false
-
-	proc.resumeChannel <- true
 }
 
 func (proc *HandleT) isReportingEnabled() bool {

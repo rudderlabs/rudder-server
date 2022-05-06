@@ -139,7 +139,6 @@ var _ = Describe("BatchRouter", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
-		BatchRoutersManagerSetup()
 	})
 
 	AfterEach(func() {

@@ -231,6 +231,11 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 		pkgLogger.Errorf("[WH]: Failed to write event with error: %s", err.Error())
 		return
 	}
+	err = writer.Close()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error while closing load file with error: %s", err.Error())
+		return
+	}
 	return
 }
 
