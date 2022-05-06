@@ -207,11 +207,6 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 	sTags := statsTags(clientEvents[0])
 
 	s := time.Now()
-	defer stats.NewTaggedStat(
-		"processor.transformation_time",
-		stats.TimerType,
-		sTags,
-	).Since(s)
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
