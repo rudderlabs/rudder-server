@@ -66,11 +66,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.Client{
-			Dialer:  c.dialer,
-			Network: c.network,
-			Address: c.address,
-		}
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.address)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -89,9 +85,9 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		t.Name() + " [partition 0]",
-		t.Name() + " [partition 1]",
+	require.Equal(t, []testutil.TopicPartition{
+		{Topic: t.Name(), Partition: 0},
+		{Topic: t.Name(), Partition: 1},
 	}, topics)
 
 	// Produce X messages in a single batch
@@ -208,11 +204,7 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.Client{
-			Dialer:  c.dialer,
-			Network: c.network,
-			Address: c.address,
-		}
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.address)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -231,9 +223,9 @@ func TestConsumer_Partition(t *testing.T) {
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		t.Name() + " [partition 0]",
-		t.Name() + " [partition 1]",
+	require.Equal(t, []testutil.TopicPartition{
+		{Topic: t.Name(), Partition: 0},
+		{Topic: t.Name(), Partition: 1},
 	}, topics)
 
 	// Produce X messages in a single batch
@@ -494,11 +486,7 @@ func TestProducer_Timeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tc := testutil.Client{
-		Dialer:  c.dialer,
-		Network: c.network,
-		Address: c.address,
-	}
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.address)
 
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
@@ -513,7 +501,7 @@ func TestProducer_Timeout(t *testing.T) {
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{t.Name() + " [partition 0]"}, topics)
+	require.Equal(t, []testutil.TopicPartition{{Topic: t.Name(), Partition: 0}}, topics)
 
 	// Produce X messages in a single batch
 	producerConf := ProducerConfig{ClientID: "producer-01"}

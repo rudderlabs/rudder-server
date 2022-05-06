@@ -21,82 +21,66 @@ type Opts struct {
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
 func NewProducer(destinationConfig interface{}, destType string, o Opts) (interface{}, error) {
-
 	switch destType {
 	case "AZURE_EVENT_HUB":
-		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig, kafka.Opts{
+		return kafka.NewProducerForAzureEventHubs(destinationConfig, kafka.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "CONFLUENT_CLOUD":
-		producer, err := kafka.NewProducerForConfluentCloud(destinationConfig, kafka.Opts{
+		return kafka.NewProducerForConfluentCloud(destinationConfig, kafka.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "EVENTBRIDGE":
-		producer, err := eventbridge.NewProducer(destinationConfig, eventbridge.Opts{
+		return eventbridge.NewProducer(destinationConfig, eventbridge.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "FIREHOSE":
-		producer, err := firehose.NewProducer(destinationConfig, firehose.Opts{
+		return firehose.NewProducer(destinationConfig, firehose.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "KAFKA":
-		producer, err := kafka.NewProducer(destinationConfig, kafka.Opts{
+		return kafka.NewProducer(destinationConfig, kafka.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "KINESIS":
-		producer, err := kinesis.NewProducer(destinationConfig, kinesis.Opts{
+		return kinesis.NewProducer(destinationConfig, kinesis.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "GOOGLEPUBSUB":
-		producer, err := googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
+		return googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
+		return googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "PERSONALIZE":
-		producer, err := personalize.NewProducer(destinationConfig, personalize.Opts{
+		return personalize.NewProducer(destinationConfig, personalize.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	case "BQSTREAM":
-		producer, err := bqstream.NewProducer(destinationConfig, bqstream.Opts{
+		return bqstream.NewProducer(destinationConfig, bqstream.Opts{
 			Timeout: o.Timeout,
 		})
-		return producer, err
 	default:
-		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+		return nil, fmt.Errorf("no provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
-
 }
 
 // CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
 func CloseProducer(producer interface{}, destType string) error {
-
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
 	case "BQSTREAM":
 		return bqstream.CloseProducer(producer)
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
-		err := kafka.CloseProducer(producer)
-		return err
+		return kafka.CloseProducer(producer)
 	case "GOOGLEPUBSUB":
-		err := googlepubsub.CloseProducer(producer)
-		return err
+		return googlepubsub.CloseProducer(producer)
 	default:
-		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+		return fmt.Errorf("no provider configured for StreamManager") //404, "no provider configured for StreamManager", ""
 	}
-
 }
 
 type StreamProducer interface {
@@ -125,5 +109,4 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	default:
 		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}
-
 }

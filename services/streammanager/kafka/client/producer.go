@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -13,8 +14,10 @@ type ProducerConfig struct {
 	ClientID string
 	WriteTimeout,
 	ReadTimeout time.Duration
-	Logger      Logger
-	ErrorLogger Logger
+	RetryInterval time.Duration
+	MaxRetries    int
+	Logger        Logger
+	ErrorLogger   Logger
 }
 
 func (c *ProducerConfig) defaults() {
@@ -24,11 +27,18 @@ func (c *ProducerConfig) defaults() {
 	if c.ReadTimeout < 1 {
 		c.ReadTimeout = 10 * time.Second
 	}
+	if c.RetryInterval < 1 {
+		c.RetryInterval = time.Second
+	}
+	if c.MaxRetries < 1 {
+		c.MaxRetries = 10
+	}
 }
 
 // Producer provides a high-level API for producing messages to Kafka
 type Producer struct {
 	writer *kafka.Writer
+	config ProducerConfig
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
@@ -61,6 +71,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 	}
 
 	p = &Producer{
+		config: producerConf,
 		writer: &kafka.Writer{
 			Addr:                   c,
 			Topic:                  topic,
@@ -117,5 +128,20 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 			Headers: headers,
 		}
 	}
-	return p.writer.WriteMessages(ctx, messages...)
+
+	var err error
+	for i := 0; i < p.config.MaxRetries; i++ {
+		err = p.writer.WriteMessages(ctx, messages...)
+		if errors.Is(err, kafka.LeaderNotAvailable) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(p.config.RetryInterval):
+				continue
+			}
+		}
+		return err
+	}
+
+	return fmt.Errorf("could not publish after %d retries: %w", p.config.MaxRetries, err)
 }
