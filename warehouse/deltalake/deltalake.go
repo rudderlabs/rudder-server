@@ -593,7 +593,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
-	tableLocationSql := dl.getTableLocationSql()
+	tableLocationSql := dl.getTableLocationSql(stagingTableName)
 	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 
 	// Creating create table sql statement for staging users table
@@ -676,7 +676,7 @@ func (dl *HandleT) getExternalLocation() (externalLocation string) {
 }
 
 // getTableLocationSql returns external external table location
-func (dl *HandleT) getTableLocationSql() (tableLocation string) {
+func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) {
 	externalLocation := dl.getExternalLocation()
 	if externalLocation == "" {
 		return
@@ -733,7 +733,7 @@ func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databr
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 
-	tableLocationSql := dl.getTableLocationSql()
+	tableLocationSql := dl.getTableLocationSql(tableName)
 	var partitionedSql string
 	if _, ok := columns["received_at"]; ok {
 		partitionedSql = `PARTITIONED BY(event_date)`
@@ -741,7 +741,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 
 	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
-	if tableLocationSql == "" {
+	if tableLocationSql != "" {
 		createTableClauseSql = "CREATE OR REPLACE TABLE"
 	}
 
