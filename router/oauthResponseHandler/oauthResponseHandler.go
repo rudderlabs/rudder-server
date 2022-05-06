@@ -66,7 +66,8 @@ type OAuthErrResHandler struct {
 	destAuthInfoMap      map[string]*AuthResponse
 	refreshActiveMap     map[string]bool // Used to check if a refresh request for an account is already InProgress
 	disableDestActiveMap map[string]bool // Used to check if a disable destination request for a destination is already InProgress
-	WorkspaceToken       string
+	workspaceToken       string
+	TokenProvider        tokenProvider
 }
 
 type Authorizer interface {
@@ -86,8 +87,8 @@ type ControlPlaneRequestT struct {
 }
 
 // This function creates a new OauthErrorResponseHandler
-func NewOAuthErrorHandler() *OAuthErrResHandler {
-	return &OAuthErrResHandler{}
+func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
+	return &OAuthErrResHandler{TokenProvider: provider}
 }
 
 var (
@@ -107,6 +108,10 @@ type RefreshTokenBodyParams struct {
 	ExpiredSecret string `json:"expiredSecret"`
 }
 
+type tokenProvider interface {
+	AccessToken() string
+}
+
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
@@ -124,9 +129,8 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.destAuthInfoMap = make(map[string]*AuthResponse)
 	authErrHandler.refreshActiveMap = make(map[string]bool)
 	authErrHandler.disableDestActiveMap = make(map[string]bool)
-
-	if authErrHandler.WorkspaceToken == "" {
-		authErrHandler.WorkspaceToken = backendconfig.GetWorkspaceToken()
+	if authErrHandler.workspaceToken == "" {
+		authErrHandler.workspaceToken = authErrHandler.TokenProvider.AccessToken()
 	}
 }
 
@@ -468,7 +472,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		return http.StatusBadRequest, err.Error()
 	}
 	// Authorisation setting
-	req.SetBasicAuth(authErrHandler.WorkspaceToken, "")
+	req.SetBasicAuth(authErrHandler.workspaceToken, "")
 
 	// Set content-type in order to send the body in request correctly
 	if router_utils.IsNotEmptyString(cpReq.ContentType) {
