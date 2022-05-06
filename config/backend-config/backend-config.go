@@ -406,6 +406,9 @@ func NewForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 	}
 
 	backendConfig.SetUp()
+	if backendConfig.AccessToken() == "" {
+		return nil, fmt.Errorf("backend config token not available")
+	}
 
 	return backendConfig, nil
 }

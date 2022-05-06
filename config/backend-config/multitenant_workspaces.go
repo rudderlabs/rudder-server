@@ -24,7 +24,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
+		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
 }
 

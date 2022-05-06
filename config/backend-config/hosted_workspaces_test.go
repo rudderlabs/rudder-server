@@ -69,7 +69,6 @@ var _ = Describe("workspace-config", func() {
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			// workspaceToken = "testToken"
 			config, ok := backendConfig.Get("testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
@@ -91,7 +90,6 @@ var _ = Describe("workspace-config", func() {
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			// workspaceToken = "testToken"
 			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
 			config, ok := backendConfig.Get("testToken")
 			Expect(config).To(Equal(ConfigT{}))
