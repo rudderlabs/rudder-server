@@ -221,9 +221,9 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 
 	tags["transform_at"] = transformAt
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_failed_events", stats.CountType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
 	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
@@ -237,9 +237,9 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
 	tags := buildStatTags(sourceID, workspaceID, destination, EVENT_FILTER)
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_failed_events", stats.CountType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_in_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_error_count", stats.CountType, tags)
 	eventFilterTime := proc.statsFactory.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
 
 	return &DestStatT{
