@@ -123,12 +123,12 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	}
 
 	if !isDedupEnabled {
-		err = bq.CreateTableView(tableName, columnMap)
+		err = bq.createTableView(tableName, columnMap)
 	}
 	return
 }
 
-func (bq *HandleT) CreateTableView(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -454,7 +454,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
 	if !viewExists {
 		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.Namespace, bq.ProjectID)
-		bq.CreateTableView(warehouseutils.UsersTable, userColMap)
+		bq.createTableView(warehouseutils.UsersTable, userColMap)
 	}
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
