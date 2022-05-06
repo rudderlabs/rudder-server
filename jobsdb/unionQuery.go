@@ -33,17 +33,12 @@ type MultiTenantJobsDB interface {
 	GetPileUpCounts(map[string]map[string]int)
 }
 
-func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, count int, payloadLimit int64) string {
+func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
 	var sqlStatement string
-
-	if count < 0 {
-		mj.logger.Errorf("workspaceCount < 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
-		count = 0
-	}
 
 	//some stats
 	orderQuery := " ORDER BY jobs.job_id"
-	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
+	limitQuery := fmt.Sprintf(" LIMIT %d ", jobsLimit)
 
 	sqlStatement = fmt.Sprintf(
 		`SELECT
@@ -60,7 +55,10 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, co
 		WHERE jobs.workspace_id='%[3]s' %[4]s %[2]s`,
 		"rt_jobs_view", limitQuery, workspace, orderQuery)
 
-	return `select * from (` + sqlStatement + fmt.Sprintf(`) subquery where running_payload_size - subquery.payload_size <= %d`, payloadLimit)
+	if payloadLimit > 0 {
+		return `select * from (` + sqlStatement + fmt.Sprintf(`) subquery where subquery.running_payload_size - subquery.payload_size <= %d`, payloadLimit)
+	}
+	return sqlStatement
 }
 
 //All Jobs
@@ -199,11 +197,20 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 		jobList = append(jobList, &job)
 
 		workspaceCount[job.WorkspaceId] -= 1
-		workspacePayloadLimitMap[job.WorkspaceId] -= job.PayloadSize
-		if workspaceCount[job.WorkspaceId] == 0 || workspacePayloadLimitMap[job.WorkspaceId] <= 0 {
+		if workspaceCount[job.WorkspaceId] == 0 {
 			delete(workspaceCount, job.WorkspaceId)
 			delete(workspacePayloadLimitMap, job.WorkspaceId)
 		}
+
+		// payload limit is enabled only if > 0
+		if workspacePayloadLimitMap[job.WorkspaceId] > 0 {
+			workspacePayloadLimitMap[job.WorkspaceId] -= job.PayloadSize // decrement
+			if workspacePayloadLimitMap[job.WorkspaceId] <= 0 {          // there is a possibility for an overflow
+				delete(workspaceCount, job.WorkspaceId)
+				delete(workspacePayloadLimitMap, job.WorkspaceId)
+			}
+		}
+
 		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
