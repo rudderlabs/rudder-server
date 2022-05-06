@@ -177,7 +177,7 @@ func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.
 		case <-ctx.Done():
 			return
 		case <-timeout:
-			log.Panicf("application was not ready after %s\n", atMost)
+			log.Panicf("application was not ready after %s, for the end point: %s\n", atMost, endpoint)
 		case <-probe.C:
 			resp, err := http.Get(endpoint)
 			if err != nil {
