@@ -211,9 +211,9 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_failed_events", stats.CountType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
 	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
