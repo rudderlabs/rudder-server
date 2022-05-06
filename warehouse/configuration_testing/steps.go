@@ -8,7 +8,7 @@ import (
 
 func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.RawMessage, error) {
 	ct.infoRequest = &DestinationValidationRequest{}
-	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
+	if err := parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
 

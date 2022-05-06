@@ -74,7 +74,7 @@ func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, 
 	return
 }
 
-func (ct *CTHandleT) parseOptions(req json.RawMessage, v interface{}) error {
+func parseOptions(req json.RawMessage, v interface{}) error {
 	if err := json.Unmarshal(req, v); err != nil {
 		return err
 	}
