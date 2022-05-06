@@ -1,6 +1,6 @@
 // This files implements integration tests for the rudder-server.
 // The code is responsible to run all dependencies using docker containers.
-// It then runs the service ensuring it is configurated to use the dependencies.
+// It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
 package main_test
@@ -55,10 +55,10 @@ var (
 	hold                         = true
 	db                           *sql.DB
 	httpPort                     string
-	webhookurl                   string
-	disableDestinationwebhookurl string
+	webhookURL                   string
+	disableDestinationWebhookURL string
 	webhook                      *WebhookRecorder
-	disableDestinationwebhook    *WebhookRecorder
+	disableDestinationWebhook    *WebhookRecorder
 	runIntegration               bool
 	writeKey                     string
 	workspaceID                  string
@@ -128,15 +128,15 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id       string
-	user_id            string
-	count              string
-	context_myuniqueid string
-	context_id         string
-	context_ip         string
-	prop_key           string
-	myuniqueid         string
-	ip                 string
+	anonymousID       string
+	userID            string
+	count             string
+	contextMyUniqueID string
+	contextID         string
+	contextIP         string
+	propKey           string
+	myUniqueID        string
+	ip                string
 }
 
 func createWorkspaceConfig(templatePath string, values map[string]string) string {
@@ -393,17 +393,17 @@ func run(m *testing.M) (int, error) {
 
 	webhook = NewWebhook()
 	defer webhook.Close()
-	webhookurl = webhook.Server.URL
+	webhookURL = webhook.Server.URL
 
-	disableDestinationwebhook = NewWebhook()
-	defer disableDestinationwebhook.Close()
-	disableDestinationwebhookurl = disableDestinationwebhook.Server.URL
+	disableDestinationWebhook = NewWebhook()
+	defer disableDestinationWebhook.Close()
+	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	mapWorkspaceConfig := map[string]string{
-		"webhookUrl":                          webhookurl,
-		"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
+		"webhookUrl":                          webhookURL,
+		"disableDestinationwebhookUrl":        disableDestinationWebhookURL,
 		"writeKey":                            writeKey,
 		"workspaceId":                         workspaceID,
 		"postgresPort":                        PostgresContainer.Port,
@@ -477,7 +477,7 @@ func run(m *testing.M) (int, error) {
 func TestWebhook(t *testing.T) {
 	var err error
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	payload_1 := strings.NewReader(`{
+	payload1 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -494,8 +494,8 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_1, "identify", writeKey)
-	payload_2 := strings.NewReader(`{
+	SendEvent(payload1, "identify", writeKey)
+	payload2 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -512,10 +512,10 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_2, "identify", writeKey) //sending duplicate event to check dedup
+	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
 
 	// Sending Batch event
-	payload_Batch := strings.NewReader(`{
+	payloadBatch := strings.NewReader(`{
 		"batch":
 		[
 			{
@@ -538,10 +538,10 @@ func TestWebhook(t *testing.T) {
 			}
 		]
 	}`)
-	SendEvent(payload_Batch, "batch", writeKey)
+	SendEvent(payloadBatch, "batch", writeKey)
 
 	// Sending track event
-	payload_track := strings.NewReader(`{
+	payloadTrack := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -554,10 +554,10 @@ func TestWebhook(t *testing.T) {
 		  "review_body" : "Average product, expected much more."
 		}
 	  }`)
-	SendEvent(payload_track, "track", writeKey)
+	SendEvent(payloadTrack, "track", writeKey)
 
 	// Sending page event
-	payload_page := strings.NewReader(`{
+	payloadPage := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -568,10 +568,10 @@ func TestWebhook(t *testing.T) {
 		  "url": "http://www.rudderstack.com"
 		}
 	  }`)
-	SendEvent(payload_page, "page", writeKey)
+	SendEvent(payloadPage, "page", writeKey)
 
 	// Sending screen event
-	payload_screen := strings.NewReader(`{
+	payloadScreen := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -581,10 +581,10 @@ func TestWebhook(t *testing.T) {
 		  "prop_key": "prop_value"
 		}
 	  }`)
-	SendEvent(payload_screen, "screen", writeKey)
+	SendEvent(payloadScreen, "screen", writeKey)
 
 	// Sending alias event
-	payload_alias := strings.NewReader(`{
+	payloadAlias := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -592,10 +592,10 @@ func TestWebhook(t *testing.T) {
 		"previousId": "name@surname.com",
 		"userId": "12345"
 	  }`)
-	SendEvent(payload_alias, "alias", writeKey)
+	SendEvent(payloadAlias, "alias", writeKey)
 
 	// Sending group event
-	payload_group := strings.NewReader(`{
+	payloadGroup := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -608,7 +608,7 @@ func TestWebhook(t *testing.T) {
 		  "plan": "basic"
 		}
 	  }`)
-	SendEvent(payload_group, "group", writeKey)
+	SendEvent(payloadGroup, "group", writeKey)
 	SendPixelEvents(writeKey)
 
 	require.Eventually(t, func() bool {
@@ -645,7 +645,7 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
 
 	// Verify Disabled destination doesn't receive any event.
-	require.Equal(t, 0, len(disableDestinationwebhook.Requests()))
+	require.Equal(t, 0, len(disableDestinationWebhook.Requests()))
 }
 
 //Verify Event in POSTGRES
@@ -653,58 +653,58 @@ func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
-	db.QueryRow(eventSql).Scan(&myEvent.count)
+	_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 	require.Equal(t, myEvent.count, "2")
 
 	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
-	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
-	require.Equal(t, myEvent.context_id, "0.0.0.0")
-	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+	_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+	require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.contextID, "0.0.0.0")
+	require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		eventSql = "select count(*) from dev_integration_test_1.users"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
+		_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
 
 	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
-	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
-	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
-	require.Equal(t, myEvent.context_id, "0.0.0.0")
-	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+	_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+	require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.contextID, "0.0.0.0")
+	require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
 		eventSql = "select count(*) from dev_integration_test_1.screens"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
+		_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
 
 	// Verify User Transformation
 	require.Eventually(t, func() bool {
 		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-		db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
-		return myEvent.myuniqueid == "identified_user_idanonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+		return myEvent.myUniqueID == "identified_user_idanonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 
-	require.Equal(t, myEvent.prop_key, "prop_value_edited")
+	require.Equal(t, myEvent.propKey, "prop_value_edited")
 	require.Equal(t, myEvent.ip, "0.0.0.0")
 }
 
@@ -714,7 +714,7 @@ func TestRedis(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	require.Eventually(t, func() bool {
 		// Similarly, get the trait1 and convert it to a string.
 		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
@@ -1115,7 +1115,7 @@ func TestWHMssqlDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-func getMessagId(wdt *wht.WareHouseDestinationTest) string {
+func getMessageId(wdt *wht.WareHouseDestinationTest) string {
 	if wdt.MessageId == "" {
 		return uuid.Must(uuid.NewV4()).String()
 	}
@@ -1138,7 +1138,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -1157,7 +1157,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "rating" : 3.0,
 			  "review_body" : "Average product, expected much more."
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -1174,7 +1174,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -1190,7 +1190,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"properties": {
 			  "prop_key": "prop_value"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -1203,7 +1203,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com"
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -1222,7 +1222,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "employees": 450,
 			  "plan": "basic"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
@@ -1606,7 +1606,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 
-	// ALter columns to all the cluster tables
+	// Alter columns to all the cluster tables
 	for _, chResource := range chClusterTest.Resources {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			for _, columnInfo := range columnInfos {
