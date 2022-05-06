@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"github.com/xdg/scram"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // Config is the config that is required to send data to Kafka
@@ -73,8 +74,14 @@ func Init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	config.RegisterDurationConfigVariable(10, &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(2, &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(
+		10, &kafkaDialTimeout, false, time.Second,
+		[]string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...,
+	)
+	config.RegisterDurationConfigVariable(
+		2, &kafkaWriteTimeout, false, time.Second,
+		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
+	)
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 }
 
@@ -89,25 +96,25 @@ func loadCertificate() {
 }
 
 func getDefaultConfiguration() *sarama.Config {
-	config := sarama.NewConfig()
-	config.Net.DialTimeout = kafkaDialTimeout
-	config.Net.WriteTimeout = kafkaWriteTimeout
-	config.Net.ReadTimeout = kafkaWriteTimeout
-	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
-	config.Version = sarama.V1_0_0_0
-	return config
+	conf := sarama.NewConfig()
+	conf.Net.DialTimeout = kafkaDialTimeout
+	conf.Net.WriteTimeout = kafkaWriteTimeout
+	conf.Net.ReadTimeout = kafkaWriteTimeout
+	conf.Producer.Partitioner = sarama.NewReferenceHashPartitioner
+	conf.Producer.RequiredAcks = sarama.WaitForAll
+	conf.Producer.Return.Successes = true
+	conf.Version = sarama.V1_0_0_0
+	return conf
 }
 
 // Boilerplate needed for SCRAM Authentication in Kafka
-type XDGSCRAMClient struct {
+type xdgSCRAMClient struct {
 	*scram.Client
 	*scram.ClientConversation
 	scram.HashGeneratorFcn
 }
 
-func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
+func (x *xdgSCRAMClient) Begin(userName, password, authzID string) (err error) {
 	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
 	if err != nil {
 		return err
@@ -116,22 +123,23 @@ func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
 	return nil
 }
 
-func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
+func (x *xdgSCRAMClient) Step(challenge string) (response string, err error) {
 	response, err = x.ClientConversation.Step(challenge)
 	return
 }
 
-func (x *XDGSCRAMClient) Done() bool {
+func (x *xdgSCRAMClient) Done() bool {
 	return x.ClientConversation.Done()
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Kafka] Error while marshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
@@ -144,34 +152,32 @@ func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, er
 	}
 	isSslEnabled := destConfig.SslEnabled
 
-	config := getDefaultConfiguration()
-	config.Producer.Timeout = o.Timeout
+	conf := getDefaultConfiguration()
+	conf.Producer.Timeout = o.Timeout
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
-		config.Net.TLS.Enable = true
+		conf.Net.TLS.Enable = true
 		if caCertificate != "" {
-			tlsConfig := NewTLSConfig(caCertificate)
+			tlsConfig := newTLSConfig(caCertificate)
 			if tlsConfig != nil {
-				config.Net.TLS.Config = tlsConfig
+				conf.Net.TLS.Config = tlsConfig
 			}
 		}
 		if destConfig.UseSASL {
 			// SASL is enabled only with SSL
-			err = SetSASLConfig(config, destConfig)
+			err = setSASLConfig(conf, destConfig)
 			if err != nil {
 				return nil, fmt.Errorf("[Kafka] Error while setting SASL config :: %w", err)
 			}
 		}
 	}
 
-	producer, err := sarama.NewSyncProducer(hosts, config)
-
-	return producer, err
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 // Sets SASL authentication config for Kafka
-func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
+func setSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = destConfig.Username
 	config.Net.SASL.Password = destConfig.Password
@@ -180,10 +186,14 @@ func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 	case "plain":
 		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 	case "sha512":
-		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA512} }
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &xdgSCRAMClient{HashGeneratorFcn: SHA512}
+		}
 		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
 	case "sha256":
-		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &xdgSCRAMClient{HashGeneratorFcn: SHA256}
+		}
 		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
 	default:
 		return fmt.Errorf("[Kafka] invalid SASL type %s", destConfig.SaslType)
@@ -197,43 +207,43 @@ type Opts struct {
 
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
 func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
 	var destConfig = AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w",
+			destinationConfig, err)
 	}
 
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := getDefaultConfiguration()
+	conf := getDefaultConfiguration()
 
-	config.Net.SASL.Enable = true
-	config.Net.SASL.User = azureEventHubUser
-	config.Net.SASL.Password = destConfig.EventHubsConnectionString
-	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	conf.Net.SASL.Enable = true
+	conf.Net.SASL.User = azureEventHubUser
+	conf.Net.SASL.Password = destConfig.EventHubsConnectionString
+	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
-	config.Net.TLS.Enable = true
-	config.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Enable = true
+	conf.Net.TLS.Config = &tls.Config{ // skipcq: GO-S1020
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
 
-	config.Producer.Timeout = o.Timeout
+	conf.Producer.Timeout = o.Timeout
 
-	producer, err := sarama.NewSyncProducer(hosts, config)
-
-	return producer, err
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
 func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
 	var destConfig = ConfluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -248,24 +258,22 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := getDefaultConfiguration()
+	conf := getDefaultConfiguration()
 
-	config.Net.SASL.Enable = true
-	config.Net.SASL.User = destConfig.APIKey
-	config.Net.SASL.Password = destConfig.APISecret
-	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	conf.Net.SASL.Enable = true
+	conf.Net.SASL.User = destConfig.APIKey
+	conf.Net.SASL.Password = destConfig.APISecret
+	conf.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
-	config.Net.TLS.Enable = true
-	config.Net.TLS.Config = &tls.Config{
+	conf.Net.TLS.Enable = true
+	conf.Net.TLS.Config = &tls.Config{ // skipcq: GO-S1020
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
 
-	config.Producer.Timeout = o.Timeout
+	conf.Producer.Timeout = o.Timeout
 
-	producer, err := sarama.NewSyncProducer(hosts, config)
-
-	return producer, err
+	return sarama.NewSyncProducer(hosts, conf)
 }
 
 func prepareMessage(topic string, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
@@ -279,7 +287,9 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 	return msg
 }
 
-func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
+func prepareBatchedMessage(
+	topic string, batch []map[string]interface{}, timestamp time.Time,
+) (batchMessage []*sarama.ProducerMessage, err error) {
 	var batchedMessage []*sarama.ProducerMessage
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
@@ -298,9 +308,8 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 	return batchedMessage, nil
 }
 
-// NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
-func NewTLSConfig(caCertFile string) *tls.Config {
-
+// newTLSConfig generates a TLS configuration used to authenticate on server with certificates.
+func newTLSConfig(caCertFile string) *tls.Config {
 	tlsConfig := tls.Config{}
 	if len(certificate.Certificate) > 0 {
 		tlsConfig.Certificates = []tls.Certificate{certificate}
@@ -326,28 +335,26 @@ func CloseProducer(producer interface{}) error {
 		return err
 	}
 	return fmt.Errorf("error while closing producer")
-
 }
 
 // Produce creates a producer and send data to Kafka.
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-
 	kafkaProducer, ok := producer.(sarama.SyncProducer)
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	var config = Config{}
+	var conf = Config{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = json.Unmarshal(jsonConfig, &conf)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
 	}
 
-	topic := config.Topic
+	topic := conf.Topic
 
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(jsonData, kafkaProducer, topic)
@@ -356,7 +363,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	return sendMessage(jsonData, kafkaProducer, topic)
 }
 
-func sendBatchedMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string) (int, string, string) {
+func sendBatchedMessage(
+	jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string,
+) (int, string, string) {
 	timestamp := time.Now()
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
@@ -407,14 +416,14 @@ func sendMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, to
 
 func makeErrorResponse(err error) (int, string, string) {
 	returnMessage := fmt.Sprintf("%s error occured.", err.Error())
-	statusCode := GetStatusCodeFromError(err) //400
+	statusCode := getStatusCodeFromError(err) //400
 	errorMessage := err.Error()
 	pkgLogger.Error(returnMessage)
 	return statusCode, returnMessage, errorMessage
 }
 
-// GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
-func GetStatusCodeFromError(err error) int {
+// getStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
+func getStatusCodeFromError(err error) int {
 	statusCode := 500
 
 	errorString := err.Error()

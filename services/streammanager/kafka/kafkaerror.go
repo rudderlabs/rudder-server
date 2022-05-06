@@ -1,6 +1,6 @@
 package kafka
 
-var abortableErrors []string = []string{errNotConnected, errInsufficientData, errInvalidMessage, errUnknownTopicOrPartition,
+var abortableErrors = []string{errNotConnected, errInsufficientData, errInvalidMessage, errUnknownTopicOrPartition,
 	errInvalidMessageSize, errNotLeaderForPartition, errRequestTimedOut, errBrokerNotAvailable, errMessageSizeTooLarge, errOffsetMetadataTooLarge,
 	errInvalidTopic, errNotEnoughReplicas, errNotEnoughReplicasAfterAppend, errInvalidSessionTimeout, errInvalidGroupID, errUnknownMemberID,
 	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest,
