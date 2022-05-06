@@ -30,7 +30,7 @@ var (
 	}
 	TestNamespace  = "_rudderstack_setup_test"
 	AlterColumnMap = map[string]string{
-		"val_1": "string",
+		"val_alter": "string",
 	}
 )
 
@@ -104,7 +104,6 @@ func (ct *CTHandleT) GetBigQueryHandle() *bigquery.HandleT {
 
 func (ct *CTHandleT) GetDatabricksHandle() *deltalake.HandleT {
 	dbHandle := deltalake.HandleT{
-		DBHandleT: ct.client.DBHandleT,
 		Namespace: ct.warehouse.Namespace,
 		Warehouse: ct.warehouse,
 	}

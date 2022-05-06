@@ -95,7 +95,7 @@ var primaryKeyMap = map[string]string{
 }
 
 type HandleT struct {
-	DBHandleT     *databricks.DBHandleT
+	dbHandleT     *databricks.DBHandleT
 	Namespace     string
 	ObjectStorage string
 	Warehouse     warehouseutils.WarehouseT
@@ -270,7 +270,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	defer fetchTablesExecTime.End()
 
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
-		Config:     dl.DBHandleT.CredConfig,
+		Config:     dl.dbHandleT.CredConfig,
 		Identifier: dbT.CredIdentifier,
 		Schema:     sqlStatement,
 	})
@@ -298,7 +298,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error)
 	execSqlStatTime.Start()
 	defer execSqlStatTime.End()
 
-	err = dl.ExecuteSQLClient(dl.DBHandleT, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
 	return
 }
 
@@ -333,9 +333,9 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	defer fetchSchemasExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
-	fetchSchemasResponse, err := dl.DBHandleT.Client.FetchSchemas(dl.DBHandleT.Context, &proto.FetchSchemasRequest{
-		Config:       dl.DBHandleT.CredConfig,
-		Identifier:   dl.DBHandleT.CredIdentifier,
+	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
+		Config:       dl.dbHandleT.CredConfig,
+		Identifier:   dl.dbHandleT.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -373,9 +373,9 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 	for _, stagingTableName := range tableNames {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
-		dropTableResponse, err := dl.DBHandleT.Client.Execute(dl.DBHandleT.Context, &proto.ExecuteRequest{
-			Config:       dl.DBHandleT.CredConfig,
-			Identifier:   dl.DBHandleT.CredIdentifier,
+		dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
+			Config:       dl.dbHandleT.CredConfig,
+			Identifier:   dl.dbHandleT.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
 		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
@@ -647,7 +647,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 // dropDanglingStagingTables drop dandling staging tables.
 func (dl *HandleT) dropDanglingStagingTables() {
 	// Fetching the staging tables
-	tableNames, err := dl.fetchTables(dl.DBHandleT, dl.Namespace)
+	tableNames, err := dl.fetchTables(dl.dbHandleT, dl.Namespace)
 	if err != nil {
 		return
 	}
@@ -804,7 +804,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	dl.Uploader = uploader
 	dl.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
 
-	dl.DBHandleT, err = dl.connectToWarehouse()
+	dl.dbHandleT, err = dl.connectToWarehouse()
 	return err
 }
 
@@ -812,15 +812,15 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	timeout := warehouseutils.TestConnectionTimeout
-	dl.DBHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
+	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
 	return
 }
 
 // Cleanup handle cleanup when upload is done.
 func (dl *HandleT) Cleanup() {
-	if dl.DBHandleT != nil {
+	if dl.dbHandleT != nil {
 		dl.dropDanglingStagingTables()
-		dl.DBHandleT.Close()
+		dl.dbHandleT.Close()
 	}
 }
 
@@ -828,11 +828,11 @@ func (dl *HandleT) Cleanup() {
 func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
-	dl.DBHandleT, err = dl.connectToWarehouse()
+	dl.dbHandleT, err = dl.connectToWarehouse()
 	if err != nil {
 		return err
 	}
-	defer dl.DBHandleT.Close()
+	defer dl.dbHandleT.Close()
 	dl.dropDanglingStagingTables()
 	return
 }
@@ -882,9 +882,9 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	defer fetchTotalCountExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
-	response, err := dl.DBHandleT.Client.FetchTotalCountInTable(dl.DBHandleT.Context, &proto.FetchTotalCountInTableRequest{
-		Config:       dl.DBHandleT.CredConfig,
-		Identifier:   dl.DBHandleT.CredIdentifier,
+	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.FetchTotalCountInTableRequest{
+		Config:       dl.dbHandleT.CredConfig,
+		Identifier:   dl.dbHandleT.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {

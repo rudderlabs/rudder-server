@@ -153,6 +153,8 @@ func (ct *CTHandleT) verifyingCreateTable() (err error) {
 	if err != nil {
 		return
 	}
+
+	// Alter table
 	return ct.alterTable()
 }
 
@@ -222,8 +224,8 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 
 	// creating event loader to add columns to temporary file
 	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, warehouseutils.GetLoadFileType(destination.DestinationDefinition.Name), writer)
-	eventLoader.AddColumn("id", TestTableSchemaMap["id"], 1)
-	eventLoader.AddColumn("val", TestTableSchemaMap["val"], "RudderStack")
+	eventLoader.AddColumn("id", TestTableSchemaMap["id"], TestPayloadMap["id"])
+	eventLoader.AddColumn("val", TestTableSchemaMap["val"], TestPayloadMap["val"])
 
 	// writing to file
 	err = eventLoader.Write()
