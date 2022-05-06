@@ -48,10 +48,12 @@ type confluentCloudConfig struct {
 }
 
 var (
-	clientCert, clientKey []byte
-	kafkaDialTimeout      time.Duration
-	kafkaWriteTimeout     time.Duration
-	kafkaBatchingEnabled  bool
+	clientCert, clientKey      []byte
+	kafkaDialTimeout           time.Duration
+	kafkaWriteTimeout          time.Duration
+	kafkaProducerRetryInterval time.Duration
+	kafkaProducerMaxRetries    int
+	kafkaBatchingEnabled       bool
 
 	pkgLogger logger.LoggerI
 )
@@ -79,6 +81,11 @@ func Init() {
 		2, &kafkaWriteTimeout, false, time.Second,
 		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
 	)
+	config.RegisterDurationConfigVariable(
+		1, &kafkaProducerRetryInterval, false, time.Second,
+		[]string{"Router.kafkaProducerRetryInterval", "Router.kafkaProducerRetryIntervalInSec"}...,
+	)
+	config.RegisterIntConfigVariable(10, &kafkaProducerMaxRetries, false, 1, "Router.kafkaProducerMaxRetries")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
@@ -138,7 +145,9 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		}
 
 		return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-			WriteTimeout: o.Timeout,
+			WriteTimeout:  o.Timeout,
+			RetryInterval: kafkaProducerRetryInterval,
+			MaxRetries:    kafkaProducerMaxRetries,
 		})
 	}
 
@@ -174,7 +183,9 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout: o.Timeout,
+		WriteTimeout:  o.Timeout,
+		RetryInterval: kafkaProducerRetryInterval,
+		MaxRetries:    kafkaProducerMaxRetries,
 	})
 }
 
@@ -202,7 +213,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout: o.Timeout,
+		WriteTimeout:  o.Timeout,
+		RetryInterval: kafkaProducerRetryInterval,
+		MaxRetries:    kafkaProducerMaxRetries,
 	})
 }
 
