@@ -2338,21 +2338,21 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                  jobs.created_at, jobs.expire_at, jobs.workspace_id,
-								  pg_column_size(jobs.event_payload) as payload_size,
-								  sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
-								  sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
-                                  job_latest_state.job_state, job_latest_state.attempt,
-                                  job_latest_state.exec_time, job_latest_state.retry_time,
-                                  job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
+                                	jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
+                                	jobs.created_at, jobs.expire_at, jobs.workspace_id,
+									pg_column_size(jobs.event_payload) as payload_size,
+									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
+									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
+                                	job_latest_state.job_state, job_latest_state.attempt,
+                                	job_latest_state.exec_time, job_latest_state.retry_time,
+                                	job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                  FROM
-                                  "%[1]s" AS jobs,
-                                  (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                    error_code, error_response,parameters FROM "%[2]s" WHERE id IN
-                                    (SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
-                                  AS job_latest_state
-                                   WHERE jobs.job_id=job_latest_state.job_id`,
+                                	"%[1]s" AS jobs,
+                                	(SELECT job_id, job_state, attempt, exec_time, retry_time,
+                                		error_code, error_response,parameters FROM "%[2]s" WHERE id IN
+                                		(SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
+                                	AS job_latest_state
+                                WHERE jobs.job_id=job_latest_state.job_id`,
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
 		rows, err = jd.dbHandle.Query(sqlStatement)
@@ -2360,38 +2360,37 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.workspace_id,
-											   pg_column_size(jobs.event_payload) as payload_size,
-											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
-											   sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
-                                               job_latest_state.job_state, job_latest_state.attempt,
-                                               job_latest_state.exec_time, job_latest_state.retry_time,
-                                               job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
-                                            FROM
-                                               "%[1]s" AS jobs,
-                                               (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                                 error_code, error_response, parameters FROM "%[2]s" WHERE id IN
-                                                   (SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
-                                               AS job_latest_state
-                                            WHERE jobs.job_id=job_latest_state.job_id
-                                             %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
+									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
+									jobs.created_at, jobs.expire_at, jobs.workspace_id,
+									pg_column_size(jobs.event_payload) as payload_size,
+									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
+									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
+									job_latest_state.job_state, job_latest_state.attempt,
+									job_latest_state.exec_time, job_latest_state.retry_time,
+									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
+								FROM
+									"%[1]s" AS jobs,
+									(SELECT job_id, job_state, attempt, exec_time, retry_time,
+										error_code, error_response, parameters FROM "%[2]s" WHERE id IN
+										(SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
+									AS job_latest_state
+								WHERE jobs.job_id=job_latest_state.job_id
+									%[4]s %[5]s
+									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 
 		args := []interface{}{getTimeNowFunc()}
 
 		var wrapQuery []string
 		if params.EventsLimit > 0 {
-			// EXPLAIN `running_event_counts - t.event_count`: we always retrieve one more job from the database
-			// than it is allowed so that if there is only one job containing more events than our limit we can return it.
-			// in all other cases, even if we select one more job here we don't include itin the result
+			// We always retrieve one more job from the database than it is allowed so that if
+			// there is only one job containing more events than our limit we can return it.
+			// In all other cases, even if we select one more job here we don't include it in the result
 			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
 			args = append(args, params.EventsLimit)
 		}
 
 		if params.PayloadSizeLimit > 0 {
-			// EXPLAIN `running_payload_size - t.payload_size`: see explanation above
 			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size <= $%d`, len(args)+1))
 			args = append(args, params.PayloadSizeLimit)
 		}
@@ -2407,9 +2406,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 		jd.assertError(err)
 		defer rows.Close()
 	}
-	var jobList []*JobT
+
 	var runningEventCount int
 	var runningPayloadSize int64
+
+	var jobList []*JobT
 	var limitsReached bool
 	var eventCount int
 	var payloadSize int64
@@ -2424,25 +2425,26 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		jd.assertError(err)
 
-		if !getAll {
+		if !getAll { // if getAll is true, limits do not apply
 			if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
+				// events limit overflow is triggered as long as we have read at least one job
 				limitsReached = true
 				break
 			}
 			if params.PayloadSizeLimit > 0 && runningPayloadSize > params.PayloadSizeLimit && len(jobList) > 0 {
+				// payload size limit overflow is triggered as long as we have read at least one job
 				limitsReached = true
 				break
 			}
 		}
+		jobList = append(jobList, &job)
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
-
-		jobList = append(jobList, &job)
 	}
 	if !limitsReached &&
-		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) ||
-		(params.EventsLimit > 0 && eventCount == params.EventsLimit) ||
-		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) {
+		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
+		(params.EventsLimit > 0 && eventCount == params.EventsLimit) || // we reached the events limit
+		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) { // we reached the payload limit
 		limitsReached = true
 	}
 
@@ -2534,15 +2536,14 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
-		// EXPLAIN `running_event_counts - subquery.event_count`: we always retrieve one more job from the database
-		// than it is allowed so that if there is only one job containing more events than our limit we can return it.
-		// in all other cases, even if we select one more job here we don't include itin the result
+		// We always retrieve one more job from the database than it is allowed so that if
+		// there is only one job containing more events than our limit we can return it.
+		// In all other cases, even if we select one more job here we don't include it in the result
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - subquery.event_count <= $%d`, len(args)+1))
 		args = append(args, params.EventsLimit)
 	}
 
 	if params.PayloadSizeLimit > 0 {
-		// EXPLAIN `running_payload_size - subquery.payload_size`: see explanation above
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size <= $%d`, len(args)+1))
 		args = append(args, params.PayloadSizeLimit)
 	}
@@ -2555,9 +2556,10 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 	jd.assertError(err)
 	defer rows.Close()
 
-	var jobList []*JobT
 	var runningEventCount int
 	var runningPayloadSize int64
+
+	var jobList []*JobT
 	var limitsReached bool
 	var eventCount int
 	var payloadSize int64
@@ -2569,10 +2571,12 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 		jd.assertError(err)
 
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
+			// events limit overflow is triggered as long as we have read at least one job
 			limitsReached = true
 			break
 		}
 		if params.PayloadSizeLimit > 0 && runningPayloadSize > params.PayloadSizeLimit && len(jobList) > 0 {
+			// payload size limit overflow is triggered as long as we have read at least one job
 			limitsReached = true
 			break
 		}
@@ -2582,9 +2586,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 		jobList = append(jobList, &job)
 	}
 	if !limitsReached &&
-		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) ||
-		(params.EventsLimit > 0 && eventCount == params.EventsLimit) ||
-		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) {
+		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
+		(params.EventsLimit > 0 && eventCount == params.EventsLimit) || // we reached the events limit
+		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) { // we reached the payload limit
 		limitsReached = true
 	}
 

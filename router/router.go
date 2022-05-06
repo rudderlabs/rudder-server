@@ -144,8 +144,6 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	workspaceCount map[string]int
-
 	resultSetMeta    map[int64]*resultSetT
 	resultSetLock    sync.RWMutex
 	lastResultSet    *resultSetT
@@ -1912,11 +1910,10 @@ func (rt *HandleT) readAndProcess() int {
 			totalPickupCount += pickup
 		}
 	}
-	rt.workspaceCount = pickupMap
 	rt.timeGained = 0
 	rt.logger.Debugf("pickupMap: %+v", pickupMap)
 	combinedList := rt.jobsDB.GetAllJobs(
-		rt.workspaceCount,
+		pickupMap,
 		jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{rt.destName},
 			PayloadSizeLimit: rt.payloadLimit,
@@ -2219,7 +2216,6 @@ func (rt *HandleT) Start() {
 	ctx := rt.backgroundCtx
 	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
-		rt.workspaceCount = make(map[string]int)
 		rt.generatorLoop(ctx)
 		return nil
 	})
