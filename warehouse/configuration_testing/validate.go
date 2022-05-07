@@ -138,7 +138,7 @@ func (ct *CTHandleT) verifyingCreateSchema() (err error) {
 	return
 }
 
-func (ct *CTHandleT) verifyingCreateTable() (err error) {
+func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
 	// Getting warehouse client
 	ct.client, err = ct.whManager.Connect(ct.warehouse)
 	if err != nil {

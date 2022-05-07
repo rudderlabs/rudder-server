@@ -45,8 +45,8 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 		},
 		&validationStep{
 			ID:        4,
-			Name:      "Verifying Create Table",
-			Validator: ct.verifyingCreateTable,
+			Name:      "Verifying Create and Alter Table",
+			Validator: ct.verifyingCreateAlterTable,
 		},
 		&validationStep{
 			ID:        5,
