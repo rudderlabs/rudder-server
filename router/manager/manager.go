@@ -28,7 +28,7 @@ type LifecycleManager struct {
 	waitGroup     *errgroup.Group
 }
 
-func (r *LifecycleManager) Run(ctx context.Context) error {
+func (*LifecycleManager) Run(ctx context.Context) error {
 	return nil
 }
 
@@ -49,14 +49,12 @@ func (r *LifecycleManager) Start() {
 // Stop stops the Router, this is a blocking call.
 func (r *LifecycleManager) Stop() {
 	r.currentCancel()
-	r.waitGroup.Wait()
+	_ = r.waitGroup.Wait()
 }
 
 // New creates a new Router instance
 func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	backendConfig backendconfig.BackendConfig) *LifecycleManager {
-	router.RoutersManagerSetup()
-	batchrouter.BatchRoutersManagerSetup()
 
 	return &LifecycleManager{
 		rt:            rtFactory,
@@ -115,16 +113,6 @@ loop:
 					}
 				}
 			}
-
-			rm, err := router.GetRoutersManager()
-			if rm != nil && err == nil {
-				rm.SetRoutersReady()
-			}
-
-			brm, err := batchrouter.GetBatchRoutersManager()
-			if brm != nil && err == nil {
-				brm.SetBatchRoutersReady()
-			}
 		}
 	}
 
@@ -136,5 +124,5 @@ loop:
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait()
 }
