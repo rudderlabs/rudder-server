@@ -140,7 +140,7 @@ func (ct *CTHandleT) AlterTableQuery() (sqlStatement string) {
 	case warehouseutils.POSTGRES:
 		sqlStatement = fmt.Sprintf(`ALTER TABLE %[1]s.%[2]s ADD COLUMN IF NOT EXISTS %s`, ct.warehouse.Namespace, ct.stagingTableName, postgres.ColumnsWithDataTypes(AlterColumnMap, ""))
 	case warehouseutils.SNOWFLAKE:
-		sqlStatement = fmt.Sprintf(`ALTER TABLE %[1]s.%[2]s ADD COLUMN %[3]s`, ct.warehouse.Namespace, ct.stagingTableName, snowflake.ColumnsWithDataTypes(AlterColumnMap, ""))
+		sqlStatement = fmt.Sprintf(`ALTER TABLE "%[1]s"."%[2]s" ADD COLUMN %[3]s`, ct.warehouse.Namespace, ct.stagingTableName, snowflake.ColumnsWithDataTypes(AlterColumnMap, ""))
 	case warehouseutils.CLICKHOUSE:
 		cluster := warehouseutils.GetConfigValue(clickhouse.Cluster, ct.warehouse)
 		clusterClause := ""
