@@ -270,7 +270,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	defer fetchTablesExecTime.End()
 
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
-		Config:     dl.dbHandleT.CredConfig,
+		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
 		Schema:     sqlStatement,
 	})
