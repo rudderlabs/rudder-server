@@ -188,12 +188,12 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 	}
 
 	return map[string]string{
-		"module":         module,
-		"destination":    destination.ID,
-		"destType":       destination.DestinationDefinition.Name,
-		"source":         sourceID,
-		"workspace":      workspaceID,
-		"transformation": transformationType,
+		"module":             module,
+		"destination":        destination.ID,
+		"destType":           destination.DestinationDefinition.Name,
+		"source":             sourceID,
+		"workspace":          workspaceID,
+		"transformationType": transformationType,
 	}
 }
 
@@ -203,10 +203,10 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
-	transformTime := proc.statsFactory.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
+	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -221,10 +221,10 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 
 	tags["transform_at"] = transformAt
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
-	destTransform := proc.statsFactory.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_failed_events", stats.CountType, tags)
+	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
