@@ -70,9 +70,11 @@ func (w *warehousegrpc) Validate(ctx context.Context, req *proto.WHValidationReq
 }
 
 func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
-	retryReq := &RetryReq{
+	retryReq := &RetryRequest{
 		WorkspaceID:     req.WorkspaceId,
+		SourceID:        req.SourceId,
 		DestinationID:   req.DestinationId,
+		DestinationType: req.DestinationType,
 		IntervalInHours: req.IntervalInHours,
 		ForceRetry:      req.ForceRetry,
 		UploadIds:       req.UploadIds,
