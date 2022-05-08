@@ -51,14 +51,14 @@ func (retryReq *RetryRequest) RetryWHUploads() (response RetryResponse, err erro
 	}
 
 	// Getting the corresponding sourceIDs from workspaceID (sourceIDsByWorkspace)
-	// Also, validating if the sources are empty or provided sourceId is present in the
+	// Also, validating if the sourceIDs list is empty or provided sourceId is present in the
 	// sources list ot not.
 	sourceIDs := retryReq.getSourceIDs()
 	if len(sourceIDs) == 0 {
-		err = fmt.Errorf("no sourceId's present to retry the jobs")
+		err = fmt.Errorf("unauthorized request")
 		return
 	}
-	if !misc.ContainsString(sourceIDs, retryReq.SourceID) {
+	if retryReq.SourceID != "" && !misc.ContainsString(sourceIDs, retryReq.SourceID) {
 		err = fmt.Errorf("no such sourceID exists")
 		return
 	}
@@ -96,7 +96,10 @@ func (retryReq *RetryRequest) retryUploads(sourceIDs []string) (rowsAffected int
 	// Preparing clauses query
 	clauses, clausesArgs = retryReq.whereClauses(sourceIDs)
 	for i, clause := range clauses {
-		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i), 1) + " AND "
+		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
+		if i != len(clauses)-1 {
+			clausesQuery += " AND "
+		}
 	}
 
 	// Preparing the prepared statement
@@ -112,7 +115,7 @@ func (retryReq *RetryRequest) retryUploads(sourceIDs []string) (rowsAffected int
 	retryReq.API.log.Info(preparedStatement)
 
 	// Executing the statement
-	result, err := retryReq.API.dbHandle.Exec(preparedStatement, clausesArgs)
+	result, err := retryReq.API.dbHandle.Exec(preparedStatement, clausesArgs...)
 	if err != nil {
 		return
 	}
