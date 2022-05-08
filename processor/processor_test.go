@@ -1059,104 +1059,8 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
-	Context("Pause and Resume Function Tests", func() {
-		var clearDB = false
-		It("Should Recieve Something on Pause when Processor Is Not Paused", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
-
-			setProcessorPausedVariable(processor, false)
-			go processor.Pause()
-			Eventually(processor.pauseChannel).Should(Receive())
-		})
-
-		It("Should Not Recieve Something on Pause when Processor Is Paused", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
-
-			setProcessorPausedVariable(processor, true)
-			go processor.Pause()
-			Eventually(processor.pauseChannel).ShouldNot(Receive())
-		})
-
-		It("Should Recieve Something on Resume when Processor is Paused", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
-
-			setProcessorPausedVariable(processor, true)
-			go processor.Resume()
-			Eventually(processor.resumeChannel).Should(Receive())
-		})
-
-		It("Should Not Recieve Something on Resume when Processor is Not Paused", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
-
-			setProcessorPausedVariable(processor, false)
-			go processor.Resume()
-			Eventually(processor.resumeChannel).ShouldNot(Receive())
-		})
-	})
-
 	Context("MainLoop Tests", func() {
 		var clearDB = false
-		It("Should be paused when recieved something on Pause Channel", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
-			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
-
-			SetMainLoopTimeout(1 * time.Second)
-			go pauseMainLoop(processor)
-			go processor.mainLoop(context.Background())
-			time.Sleep(1 * time.Second)
-			Expect(processor.paused).To(BeTrue())
-		})
-
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1183,57 +1087,6 @@ var _ = Describe("Processor", func() {
 	Context("ProcessorLoop Tests", func() {
 
 		var clearDB = false
-		It("Should be Pause and Resume", func() {
-
-			Skip("FIXME skip this test for now")
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-			Skip("FIXME skip this test for now")
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
-			defer processor.Shutdown()
-
-			processor.readLoopSleep = time.Millisecond
-
-			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-			c.mockProcErrorsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
-			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).AnyTimes()
-			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).AnyTimes()
-
-			SetIsUnlocked(true)
-			defer SetIsUnlocked(false)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan struct{})
-			go func() {
-				processor.Start(ctx)
-				close(done)
-			}()
-
-			processor.Pause()
-			Expect(processor.paused).To(BeTrue())
-
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).DoAndReturn(
-				func(queryParams jobsdb.GetQueryParamsT) ([]jobsdb.JobT, error) {
-					cancel()
-
-					return []jobsdb.JobT{}, nil
-				}).Times(1)
-
-			processor.Resume()
-			Expect(processor.paused).To(BeFalse())
-
-			<-done
-		})
-
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1512,14 +1365,6 @@ type transformExpectation struct {
 	messageIds                string
 	receiveMetadata           bool
 	destinationDefinitionName string
-}
-
-func setProcessorPausedVariable(processor *HandleT, setValue bool) {
-	processor.paused = setValue
-}
-
-func pauseMainLoop(processor *HandleT) {
-	processor.pauseChannel <- &PauseT{respChannel: make(chan bool)}
 }
 
 func createMessagePayload(e mockEventData) string {

@@ -48,16 +48,8 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
 }
 
-type PauseT struct {
-	respChannel chan bool
-}
-
 //HandleT is a handle to this object used in main.go
 type HandleT struct {
-	paused              bool
-	pauseLock           sync.Mutex
-	pauseChannel        chan *PauseT
-	resumeChannel       chan bool
 	backendConfig       backendconfig.BackendConfig
 	transformer         transformer.Transformer
 	lastJobID           int64
@@ -196,12 +188,12 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 	}
 
 	return map[string]string{
-		"module":         module,
-		"destination":    destination.ID,
-		"destType":       destination.DestinationDefinition.Name,
-		"source":         sourceID,
-		"workspace":      workspaceID,
-		"transformation": transformationType,
+		"module":             module,
+		"destination":        destination.ID,
+		"destType":           destination.DestinationDefinition.Name,
+		"source":             sourceID,
+		"workspace":          workspaceID,
+		"transformationType": transformationType,
 	}
 }
 
@@ -211,10 +203,10 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
-	transformTime := proc.statsFactory.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
+	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -229,10 +221,10 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 
 	tags["transform_at"] = transformAt
 
-	numEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
-	destTransform := proc.statsFactory.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_failed_events", stats.CountType, tags)
+	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -294,9 +286,6 @@ func (proc *HandleT) Setup(
 	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI,
 ) {
-	proc.pauseChannel = make(chan *PauseT)
-	proc.resumeChannel = make(chan bool)
-	//TODO : Remove this
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -419,7 +408,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 			return err
 		}
 		if enablePipelining {
-			proc.pipelineWithPause(ctx, proc.mainPipeline)
+			proc.mainPipeline(ctx)
 		} else {
 			proc.mainLoop(ctx)
 		}
@@ -476,14 +465,14 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5*time.Minute/time.Minute), &storeTimeout, true, time.Minute, "Processor.storeTimeout")
+	config.RegisterDurationConfigVariable(5000, &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(5, &storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
-	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
+	config.RegisterDurationConfigVariable(200, &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(10, &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
 	//DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(0, &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
@@ -499,7 +488,7 @@ func loadConfig() {
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
+	config.RegisterDurationConfigVariable(5, &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
@@ -545,7 +534,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	res, err := client.Do(req)
 	if err != nil {
 		proc.logger.Error("error sending request - %s", err)
@@ -2231,13 +2220,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case pause := <-proc.pauseChannel:
-			pkgLogger.Info("Processor is paused.")
-			proc.paused = true
-			pause.respChannel <- true
-			<-proc.resumeChannel
 		case <-time.After(mainLoopTimeout):
-			proc.paused = false
 			if isUnLocked {
 				found := proc.handlePendingGatewayJobs()
 				if found {
@@ -2254,31 +2237,6 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 				time.Sleep(fixedLoopSleep)
 			}
 		}
-	}
-}
-
-func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.Context)) {
-	for {
-		var pause *PauseT
-
-		ctxPausable, cancel := context.WithCancel(ctx)
-		go func() {
-			pause = <-proc.pauseChannel
-			cancel()
-		}()
-		fn(ctxPausable)
-		// stop due to parent context cancellation
-		if ctx.Err() != nil {
-			return
-		}
-
-		// handle pause
-		if pause == nil {
-			panic("`pause` should not be nil")
-		}
-		proc.paused = true
-		pause.respChannel <- true
-		<-proc.resumeChannel
 	}
 }
 
@@ -2482,33 +2440,6 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
 	}
-}
-
-//Pause is a blocking call.
-//Pause returns after the processor is paused.
-func (proc *HandleT) Pause() {
-	proc.pauseLock.Lock()
-	defer proc.pauseLock.Unlock()
-
-	if proc.paused {
-		return
-	}
-
-	respChannel := make(chan bool)
-	proc.pauseChannel <- &PauseT{respChannel: respChannel}
-	<-respChannel
-}
-
-func (proc *HandleT) Resume() {
-	proc.pauseLock.Lock()
-	defer proc.pauseLock.Unlock()
-
-	if !proc.paused {
-		return
-	}
-	proc.paused = false
-
-	proc.resumeChannel <- true
 }
 
 func (proc *HandleT) isReportingEnabled() bool {

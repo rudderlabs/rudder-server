@@ -66,6 +66,10 @@ func (b *BackupSettingsT) IsBackupEnabled() bool {
 	return masterBackupEnabled && b.instanceBackupEnabled
 }
 
+func IsMasterBackupEnabled() bool {
+	return masterBackupEnabled
+}
+
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
 // JobCount puts an upper limit on the number of returned jobs,
@@ -146,7 +150,7 @@ var masterBackupEnabled bool
 var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
-func (jd *HandleT) initGlobalDBHandle() {
+func (*HandleT) initGlobalDBHandle() {
 	if globalDBHandle != nil {
 		return
 	}
@@ -161,7 +165,7 @@ func (jd *HandleT) initGlobalDBHandle() {
 }
 
 //BeginGlobalTransaction starts a transaction on the globalDBHandle to be used across jobsdb instances
-func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
+func (*HandleT) BeginGlobalTransaction() *sql.Tx {
 	txn, err := globalDBHandle.Begin()
 	if err != nil {
 		panic(err)
@@ -171,7 +175,7 @@ func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
 }
 
 //CommitTransaction commits the passed transaction
-func (jd *HandleT) CommitTransaction(txn *sql.Tx) {
+func (*HandleT) CommitTransaction(txn *sql.Tx) {
 	err := txn.Commit()
 	if err != nil {
 		panic(err)
@@ -302,7 +306,7 @@ type MigrationState struct {
 	dsForNewEvents             dataSetT
 	dsForImport                dataSetT
 	lastDsForExport            dataSetT
-	importLock                 sync.RWMutex
+	importLock                 *sync.RWMutex
 	migrationMode              string
 	fromVersion                int
 	toVersion                  int
@@ -599,11 +603,11 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	config.RegisterInt64ConfigVariable(1000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
-	config.RegisterDurationConfigVariable(time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
-	config.RegisterDurationConfigVariable(time.Duration(60), &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
+	config.RegisterDurationConfigVariable(60, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
@@ -673,6 +677,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 		// default values:
 		migrationState: MigrationState{
 			migrationMode: "",
+			importLock:    &sync.RWMutex{},
 		},
 		dsRetentionPeriod: 0,
 	}
@@ -1962,7 +1967,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 			where
 			  (
 				s.job_state not in (
-				  'executing', 'aborted', 'succeeded',
+				  'aborted', 'succeeded',
 				  'migrated'
 				)
 				or s.job_id is null
@@ -1997,7 +2002,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	}
 }
 
-func (jd *HandleT) copyJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
+func (*HandleT) copyJobsDSInTxn(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 

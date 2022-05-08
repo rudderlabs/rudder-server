@@ -130,7 +130,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.postgres.connectTimeout")
+	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.postgres.connectTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {

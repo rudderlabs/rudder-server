@@ -44,7 +44,6 @@ type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
 	StartRudderCore(context.Context, *app.Options) error
-	LegacyStart(context.Context, *app.Options) error
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
@@ -70,8 +69,8 @@ func Init2() {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
+	config.RegisterDurationConfigVariable(0, &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
+	config.RegisterDurationConfigVariable(0, &routerDBRetention, false, time.Hour, "routerDBRetention")
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
@@ -122,7 +121,6 @@ func StartProcessor(
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processor.ManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
@@ -137,9 +135,6 @@ func StartRouter(
 		pkgLogger.Debug("processor started by an other go routine")
 		return
 	}
-
-	router.RoutersManagerSetup()
-	batchrouter.BatchRoutersManagerSetup()
 
 	routerFactory := router.Factory{
 		BackendConfig: backendconfig.DefaultBackendConfig,
@@ -212,16 +207,6 @@ loop:
 						}
 					}
 				}
-			}
-
-			rm, err := router.GetRoutersManager()
-			if rm != nil && err == nil {
-				rm.SetRoutersReady()
-			}
-
-			brm, err := batchrouter.GetBatchRoutersManager()
-			if brm != nil && err == nil {
-				brm.SetBatchRoutersReady()
 			}
 		}
 	}

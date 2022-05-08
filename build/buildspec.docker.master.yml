@@ -35,6 +35,8 @@ phases:
       - docker pull minio/minio:latest
       - docker pull mcr.microsoft.com/azure-storage/azurite:latest
       - docker pull fsouza/fake-gcs-server:latest
+      - docker pull atzoum/simulator-google-sheets:latest
+      - docker pull messagebird/gcloud-pubsub-emulator:latest
       - go mod download
   build:
     commands:
@@ -44,7 +46,6 @@ phases:
       # Build Open source version
       - make test
       - go test -v ./docker_test.go -integration -count 1
-      - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderlabs/rudder-server:$VERSION -f build/Dockerfile-aws .

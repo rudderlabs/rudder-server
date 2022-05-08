@@ -6,11 +6,12 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/config"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -29,7 +30,7 @@ var (
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.snowflake.connectTimeout")
+	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
