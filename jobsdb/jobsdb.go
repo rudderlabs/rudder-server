@@ -100,8 +100,7 @@ type GetQueryParamsT struct {
 	// query limits
 
 	// Limit the total number of jobs.
-	// Values greater or equal than zero enforce this limit.
-	// FIXME: Values less than zero can have different meaning depending on the context.
+	// A value less than or equal to zero will return no results
 	JobsLimit int
 	// Limit the total number of events, 1 job contains 1+ event(s).
 	// A value less than or equal to zero will disable this limit,
@@ -2280,7 +2279,8 @@ type getJobsDsResult struct {
 
 /*
 stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
+parameterFilters do a AND query on values included in the map.
+A JobsLimit less than or equal to zero indicates no limit.
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryParamsT) getJobsDsResult {
 	stateFilters := params.StateFilters
@@ -2383,9 +2383,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 
 		var wrapQuery []string
 		if params.EventsLimit > 0 {
-			// We always retrieve one more job from the database than it is allowed so that if
-			// there is only one job containing more events than our limit we can return it.
-			// In all other cases, even if we select one more job here we don't include it in the result
+			// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
+			// otherwise processing will halt.
+			// Therefore, we always retrieve one more job from the database than our limit dictates.
+			// This job will only be returned in the result in case of the aforementioned scenario, otherwise it gets filtered out
+			// later, during row scanning
 			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
 			args = append(args, params.EventsLimit)
 		}
@@ -2467,7 +2469,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 /*
 count == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
+parameterFilters do a AND query on values included in the map.
+A JobsLimit less than or equal to zero indicates no limit.
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQueryParamsT) getJobsDsResult {
 	customValFilters := params.CustomValFilters
@@ -2536,9 +2539,11 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
-		// We always retrieve one more job from the database than it is allowed so that if
-		// there is only one job containing more events than our limit we can return it.
-		// In all other cases, even if we select one more job here we don't include it in the result
+		// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
+		// otherwise processing will halt.
+		// Therefore, we always retrieve one more job from the database than our limit dictates.
+		// This job will only be returned in the result in case of the aforementioned scenario, otherwise it gets filtered out
+		// later, during row scanning
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - subquery.event_count <= $%d`, len(args)+1))
 		args = append(args, params.EventsLimit)
 	}
@@ -3892,7 +3897,7 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
 func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
-	if params.JobsLimit == 0 {
+	if params.JobsLimit <= 0 {
 		return []*JobT{}
 	}
 
@@ -3911,10 +3916,6 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
-
-	if params.JobsLimit <= 0 {
-		return outJobs
-	}
 
 	limitByEventCount := false
 	if params.EventsLimit > 0 {
