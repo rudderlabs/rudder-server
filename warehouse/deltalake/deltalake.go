@@ -594,10 +594,9 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
 	tableLocationSql := dl.getTableLocationSql(stagingTableName)
-	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 
 	// Creating create table sql statement for staging users table
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s %[8]s AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
@@ -618,7 +617,6 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		identifyStagingTable,
 		quotedUserColNames,
 		tableLocationSql,
-		tablePropertiesSql,
 	)
 
 	// Executing create sql statement
@@ -738,14 +736,13 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["received_at"]; ok {
 		partitionedSql = `PARTITIONED BY(event_date)`
 	}
-	tablePropertiesSql := "TBLPROPERTIES ( delta.autoOptimize.optimizeWrite = true, delta.autoOptimize.autoCompact = true )"
 
 	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
 	if tableLocationSql != "" {
 		createTableClauseSql = "CREATE OR REPLACE TABLE"
 	}
 
-	sqlStatement := fmt.Sprintf(`%s %s ( %v ) USING DELTA %s %s %s;`, createTableClauseSql, name, ColumnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql, tablePropertiesSql)
+	sqlStatement := fmt.Sprintf(`%s %s ( %v ) USING DELTA %s %s;`, createTableClauseSql, name, ColumnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
