@@ -91,10 +91,12 @@ message WHValidationResponse {
 
 message RetryWHUploadsRequest{
   string workspaceId = 1;
-  string destinationId = 2;
-  int64 intervalInHours = 3;
-  repeated int64 uploadIds = 4;
-  bool forceRetry = 5;
+  string sourceId = 2;
+  string destinationId = 3;
+  string destinationType = 4;
+  int64 intervalInHours = 5;
+  repeated int64 uploadIds = 6;
+  bool forceRetry = 7;
 }
 
 message RetryWHUploadsResponse {
