@@ -202,10 +202,14 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
+	tags["error"] = "false"
 
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
+
+	errTags := tags
+	errTags["error"] = "true"
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
 	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
@@ -220,10 +224,14 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 	tags := buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
 
 	tags["transform_at"] = transformAt
+	tags["error"] = "false"
 
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_error_count", stats.CountType, tags)
+
+	errTags := tags
+	errTags["error"] = "true"
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
 	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
@@ -236,10 +244,14 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 
 func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
 	tags := buildStatTags(sourceID, workspaceID, destination, EVENT_FILTER)
+	tags["error"] = "false"
 
 	numEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_in_count", stats.CountType, tags)
-	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_out_count", stats.CountType, tags)
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_output_error_count", stats.CountType, tags)
+	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, tags)
+
+	errTags := tags
+	errTags["error"] = "true"
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, errTags)
 	eventFilterTime := proc.statsFactory.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
 
 	return &DestStatT{
