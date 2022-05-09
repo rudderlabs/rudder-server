@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,23 @@ type configuration struct {
 	SaslType      string
 	Username      string
 	Password      string
+}
+
+func (c *configuration) validate() error {
+	if c.Topic == "" {
+		return fmt.Errorf("topic cannot be empty")
+	}
+	if c.HostName == "" {
+		return fmt.Errorf("hostname cannot be empty")
+	}
+	port, err := strconv.Atoi(c.Port)
+	if err != nil {
+		return fmt.Errorf("invalid port: %w", err)
+	}
+	if port < 1 {
+		return fmt.Errorf("invalid port: %d", port)
+	}
+	return nil
 }
 
 // azureEventHubConfig is the config that is required to send data to Azure Event Hub
@@ -118,6 +136,10 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config: %w", err)
+	}
+
+	if err = destConfig.validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	clientConf := client.Config{}

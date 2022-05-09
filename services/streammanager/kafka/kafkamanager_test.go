@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 func TestMain(m *testing.M) {
@@ -19,7 +21,75 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewProducer(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid destination configuration", func(t *testing.T) {
+		var destConfig func()
+		p, err := NewProducer(destConfig, Opts{})
+		require.Nil(t, p)
+		require.EqualError(t, err, "[Kafka] Error while marshaling destination configuration <nil>, "+
+			"with Error: json: unsupported type: func()")
+	})
+
+	t.Run("missing configuration data", func(t *testing.T) {
+		t.Run("missing topic", func(t *testing.T) {
+			var destConfig interface{}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
+		})
+		t.Run("missing hostname", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic": "some-topic",
+			}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: hostname cannot be empty")
+		})
+		t.Run("missing port", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic":    "some-topic",
+				"hostname": "some-hostname",
+			}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, `invalid configuration: invalid port: strconv.Atoi: parsing "": invalid syntax`)
+		})
+		t.Run("invalid port", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic":    "some-topic",
+				"hostname": "some-hostname",
+				"port":     "0",
+			}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, `invalid configuration: invalid port: 0`)
+		})
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
+			destination.WithLogger(t),
+			destination.WithBrokers(1))
+		require.NoError(t, err)
+
+		destConfig := map[string]interface{}{
+			"topic":    "some-topic",
+			"hostname": "localhost",
+			"port":     kafkaContainer.Port,
+		}
+		p, err := NewProducer(destConfig, Opts{})
+		require.NotNil(t, p)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			cancel()
+			return err == nil
+		}, 60*time.Second, 100*time.Millisecond)
+	})
 }
 
 func TestNewProducerForAzureEventHubs(t *testing.T) {
@@ -300,3 +370,13 @@ type nopLogger struct{}
 
 func (*nopLogger) Error(...interface{})          {}
 func (*nopLogger) Errorf(string, ...interface{}) {}
+
+type testCleanup struct{ *testing.T }
+
+func (t *testCleanup) Defer(fn func() error) {
+	t.Cleanup(func() {
+		if err := fn(); err != nil {
+			t.Log(err)
+		}
+	})
+}
