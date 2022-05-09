@@ -121,7 +121,57 @@ func TestCloseProducer(t *testing.T) {
 }
 
 func TestProduce(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid producer", func(t *testing.T) {
+		sc, res, err := Produce(nil, nil, nil)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Could not create producer", res)
+		require.Equal(t, "Could not create producer", err)
+	})
+
+	t.Run("invalid destination configuration", func(t *testing.T) {
+		p := &pMockErr{}
+		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
+		sc, res, err := Produce(nil, p, destConfig)
+		require.Equal(t, 500, sc) // TODO: should this be a 500?
+		require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
+		require.Equal(t, "json: unsupported type: chan struct {}", err)
+	})
+
+	t.Run("empty destination configuration", func(t *testing.T) {
+		p := &pMockErr{}
+		destConfig := map[string]interface{}{"foo": "bar"}
+		sc, res, err := Produce(json.RawMessage(""), p, destConfig)
+		require.Equal(t, 500, sc) // TODO: should this be a 500?
+		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
+		require.Equal(t, "invalid destination configuration: no topic", err)
+	})
+
+	t.Run("invalid message", func(t *testing.T) {
+		p := &pMockErr{}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := Produce(json.RawMessage(""), p, destConfig)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Invalid message", err)
+	})
+
+	t.Run("producer error", func(t *testing.T) {
+		p := &pMockErr{error: fmt.Errorf("super bad")}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		require.Equal(t, 500, sc)
+		require.Equal(t, "super bad error occurred.", res)
+		require.Equal(t, "super bad", err)
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		p := &pMockErr{}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Message delivered to topic: foo-bar", res)
+		require.Equal(t, "Message delivered to topic: foo-bar", err)
+	})
 }
 
 func TestSendBatchedMessage(t *testing.T) {

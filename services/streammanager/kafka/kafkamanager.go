@@ -302,6 +302,10 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
 	}
 
+	if conf.Topic == "" {
+		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
+	}
+
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(jsonData, p, conf.Topic)
 	}
