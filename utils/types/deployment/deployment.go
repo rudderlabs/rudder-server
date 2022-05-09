@@ -2,8 +2,6 @@ package deployment
 
 import (
 	"fmt"
-	"os"
-
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -18,11 +16,12 @@ const (
 const defaultClusterType = DedicatedType
 
 func GetFromEnv() (Type, error) {
-	t := Type(os.Getenv("DEPLOYMENT_TYPE"))
+	t := Type(config.GetEnv("DEPLOYMENT_TYPE", ""))
 	if t == "" {
-		t = defaultClusterType
 		if config.GetEnvAsBool("HOSTED_SERVICE", false) {
 			t = HostedType
+		} else {
+			t = defaultClusterType
 		}
 	}
 	if !t.Valid() {

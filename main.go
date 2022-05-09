@@ -272,7 +272,7 @@ func Run(ctx context.Context) {
 		return
 	}
 
-	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
+	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)

@@ -383,7 +383,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	return nil
 }
 
-func NewForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	var backendConfig BackendConfig
 
 	switch deploymentType {
@@ -421,7 +421,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err = NewForDeployment(deploymentType, configEnvHandler)
+	backendConfig, err = newForDeployment(deploymentType, configEnvHandler)
 	if err != nil {
 		return err
 	}
@@ -454,12 +454,4 @@ func (bc *CommonBackendConfig) Stop() {
 
 func GetConfigBackendURL() string {
 	return configBackendURL
-}
-
-// Gets the workspace token data for a single workspace or multi workspace case
-func GetWorkspaceToken() (workspaceToken string) {
-	if DefaultBackendConfig == nil {
-		Setup(nil)
-	}
-	return DefaultBackendConfig.AccessToken()
 }

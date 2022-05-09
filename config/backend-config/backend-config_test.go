@@ -98,11 +98,11 @@ func initBackendConfig() {
 	Init()
 }
 
-var _ = Describe("NewForDeployment", func() {
+var _ = Describe("newForDeployment", func() {
 
 	It("supports single workspace config", func() {
 		os.Setenv("WORKSPACE_TOKEN", "password")
-		config, err := NewForDeployment(deployment.DedicatedType, nil)
+		config, err := newForDeployment(deployment.DedicatedType, nil)
 
 		Expect(err).To(BeNil())
 		_, ok := config.(*SingleWorkspaceConfig)
@@ -111,7 +111,7 @@ var _ = Describe("NewForDeployment", func() {
 
 	It("supports hosted workspace config", func() {
 		os.Setenv("HOSTED_WORKSPACE_SECRET", "password")
-		config, err := NewForDeployment(deployment.HostedType, nil)
+		config, err := newForDeployment(deployment.HostedType, nil)
 
 		Expect(err).To(BeNil())
 		_, ok := config.(*HostedWorkspacesConfig)
@@ -120,7 +120,7 @@ var _ = Describe("NewForDeployment", func() {
 
 	It("supports hosted workspace config", func() {
 		os.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-		config, err := NewForDeployment(deployment.MultiTenantType, nil)
+		config, err := newForDeployment(deployment.MultiTenantType, nil)
 
 		Expect(err).To(BeNil())
 		_, ok := config.(*MultiTenantWorkspacesConfig)
@@ -128,7 +128,7 @@ var _ = Describe("NewForDeployment", func() {
 	})
 
 	It("return err for unsupported type", func() {
-		config, err := NewForDeployment("UNSUPPORTED_TYPE", nil)
+		config, err := newForDeployment("UNSUPPORTED_TYPE", nil)
 
 		Expect(err).To(MatchError("Deployment type \"UNSUPPORTED_TYPE\" not supported"))
 		Expect(config).To(BeNil())
