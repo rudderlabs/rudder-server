@@ -179,7 +179,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
-	config.RegisterBoolConfigVariable(true, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
