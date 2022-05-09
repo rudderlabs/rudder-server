@@ -469,7 +469,7 @@ func run(m *testing.M) (int, error) {
 	waitUntilReady(
 		context.Background(),
 		serviceHealthEndpoint,
-		time.Minute,
+		5*time.Minute,
 		time.Second,
 		"serviceHealthEndpoint",
 	)
