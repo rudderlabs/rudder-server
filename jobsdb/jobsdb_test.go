@@ -254,12 +254,6 @@ var sampleTestJob = JobT{
 type tContext struct {
 }
 
-func (c *tContext) Setup() {
-}
-
-func (c *tContext) Finish() {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -272,18 +266,12 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *tContext
-
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
 	})
 
 	AfterEach(func() {
-		c.Finish()
 	})
 
 	Context("getDSList", func() {
