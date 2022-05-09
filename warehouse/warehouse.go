@@ -83,6 +83,7 @@ var (
 	useParquetLoadFilesRS               bool
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
+	enableJitterForSyncs                bool
 )
 
 var (
@@ -178,6 +179,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
+	config.RegisterBoolConfigVariable(true, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -530,7 +532,8 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	var stagingFilesInUpload []*StagingFileT
 	var counter int
 	uploadTriggered := isUploadTriggered(warehouse)
-	uploadStartAfter := timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
+	uploadStartAfter := getUploadStartAfterTime()
+
 	initUpload := func() {
 		wh.initUpload(warehouse, stagingFilesInUpload, uploadTriggered, priority, uploadStartAfter)
 		stagingFilesInUpload = []*StagingFileT{}
@@ -553,6 +556,13 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 		clearTriggeredUpload(warehouse)
 	}
 	return uploadStartAfter
+}
+
+func getUploadStartAfterTime() time.Time {
+	if enableJitterForSyncs {
+		return timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
+	}
+	return time.Now()
 }
 
 func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (uploadID int64, status string, priority int) {
