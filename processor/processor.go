@@ -207,9 +207,9 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
 
-	errTags := tags
+	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, errTags)
 	transformTime := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
@@ -229,9 +229,9 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
 
-	errTags := tags
+	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
-	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
+	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, errTags)
 	destTransform := proc.statsFactory.NewTaggedStat("proc_transform_stage_duration", stats.TimerType, tags)
 
 	return &DestStatT{
@@ -249,7 +249,7 @@ func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destinatio
 	numEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, tags)
 
-	errTags := tags
+	errTags := misc.CopyStringMap(tags)
 	errTags["error"] = "true"
 	numOutputFailedEvents := proc.statsFactory.NewTaggedStat("proc_event_filter_out_count", stats.CountType, errTags)
 	eventFilterTime := proc.statsFactory.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
