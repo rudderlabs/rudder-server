@@ -153,3 +153,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) 
 
 	return respBody, resp.StatusCode, nil
 }
+
+func (multiWorkspaceConfig *HostedWorkspacesConfig) IsConfigured() bool {
+	return multiWorkspaceConfig.AccessToken() != ""
+}

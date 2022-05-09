@@ -151,3 +151,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 
 	return respBody, resp.StatusCode, nil
 }
+
+func (workspaceConfig *MultiTenantWorkspacesConfig) IsConfigured() bool {
+	return workspaceConfig.Token != ""
+}

@@ -209,6 +209,7 @@ type BackendConfig interface {
 	Subscribe(channel chan pubsub.DataEvent, topic Topic)
 	Stop()
 	StartWithIDs(workspaces string)
+	IsConfigured() bool
 }
 type CommonBackendConfig struct {
 	eb               pubsub.PublishSubscriber
@@ -406,7 +407,7 @@ func NewForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 	}
 
 	backendConfig.SetUp()
-	if backendConfig.AccessToken() == "" {
+	if !backendConfig.IsConfigured() {
 		return nil, fmt.Errorf("backend config token not available")
 	}
 

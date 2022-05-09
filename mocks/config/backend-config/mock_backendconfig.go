@@ -107,6 +107,20 @@ func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
+// IsConfigured mocks base method.
+func (m *MockBackendConfig) IsConfigured() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsConfigured")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsConfigured indicates an expected call of IsConfigured.
+func (mr *MockBackendConfigMockRecorder) IsConfigured() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsConfigured", reflect.TypeOf((*MockBackendConfig)(nil).IsConfigured))
+}
+
 // SetUp mocks base method.
 func (m *MockBackendConfig) SetUp() {
 	m.ctrl.T.Helper()

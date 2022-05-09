@@ -147,3 +147,10 @@ func (_ *SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken strin
 
 	return respBody, resp.StatusCode, nil
 }
+
+func (workspaceConfig *SingleWorkspaceConfig) IsConfigured() bool {
+	if configFromFile {
+		return true
+	}
+	return workspaceConfig.Token != ""
+}
