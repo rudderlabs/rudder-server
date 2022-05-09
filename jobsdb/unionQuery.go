@@ -66,11 +66,6 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jo
 
 func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
-	outJobs := make([]*JobT, 0)
-	if params.PayloadSizeLimit <= 0 {
-		return outJobs
-	}
-
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
@@ -80,6 +75,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	defer mj.dsListLock.RUnlock()
 
 	dsList := mj.getDSList(false)
+	outJobs := make([]*JobT, 0)
 
 	workspacePayloadLimitMap := make(map[string]int64)
 	for workspace, count := range workspaceCount {
