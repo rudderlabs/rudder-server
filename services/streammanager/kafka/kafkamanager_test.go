@@ -155,7 +155,76 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 }
 
 func TestProducerForConfluentCloud(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid destination configuration", func(t *testing.T) {
+		var destConfig func()
+		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+		require.Nil(t, p)
+		require.EqualError(t, err, "[Confluent Cloud] Error while marshaling destination configuration <nil>, "+
+			"got error: json: unsupported type: func()")
+	})
+
+	t.Run("missing configuration data", func(t *testing.T) {
+		t.Run("missing topic", func(t *testing.T) {
+			var destConfig interface{}
+			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
+		})
+		t.Run("missing bootstrap server", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic": "some-topic",
+			}
+			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: bootstrap server cannot be empty")
+		})
+		t.Run("missing api key", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic":           "some-topic",
+				"bootstrapServer": "some-server",
+			}
+			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: API key cannot be empty")
+		})
+		t.Run("missing api secret", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic":           "some-topic",
+				"bootstrapServer": "some-server",
+				"apiKey":          "secret-key",
+			}
+			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: API secret cannot be empty")
+		})
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		kafkaHost := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_HOST")
+		confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
+		confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
+
+		if kafkaHost == "" || confluentCloudKey == "" || confluentCloudSecret == "" {
+			t.Skip("Skipping because credentials or host are not provided")
+		}
+
+		destConfig := map[string]interface{}{
+			"topic":           "TestConfluentAzureCloud",
+			"bootstrapServer": kafkaHost,
+			"apiKey":          confluentCloudKey,
+			"apiSecret":       confluentCloudSecret,
+		}
+		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+		require.NotNil(t, p)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			cancel()
+			return err == nil
+		}, 60*time.Second, 100*time.Millisecond)
+	})
 }
 
 func TestPrepareBatchOfMessages(t *testing.T) {

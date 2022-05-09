@@ -78,6 +78,22 @@ type confluentCloudConfig struct {
 	APISecret       string
 }
 
+func (c *confluentCloudConfig) validate() error {
+	if c.Topic == "" {
+		return fmt.Errorf("topic cannot be empty")
+	}
+	if c.BootstrapServer == "" {
+		return fmt.Errorf("bootstrap server cannot be empty")
+	}
+	if c.APIKey == "" {
+		return fmt.Errorf("API key cannot be empty")
+	}
+	if c.APISecret == "" {
+		return fmt.Errorf("API secret cannot be empty")
+	}
+	return nil
+}
+
 type producer interface {
 	Close(context.Context) error
 	Publish(context.Context, ...client.Message) error
@@ -249,12 +265,22 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	var destConfig = confluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while marshalling destination config: %w", err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while marshaling destination configuration %+v, got error: %w",
+			destinationConfig, err,
+		)
 	}
 
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while unmarshalling destination config: %w", err)
+		return nil, fmt.Errorf(
+			"[Confluent Cloud] Error while unmarshaling destination configuration %+v, got error: %w",
+			destinationConfig, err,
+		)
+	}
+
+	if err = destConfig.validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	c, err := client.NewConfluentCloud(
