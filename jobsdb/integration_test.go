@@ -324,7 +324,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+		jobDB.Setup(jobsdb.ReadWrite, true, "gw", dbRetention, migrationMode, true, queryFilters)
 		defer jobDB.TearDown()
 
 		jobCountPerDS := 10
@@ -407,7 +407,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+		jobDB.Setup(jobsdb.ReadWrite, true, "gw", dbRetention, migrationMode, true, queryFilters)
 		defer jobDB.TearDown()
 
 		jobs := genJobs(defaultWorkspaceID, customVal, 2, 1)
@@ -422,10 +422,110 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
 
 		payloadLimit := 3 * payloadSize
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		payloadLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			PayloadSizeLimit: payloadLimit,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+
+		requireSequential(t, payloadLimitList)
+		require.Equal(t, 3, len(payloadLimitList))
+	})
+
+	t.Run("querying with an payload size limit should return at least one job even if limit is exceeded", func(t *testing.T) {
+		customVal := "MOCKDS"
+		triggerAddNewDS := make(chan time.Time)
+
+		maxDSSize := 1
+		jobDB := jobsdb.HandleT{
+			MaxDSSize: &maxDSSize,
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+		}
+		jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+		defer jobDB.TearDown()
+
+		jobs := genJobs(defaultWorkspaceID, customVal, 2, 1)
+		require.NoError(t, jobDB.Store(jobs))
+		payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
+		require.NoError(t, err)
+
+		payloadLimit := payloadSize / 2
+		payloadLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			PayloadSizeLimit: payloadLimit,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+
+		requireSequential(t, payloadLimitList)
+		require.Equal(t, 1, len(payloadLimitList))
+	})
+
+	t.Run("querying with an event count limit should return at least one job even if limit is exceeded", func(t *testing.T) {
+		customVal := "MOCKDS"
+		triggerAddNewDS := make(chan time.Time)
+
+		maxDSSize := 1
+		jobDB := jobsdb.HandleT{
+			MaxDSSize: &maxDSSize,
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+		}
+		jobDB.Setup(jobsdb.ReadWrite, true, "gw", dbRetention, migrationMode, true, queryFilters)
+		defer jobDB.TearDown()
+
+		jobs := genJobs(defaultWorkspaceID, customVal, 2, 4)
+		require.NoError(t, jobDB.Store(jobs))
+
+		eventCountLimit := 1
+		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			EventsLimit:      eventCountLimit,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+
+		requireSequential(t, eventLimitList)
+		require.Equal(t, 1, len(eventLimitList))
+	})
+
+	t.Run("should stay within event count limits", func(t *testing.T) {
+		customVal := "MOCKDS"
+		triggerAddNewDS := make(chan time.Time)
+
+		maxDSSize := 4
+		jobDB := jobsdb.HandleT{
+			MaxDSSize: &maxDSSize,
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+		}
+
+		jobDB.Setup(jobsdb.ReadWrite, true, "gw", dbRetention, migrationMode, true, queryFilters)
+		defer jobDB.TearDown()
+
+		jobs := []*jobsdb.JobT{}
+		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 1)...)
+		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 2)...)
+		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 3)...)
+		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 10)...)
+		require.NoError(t, jobDB.Store(jobs))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		require.NoError(t, jobDB.Store(jobs))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		eventCountLimit := 10
+		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			EventsLimit:      eventCountLimit,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
