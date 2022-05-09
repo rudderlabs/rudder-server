@@ -980,11 +980,12 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 			)
 
 			var exists bool
-			var uploaded int = 0
+			var uploaded int
 			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-			} else if exists {
+			}
+			if exists {
 				uploaded = 1
 			}
 
