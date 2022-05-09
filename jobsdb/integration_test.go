@@ -575,7 +575,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 
 	t.Run("GetAllJobs with large limits", func(t *testing.T) {
 		params := jobsdb.GetQueryParamsT{JobsLimit: 30}
-		allJobs := mtl.GetAllJobs(map[string]int{"testWorkspace": 30}, params, 0)
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: 30}, params, 0)
 		require.Equal(t, 30, len(allJobs), "should get all 30 jobs")
 
 	})
@@ -583,22 +583,36 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: 10}
-		allJobs := mtl.GetAllJobs(map[string]int{"testWorkspace": jobsLimit}, params, 0)
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
 		require.Truef(t, len(allJobs)-jobsLimit == 0, "should get %d jobs", jobsLimit)
+	})
+
+	t.Run("GetAllJobs with events limit", func(t *testing.T) {
+		jobsLimit := 10
+		params := jobsdb.GetQueryParamsT{JobsLimit: 10, EventsLimit: 3 * eventsPerJob}
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
+	})
+
+	t.Run("GetAllJobs with events limit less than the events of the first job get one job", func(t *testing.T) {
+		jobsLimit := 10
+		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, EventsLimit: eventsPerJob - 1}
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
 	})
 
 	t.Run("GetAllJobs with payload limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: 3 * payloadSize}
-		allJobs := mtl.GetAllJobs(map[string]int{"testWorkspace": jobsLimit}, params, 0)
-		require.Equal(t, 3, len(allJobs), "should get limit jobs")
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
 	})
 
 	t.Run("GetAllJobs with payload limit less than the payload size should get one job", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: payloadSize - 1}
-		allJobs := mtl.GetAllJobs(map[string]int{"testWorkspace": jobsLimit}, params, 0)
-		require.Equal(t, 1, len(allJobs), "should get limit+1 jobs")
+		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
 	})
 
 }
@@ -634,7 +648,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 		workspaceB = "workspaceB"
 		workspaceC = "workspaceC"
 	)
-	// Create 30 jobs for 3 workspaces
+	// Create 30 jobs in each of 3 workspaces
 	jobs := genJobs(workspaceA, customVal, 30, eventsPerJob)
 	require.NoError(t, jobDB.Store(jobs))
 	payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
@@ -650,12 +664,12 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	workspaceBJobs := filterWorkspaceJobs(allJobs, workspaceB)
 	workspaceCJobs := filterWorkspaceJobs(allJobs, workspaceC)
 
-	// Mark 1-10 as failed
+	// Mark 1-10 as failed for each workspace
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceAJobs[0:10], jobsdb.Failed.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceBJobs[0:10], jobsdb.Failed.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceCJobs[0:10], jobsdb.Failed.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
 
-	// Mark 11-20 as waiting
+	// Mark 11-20 as waiting for each workspace
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceAJobs[10:20], jobsdb.Waiting.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceBJobs[10:20], jobsdb.Waiting.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
 	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(workspaceCJobs[10:20], jobsdb.Waiting.State), []string{customVal}, []jobsdb.ParameterFilterT{}))
