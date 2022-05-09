@@ -187,7 +187,51 @@ func TestSendBatchedMessage(t *testing.T) {
 }
 
 func TestSendMessage(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid json", func(t *testing.T) {
+		sc, res, err := sendMessage(json.RawMessage("{{{"), nil, "some-topic")
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Invalid message", err)
+	})
+
+	t.Run("no message", func(t *testing.T) {
+		sc, res, err := sendMessage(json.RawMessage("{}"), nil, "some-topic")
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Invalid message", err)
+	})
+
+	t.Run("no userId", func(t *testing.T) {
+		p := &pMockErr{error: nil}
+		sc, res, err := sendMessage(json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Message delivered to topic: some-topic", res)
+		require.Equal(t, "Message delivered to topic: some-topic", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte(""), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
+	t.Run("publisher error", func(t *testing.T) {
+		p := &pMockErr{error: fmt.Errorf("something bad")}
+		sc, res, err := sendMessage(
+			json.RawMessage(`{"message":"ciao","userId":"123"}`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 500, sc)
+		require.Equal(t, "something bad error occurred.", res)
+		require.Equal(t, "something bad", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
 }
 
 // Mocks

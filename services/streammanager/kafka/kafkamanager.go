@@ -333,7 +333,12 @@ func sendBatchedMessage(jsonData json.RawMessage, p producer, topic string) (int
 
 func sendMessage(jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
-	data := parsedJSON.Get("message").Value().(interface{})
+	messageValue := parsedJSON.Get("message").Value()
+	if messageValue == nil {
+		return 400, "Failure", "Invalid message"
+	}
+
+	data := messageValue.(interface{})
 	value, err := json.Marshal(data)
 	if err != nil {
 		return makeErrorResponse(err)
