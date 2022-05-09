@@ -44,7 +44,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, mockDestLatencyTime int) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -184,7 +184,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, mockDestLatencyTime int) (int, string) {
 	rawJSON, err := jsonfast.Marshal(responseData)
 	if err != nil {
 		panic(err)
@@ -200,7 +200,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		var requestError error
 		//start
 		rdl_time := time.Now()
-		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload)
+		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, mockDestLatencyTime)
 		// if requestError != nil {
 		// 	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "false"}).SendTiming(time.Since(rdl_time))
 		// 	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "false"}).Increment()
@@ -268,7 +268,7 @@ func (trans *HandleT) Setup() {
 
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, mockDestTime int) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
@@ -276,6 +276,12 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	if mockDestTime > 0 {
+		q := req.URL.Query()
+		q.Add("mockDestTime", strconv.Itoa(mockDestTime))
+		req.URL.RawQuery = q.Encode()
+	}
 
 	resp, err := trans.client.Do(req)
 

@@ -132,6 +132,7 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
+	destLatency                            int
 	saveDestinationResponseOverride        bool
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
@@ -772,10 +773,10 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								//transformer proxy start
 								if worker.rt.transformerProxy {
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, worker.rt.destLatency)
 									proxyDuration := time.Since(rtl_time)
 									worker.routerProxyStat.SendTiming(proxyDuration)
-									pkgLogger.Errorf("[NwLayer Latency], %v, router_proxy_latency, %v, %v", time.Now().Format("2017-09-07 17:06:04.000000000"), worker.rt.destName, proxyDuration.Milliseconds())
+									pkgLogger.Errorf("[NwLayer Latency], %v, router_proxy_latency, %v, %v", time.Now().Format(time.StampNano), worker.rt.destName, proxyDuration.Milliseconds())
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -790,8 +791,13 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 										})
 									}
 								} else {
+									var resp *router_utils.SendPostResponse
 									rdl_time := time.Now()
-									resp := worker.rt.netHandle.SendPost(sendCtx, val)
+									if worker.rt.destLatency == 0 {
+										resp = worker.rt.netHandle.SendPost(sendCtx, val)
+									} else {
+										resp = worker.rt.netHandle.SendPostMock(sendCtx, val, worker.rt.destLatency)
+									}
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 									// stat end
 									worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
@@ -825,8 +831,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				delTimeDuration := time.Since(delTimeStart)
 				worker.deliveryTimeStat.End()
 
-				pkgLogger.Errorf("[NwLayer Latency], %v, router_delivery_time, %v, %v",
-					time.Now().Format("2017-09-07 17:06:04.000000000"),
+				isMock := worker.rt.destLatency == 0
+				var mock string
+				if !isMock {
+					mock = "Mock"
+				}
+				pkgLogger.Errorf("%v[NwLayer Latency], %v, router_delivery_time, %v, %v",
+					mock,
+					time.Now().Format(time.StampNano),
 					worker.rt.destName,
 					delTimeDuration.Milliseconds(),
 				)
@@ -2130,6 +2142,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
+	// For mocking, we can have the same config
+	destLatency := []string{"Router." + rt.destName + "." + "destLatency", "Router." + "destLatency"}
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	routerTimeoutKeys := []string{"Router." + rt.destName + "." + "routerTimeout", "Router." + "routerTimeout"}
@@ -2140,6 +2154,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
+	// Mock destination Latency
+	config.RegisterIntConfigVariable(0, &rt.destLatency, true, 1, destLatency...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)

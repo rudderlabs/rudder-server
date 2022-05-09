@@ -37,6 +37,7 @@ type NetHandleT struct {
 //Network interface
 type NetHandleI interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
+	SendPostMock(ctx context.Context, structData integrations.PostParametersT, timeInMs int) *utils.SendPostResponse
 }
 
 //temp solution for handling complex query params
@@ -223,6 +224,16 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		ResponseBody: []byte{},
 	}
 
+}
+
+func (network *NetHandleT) SendPostMock(ctx context.Context, structData integrations.PostParametersT, timeInMs int) *utils.SendPostResponse {
+	// Sleep time
+	misc.SleepCtx(ctx, time.Duration(timeInMs)*time.Millisecond)
+	return &utils.SendPostResponse{
+		StatusCode:          200,
+		ResponseContentType: "application/json",
+		ResponseBody:        []byte(""),
+	}
 }
 
 //Setup initializes the module
