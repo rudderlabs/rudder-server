@@ -170,7 +170,6 @@ func initJobsDB() {
 }
 
 func TestDynamicClusterManager(t *testing.T) {
-	//t.Skip("Skipping test for now on CI")
 	initJobsDB()
 
 	processor.SetFeaturesRetryAttempts(0)
