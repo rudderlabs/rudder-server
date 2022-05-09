@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -65,6 +66,11 @@ func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jo
 
 func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
+	outJobs := make([]*JobT, 0)
+	if params.PayloadSizeLimit <= 0 {
+		return outJobs
+	}
+
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
@@ -74,30 +80,31 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	defer mj.dsListLock.RUnlock()
 
 	dsList := mj.getDSList(false)
-	outJobs := make([]*JobT, 0)
-
-	if params.PayloadSizeLimit < 0 {
-		return outJobs
-	}
 
 	workspacePayloadLimitMap := make(map[string]int64)
 	for workspace, count := range workspaceCount {
-		percentage := float64(count) / float64(params.JobsLimit)
+		percentage := math.Max(float64(count), 0) / float64(params.JobsLimit)
 		payloadLimit := percentage * float64(params.PayloadSizeLimit)
 		workspacePayloadLimitMap[workspace] = int64(payloadLimit)
 	}
 
 	var tablesQueried int
 	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
+	conditions := QueryConditions{
+		IgnoreCustomValFiltersInQuery: params.IgnoreCustomValFiltersInQuery,
+		CustomValFilters:              params.CustomValFilters,
+		ParameterFilters:              params.ParameterFilters,
+		StateFilters:                  params.StateFilters,
+	}
 	start := time.Now()
 	for _, ds := range dsList {
-		jobs := mj.getUnionDS(ds, workspaceCount, workspacePayloadLimitMap, params)
+		jobs := mj.getUnionDS(ds, workspaceCount, workspacePayloadLimitMap, conditions)
 		outJobs = append(outJobs, jobs...)
 		if len(jobs) > 0 {
 			tablesQueried++
 		}
 
-		if len(workspaceCount) == 0 || len(workspacePayloadLimitMap) == 0 {
+		if len(workspaceCount) == 0 {
 			break
 		}
 		if tablesQueried >= maxDSQuerySize {
@@ -112,15 +119,15 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	return outJobs
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) []*JobT {
 	var jobList []*JobT
-	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, params)
+	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, conditions)
 
 	if len(workspacesToQuery) == 0 {
 		return jobList
 	}
 	for _, workspace := range workspacesToQuery {
-		mj.markClearEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 			willTryToSet, nil)
 	}
 
@@ -220,19 +227,19 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
-		mj.markClearEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
 	return jobList
 }
 
-func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, params GetQueryParamsT) (string, []string) {
+func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, conditions QueryConditions) (string, []string) {
 	var queries, workspacesToQuery []string
-	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, params, workspaceCount)
+	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, conditions, workspaceCount)
 
 	for workspace, count := range workspaceCount {
-		if mj.isEmptyResult(ds, workspace, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
+		if mj.isEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters) {
 			continue
 		}
 		if count <= 0 {
@@ -246,10 +253,10 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, params GetQueryParamsT, workspaceCount map[string]int) string {
-	customValFilters := params.CustomValFilters
-	parameterFilters := params.ParameterFilters
-	stateFilters := params.StateFilters
+func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
+	customValFilters := conditions.CustomValFilters
+	parameterFilters := conditions.ParameterFilters
+	stateFilters := conditions.StateFilters
 	var sqlStatement string
 
 	//some stats
@@ -270,7 +277,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 		stateQuery = ""
 	}
 
-	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
+	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
 			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")

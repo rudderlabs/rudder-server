@@ -79,14 +79,9 @@ type QueryConditions struct {
 	StateFilters                  []string
 }
 
+//
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
-// JobCount puts an upper limit on the number of returned jobs,
-//		if is not specified zero jobs will be returned.
-//
-// EventCount can further limit the number of returned jobs,
-//		based on the total number of event these jobs contain.
-// 	    NOTE: EventCount is not an exact limit. If the last job is split in half, it will be returned.
 type GetQueryParamsT struct {
 
 	// query conditions
@@ -103,11 +98,11 @@ type GetQueryParamsT struct {
 	// A value less than or equal to zero will return no results
 	JobsLimit int
 	// Limit the total number of events, 1 job contains 1+ event(s).
-	// A value less than or equal to zero will disable this limit,
+	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	EventsLimit int
 	// Limit the total job payload size
-	// A value less than or equal to zero will disable this limit,
+	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	PayloadSizeLimit int64
 }
@@ -2291,11 +2286,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 
 	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		return getJobsDsResult{
-			jobs:          []*JobT{},
-			limitsReached: false,
-			payloadSize:   0,
-		}
+		return getJobsDsResult{}
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
@@ -2439,14 +2430,16 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 				break
 			}
 		}
+		// we are adding the job only after testing for limitsReached
+		// so that we don't always overflow
 		jobList = append(jobList, &job)
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
-		(params.EventsLimit > 0 && eventCount == params.EventsLimit) || // we reached the events limit
-		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) { // we reached the payload limit
+		(params.EventsLimit > 0 && eventCount >= params.EventsLimit) || // we reached the events limit
+		(params.PayloadSizeLimit > 0 && payloadSize >= params.PayloadSizeLimit) { // we reached the payload limit
 		limitsReached = true
 	}
 
@@ -2478,11 +2471,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 
 	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		return getJobsDsResult{
-			jobs:          []*JobT{},
-			limitsReached: false,
-			payloadSize:   0,
-		}
+		return getJobsDsResult{}
 	}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
@@ -2585,15 +2574,17 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 			limitsReached = true
 			break
 		}
+		// we are adding the job only after testing for limitsReached
+		// so that we don't always overflow
+		jobList = append(jobList, &job)
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 
-		jobList = append(jobList, &job)
 	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
-		(params.EventsLimit > 0 && eventCount == params.EventsLimit) || // we reached the events limit
-		(params.PayloadSizeLimit > 0 && payloadSize == params.PayloadSizeLimit) { // we reached the payload limit
+		(params.EventsLimit > 0 && eventCount >= params.EventsLimit) || // we reached the events limit
+		(params.PayloadSizeLimit > 0 && payloadSize >= params.PayloadSizeLimit) { // we reached the payload limit
 		limitsReached = true
 	}
 
@@ -3676,7 +3667,7 @@ those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
-	if params.JobsLimit == 0 {
+	if params.JobsLimit <= 0 {
 		return []*JobT{}
 	}
 
@@ -3695,7 +3686,7 @@ those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	outJobs := make([]*JobT, 0)
-	if params.JobsLimit == 0 {
+	if params.JobsLimit <= 0 {
 		return outJobs
 	}
 
