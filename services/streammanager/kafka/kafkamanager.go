@@ -58,12 +58,13 @@ type logger interface {
 }
 
 var (
-	clientCert, clientKey      []byte
-	kafkaDialTimeout           time.Duration
-	kafkaWriteTimeout          time.Duration
-	kafkaProducerRetryInterval time.Duration
-	kafkaProducerMaxRetries    int
-	kafkaBatchingEnabled       bool
+	clientCert, clientKey                []byte
+	kafkaDialTimeout                     time.Duration
+	kafkaWriteTimeout                    time.Duration
+	kafkaProducerRetryInterval           time.Duration
+	kafkaProducerMaxRetries              int
+	kafkaBatchingEnabled                 bool
+	allowReqsWithoutUserIDAndAnonymousID bool
 
 	pkgLogger logger
 )
@@ -97,6 +98,9 @@ func Init() {
 	)
 	config.RegisterIntConfigVariable(10, &kafkaProducerMaxRetries, false, 1, "Router.kafkaProducerMaxRetries")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
+	config.RegisterBoolConfigVariable(
+		false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID",
+	)
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 }
@@ -250,7 +254,7 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 			continue
 		}
 		userID, ok := data["userId"].(string)
-		if !ok {
+		if !ok && !allowReqsWithoutUserIDAndAnonymousID {
 			// TODO bump metric
 			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
 			continue

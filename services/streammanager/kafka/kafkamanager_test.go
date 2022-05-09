@@ -73,6 +73,25 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			},
 		}, batch)
 	})
+
+	t.Run("with empty user id and allow empty", func(t *testing.T) {
+		now := time.Now()
+		allowReqsWithoutUserIDAndAnonymousID = true
+		data := []map[string]interface{}{
+			{"not-interesting": "some value"},
+			{"message": "msg01"},
+		}
+		batch, err := prepareBatchOfMessages("some-topic", data, now)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []client.Message{
+			{
+				Key:       []byte(""),
+				Value:     []byte(`"msg01"`),
+				Topic:     "some-topic",
+				Timestamp: now,
+			},
+		}, batch)
+	})
 }
 
 func TestCloseProducer(t *testing.T) {
