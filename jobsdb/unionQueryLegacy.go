@@ -15,14 +15,14 @@ func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params Ge
 
 	retryList := mj.GetToRetry(params)
 	list = append(list, retryList...)
-	updateParams(&params, retryList)
+	updateParams(payloadLimitEnabled, &params, retryList)
 	if limitsReached(payloadLimitEnabled, params) {
 		return list
 	}
 
 	waitList := mj.GetWaiting(params)
 	list = append(list, waitList...)
-	updateParams(&params, waitList)
+	updateParams(payloadLimitEnabled, &params, waitList)
 	if limitsReached(payloadLimitEnabled, params) {
 		return list
 	}
@@ -32,9 +32,11 @@ func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params Ge
 	return list
 }
 
-func updateParams(params *GetQueryParamsT, jobs []*JobT) {
+func updateParams(payloadLimitEnabled bool, params *GetQueryParamsT, jobs []*JobT) {
 	params.JobsLimit -= len(jobs)
-	params.PayloadSizeLimit -= getTotalPayload(jobs)
+	if payloadLimitEnabled {
+		params.PayloadSizeLimit -= getTotalPayload(jobs)
+	}
 }
 
 func getTotalPayload(jobs []*JobT) int64 {
