@@ -26,7 +26,7 @@ func TestNewProducer(t *testing.T) {
 		p, err := NewProducer(destConfig, Opts{})
 		require.Nil(t, p)
 		require.EqualError(t, err, "[Kafka] Error while marshaling destination configuration <nil>, "+
-			"with Error: json: unsupported type: func()")
+			"got error: json: unsupported type: func()")
 	})
 
 	t.Run("missing configuration data", func(t *testing.T) {
@@ -93,7 +93,65 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestNewProducerForAzureEventHubs(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid destination configuration", func(t *testing.T) {
+		var destConfig func()
+		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+		require.Nil(t, p)
+		require.EqualError(t, err, "[Azure Event Hubs] Error while marshaling destination configuration <nil>, "+
+			"got error: json: unsupported type: func()")
+	})
+
+	t.Run("missing configuration data", func(t *testing.T) {
+		t.Run("missing topic", func(t *testing.T) {
+			var destConfig interface{}
+			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
+		})
+		t.Run("missing bootstrap server", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic": "some-topic",
+			}
+			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: bootstrap server cannot be empty")
+		})
+		t.Run("missing connection string", func(t *testing.T) {
+			destConfig := map[string]interface{}{
+				"topic":           "some-topic",
+				"bootstrapServer": "some-server",
+			}
+			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, "invalid configuration: connection string cannot be empty")
+		})
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		kafkaHost := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST")
+		azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
+		azureEventHubsConnString := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING")
+
+		if kafkaHost == "" || azureEventHubName == "" || azureEventHubsConnString == "" {
+			t.Skip("Skipping because credentials or host are not provided")
+		}
+
+		destConfig := map[string]interface{}{
+			"topic":                     azureEventHubName,
+			"bootstrapServer":           kafkaHost,
+			"eventHubsConnectionString": azureEventHubsConnString,
+		}
+		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+		require.NotNil(t, p)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			cancel()
+			return err == nil
+		}, 60*time.Second, 100*time.Millisecond)
+	})
 }
 
 func TestProducerForConfluentCloud(t *testing.T) {

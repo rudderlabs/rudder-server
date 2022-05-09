@@ -591,7 +591,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
 	azureEventHubsConnString := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING")
 
-	if kafkaHost == "" || azureEventHubsConnString == "" {
+	if kafkaHost == "" || azureEventHubName == "" || azureEventHubsConnString == "" {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 

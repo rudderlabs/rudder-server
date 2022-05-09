@@ -57,6 +57,19 @@ type azureEventHubConfig struct {
 	EventHubsConnectionString string
 }
 
+func (c *azureEventHubConfig) validate() error {
+	if c.Topic == "" {
+		return fmt.Errorf("topic cannot be empty")
+	}
+	if c.BootstrapServer == "" {
+		return fmt.Errorf("bootstrap server cannot be empty")
+	}
+	if c.EventHubsConnectionString == "" {
+		return fmt.Errorf("connection string cannot be empty")
+	}
+	return nil
+}
+
 // confluentCloudConfig is the config that is required to send data to Confluent Cloud
 type confluentCloudConfig struct {
 	Topic           string
@@ -129,13 +142,15 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 	jsonConfig, err := json.Marshal(destConfigJSON)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"[Kafka] Error while marshaling destination configuration %+v, with Error: %w",
+			"[Kafka] Error while marshaling destination configuration %+v, got error: %w",
 			destConfigJSON, err,
 		)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config: %w", err)
+		return nil, fmt.Errorf("[Kafka] Error while unmarshalling destination configuration %+v, got error: %w",
+			destConfigJSON, err,
+		)
 	}
 
 	if err = destConfig.validate(); err != nil {
@@ -196,16 +211,20 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"[Azure Event Hubs] Cannot marshaling destination configuration %+v, got error: %w",
+			"[Azure Event Hubs] Error while marshaling destination configuration %+v, got error: %w",
 			destinationConfig, err,
 		)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"[Azure Event Hubs] Cannot unmarshaling destination configuration %+v, got error: %w",
+			"[Azure Event Hubs] Error while unmarshaling destination configuration %+v, got error: %w",
 			destinationConfig, err,
 		)
+	}
+
+	if err = destConfig.validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	c, err := client.NewAzureEventHubs(
