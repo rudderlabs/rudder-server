@@ -1411,3 +1411,11 @@ func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 	}
 	return nil
 }
+
+func CopyStringMap(originalMap map[string]string) map[string]string {
+	newMap := make(map[string]string)
+	for key, value := range originalMap {
+		newMap[key] = value
+	}
+	return newMap
+}
