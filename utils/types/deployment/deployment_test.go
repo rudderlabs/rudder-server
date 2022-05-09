@@ -8,10 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func restoreEnvVariable(name string) {
-
-}
-
 func Test_GetFromEnv(t *testing.T) {
 	envScope := []string{"HOSTED_SERVICE", "DEPLOYMENT_TYPE"}
 	t.Logf("Only %s will be considered for environment variable", envScope)

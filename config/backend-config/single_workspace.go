@@ -107,7 +107,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (Conf
 }
 
 // getFromFile reads the workspace config from JSON file
-func (_ *SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
+func (*SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
@@ -115,15 +115,15 @@ func (_ *SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 		return ConfigT{}, false
 	}
 	var configJSON ConfigT
-	error := json.Unmarshal(data, &configJSON)
-	if error != nil {
+	err = json.Unmarshal(data, &configJSON)
+	if err != nil {
 		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
 		return ConfigT{}, false
 	}
 	return configJSON, true
 }
 
-func (_ *SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
+func (*SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
