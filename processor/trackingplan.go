@@ -27,9 +27,6 @@ func reportViolations(validateEvent *transformer.TransformerResponseT, trackingP
 	validationErrors := validateEvent.ValidationErrors
 	output := validateEvent.Output
 
-	pkgLogger.Errorf("%d errors reported", len(validationErrors))
-	pkgLogger.Error(validationErrors)
-
 	eventContext, castOk := output["context"].(map[string]interface{})
 	if castOk {
 		eventContext["trackingPlanId"] = trackingPlanId
