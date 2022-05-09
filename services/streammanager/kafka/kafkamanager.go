@@ -351,7 +351,7 @@ func sendMessage(jsonData json.RawMessage, p producer, topic string) (int, strin
 }
 
 func makeErrorResponse(err error) (int, string, string) {
-	returnMessage := fmt.Sprintf("%s error occured.", err.Error())
+	returnMessage := fmt.Sprintf("%s error occurred.", err)
 	pkgLogger.Error(returnMessage)
 	return getStatusCodeFromError(err), returnMessage, err.Error()
 }

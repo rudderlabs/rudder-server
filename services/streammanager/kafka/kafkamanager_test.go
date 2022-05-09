@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -113,7 +114,7 @@ func TestCloseProducer(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("error", func(t *testing.T) {
-		var p producer = &pMockErr{fmt.Errorf("a bad error")}
+		var p producer = &pMockErr{error: fmt.Errorf("a bad error")}
 		err := CloseProducer(context.Background(), p)
 		require.EqualError(t, err, "a bad error")
 	})
@@ -124,7 +125,65 @@ func TestProduce(t *testing.T) {
 }
 
 func TestSendBatchedMessage(t *testing.T) {
-	t.Skip("TODO")
+	t.Run("invalid json", func(t *testing.T) {
+		sc, res, err := sendBatchedMessage(
+			json.RawMessage("{{{"),
+			nil,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while unmarshalling json data: "+
+			"invalid character '{' looking for beginning of object key string", err)
+	})
+
+	t.Run("invalid data", func(t *testing.T) {
+		sc, res, err := sendBatchedMessage(
+			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
+			nil,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while unmarshalling json data: "+
+			"json: cannot unmarshal object into Go value of type []map[string]interface {}", err)
+	})
+
+	t.Run("publisher error", func(t *testing.T) {
+		p := &pMockErr{error: fmt.Errorf("something bad")}
+		sc, res, err := sendBatchedMessage(
+			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 500, sc)
+		require.Equal(t, "something bad error occurred.", res)
+		require.Equal(t, "something bad", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		p := &pMockErr{error: nil}
+		sc, res, err := sendBatchedMessage(
+			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Kafka: Message delivered in batch", res)
+		require.Equal(t, "Kafka: Message delivered in batch", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
 }
 
 func TestSendMessage(t *testing.T) {
@@ -132,10 +191,16 @@ func TestSendMessage(t *testing.T) {
 }
 
 // Mocks
-type pMockErr struct{ error }
+type pMockErr struct {
+	error error
+	calls [][]client.Message
+}
 
-func (p *pMockErr) Close(_ context.Context) error                        { return p }
-func (p *pMockErr) Publish(_ context.Context, _ ...client.Message) error { return p }
+func (p *pMockErr) Close(_ context.Context) error { return p.error }
+func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
+	p.calls = append(p.calls, msgs)
+	return p.error
+}
 
 type nopLogger struct{}
 
