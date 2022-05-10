@@ -21,8 +21,6 @@ import (
 )
 
 func TestClient_Ping(t *testing.T) {
-	t.Parallel()
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -43,9 +41,6 @@ func TestClient_Ping(t *testing.T) {
 }
 
 func TestProducerBatchConsumerGroup(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper + 3 Kafka brokers
 	// We need more than one broker, or we'll be stuck with a "GROUP_COORDINATOR_NOT_AVAILABLE" error
 	pool, err := dockertest.NewPool("")
@@ -182,9 +177,6 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 }
 
 func TestConsumer_Partition(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -318,9 +310,6 @@ func TestConsumer_Partition(t *testing.T) {
 }
 
 func TestWithSASL(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	path, err := os.Getwd()
 	require.NoError(t, err)
@@ -339,8 +328,6 @@ func TestWithSASL(t *testing.T) {
 	for _, hashType := range hashTypes {
 		saslConfiguration := saslConfiguration // to avoid data race
 		t.Run(hashType.String(), func(t *testing.T) {
-			t.Parallel()
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -413,9 +400,6 @@ func TestWithSASL(t *testing.T) {
 }
 
 func TestWithSASLBadCredentials(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	path, err := os.Getwd()
 	require.NoError(t, err)
@@ -468,8 +452,6 @@ func TestWithSASLBadCredentials(t *testing.T) {
 }
 
 func TestProducer_Timeout(t *testing.T) {
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -538,8 +520,6 @@ func TestProducer_Timeout(t *testing.T) {
 }
 
 func TestConfluentAzureCloud(t *testing.T) {
-	t.Parallel()
-
 	kafkaHost := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_HOST")
 	confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
 	confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
@@ -585,8 +565,6 @@ func TestConfluentAzureCloud(t *testing.T) {
 }
 
 func TestAzureEventHubsCloud(t *testing.T) {
-	t.Parallel()
-
 	kafkaHost := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST")
 	azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
 	azureEventHubsConnString := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING")
