@@ -455,7 +455,7 @@ func (job *UploadJobT) run() (err error) {
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
 
-			loadFilesTableMap, err := job.populateLoadFilesTableMap()
+			loadFilesTableMap, err := job.getLoadFilesTableMap()
 			if err != nil {
 				pkgLogger.Errorf("Unable to populate load files table map with error: %w", err)
 				break
@@ -1583,13 +1583,13 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) populateLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
+func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
 	loadFilesMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT distinct table_name FROM %S WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 );`,
+	sqlStatement := fmt.Sprintf(`SELECT distinct table_name FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 );`,
 		warehouseutils.WarehouseLoadFilesTable,
 	)
 	sqlStatementArgs := []interface{}{
@@ -1604,7 +1604,7 @@ func (job *UploadJobT) populateLoadFilesTableMap() (loadFilesMap map[tableNameT]
 		return
 	}
 	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf("[WH] Error occurred while populateLoadFilesTableMap with error: %s", err.Error())
+		pkgLogger.Errorf("[WH] Error occurred while getting load files table map with error: %s", err.Error())
 		return
 	}
 	defer rows.Close()
