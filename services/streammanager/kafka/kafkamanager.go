@@ -108,7 +108,6 @@ var (
 	clientCert, clientKey                []byte
 	kafkaDialTimeout                     = 10 * time.Second
 	kafkaWriteTimeout                    = 2 * time.Second
-	kafkaProducerMaxRetries              = 10
 	kafkaBatchingEnabled                 bool
 	allowReqsWithoutUserIDAndAnonymousID bool
 
@@ -138,7 +137,6 @@ func Init() {
 		2, &kafkaWriteTimeout, false, time.Second,
 		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
 	)
-	config.RegisterIntConfigVariable(10, &kafkaProducerMaxRetries, false, 1, "Router.kafkaProducerMaxRetries")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 	config.RegisterBoolConfigVariable(
 		false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID",
@@ -214,7 +212,6 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		return c.NewProducer(destConfig.Topic, client.ProducerConfig{
 			DefaultPublishTimeout: o.Timeout,
 			WriteTimeout:          kafkaWriteTimeout,
-			MaxRetries:            kafkaProducerMaxRetries,
 		})
 	}
 
@@ -261,7 +258,6 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		DefaultPublishTimeout: o.Timeout,
 		WriteTimeout:          kafkaWriteTimeout,
-		MaxRetries:            kafkaProducerMaxRetries,
 	})
 }
 
@@ -306,7 +302,6 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		DefaultPublishTimeout: o.Timeout,
 		WriteTimeout:          kafkaWriteTimeout,
-		MaxRetries:            kafkaProducerMaxRetries,
 	})
 }
 
@@ -445,15 +440,8 @@ func makeErrorResponse(err error) (int, string, string) {
 
 // getStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
 func getStatusCodeFromError(err error) int {
-	statusCode := 500
-	errorString := err.Error()
-
-	for _, s := range abortableErrors {
-		if strings.Contains(errorString, s) {
-			statusCode = 400
-			break
-		}
+	if client.IsProducerErrTemporary(err) {
+		return 500
 	}
-
-	return statusCode
+	return 400
 }

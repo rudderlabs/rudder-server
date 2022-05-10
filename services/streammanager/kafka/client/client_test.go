@@ -21,6 +21,10 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
+const (
+	defaultTestTimeout = 60 * time.Second
+)
+
 func TestMain(m *testing.M) {
 	if runtime.GOARCH == "arm64" {
 		fmt.Println("arm64 is not supported yet")
@@ -84,7 +88,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 30*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
@@ -219,7 +223,7 @@ func TestConsumer_Partition(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 30*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
@@ -376,7 +380,7 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Ping error: %v", err)
 				}
 				return err == nil
-			}, 60*time.Second, 250*time.Millisecond)
+			}, defaultTestTimeout, 250*time.Millisecond)
 
 			var producerConf ProducerConfig
 			if testing.Verbose() {
@@ -403,7 +407,7 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Publish error: %v", err)
 				}
 				return err == nil
-			}, 60*time.Second, 100*time.Millisecond, "Could not publish within timeout")
+			}, defaultTestTimeout, 100*time.Millisecond, "Could not publish within timeout")
 		})
 	}
 }
@@ -457,7 +461,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 			t.Logf("Ping error: %v", err)
 		}
 		return strings.Contains(err.Error(), "SASL Authentication failed")
-	}, 30*time.Second, 250*time.Millisecond)
+	}, defaultTestTimeout, 250*time.Millisecond)
 }
 
 func TestProducer_Timeout(t *testing.T) {
@@ -487,7 +491,7 @@ func TestProducer_Timeout(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 60*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)

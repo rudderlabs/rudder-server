@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
@@ -334,7 +335,7 @@ func TestProduce(t *testing.T) {
 		p := &pMockErr{}
 		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
 		sc, res, err := Produce(nil, p, destConfig)
-		require.Equal(t, 500, sc) // TODO: should this be a 500?
+		require.Equal(t, 400, sc)
 		require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
 		require.Equal(t, "json: unsupported type: chan struct {}", err)
 	})
@@ -343,7 +344,7 @@ func TestProduce(t *testing.T) {
 		p := &pMockErr{}
 		destConfig := map[string]interface{}{"foo": "bar"}
 		sc, res, err := Produce(json.RawMessage(""), p, destConfig)
-		require.Equal(t, 500, sc) // TODO: should this be a 500?
+		require.Equal(t, 400, sc)
 		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
 		require.Equal(t, "invalid destination configuration: no topic", err)
 	})
@@ -361,9 +362,18 @@ func TestProduce(t *testing.T) {
 		p := &pMockErr{error: fmt.Errorf("super bad")}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
-		require.Equal(t, 500, sc)
+		require.Equal(t, 400, sc)
 		require.Equal(t, "super bad error occurred.", res)
 		require.Equal(t, "super bad", err)
+	})
+
+	t.Run("producer retryable error", func(t *testing.T) {
+		p := &pMockErr{error: kafka.LeaderNotAvailable}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		require.Equal(t, 500, sc)
+		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
+		require.Equal(t, kafka.LeaderNotAvailable.Error(), err)
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -411,9 +421,28 @@ func TestSendBatchedMessage(t *testing.T) {
 			p,
 			"some-topic",
 		)
-		require.Equal(t, 500, sc)
+		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
 		require.Equal(t, "something bad", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
+	t.Run("publisher retryable error", func(t *testing.T) {
+		p := &pMockErr{error: kafka.LeaderNotAvailable}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 500, sc)
+		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
+		require.Equal(t, kafka.LeaderNotAvailable.Error(), err)
 		require.Len(t, p.calls, 1)
 		require.Len(t, p.calls[0], 1)
 		require.Equal(t, []byte("123"), p.calls[0][0].Key)
@@ -479,7 +508,7 @@ func TestSendMessage(t *testing.T) {
 			p,
 			"some-topic",
 		)
-		require.Equal(t, 500, sc)
+		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
 		require.Equal(t, "something bad", err)
 		require.Len(t, p.calls, 1)

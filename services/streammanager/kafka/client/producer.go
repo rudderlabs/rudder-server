@@ -2,8 +2,11 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -14,7 +17,6 @@ type ProducerConfig struct {
 	WriteTimeout,
 	ReadTimeout,
 	DefaultPublishTimeout time.Duration
-	MaxRetries  int
 	Logger      Logger
 	ErrorLogger Logger
 }
@@ -28,9 +30,6 @@ func (c *ProducerConfig) defaults() {
 	}
 	if c.DefaultPublishTimeout < 1 {
 		c.DefaultPublishTimeout = 10 * time.Second
-	}
-	if c.MaxRetries < 1 {
-		c.MaxRetries = 10
 	}
 }
 
@@ -78,7 +77,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
-			MaxAttempts:            producerConf.MaxRetries,
+			MaxAttempts:            1,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
@@ -138,4 +137,20 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 		defer cancel()
 	}
 	return p.writer.WriteMessages(ctx, messages...)
+}
+
+var tempError interface{ Temporary() bool }
+
+func IsProducerErrTemporary(err error) bool {
+	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE)
+	if isTransientNetworkError {
+		return true
+	}
+	if errors.As(err, &tempError) {
+		return tempError.Temporary()
+	}
+	return false
 }
