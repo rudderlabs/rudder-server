@@ -2158,7 +2158,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()
 
-	rt.oauth = oauth.NewOAuthErrorHandler()
+	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
 
 	var throttler throttler.HandleT

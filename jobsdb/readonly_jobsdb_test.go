@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	uuid "github.com/gofrs/uuid"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -23,12 +23,9 @@ func initReadonlyJobsDB() {
 }
 
 var _ = Describe("readonly_jobsdb", func() {
-	var c *tContext
 	initReadonlyJobsDB()
 
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
 		stats.Setup()
 	})
 

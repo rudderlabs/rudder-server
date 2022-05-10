@@ -11,24 +11,33 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-type WorkspaceConfig struct {
+type SingleWorkspaceConfig struct {
 	CommonBackendConfig
-	workspaceID               string
+	workspaceID string
+	Token       string
+
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceIDLock           sync.RWMutex
 }
 
-func (workspaceConfig *WorkspaceConfig) SetUp() {
+func (workspaceConfig *SingleWorkspaceConfig) SetUp() {
+	if workspaceConfig.Token == "" {
+		workspaceConfig.Token = config.GetWorkspaceToken()
+	}
 }
 
-func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
+	return workspaceConfig.Token
+}
+
+func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 
 	return workspaceConfig.workspaceID
 }
 
-func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForSourceID(sourceID string) string {
+func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 
@@ -36,7 +45,7 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForSourceID(sourceID strin
 }
 
 //GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 	if workspaceConfig.workspaceIDToLibrariesMap[workspaceID] == nil {
@@ -46,7 +55,7 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(work
 }
 
 //Get returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) Get(workspace string) (ConfigT, bool) {
+func (workspaceConfig *SingleWorkspaceConfig) Get(workspace string) (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
@@ -55,7 +64,7 @@ func (workspaceConfig *WorkspaceConfig) Get(workspace string) (ConfigT, bool) {
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *WorkspaceConfig) getFromAPI(workspace string) (ConfigT, bool) {
+func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (ConfigT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 	var respBody []byte
 	var statusCode int
@@ -98,7 +107,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI(workspace string) (ConfigT, b
 }
 
 // getFromFile reads the workspace config from JSON file
-func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
+func (*SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
@@ -106,15 +115,15 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
 		return ConfigT{}, false
 	}
 	var configJSON ConfigT
-	error := json.Unmarshal(data, &configJSON)
-	if error != nil {
+	err = json.Unmarshal(data, &configJSON)
+	if err != nil {
 		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
 		return ConfigT{}, false
 	}
 	return configJSON, true
 }
 
-func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
+func (*SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
@@ -137,4 +146,11 @@ func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string, workspaceTok
 	}
 
 	return respBody, resp.StatusCode, nil
+}
+
+func (workspaceConfig *SingleWorkspaceConfig) IsConfigured() bool {
+	if configFromFile {
+		return true
+	}
+	return workspaceConfig.Token != ""
 }
