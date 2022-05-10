@@ -15,8 +15,7 @@ import (
 type ProducerConfig struct {
 	ClientID string
 	WriteTimeout,
-	ReadTimeout,
-	DefaultPublishTimeout time.Duration
+	ReadTimeout time.Duration
 	Logger      Logger
 	ErrorLogger Logger
 }
@@ -27,9 +26,6 @@ func (c *ProducerConfig) defaults() {
 	}
 	if c.ReadTimeout < 1 {
 		c.ReadTimeout = 10 * time.Second
-	}
-	if c.DefaultPublishTimeout < 1 {
-		c.DefaultPublishTimeout = 10 * time.Second
 	}
 }
 
@@ -131,11 +127,6 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 		}
 	}
 
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel func()
-		ctx, cancel = context.WithTimeout(ctx, p.config.DefaultPublishTimeout)
-		defer cancel()
-	}
 	return p.writer.WriteMessages(ctx, messages...)
 }
 

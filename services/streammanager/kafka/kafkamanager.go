@@ -97,6 +97,19 @@ func (c *confluentCloudConfig) validate() error {
 type producer interface {
 	Close(context.Context) error
 	Publish(context.Context, ...client.Message) error
+
+	getTimeout() time.Duration
+}
+
+type producerImpl struct {
+	p       *client.Producer
+	timeout time.Duration
+}
+
+func (p *producerImpl) getTimeout() time.Duration       { return p.timeout }
+func (p *producerImpl) Close(ctx context.Context) error { return p.p.Close(ctx) }
+func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
+	return p.p.Publish(ctx, msgs...)
 }
 
 type logger interface {
@@ -105,6 +118,8 @@ type logger interface {
 }
 
 var (
+	_ producer = &producerImpl{}
+
 	clientCert, clientKey                []byte
 	kafkaDialTimeout                     = 10 * time.Second
 	kafkaWriteTimeout                    = 2 * time.Second
@@ -146,7 +161,7 @@ func Init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
+func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) {
 	var destConfig = configuration{}
 	jsonConfig, err := json.Marshal(destConfigJSON)
 	if err != nil {
@@ -209,17 +224,21 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 			continue
 		}
 
-		return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-			DefaultPublishTimeout: o.Timeout,
-			WriteTimeout:          kafkaWriteTimeout,
+		p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+			WriteTimeout: kafkaWriteTimeout,
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &producerImpl{p: p, timeout: o.Timeout}, nil
 	}
 
 	return nil, fmt.Errorf("could not create producer [%q at %s]: %w", destConfig.HostName, destConfig.Port, err)
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*client.Producer, error) {
+func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) {
 	var destConfig = azureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -255,14 +274,17 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
 
-	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		DefaultPublishTimeout: o.Timeout,
-		WriteTimeout:          kafkaWriteTimeout,
+	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+		WriteTimeout: kafkaWriteTimeout,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &producerImpl{p: p, timeout: o.Timeout}, nil
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*client.Producer, error) {
+func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) {
 	var destConfig = confluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -299,10 +321,13 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		DefaultPublishTimeout: o.Timeout,
-		WriteTimeout:          kafkaWriteTimeout,
+	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+		WriteTimeout: kafkaWriteTimeout,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &producerImpl{p: p, timeout: o.Timeout}, nil
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
@@ -378,7 +403,8 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
+	defer cancel()
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}

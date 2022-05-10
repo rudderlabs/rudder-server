@@ -304,7 +304,7 @@ func TestCloseProducer(t *testing.T) {
 		require.EqualError(t, err, "error while closing producer")
 	})
 	t.Run("not initialized", func(t *testing.T) {
-		p := &client.Producer{}
+		p := &producerImpl{p: &client.Producer{}}
 		err := CloseProducer(context.Background(), p)
 		require.NoError(t, err)
 	})
@@ -313,7 +313,7 @@ func TestCloseProducer(t *testing.T) {
 		require.NoError(t, err)
 		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
 		require.NoError(t, err)
-		err = CloseProducer(context.Background(), p)
+		err = CloseProducer(context.Background(), &producerImpl{p: p})
 		require.NoError(t, err)
 	})
 	t.Run("error", func(t *testing.T) {
@@ -526,6 +526,7 @@ type pMockErr struct {
 	calls [][]client.Message
 }
 
+func (p *pMockErr) getTimeout() time.Duration     { return 0 }
 func (p *pMockErr) Close(_ context.Context) error { return p.error }
 func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	p.calls = append(p.calls, msgs)
