@@ -457,7 +457,6 @@ func (job *UploadJobT) run() (err error) {
 
 			loadFilesTableMap, err := job.getLoadFilesTableMap()
 			if err != nil {
-				pkgLogger.Errorf("Unable to populate load files table map with error: %w", err)
 				break
 			}
 
@@ -1604,7 +1603,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 		return
 	}
 	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf("[WH] Error occurred while getting load files table map with error: %s", err.Error())
+		err = fmt.Errorf("error occurred while getting load files table map with error: %w", err)
 		return
 	}
 	defer rows.Close()
@@ -1613,7 +1612,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 		var tableName string
 		err = rows.Scan(&tableName)
 		if err != nil {
-			pkgLogger.Errorf("[WH] Error occurred while processing load files table map with error: %s", err.Error())
+			err = fmt.Errorf("error occurred while processing load files table map with error: %w", err)
 			return
 		}
 		loadFilesMap[tableNameT(tableName)] = true
