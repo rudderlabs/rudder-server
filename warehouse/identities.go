@@ -91,7 +91,7 @@ func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 }
 
 func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) (exists bool) {
-	sqlStatement := fmt.Sprintf(`select exists ( SELECT 1 FROM %s )`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %s )`, warehouseutils.IdentityMergeRulesTableName(warehouse))
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
 		// TODO: Handle this
