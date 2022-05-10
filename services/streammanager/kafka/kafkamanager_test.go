@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -66,6 +67,10 @@ func TestNewProducer(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
+		if runtime.GOARCH == "arm64" {
+			t.Skip("arm64 is not supported yet")
+		}
+
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 

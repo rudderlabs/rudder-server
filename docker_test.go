@@ -22,6 +22,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -723,6 +724,10 @@ func TestRedis(t *testing.T) {
 }
 
 func TestKafka(t *testing.T) {
+	if runtime.GOARCH == "arm64" {
+		t.Skip("arm64 is not supported yet")
+	}
+
 	kafkaHost := fmt.Sprintf("localhost:%s", KafkaContainer.Port)
 
 	// Create new consumer

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,14 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
+
+func TestMain(m *testing.M) {
+	if runtime.GOARCH == "arm64" {
+		fmt.Println("arm64 is not supported yet")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func TestClient_Ping(t *testing.T) {
 	pool, err := dockertest.NewPool("")
