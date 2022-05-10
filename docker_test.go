@@ -323,12 +323,14 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup,
-		destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-		destination.WithBrokers(3),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
+	if runtime.GOARCH != "arm64" {
+		KafkaContainer, err = destination.SetupKafka(pool, cleanup,
+			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+			destination.WithBrokers(3),
+		)
+		if err != nil {
+			return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
+		}
 	}
 
 	RedisContainer, err = destination.SetupRedis(pool, cleanup)
@@ -411,7 +413,6 @@ func run(m *testing.M) (int, error) {
 		"address":                             RedisContainer.RedisAddress,
 		"minioEndpoint":                       MINIOContainer.MinioEndpoint,
 		"minioBucketName":                     MINIOContainer.MinioBucketName,
-		"kafkaPort":                           KafkaContainer.Port,
 		"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 		"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
 		"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
@@ -420,6 +421,9 @@ func run(m *testing.M) (int, error) {
 		"rwhClickHouseDestinationPort":        wht.Test.CHTest.Credentials.Port,
 		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
+	}
+	if runtime.GOARCH != "arm64" {
+		mapWorkspaceConfig["kafkaPort"] = KafkaContainer.Port
 	}
 	if runBigQueryTest && wht.Test.BQTest != nil {
 		mapWorkspaceConfig["bqEventWriteKey"] = wht.Test.BQTest.WriteKey
