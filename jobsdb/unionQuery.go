@@ -34,7 +34,7 @@ type MultiTenantJobsDB interface {
 	GetPileUpCounts(map[string]map[string]int)
 }
 
-func (mj *MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
+func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
 	var sqlStatement string
 
 	//some stats

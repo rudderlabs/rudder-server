@@ -540,7 +540,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	dbRetention := time.Minute * 5
 	migrationMode := ""
 
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
@@ -623,7 +623,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	dbRetention := time.Minute * 5
 	migrationMode := ""
 
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
