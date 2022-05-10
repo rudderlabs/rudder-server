@@ -161,7 +161,7 @@ func Init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) {
+func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
 	var destConfig = configuration{}
 	jsonConfig, err := json.Marshal(destConfigJSON)
 	if err != nil {
@@ -238,7 +238,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) {
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) {
+func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
 	var destConfig = azureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -284,7 +284,7 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) {
+func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
 	var destConfig = confluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {

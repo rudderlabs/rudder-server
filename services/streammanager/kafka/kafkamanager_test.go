@@ -526,7 +526,7 @@ type pMockErr struct {
 	calls [][]client.Message
 }
 
-func (p *pMockErr) getTimeout() time.Duration     { return 0 }
+func (*pMockErr) getTimeout() time.Duration       { return 0 }
 func (p *pMockErr) Close(_ context.Context) error { return p.error }
 func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	p.calls = append(p.calls, msgs)
