@@ -32,16 +32,27 @@ var (
 )
 
 const (
-	host          = "host"
-	dbName        = "database"
-	user          = "user"
-	password      = "password"
-	port          = "port"
-	sslMode       = "sslMode"
-	serverCAPem   = "serverCA"
-	clientSSLCert = "clientCert"
-	clientSSLKey  = "clientKey"
-	verifyCA      = "verify-ca"
+	host                     = "host"
+	dbName                   = "database"
+	user                     = "user"
+	password                 = "password"
+	port                     = "port"
+	sslMode                  = "sslMode"
+	serverCAPem              = "serverCA"
+	clientSSLCert            = "clientCert"
+	clientSSLKey             = "clientKey"
+	verifyCA                 = "verify-ca"
+	createStagingTable       = "staging_table_creation"
+	copyInSchemaStagingTable = "staging_table_copy_in_schema"
+	openLoadFiles            = "load_files_opening"
+	readGzipLoadFiles        = "load_files_gzip_reading"
+	readCsvLoadFiles         = "load_files_csv_reading"
+	csvColumnCountMismatch   = "csv_column_count_mismatch"
+	loadStagingTable         = "staging_table_loading"
+	stagingTableloadStage    = "staging_table_load_stage"
+	deleteDedup              = "dedup_deletion"
+	insertDedup              = "dedup_insertion"
+	dedupStage               = "dedup_stage"
 )
 
 var rudderDataTypesMapToPostgres = map[string]string{
@@ -275,7 +286,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
-		tags["stage"] = "staging_table_creation"
+		tags["stage"] = createStagingTable
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
@@ -286,7 +297,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
-		tags["stage"] = "staging_table_schema"
+		tags["stage"] = copyInSchemaStagingTable
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
@@ -295,7 +306,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			tags["stage"] = "load_files_opening"
+			tags["stage"] = openLoadFiles
 			runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 			return
 		}
@@ -305,7 +316,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if err != nil {
 			pkgLogger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
-			tags["stage"] = "load_files_reading"
+			tags["stage"] = readGzipLoadFiles
 			runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 			return
 		}
@@ -320,7 +331,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					break
 				} else {
 					pkgLogger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-					tags["stage"] = "staging_table_reading"
+					tags["stage"] = readCsvLoadFiles
 					runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 					return
 				}
@@ -328,7 +339,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
-				tags["stage"] = "staging_table_column_mismatch"
+				tags["stage"] = csvColumnCountMismatch
 				runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 				return
 			}
@@ -343,7 +354,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				pkgLogger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				tags["stage"] = "staging_table_loading"
+				tags["stage"] = loadStagingTable
 				runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 				return
 			}
@@ -356,7 +367,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf("PG: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		tags["stage"] = "staging_table_load_stage"
+		tags["stage"] = stagingTableloadStage
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 
@@ -379,7 +390,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		tags["stage"] = "dedup_deletion"
+		tags["stage"] = deleteDedup
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
@@ -389,14 +400,14 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into original table: %v\n", err)
-		tags["stage"] = "dedup_insertion"
+		tags["stage"] = insertDedup
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		tags["stage"] = "dedup_stage"
+		tags["stage"] = dedupStage
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
@@ -513,7 +524,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		tags["stage"] = "dedup_users_deletion"
+		tags["stage"] = deleteDedup
 		runRollbackWithTimeout(tx.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -525,7 +536,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
-		tags["stage"] = "dedup_users_insertion"
+		tags["stage"] = insertDedup
 		runRollbackWithTimeout(tx.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -534,7 +545,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	err = tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error in transaction commit for users table: %v\n", err)
-		tags["stage"] = "dedup_users_stage"
+		tags["stage"] = dedupStage
 		runRollbackWithTimeout(tx.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		errorMap[warehouseutils.UsersTable] = err
 		return
