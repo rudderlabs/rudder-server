@@ -3,8 +3,10 @@ package bqstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -26,6 +28,14 @@ type Credentials struct {
 	TokenUrl   string `json:"token_uri"`
 }
 
+type Client struct {
+	bqClient *bigquery.Client
+	opts     Opts
+}
+type Opts struct {
+	Timeout time.Duration
+}
+
 // https://stackoverflow.com/questions/55951812/insert-into-bigquery-without-a-well-defined-struct
 type genericRecord map[string]bigquery.Value
 
@@ -44,7 +54,7 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("bqstream")
 }
 
-func NewProducer(destinationConfig interface{}) (*bigquery.Client, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	var config Config
 	var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -70,12 +80,18 @@ func NewProducer(destinationConfig interface{}) (*bigquery.Client, error) {
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	return bigquery.NewClient(context.Background(), config.ProjectId, opts...)
+	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{bqClient: bqClient, opts: o}, nil
 }
 
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
-	bqClient := producer.(*bigquery.Client)
+	client := producer.(*Client)
+	bqClient := client.bqClient
+	o := client.opts
 	parsedJSON := gjson.ParseBytes(jsonData)
 	dsId := parsedJSON.Get("datasetId").String()
 	tblId := parsedJSON.Get("tableId").String()
@@ -87,9 +103,14 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 	}
 	bqInserter := bqClient.Dataset(dsId).Table(tblId).Inserter()
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
+	defer cancel()
+	err = bqInserter.Put(ctx, genericRec)
 
-	err = bqInserter.Put(context.Background(), genericRec)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+			return http.StatusGatewayTimeout, "Failure", createErr(err, "timeout in data insertion").Error()
+		}
 		return http.StatusBadRequest, "Failure", createErr(err, "error in data insertion").Error()
 	}
 
@@ -97,10 +118,12 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 }
 
 func CloseProducer(producer interface{}) error {
-	bqClient, ok := producer.(*bigquery.Client)
+	client, ok := producer.(*Client)
 	if !ok {
 		return createErr(nil, "error while trying to close the client")
 	}
+	bqClient := client.bqClient
+
 	err := bqClient.Close()
 	if err != nil {
 		return createErr(err, "error while closing the client")

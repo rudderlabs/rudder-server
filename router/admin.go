@@ -15,26 +15,26 @@ func RegisterAdminHandlers(readonlyRouterDB, readonlyBatchRouterDB jobsdb.Readon
 	admin.RegisterAdminHandler("BatchRouter", &RouterRpcHandler{jobsDBPrefix: "batch_rt", readonlyBatchRouterDB: readonlyBatchRouterDB})
 }
 
-type RouterAdmin struct {
+type Admin struct {
 	handles map[string]*HandleT
 }
 
-var adminInstance *RouterAdmin
+var adminInstance *Admin
 var routerJobsTableName, routerJobStatusTableName string
 
-func Init2() {
-	adminInstance = &RouterAdmin{
+func InitRouterAdmin() {
+	adminInstance = &Admin{
 		handles: make(map[string]*HandleT),
 	}
 	admin.RegisterStatusHandler("routers", adminInstance)
 }
 
-func (ra *RouterAdmin) registerRouter(name string, handle *HandleT) {
+func (ra *Admin) registerRouter(name string, handle *HandleT) {
 	ra.handles[name] = handle
 }
 
 // Status function is used for debug purposes by the admin interface
-func (ra *RouterAdmin) Status() interface{} {
+func (ra *Admin) Status() interface{} {
 	statusList := make([]map[string]interface{}, 0)
 	for name, router := range ra.handles {
 		routerStatus := router.perfStats.Status()
@@ -107,6 +107,7 @@ type DSStats struct {
 	UnprocessedJobCounts           int
 }
 
+// GetDSStats
 // group_by job_status
 // group by custom_val
 // Get all errors = distinct (error), count(*) where state=failed
@@ -117,7 +118,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	var completeErr error
@@ -127,7 +128,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 	if err != nil {
 		return err
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 	// TODO:: seems like sqlx library will be better as it allows to map structs to rows
 	// that way the repeated logic can be brought to a single method
 	err = getJobCountsByStateAndDestination(dbHandle, dsName, r.jobsDBPrefix, &dsStats)
@@ -160,7 +161,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		*result = string(response)
 	}
 	// Since we try to execute each query independently once we are connected to db
-	// this tries to captures errors that happened on all the execution paths
+	// this tries to capture errors that happened on all the execution paths
 	return completeErr
 }
 
@@ -175,12 +176,12 @@ func (r *RouterRpcHandler) GetDSJobCount(arg string, result *string) (err error)
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetJobSummaryCount(arg, r.jobsDBPrefix)
-	*result = string(response)
+	*result = response
 	return nil
 }
 
@@ -188,12 +189,12 @@ func (r *RouterRpcHandler) GetDSFailedJobs(arg string, result *string) (err erro
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetLatestFailedJobs(arg, r.jobsDBPrefix)
-	*result = string(response)
+	*result = response
 	return nil
 }
 
@@ -201,12 +202,12 @@ func (r *RouterRpcHandler) GetJobByID(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetJobByID(arg, r.jobsDBPrefix)
-	*result = string(response)
+	*result = response
 	return err
 }
 
@@ -214,26 +215,26 @@ func (r *RouterRpcHandler) GetJobIDStatus(arg string, result *string) (err error
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetJobIDStatus(arg, r.jobsDBPrefix)
-	*result = string(response)
+	*result = response
 	return err
 }
 
-func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) {
+func (r *RouterRpcHandler) GetDSList(_ string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 
 	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetDSListString()
-	*result = string(response)
+	*result = response
 	return nil
 }
 
@@ -266,7 +267,7 @@ func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName string, jobsDBPr
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := JobCountsByStateAndDestination{}
 	for rows.Next() {
 		err = rows.Scan(&result.Count, &result.State, &result.Destination)
@@ -310,7 +311,7 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := ErrorCodeCountsByDestination{}
 	for rows.Next() {
 		err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination, &result.DestinationID)
@@ -348,7 +349,7 @@ func getJobCountByConnections(dbHandle *sql.DB, dsName string, jobsDBPrefix stri
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := JobCountByConnections{}
 	for rows.Next() {
 		err = rows.Scan(&result.Count, &result.SourceId, &result.DestinationId)
@@ -395,7 +396,7 @@ func getLatestJobStatusCounts(dbHandle *sql.DB, dsName string, jobsDBPrefix stri
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := LatestJobStatusCounts{}
 	for rows.Next() {
 		err = rows.Scan(&result.Count, &result.State, &result.Rank)

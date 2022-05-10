@@ -3,17 +3,20 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"log"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 )
 
 type PostgresTest struct {
-	Resource    *dockertest.Resource
-	Credentials *postgres.CredentialsT
-	DB          *sql.DB
-	EventsMap   EventsCountMap
-	WriteKey    string
+	Resource           *dockertest.Resource
+	Credentials        *postgres.CredentialsT
+	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
 }
 
 // SetWHPostgresDestination setup warehouse postgres destination
@@ -39,6 +42,7 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	pgTest := Test.PGTest
 	credentials := pgTest.Credentials

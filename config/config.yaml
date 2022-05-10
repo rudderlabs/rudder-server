@@ -5,6 +5,8 @@ enableProcessor: true
 enableRouter: true
 enableStats: true
 statsTagsFormat: influxdb
+HttpClient:
+  timeout: 30s
 Http:
   ReadTimeout: 0s
   ReadHeaderTimeout: 0s
@@ -61,6 +63,7 @@ TransformationDebugger:
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
+  fairPickup: true
   jobDoneMigrateThres: 0.8
   jobStatusMigrateThres: 5
   maxDSSize: 100000
@@ -173,6 +176,7 @@ Processor:
   loopSleep: 10ms
   maxLoopSleep: 5000ms
   fixedLoopSleep: 0ms
+  storeTimeout: 5m
   maxLoopProcessEvents: 10000
   transformBatchSize: 100
   userTransformBatchSize: 200
@@ -181,7 +185,6 @@ Processor:
   maxHTTPIdleConnections: 50
   maxRetry: 30
   retrySleep: 100ms
-  timeoutDuration: 30s
   errReadLoopSleep: 30s
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2

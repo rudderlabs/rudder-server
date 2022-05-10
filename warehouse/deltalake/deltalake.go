@@ -3,20 +3,21 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/proto/databricks"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"strings"
-	"time"
 )
 
 // Database configuration
@@ -118,8 +119,8 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("2", &thriftTransport, false, "Warehouse.deltalake.thriftTransport")
 	config.RegisterStringConfigVariable("1", &ssl, false, "Warehouse.deltalake.ssl")
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
-	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
-	config.RegisterDurationConfigVariable(time.Duration(15), &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
+	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
+	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -127,8 +128,8 @@ func getDeltaLakeDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-// columnsWithDataTypes returns columns with specified prefix and data type
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+// ColumnsWithDataTypes returns columns with specified prefix and data type
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
 		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
@@ -171,7 +172,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
@@ -213,7 +214,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	}
 
 	// Getting timeout context
-	tCtx, cancel := context.WithTimeout(ctx, grpcTimeout)
+	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Creating grpc connection using timeout context
@@ -297,16 +298,22 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error)
 	execSqlStatTime.Start()
 	defer execSqlStatTime.End()
 
-	executeResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
-		Config:       dl.dbHandleT.CredConfig,
-		Identifier:   dl.dbHandleT.CredIdentifier,
+	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
+	return
+}
+
+// ExecuteSQLClient executes sql client using grpc Client
+func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
+	executeResponse, err := dbClient.Client.Execute(dbClient.Context, &proto.ExecuteRequest{
+		Config:       dbClient.CredConfig,
+		Identifier:   dbClient.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
-		return fmt.Errorf("%s Error while executing: %v", dl.GetLogIdentifier(), err)
+		return fmt.Errorf("error while executing: %v", err)
 	}
 	if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), databaseNotFound) || !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while executing with response: %v", dl.GetLogIdentifier(), executeResponse.GetErrorMessage())
+		err = fmt.Errorf("error while executing with response: %v", executeResponse.GetErrorMessage())
 		return
 	}
 	return
@@ -420,12 +427,8 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(tableName string) (loadFolder string, err error) {
-	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
-	if err != nil {
-		return
-	}
-	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, csvObjectLocation)
+func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder string, err error) {
+	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == "S3" {
 		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
 		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
@@ -459,7 +462,13 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(tableName)
+	// Getting objects location
+	objectsLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
+	if err != nil {
+		return
+	}
+
+	loadFolder, err := dl.getLoadFolder(tableName, objectsLocation)
 	if err != nil {
 		return
 	}
@@ -478,7 +487,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
-			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
+			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
@@ -660,6 +669,10 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
+	return dl.connectToWarehouseWithTimeout(grpcTimeout)
+}
+
+func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -673,13 +686,13 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 		SSL:             ssl,
 		UserAgentEntry:  userAgent,
 	}
-	return dl.connect(credT)
+	return dl.connect(credT, timeout)
 }
 
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
@@ -799,7 +812,8 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
-	dl.dbHandleT, err = dl.connectToWarehouse()
+	timeout := warehouseutils.TestConnectionTimeout
+	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
 	return
 }
 
@@ -890,6 +904,11 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
+	dl.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.DELTALAKE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config),
+	)
 	dbHandleT, err := dl.connectToWarehouse()
 
 	if err != nil {
@@ -961,5 +980,47 @@ func checkHealth() (err error) {
 	if healthResponse.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
 		err = fmt.Errorf("databricks Service is not up")
 	}
+	return
+}
+
+func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	// Get the credentials string to copy from the staging location to table
+	auth, err := dl.credentialsStr()
+	if err != nil {
+		return
+	}
+
+	loadFolder, err := dl.getLoadFolder(stagingTableName, location)
+	if err != nil {
+		return
+	}
+
+	var sqlStatement string
+	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
+			"FILEFORMAT = PARQUET "+
+			"PATTERN = '*.parquet' "+
+			"COPY_OPTIONS ('force' = 'true') "+
+			"%s;",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s, %s`, "id", "val"),
+			loadFolder,
+			auth,
+		)
+	} else {
+		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
+			"FILEFORMAT = CSV "+
+			"PATTERN = '*.gz' "+
+			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
+			"COPY_OPTIONS ('force' = 'true') "+
+			"%s;",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
+			loadFolder,
+			auth,
+		)
+	}
+
+	err = dl.ExecuteSQLClient(client.DBHandleT, sqlStatement)
 	return
 }

@@ -3,17 +3,21 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"log"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 )
 
 type MSSQLTest struct {
-	Resource    *dockertest.Resource
-	Credentials *mssql.CredentialsT
-	DB          *sql.DB
-	EventsMap   EventsCountMap
-	WriteKey    string
+	Resource               *dockertest.Resource
+	Credentials            *mssql.CredentialsT
+	DB                     *sql.DB
+	EventsMap              EventsCountMap
+	WriteKey               string
+	TableTestQueryFreq     time.Duration
 }
 
 // SetWHMssqlDestination setup warehouse mssql destination
@@ -39,13 +43,14 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	mssqlTest := Test.MSSQLTest
 	credentials := mssqlTest.Credentials
 	cleanup = func() {}
 
 	var err error
-	if mssqlTest.Resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-CU10-ubuntu-20.04", []string{
+	if mssqlTest.Resource, err = pool.Run("mcr.microsoft.com/azure-sql-edge", "1.0.5", []string{
 		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
 		fmt.Sprintf("SA_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("SA_DB=%s", credentials.DBName),

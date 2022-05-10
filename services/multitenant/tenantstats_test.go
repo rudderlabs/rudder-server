@@ -9,12 +9,13 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -37,31 +38,31 @@ var (
 var _ = Describe("tenantStats", func() {
 
 	BeforeEach(func() {
+		metric.GetManager().Reset()
 		config.Load()
 		logger.Init()
 		Init()
 	})
 
 	Context("Tenant Stats Testing", func() {
-		mockCtrl := gomock.NewController(GinkgoT())
-		mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 		var tenantStats *MultitenantStatsT
 		BeforeEach(func() {
+			mockCtrl := gomock.NewController(GinkgoT())
+			mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 			// crash recovery check
 			mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
-			tenantStats = NewStats(mockRouterJobsDB)
+			tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"rt": mockRouterJobsDB})
 		})
 
 		It("TenantStats init", func() {
 
-			Expect(len(tenantStats.routerInputRates)).To(Equal(2))
-			Expect(len(tenantStats.routerNonTerminalCounts)).To(Equal(2))
+			Expect(len(tenantStats.routerInputRates)).To(Equal(1))
 			Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 			Expect(len(tenantStats.failureRate)).To(Equal(0))
 		})
 
 		It("Calculate Success Failure Counts , Failure Rate", func() {
-			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+			for i := 0; i < int(metric.AVG_METRIC_AGE); i++ {
 				tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, true, false)
 				tenantStats.CalculateSuccessFailureCounts(workspaceID2, destType1, false, false)
 			}
@@ -73,7 +74,7 @@ var _ = Describe("tenantStats", func() {
 		})
 
 		It("Should Update Latency Map", func() {
-			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+			for i := 0; i < int(metric.AVG_METRIC_AGE); i++ {
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 1)
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 2)
 			}
@@ -94,39 +95,16 @@ var _ = Describe("tenantStats", func() {
 		It("Add and Remove from InMemory Counts", func() {
 			addJobWID1 := rand.Intn(10)
 			addJobWID2 := rand.Intn(10)
-			removeJobWID1 := rand.Intn(10)
-			removeJobWID2 := rand.Intn(10)
-			for i := 0; i < addJobWID1; i++ {
-				tenantStats.AddToInMemoryCount(workspaceID1, destType1, 1, "router")
-			}
-			for i := 0; i < removeJobWID2; i++ {
-				tenantStats.RemoveFromInMemoryCount(workspaceID2, destType1, 1, "router")
-			}
-			for i := 0; i < addJobWID2; i++ {
-				tenantStats.AddToInMemoryCount(workspaceID2, destType1, 1, "router")
-			}
-			for i := 0; i < removeJobWID1; i++ {
-				tenantStats.RemoveFromInMemoryCount(workspaceID1, destType1, 1, "router")
-			}
-
-			netCountWID1 := addJobWID1 - removeJobWID1
-			netCountWID2 := addJobWID2 - removeJobWID2
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(netCountWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(netCountWID2))
-		})
-
-		It("Add and Remove from InMemory Counts", func() {
-			addJobWID1 := rand.Intn(10)
-			addJobWID2 := rand.Intn(10)
 			input := make(map[string]map[string]int)
 			input[workspaceID1] = make(map[string]int)
 			input[workspaceID2] = make(map[string]int)
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 
-			tenantStats.ReportProcLoopAddStats(input, "router")
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1]).To(Equal(addJobWID1))
-			Expect(tenantStats.routerNonTerminalCounts["router"][workspaceID2][destType1]).To(Equal(addJobWID2))
+			tenantStats.ReportProcLoopAddStats(input, "rt")
+
+			Expect(metric.PendingEvents("rt", workspaceID1, destType1).IntValue()).To(Equal(addJobWID1))
+			Expect(metric.PendingEvents("rt", workspaceID2, destType1).IntValue()).To(Equal(addJobWID2))
 		})
 
 		It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -140,7 +118,7 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-			tenantStats.ReportProcLoopAddStats(input, "router")
+			tenantStats.ReportProcLoopAddStats(input, "rt")
 			tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 0)
 			tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0)
 			tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0)
@@ -164,8 +142,8 @@ var _ = Describe("tenantStats", func() {
 			input[workspaceID1][destType1] = addJobWID1
 			input[workspaceID2][destType1] = addJobWID2
 			input[workspaceID3][destType1] = addJobWID3
-			tenantStats.ReportProcLoopAddStats(input, "router")
-			for i := 0; i < int(misc.AVG_METRIC_AGE); i++ {
+			tenantStats.ReportProcLoopAddStats(input, "rt")
+			for i := 0; i < int(metric.AVG_METRIC_AGE); i++ {
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 1)
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 2)
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 3)
@@ -180,34 +158,29 @@ var _ = Describe("tenantStats", func() {
 })
 
 func Benchmark_Counts(b *testing.B) {
-	mockCtrl := gomock.NewController(b)
-	mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
-	// crash recovery check
-	mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
-	tenantStats := NewStats(mockRouterJobsDB)
 
 	b.ResetTimer()
-
-	const writeRatio = 10
-
+	metric.GetManager().Reset()
+	const writeRatio = 1000
+	gauge := metric.PendingEvents("rt", workspaceID1, destType1)
 	errgroup := errgroup.Group{}
 	errgroup.Go(func() error {
 		for i := 0; i < b.N; i++ {
-			tenantStats.AddToInMemoryCount(workspaceID1, destType1, writeRatio+1, "router")
+			gauge.Add(float64(writeRatio + 1))
 		}
 		return nil
 	})
 	for i := 0; i < writeRatio; i++ {
 		errgroup.Go(func() error {
 			for i := 0; i < b.N; i++ {
-				tenantStats.RemoveFromInMemoryCount(workspaceID1, destType1, 1, "router")
+				gauge.Sub(float64(1))
 			}
 			return nil
 		})
 	}
 	errgroup.Wait()
 
-	require.Equal(b, b.N, tenantStats.routerNonTerminalCounts["router"][workspaceID1][destType1])
+	require.Equal(b, b.N, gauge.IntValue())
 }
 
 func Benchmark_Counts_Atomic(b *testing.B) {

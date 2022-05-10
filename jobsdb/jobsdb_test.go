@@ -4,8 +4,7 @@ import (
 	"time"
 
 	uuid "github.com/gofrs/uuid"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -59,7 +58,70 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		Entry("Internal Migration for import tables Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
 
 		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
+
+		Entry("Internal Migration for tables : ", "10_1", "11_3", "10_2"),
+		Entry("Internal Migration for tables : ", "0_1", "1", "0_1_1"),
+		Entry("Internal Migration for tables : ", "0_1", "20", "0_1_1"),
+		Entry("Internal Migration for tables : ", "0_1", "0_2", "0_1_1"),
 	)
+
+	Context("computeInsertIdx - bad input tests", func() {
+		It("Should throw error for input 1, 1_1", func() {
+			_, err := computeInsertIdx("1", "1_1")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10_1, 10_2", func() {
+			_, err := computeInsertIdx("10_1", "10_2")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10_1, 10_1", func() {
+			_, err := computeInsertIdx("10_1", "10_1")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10, 9", func() {
+			_, err := computeInsertIdx("10", "9")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10_1_2, 11_3", func() {
+			_, err := computeInsertIdx("10_1_2", "11_3")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 0, 1", func() {
+			_, err := computeInsertIdx("0", "1")
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 0_1, 0", func() {
+			_, err := computeInsertIdx("0_1", "0")
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("computeInsertVals - good input tests", func() {
+		It("Should not throw error for input 0_1, 0_2", func() {
+			calculatedIdx, err := computeInsertVals([]string{"0", "1"}, []string{"0", "2"})
+			Expect(err).To(BeNil())
+			Expect(calculatedIdx).To(Equal([]string{"0", "1", "1"}))
+		})
+	})
+
+	Context("computeInsertVals - bad input tests", func() {
+		It("Should throw error for input 1, 1_1", func() {
+			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10_1, 10_2", func() {
+			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "2"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10_1, 10_1", func() {
+			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "1"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for input 10, 9", func() {
+			_, err := computeInsertVals([]string{"10"}, []string{"9"})
+			Expect(err).To(HaveOccurred())
+		})
+	})
 })
 
 var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
@@ -192,12 +254,6 @@ var sampleTestJob = JobT{
 type tContext struct {
 }
 
-func (c *tContext) Setup() {
-}
-
-func (c *tContext) Finish() {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -210,18 +266,12 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *tContext
-
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
 	})
 
 	AfterEach(func() {
-		c.Finish()
 	})
 
 	Context("getDSList", func() {

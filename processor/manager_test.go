@@ -6,10 +6,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"testing"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -17,15 +26,10 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"testing"
-	"time"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -33,6 +37,15 @@ var (
 	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
 	db     *sql.DB
 )
+
+type reportingNOOP struct{}
+
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
+}
+func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
+}
+func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
+}
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
@@ -135,7 +148,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 
 func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
-	defer func() {isUnLocked = temp}()
+	defer func() { isUnLocked = temp }()
 	initJobsDB()
 	stats.Setup()
 	mockCtrl := gomock.NewController(t)
@@ -187,7 +200,13 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB)
+	mtStat := &multitenant.MultitenantStatsT{
+		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
+			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+		},
+	}
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{})
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()
@@ -201,11 +220,11 @@ func TestProcessorManager(t *testing.T) {
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-		processor.backendConfig = mockBackendConfig
-		processor.transformer = mockTransformer
-		processor.StartNew()
+		processor.BackendConfig = mockBackendConfig
+		processor.HandleT.transformer = mockTransformer
+		processor.Start()
 		defer processor.Stop()
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -228,9 +247,9 @@ func TestProcessorManager(t *testing.T) {
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
-		processor.StartNew()
+		processor.Start()
 		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -239,11 +258,13 @@ func TestProcessorManager(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		Eventually(func() int {return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{customVal},
-			JobCount:         20,
-			ParameterFilters: []jobsdb.ParameterFilterT{},
-		}))}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		Eventually(func() int {
+			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         20,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			}))
+		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})
 }

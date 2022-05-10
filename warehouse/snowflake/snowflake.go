@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
+
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -22,11 +24,13 @@ import (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	connectTimeout     time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
+	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
@@ -38,7 +42,6 @@ type HandleT struct {
 	Namespace     string
 	CloudProvider string
 	ObjectStorage string
-	Stage         string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
 }
@@ -54,8 +57,6 @@ const (
 	SFUserName         = "user"
 	SFPassword         = "password"
 )
-
-const PROVIDER = "SNOWFLAKE"
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
@@ -112,11 +113,11 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.UsersTable)
-	identifiesTable         = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentifiesTable)
-	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
-	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
+	usersTable              = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.UsersTable)
+	identifiesTable         = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentifiesTable)
+	discardsTable           = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.DiscardsTable)
+	identityMergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable   = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMappingsTable)
 )
 
 type tableLoadRespT struct {
@@ -124,7 +125,7 @@ type tableLoadRespT struct {
 	stagingTable string
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
@@ -133,7 +134,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -201,7 +202,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *HandleT) authString() string {
 	var auth string
-	if sf.Uploader.UseRudderStorage() {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
@@ -564,14 +565,19 @@ type SnowflakeCredentialsT struct {
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
+	return connectWithTimeout(cred, connectTimeout)
+}
+
+func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:     cred.account,
-		User:        cred.username,
-		Password:    cred.password,
-		Database:    cred.dbName,
-		Schema:      cred.schemaName,
-		Warehouse:   cred.whName,
-		Application: "Rudderstack",
+		Account:      cred.account,
+		User:         cred.username,
+		Password:     cred.password,
+		Database:     cred.dbName,
+		Schema:       cred.schemaName,
+		Warehouse:    cred.whName,
+		LoginTimeout: timeout / time.Second,
+		Application:  "Rudderstack",
 	}
 
 	var err error
@@ -793,7 +799,7 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
 	sf.Uploader = uploader
-	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
 	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	return err
@@ -801,12 +807,12 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	sf.Warehouse = warehouse
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	timeOut := warehouseutils.TestConnectionTimeout
+	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), timeOut)
 	if err != nil {
 		return
 	}
 	defer sf.Db.Close()
-	timeOut := 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
 	defer cancel()
@@ -893,10 +899,31 @@ func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
+	sf.ObjectStorage = warehouseutils.ObjectStorageType(
+		warehouseutils.SNOWFLAKE,
+		warehouse.Destination.Config,
+		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
+	)
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return client.Client{}, err
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
+
+	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
+		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName),
+		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		loadFolder,
+		sf.authString(),
+	)
+
+	_, err = client.SQL.Exec(sqlStatement)
+	return
 }

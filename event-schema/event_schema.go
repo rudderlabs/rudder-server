@@ -173,14 +173,14 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
+	config.RegisterDurationConfigVariable(240, &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
 	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
-	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
-	config.RegisterDurationConfigVariable(time.Duration(1800), &offloadThreshold, true, time.Second, []string{"EventSchemas.offloadThreshold"}...)
+	config.RegisterDurationConfigVariable(60, &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
+	config.RegisterDurationConfigVariable(1800, &offloadThreshold, true, time.Second, []string{"EventSchemas.offloadThreshold"}...)
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -619,9 +619,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 	var flushDBHandle *sql.DB
 	defer func() {
 		if r := recover(); r != nil {
-			// If some of the panicking happens while doing the flushing of events, then we need to close the connection.
+			// if the panic happens while flushing events, we need to close the connection
 			if flushDBHandle != nil {
-				flushDBHandle.Close()
+				_ = flushDBHandle.Close()
 			}
 		}
 	}()
@@ -1070,7 +1070,7 @@ func (manager *EventSchemaManagerT) Setup() {
 	archivedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
 
 	if !manager.disableInMemoryCache {
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			defer setEventSchemasPopulated(true)
 
 			populateESTimer := stats.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
@@ -1083,16 +1083,16 @@ func (manager *EventSchemaManagerT) Setup() {
 	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
 	for i := 0; i < noOfWorkers; i++ {
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			manager.recordEvents()
 		})
 	}
 
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		manager.flushEventSchemas()
 	})
 
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		manager.offloadEventSchemas()
 	})
 

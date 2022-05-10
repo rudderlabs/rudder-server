@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"io"
 	"net/http"
 	"runtime"
@@ -26,13 +27,12 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -47,8 +47,6 @@ var (
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
-	WarehouseDestinations               []string
-	timeWindowDestinations              []string
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -82,7 +80,8 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
-	skipDeepEqualSchemas                 bool
+	skipDeepEqualSchemas                bool
+	maxParallelJobCreation              int
 )
 
 var (
@@ -143,13 +142,11 @@ func Init4() {
 func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
-	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL", "AZURE_SYNAPSE", "DELTALAKE"}
+	config.RegisterDurationConfigVariable(5, &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
+	crashRecoverWarehouses = []string{warehouseutils.RS, warehouseutils.POSTGRES, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -163,23 +160,23 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
-	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
+	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
 	connectionsMap = map[string]map[string]warehouseutils.WarehouseT{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
+	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
+	config.RegisterDurationConfigVariable(10, &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
-	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
+	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
-	config.RegisterDurationConfigVariable(time.Duration(5), &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
+	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
+	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
+	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
+	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -238,7 +235,7 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
@@ -295,15 +292,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
 
-				// test and send connection status to control plane
-				if val, ok := destination.Config["testConnection"].(bool); ok && val {
-					destination := destination
-					rruntime.Go(func() {
-						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-					})
-				}
-
 				if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 					wh.setupIdentityTables(warehouse)
 					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
@@ -324,10 +312,10 @@ func (wh *HandleT) backendConfigSubscriber() {
 // 	1. user set name from destinationConfig
 // 	2. from existing record in wh_schemas with same source + dest combo
 // 	3. convert source name
-func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
-	configMap := config.(map[string]interface{})
+func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+	configMap := configI.(map[string]interface{})
 	var namespace string
-	if destType == "CLICKHOUSE" {
+	if destType == warehouseutils.CLICKHOUSE {
 		//TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
@@ -336,6 +324,11 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 		if len(strings.TrimSpace(namespace)) > 0 {
 			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 		}
+	}
+	// TODO: Move config to global level based on use case
+	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), "")
+	if namespacePrefix != "" {
+		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 	var exists bool
 	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
@@ -448,7 +441,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     getLoadFileType(wh.destType),
+		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -688,13 +681,19 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 			continue
 		}
 
-		wg := sync.WaitGroup{}
+		jobCreationChan := make(chan struct{}, maxParallelJobCreation)
 		wh.configSubscriberLock.RLock()
+		wg := sync.WaitGroup{}
+		wg.Add(len(wh.warehouses))
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
-			wg.Add(1)
-			rruntime.Go(func() {
-				defer wg.Done()
+			rruntime.GoForWarehouse(func() {
+				jobCreationChan <- struct{}{}
+				defer func() {
+					wg.Done()
+					<-jobCreationChan
+				}()
+
 				pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
 				err := wh.createJobs(w)
 				if err != nil {
@@ -831,13 +830,14 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}
 
 		uploadJob := UploadJobT{
-			upload:         &upload,
-			stagingFiles:   stagingFilesList,
-			stagingFileIDs: stagingFileIDs,
-			warehouse:      warehouse,
-			whManager:      whManager,
-			dbHandle:       wh.dbHandle,
-			pgNotifier:     &wh.notifier,
+			upload:               &upload,
+			stagingFiles:         stagingFilesList,
+			stagingFileIDs:       stagingFileIDs,
+			warehouse:            warehouse,
+			whManager:            whManager,
+			dbHandle:             wh.dbHandle,
+			pgNotifier:           &wh.notifier,
+			destinationValidator: configuration_testing.NewDestinationValidator(),
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
@@ -1028,20 +1028,20 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
 
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		wh.backendConfigSubscriber()
 	})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.runUploadJobAllocator(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.mainLoop(ctx)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
 		wh.uploadStatusTrack(ctx)
 		return nil
@@ -1061,26 +1061,8 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-func getLoadFileFormat(whType string) string {
-	switch whType {
-	case "BQ":
-		return "json.gz"
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
-		return "parquet"
-	case "RS":
-		if useParquetLoadFilesRS {
-			return "parquet"
-		}
-		return "csv.gz"
-	case "DELTALAKE":
-		return "csv.gz"
-	default:
-		return "csv.gz"
-	}
-}
-
 func minimalConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
@@ -1094,7 +1076,7 @@ func minimalConfigSubscriber() {
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
 			for _, destination := range source.Destinations {
-				if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
 						dbHandle: dbHandle,
 						destType: destination.DestinationDefinition.Name,
@@ -1126,7 +1108,7 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context) {
-	ch := make(chan utils.DataEvent)
+	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
@@ -1152,14 +1134,14 @@ loop:
 
 }
 
-func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
+func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
 	pkgLogger.Debug("Got config from config-backend", config)
 	sources := config.Data.(backendconfig.ConfigT)
 	enabledDestinations := make(map[string]bool)
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.ContainsString(WarehouseDestinations, destination.DestinationDefinition.Name) {
+			if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if !ok {
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1400,13 +1382,17 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	} else {
 		sourceOrDestColumn = "destination_id"
 	}
-	var lastStagingFileID int64
+	var lastStagingFileIDRes sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(end_staging_file_id) FROM %[1]s WHERE %[1]s.%[3]s='%[2]s'`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
 
-	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
 		return
+	}
+	lastStagingFileID := int64(0)
+	if lastStagingFileIDRes.Valid {
+		lastStagingFileID = lastStagingFileIDRes.Int64
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(*)
@@ -1695,9 +1681,9 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
-		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
@@ -1719,7 +1705,7 @@ func Start(ctx context.Context, app app.Interface) error {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-			g.Go(misc.WithBugsnag(func() error {
+			g.Go(misc.WithBugsnagForWarehouse(func() error {
 				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 				return nil
 			}))
@@ -1732,7 +1718,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
 	}
@@ -1740,14 +1726,14 @@ func Start(ctx context.Context, app app.Interface) error {
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))
@@ -1759,22 +1745,4 @@ func Start(ctx context.Context, app app.Interface) error {
 	})
 
 	return g.Wait()
-}
-
-func getLoadFileType(wh string) string {
-	switch wh {
-	case "BQ":
-		return warehouseutils.LOAD_FILE_TYPE_JSON
-	case "RS":
-		if useParquetLoadFilesRS {
-			return warehouseutils.LOAD_FILE_TYPE_PARQUET
-		}
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
-		return warehouseutils.LOAD_FILE_TYPE_PARQUET
-	case "DELTALAKE":
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	default:
-		return warehouseutils.LOAD_FILE_TYPE_CSV
-	}
 }

@@ -14,15 +14,16 @@ import (
 	"time"
 
 	uuid "github.com/gofrs/uuid"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -375,6 +376,54 @@ func requireSequential(t *testing.T, jobs []*jobsdb.JobT) {
 	for i := 0; i < len(jobs)-1; i++ {
 		require.Equal(t, jobs[i].JobID+1, jobs[i+1].JobID, "Gap detected: jobs[%d].id = %d +1 != jobs[%d].id = %d +1", i, jobs[i].JobID, i+1, jobs[i+1].JobID)
 	}
+}
+
+func TestJobsDB_IncompatiblePayload(t *testing.T) {
+	initJobsDB()
+	stats.Setup()
+
+	dbRetention := time.Minute * 5
+	migrationMode := ""
+
+	triggerAddNewDS := make(chan time.Time, 0)
+	maxDSSize := 10
+	jobDB := jobsdb.HandleT{
+		MaxDSSize: &maxDSSize,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	queryFilters := jobsdb.QueryFiltersT{
+		CustomVal: true,
+	}
+
+	jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+	defer jobDB.TearDown()
+	customVal := "MOCKDS"
+	var sampleTestJob = jobsdb.JobT{
+		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  "workspaceID",
+		EventCount:   1,
+	}
+	err := jobDB.StoreWithRetryEach([]*jobsdb.JobT{&sampleTestJob})
+	for _, val := range err {
+		require.Equal(t, "", val)
+	}
+	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{customVal},
+		JobCount:         1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
+	})
+	require.Equal(t, 1, len(unprocessedList))
+
+	t.Run("validate fetched event", func(t *testing.T) {
+		require.Equal(t, "MOCKDS", unprocessedList[0].CustomVal)
+		require.Equal(t, "workspaceID", unprocessedList[0].WorkspaceId)
+	})
 }
 
 func BenchmarkJobsdb(b *testing.B) {

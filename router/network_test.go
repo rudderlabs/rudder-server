@@ -7,8 +7,7 @@ import (
 	"net/http"
 
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -100,7 +99,7 @@ var _ = Describe("Network", func() {
 
 			network := &NetHandleT{}
 			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = http.DefaultClient
+			network.httpClient = &http.Client{}
 
 			structData := integrations.PostParametersT{
 				Type: "REST",

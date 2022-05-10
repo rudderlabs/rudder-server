@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,18 +114,19 @@ type UploadT struct {
 }
 
 type UploadJobT struct {
-	upload              *UploadT
-	dbHandle            *sql.DB
-	warehouse           warehouseutils.WarehouseT
-	whManager           manager.ManagerI
-	stagingFiles        []*StagingFileT
-	stagingFileIDs      []int64
-	pgNotifier          *pgnotifier.PgNotifierT
-	schemaHandle        *SchemaHandleT
-	schemaLock          sync.Mutex
-	uploadLock          sync.Mutex
-	hasAllTablesSkipped bool
-	tableUploadStatuses []*TableUploadStatusT
+	upload               *UploadT
+	dbHandle             *sql.DB
+	warehouse            warehouseutils.WarehouseT
+	whManager            manager.ManagerI
+	stagingFiles         []*StagingFileT
+	stagingFileIDs       []int64
+	pgNotifier           *pgnotifier.PgNotifierT
+	schemaHandle         *SchemaHandleT
+	schemaLock           sync.Mutex
+	uploadLock           sync.Mutex
+	hasAllTablesSkipped  bool
+	tableUploadStatuses  []*TableUploadStatusT
+	destinationValidator configuration_testing.DestinationValidator
 }
 
 type UploadColumnT struct {
@@ -162,22 +164,22 @@ func init() {
 
 func setMaxParallelLoads() {
 	maxParallelLoads = map[string]int{
-		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
-		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
-		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
-		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
-		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
-		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
-		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
+		warehouseutils.BQ:         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
+		warehouseutils.RS:         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
+		warehouseutils.POSTGRES:   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		warehouseutils.MSSQL:      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
+		warehouseutils.SNOWFLAKE:  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
+		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountThresholds = map[string]int{
-		"AZURE_SYNAPSE": config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
-		"BQ":            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
-		"CLICKHOUSE":    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
-		"MSSQL":         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
-		"POSTGRES":      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
-		"RS":            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
-		"SNOWFLAKE":     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
+		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
 	}
 }
 
@@ -199,7 +201,7 @@ func (job *UploadJobT) identityMappingsTableName() string {
 
 func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
-	rruntime.Go(func() {
+	rruntime.GoForWarehouse(func() {
 		select {
 		case <-ch:
 			// do nothing
@@ -454,7 +456,7 @@ func (job *UploadJobT) run() (err error) {
 			var wg sync.WaitGroup
 			wg.Add(3)
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededUserTableCount int
 				for _, userTable := range userTables {
 					if _, ok := currentJobSucceededTables[userTable]; ok {
@@ -474,7 +476,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				var succeededIdentityTableCount int
 				for _, identityTable := range identityTables {
 					if _, ok := currentJobSucceededTables[identityTable]; ok {
@@ -494,7 +496,7 @@ func (job *UploadJobT) run() (err error) {
 				wg.Done()
 			})
 
-			rruntime.Go(func() {
+			rruntime.GoForWarehouse(func() {
 				specialTables := append(userTables, identityTables...)
 				err = job.exportRegularTables(specialTables)
 				if err != nil {
@@ -879,7 +881,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		tName := tableName
 		loadChan <- struct{}{}
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
 				alteredSchemaInAtleastOneTable = true
@@ -1342,41 +1344,84 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	return err
 }
 
-func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
-	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
+// extractAndUpdateUploadErrorsByState extracts and augment errors in format
+// { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
+// from a particular upload.
+func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
 
-	upload := job.upload
+	var uploadErrors map[string]map[string]interface{}
+	err := json.Unmarshal(message, &uploadErrors)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
+	}
 
-	job.setUploadStatus(UploadStatusOpts{Status: state})
-	var e map[string]map[string]interface{}
-	json.Unmarshal(job.upload.Error, &e)
-	if e == nil {
-		e = make(map[string]map[string]interface{})
+	if uploadErrors == nil {
+		uploadErrors = make(map[string]map[string]interface{})
 	}
-	if _, ok := e[state]; !ok {
-		e[state] = make(map[string]interface{})
+
+	if _, ok := uploadErrors[state]; !ok {
+		uploadErrors[state] = make(map[string]interface{})
 	}
-	errorByState := e[state]
+	errorByState := uploadErrors[state]
+
 	// increment attempts for errored stage
 	if attempt, ok := errorByState["attempt"]; ok {
 		errorByState["attempt"] = int(attempt.(float64)) + 1
 	} else {
 		errorByState["attempt"] = 1
 	}
+
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
 		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
 	} else {
 		errorByState["errors"] = []string{statusError.Error()}
 	}
-	// abort after configured retry attempts
-	if errorByState["attempt"].(int) > minRetryAttempts {
-		firstTiming := job.getUploadFirstAttemptTime()
-		// do not abort upload if the the error list has only skipped errors.
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !job.hasAllTablesSkipped {
-			state = Aborted
-		}
+
+	return uploadErrors, nil
+}
+
+// Aborted makes a check that if the state of the job
+// should be aborted
+func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
+
+	// Defensive check to prevent garbage startTime
+	if startTime.IsZero() {
+		return false
+	}
+
+	// Do not mark aborted as tables skipped.
+	if job.hasAllTablesSkipped {
+		return false
+	}
+	return attempts > minRetryAttempts && timeutil.Now().Sub(startTime) > retryTimeWindow
+}
+
+func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
+	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
+
+	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
+	upload := job.upload
+
+	err := job.setUploadStatus(UploadStatusOpts{Status: state})
+	if err != nil {
+		return "", fmt.Errorf("unable to set upload's job: %d status: %w", job.upload.ID, err)
+	}
+
+	uploadErrors, err := extractAndUpdateUploadErrorsByState(job.upload.Error, state, statusError)
+	if err != nil {
+		return "", fmt.Errorf("unable to handle upload errors in job: %d by state: %s, err: %v",
+			job.upload.ID,
+			state,
+			err)
+	}
+
+	// Reset the state as aborted if max retries
+	// exceeded.
+	uploadErrorAttempts := uploadErrors[state]["attempt"].(int)
+
+	if job.Aborted(uploadErrorAttempts, job.getUploadFirstAttemptTime()) {
+		state = Aborted
 	}
 
 	var metadata map[string]interface{}
@@ -1390,7 +1435,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		metadataJSON = []byte("{}")
 	}
 
-	serializedErr, _ := json.Marshal(&e)
+	serializedErr, _ := json.Marshal(&uploadErrors)
 	// sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
 
 	uploadColumns := []UploadColumnT{
@@ -1402,11 +1447,12 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 
 	txn, err := job.dbHandle.Begin()
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("unable to start transaction: %w", err)
 	}
+
 	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
 	inputCount := job.getTotalRowsInStagingFiles()
@@ -1481,11 +1527,33 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if !job.hasAllTablesSkipped {
 		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
 	}
+
+	// On aborted state, validate credentials to allow
+	// us to differentiate between user caused abort vs platform issue.
 	if state == Aborted {
-		job.counterStat("upload_aborted", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+		// base tag to be sent as stat
+
+		tags := []tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+		valid, err := job.validateDestinationCredentials()
+		if err == nil {
+			tags = append(tags, tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+		}
+
+		job.counterStat("upload_aborted", tags...).Count(1)
 	}
 
 	return state, err
+}
+
+func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
+	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
+
+	if err != nil {
+		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
+		return false, err
+	}
+
+	return validationResult.Success, nil
 }
 
 func (job *UploadJobT) getAttemptNumber() int {
@@ -1662,7 +1730,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
-			if misc.ContainsString(timeWindowDestinations, job.warehouse.Type) {
+			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 
@@ -1688,7 +1756,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		wg.Add(1)
 		batchStartIdx := i
 		batchEndIdx := j
-		rruntime.Go(func() {
+		rruntime.GoForWarehouse(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
 			var loadFiles []loadFileUploadOutputT
@@ -2055,29 +2123,3 @@ func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
 func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 	return job.schemaHandle.updateLocalSchema(schema)
 }
-
-// func (job *UploadJobT) BatchStagingFilesOnTimeWindow(stagingFiles []*StagingFileT) map[string][]StagingFileEntryT {
-// 	var batchedStagingFiles = map[string][]StagingFileEntryT{}
-// 	if job.warehouse.Type != "S3_DATALAKE" {
-// 		var stagingFileEntries = []StagingFileEntryT{}
-// 		for _, stagingFile := range stagingFiles {
-// 			stagingFileEntries = append(stagingFileEntries, StagingFileEntryT{
-// 				ID:       stagingFile.ID,
-// 				Location: stagingFile.Location,
-// 			})
-// 		}
-// 		// return single batch with a zero value timeWindow for all whs except S3_DATALAKE
-// 		batchedStagingFiles[time.Time{}.Format(time.RFC3339)] = stagingFileEntries
-// 		return batchedStagingFiles
-// 	}
-// 	for _, stagingFile := range stagingFiles {
-// 		// td: take prefix from config
-// 		prefixFormat := time.RFC3339
-// 		timeWindow := stagingFile.TimeWindow.Format(prefixFormat)
-// 		batchedStagingFiles[timeWindow] = append(batchedStagingFiles[timeWindow], StagingFileEntryT{
-// 			ID:       stagingFile.ID,
-// 			Location: stagingFile.Location,
-// 		})
-// 	}
-// 	return batchedStagingFiles
-// }

@@ -5,10 +5,19 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -20,17 +29,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"log"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
 )
 
 var (
@@ -128,16 +130,26 @@ const (
 )
 
 var (
-	workspaceID = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.Must(uuid.NewV4()).String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
+	gcsDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GCS",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
-				WorkspaceID:  workspaceID,
-				ID:           SourceIDEnabled,
-				WriteKey:     WriteKeyEnabled,
-				Enabled:      true,
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
+				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID,
+					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			},
+			{
+				WorkspaceID: workspaceID,
+				ID:          SourceIDEnabled,
+				WriteKey:    WriteKeyEnabled,
+				Enabled:     true,
 				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 			},
@@ -155,7 +167,7 @@ func initRouter() {
 	jobsdb.Init3()
 	archiver.Init()
 	router.Init()
-	router.Init2()
+	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
 }
@@ -175,20 +187,20 @@ func TestRouterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
-		channel chan utils.DataEvent, topic backendConfig.Topic) {
+		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
 		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).Do(
-			func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
-				once.Do(func() {
-					close(c)
-				})
-			}).AnyTimes()
+		func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
+			once.Do(func() {
+				close(c)
+			})
+		}).AnyTimes()
 
-	ctx := context.Background()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
 	errDB := jobsdb.NewForReadWrite("proc_error")
@@ -196,15 +208,27 @@ func TestRouterManager(t *testing.T) {
 	defer brtDB.Close()
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
-	r := NewRouterManager(ctx, brtDB, errDB, tDb, mockMTI)
-	r.backendConfig = mockBackendConfig
-	r.reportingI = &reportingNOOP{}
+	rtFactory := &router.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      tDb,
+		ProcErrorDB:   errDB,
+	}
+	brtFactory := &batchrouter.Factory{
+		Reporting:     &reportingNOOP{},
+		Multitenant:   mockMTI,
+		BackendConfig: mockBackendConfig,
+		RouterDB:      brtDB,
+		ProcErrorDB:   errDB,
+	}
+	r := New(rtFactory, brtFactory, mockBackendConfig)
 
 	for i := 0; i < 5; i++ {
 		rtDB.Start()
 		brtDB.Start()
 		errDB.Start()
-		r.StartNew()
+		r.Start()
 		<-c
 		r.Stop()
 		rtDB.Stop()

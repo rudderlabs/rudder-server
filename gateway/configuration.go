@@ -17,8 +17,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(128, &maxDBBatchSize, false, 1, "Gateway.maxDBBatchSize")
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	config.RegisterDurationConfigVariable(time.Duration(15), &userWebRequestBatchTimeout, true, time.Millisecond, []string{"Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &dbBatchWriteTimeout, true, time.Millisecond, []string{"Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS"}...)
+	config.RegisterDurationConfigVariable(15, &userWebRequestBatchTimeout, true, time.Millisecond, []string{"Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS"}...)
+	config.RegisterDurationConfigVariable(5, &dbBatchWriteTimeout, true, time.Millisecond, []string{"Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS"}...)
 	//Multiple workers are used to batch user web requests
 	config.RegisterIntConfigVariable(64, &maxUserWebRequestWorkerProcess, false, 1, "Gateway.maxUserWebRequestWorkerProcess")
 	//Multiple DB writers are used to write data to DB
@@ -34,15 +34,17 @@ func loadConfig() {
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(time.Duration(60), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS"}...)
+	config.RegisterDurationConfigVariable(60, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.gatewayTimePeriod", "Diagnostics.gatewayTimePeriodInS"}...)
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
-	config.RegisterDurationConfigVariable(time.Duration(0), &ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(0, &ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(0, &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(10, &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+	//default values is '0', which means disabled. So, if `maxActiveClients` is not set. We consider it to be disabled.
+	config.RegisterIntConfigVariable(0, &maxConcurrentRequests, false, 1, "Gateway.maxConcurrentRequests")
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

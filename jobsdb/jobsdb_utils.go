@@ -241,7 +241,7 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
-			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
 
@@ -264,33 +264,26 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	return err
 }
 
-func (jd *HandleT) getTimerStat(stat string, tags StatTagsT) stats.RudderStats {
-	customValTag := strings.Join(tags.CustomValFilters, "_")
-	stateFiltersTag := strings.Join(tags.StateFilters, "_")
-
+func (jd *HandleT) getTimerStat(stat string, tags *StatTagsT) stats.RudderStats {
 	timingTags := map[string]string{
 		"tablePrefix": jd.tablePrefix,
 	}
+	if tags != nil {
+		customValTag := strings.Join(tags.CustomValFilters, "_")
+		stateFiltersTag := strings.Join(tags.StateFilters, "_")
 
-	if customValTag != "" {
-		timingTags["customVal"] = customValTag
-	}
+		if customValTag != "" {
+			timingTags["customVal"] = customValTag
+		}
 
-	if stateFiltersTag != "" {
-		timingTags["stateFilters"] = stateFiltersTag
-	}
+		if stateFiltersTag != "" {
+			timingTags["stateFilters"] = stateFiltersTag
+		}
 
-	for _, paramTag := range tags.ParameterFilters {
-		timingTags[paramTag.Name] = paramTag.Value
+		for _, paramTag := range tags.ParameterFilters {
+			timingTags[paramTag.Name] = paramTag.Value
+		}
 	}
 
 	return stats.NewTaggedStat(stat, stats.TimerType, timingTags)
-}
-
-func (jd *HandleT) storeTimerStat(stat string) stats.RudderStats {
-	timingTags := stats.Tags{
-		"tablePrefix": jd.tablePrefix,
-	}
-	timingStat := stats.NewTaggedStat(stat, stats.TimerType, timingTags)
-	return timingStat
 }

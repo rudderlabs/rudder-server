@@ -3,17 +3,21 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"log"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
 type ClickHouseTest struct {
-	Resource    *dockertest.Resource
-	Credentials *clickhouse.CredentialsT
-	DB          *sql.DB
-	EventsMap   EventsCountMap
-	WriteKey    string
+	Resource           *dockertest.Resource
+	Credentials        *clickhouse.CredentialsT
+	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
 }
 
 // SetWHClickHouseDestination setup warehouse clickhouse destination
@@ -41,6 +45,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	chTest := Test.CHTest
 	credentials := chTest.Credentials

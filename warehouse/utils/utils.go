@@ -30,14 +30,17 @@ import (
 )
 
 const (
-	RS            = "RS"
-	BQ            = "BQ"
-	SNOWFLAKE     = "SNOWFLAKE"
-	POSTGRES      = "POSTGRES"
-	CLICKHOUSE    = "CLICKHOUSE"
-	MSSQL         = "MSSQL"
-	AZURE_SYNAPSE = "AZURE_SYNAPSE"
-	DELTALAKE     = "DELTALAKE"
+	RS             = "RS"
+	BQ             = "BQ"
+	SNOWFLAKE      = "SNOWFLAKE"
+	POSTGRES       = "POSTGRES"
+	CLICKHOUSE     = "CLICKHOUSE"
+	MSSQL          = "MSSQL"
+	AZURE_SYNAPSE  = "AZURE_SYNAPSE"
+	DELTALAKE      = "DELTALAKE"
+	S3_DATALAKE    = "S3_DATALAKE"
+	GCS_DATALAKE   = "GCS_DATALAKE"
+	AZURE_DATALAKE = "AZURE_DATALAKE"
 )
 
 const (
@@ -87,12 +90,26 @@ var (
 	AWSCredsExpiryInS         int64
 )
 
+var WHDestNameMap = map[string]string{
+	BQ:             "bigquery",
+	RS:             "redshift",
+	MSSQL:          "mssql",
+	POSTGRES:       "postgres",
+	SNOWFLAKE:      "snowflake",
+	CLICKHOUSE:     "clickhouse",
+	DELTALAKE:      "deltalake",
+	S3_DATALAKE:    "s3_datalake",
+	GCS_DATALAKE:   "gcs_datalake",
+	AZURE_DATALAKE: "azure_datalake",
+	AZURE_SYNAPSE:  "azure_synapse",
+}
+
 var ObjectStorageMap = map[string]string{
-	"RS":             "S3",
-	"S3_DATALAKE":    "S3",
-	"BQ":             "GCS",
-	"GCS_DATALAKE":   "GCS",
-	"AZURE_DATALAKE": "AZURE_BLOB",
+	RS:             "S3",
+	S3_DATALAKE:    "S3",
+	BQ:             "GCS",
+	GCS_DATALAKE:   "GCS",
+	AZURE_DATALAKE: "AZURE_BLOB",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -114,22 +131,29 @@ const (
 	LOAD_FILE_TYPE_CSV     = "csv"
 	LOAD_FILE_TYPE_JSON    = "json"
 	LOAD_FILE_TYPE_PARQUET = "parquet"
+	TestConnectionTimeout  = 15 * time.Second
 )
 
-var pkgLogger logger.LoggerI
+var (
+	pkgLogger              logger.LoggerI
+	useParquetLoadFilesRS  bool
+	TimeWindowDestinations []string
+	WarehouseDestinations  []string
+)
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
-
 }
 
 func loadConfig() {
-	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
+	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
+	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
+	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-
+	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 }
 
 type WarehouseT struct {
@@ -560,7 +584,7 @@ ToProviderCase converts string provided to case generally accepted in the wareho
 eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider string, str string) string {
-	if strings.ToUpper(provider) == "SNOWFLAKE" {
+	if strings.ToUpper(provider) == SNOWFLAKE {
 		str = strings.ToUpper(str)
 	}
 	return str
@@ -600,7 +624,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
 	}
-	if destType == "SNOWFLAKE" {
+	if destType == SNOWFLAKE {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {
 			provider = "AWS"
@@ -681,7 +705,7 @@ func DoubleQuoteAndJoinByComma(strs []string) string {
 	return strings.Join(quotedSlice, ",")
 }
 func GetTempFileExtension(destType string) string {
-	if destType == "BQ" {
+	if destType == BQ {
 		return "json.gz"
 	}
 	return "csv.gz"
@@ -843,4 +867,40 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	}
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
 	return sslDirPath
+}
+
+func GetLoadFileType(wh string) string {
+	switch wh {
+	case BQ:
+		return LOAD_FILE_TYPE_JSON
+	case RS:
+		if useParquetLoadFilesRS {
+			return LOAD_FILE_TYPE_PARQUET
+		}
+		return LOAD_FILE_TYPE_CSV
+	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
+		return LOAD_FILE_TYPE_PARQUET
+	case DELTALAKE:
+		return LOAD_FILE_TYPE_CSV
+	default:
+		return LOAD_FILE_TYPE_CSV
+	}
+}
+
+func GetLoadFileFormat(whType string) string {
+	switch whType {
+	case BQ:
+		return "json.gz"
+	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
+		return "parquet"
+	case RS:
+		if useParquetLoadFilesRS {
+			return "parquet"
+		}
+		return "csv.gz"
+	case DELTALAKE:
+		return "csv.gz"
+	default:
+		return "csv.gz"
+	}
 }

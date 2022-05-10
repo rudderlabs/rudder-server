@@ -157,6 +157,10 @@ type GCSManager struct {
 	Timeout *time.Duration
 }
 
+func (manager *GCSManager) SetTimeout(timeout *time.Duration) {
+	manager.Timeout = timeout
+}
+
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 	var bucketName, prefix, credentials string
 	var endPoint *string

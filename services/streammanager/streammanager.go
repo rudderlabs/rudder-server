@@ -34,10 +34,14 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "EVENTBRIDGE":
-		producer, err := eventbridge.NewProducer(destinationConfig)
+		producer, err := eventbridge.NewProducer(destinationConfig, eventbridge.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "FIREHOSE":
-		producer, err := firehose.NewProducer(destinationConfig)
+		producer, err := firehose.NewProducer(destinationConfig, firehose.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "KAFKA":
 		producer, err := kafka.NewProducer(destinationConfig, kafka.Opts{
@@ -45,19 +49,29 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "KINESIS":
-		producer, err := kinesis.NewProducer(destinationConfig)
+		producer, err := kinesis.NewProducer(destinationConfig, kinesis.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "GOOGLEPUBSUB":
-		producer, err := googlepubsub.NewProducer(destinationConfig)
+		producer, err := googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig)
+		producer, err := googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "PERSONALIZE":
-		producer, err := personalize.NewProducer(destinationConfig)
+		producer, err := personalize.NewProducer(destinationConfig, personalize.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "BQSTREAM":
-		producer, err := bqstream.NewProducer(destinationConfig)
+		producer, err := bqstream.NewProducer(destinationConfig, bqstream.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""

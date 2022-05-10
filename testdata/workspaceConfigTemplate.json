@@ -2256,6 +2256,167 @@
                 "updatedAt": "2021-09-28T02:27:30.373Z"
             },
             "dgSourceTrackingPlanConfig": null
+        },
+        {
+            "config": {
+                "isSampleSource": true,
+                "eventUpload": false,
+                "eventUploadTS": 1646073666353
+            },
+            "liveEventsConfig": {
+                "eventUpload": false,
+                "eventUploadTS": 1646073666353
+            },
+            "id": "24p1HhPk09FW25Kuzvx7GshCLKR",
+            "name": "Rudderstack Sample HTTP Source",
+            "writeKey": "{{.bqEventWriteKey}}",
+            "enabled": true,
+            "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+            "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+            "workspaceId": "{{.workspaceId}}",
+            "deleted": false,
+            "createdAt": "2022-02-08T09:30:27.073Z",
+            "updatedAt": "2022-02-28T18:41:06.362Z",
+            "destinations": [
+                {
+                    "config": {
+                        "project": "{{.rwhBQProject}}",
+                        "location": "{{.rwhBQLocation}}",
+                        "bucketName": "{{.rwhBQBucketName}}",
+                        "credentials": "{{.rwhBQCredentials}}",
+                        "prefix": "",
+                        "namespace": "",
+                        "syncFrequency": "30"
+                    },
+                    "liveEventsConfig": {},
+                    "secretConfig": {},
+                    "id": "26Bgm9FrQDZjvadSwAlpd35atwn",
+                    "name": "bigquery-wh-integration",
+                    "enabled": true,
+                    "workspaceId": "24p1HTlALMzW9ZGDlIP8cOfqfI0",
+                    "deleted": false,
+                    "createdAt": "2022-03-10T08:55:49.791Z",
+                    "updatedAt": "2022-03-10T08:55:49.791Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "project",
+                                    "location",
+                                    "bucketName",
+                                    "credentials",
+                                    "prefix",
+                                    "namespace",
+                                    "syncFrequency",
+                                    "syncStartAt",
+                                    "excludeWindow"
+                                ]
+                            },
+                            "secretKeys": [
+                                "credentials"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "reactnative",
+                                "cloudSource",
+                                "flutter",
+                                "cordova"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema",
+                            "required": [
+                                "project",
+                                "bucketName",
+                                "credentials",
+                                "syncFrequency"
+                            ],
+                            "properties": {
+                                "prefix": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "project": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "location": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "namespace": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "bucketName": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "credentials": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|.*"
+                                },
+                                "syncStartAt": {
+                                    "type": "string"
+                                },
+                                "excludeWindow": {
+                                    "type": "object",
+                                    "required": [
+                                        "excludeWindowStartTime",
+                                        "excludeWindowEndTime"
+                                    ],
+                                    "properties": {
+                                        "excludeWindowEndTime": {
+                                            "type": "string"
+                                        },
+                                        "excludeWindowStartTime": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "syncFrequency": {
+                                    "type": "string",
+                                    "default": "30",
+                                    "pattern": "^(30|60|180|360|720|1440)$"
+                                }
+                            },
+                            "additionalProperties": true
+                        },
+                        "responseRules": null,
+                        "options": null,
+                        "id": "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+                        "name": "BQ",
+                        "displayName": "BigQuery",
+                        "category": "warehouse",
+                        "createdAt": "2019-12-10T08:21:15.841Z",
+                        "updatedAt": "2022-02-08T06:46:30.483Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                }
+            ],
+            "sourceDefinition": {
+                "options": null,
+                "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+                "name": "HTTP",
+                "displayName": "HTTP",
+                "category": "",
+                "createdAt": "2020-06-12T06:35:35.962Z",
+                "updatedAt": "2020-06-12T06:35:35.962Z"
+            },
+            "dgSourceTrackingPlanConfig": null
         }
     ],
     "libraries":

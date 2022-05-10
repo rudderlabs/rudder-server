@@ -3,13 +3,16 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	dc "github.com/ory/dockertest/docker"
-	"github.com/phayes/freeport"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"log"
 	"os"
 	"strconv"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
+	"github.com/phayes/freeport"
+
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
 type ClickHouseClusterResource struct {
@@ -32,11 +35,12 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 }
 
 type ClickHouseClusterTest struct {
-	Network   *dc.Network
-	Zookeeper *dockertest.Resource
-	Resources ClickHouseClusterResources
-	EventsMap EventsCountMap
-	WriteKey  string
+	Network            *dc.Network
+	Zookeeper          *dockertest.Resource
+	Resources          ClickHouseClusterResources
+	EventsMap          EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
 }
 
 // SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
@@ -57,9 +61,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		},
 		Resources: []*ClickHouseClusterResource{
 			{
-				Name:      "clickhouse01",
-				HostName:  "clickhouse01",
-				IPAddress: "172.23.0.11",
+				Name:     "clickhouse01",
+				HostName: "clickhouse01",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -71,9 +74,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse02",
-				HostName:  "clickhouse02",
-				IPAddress: "172.23.0.12",
+				Name:     "clickhouse02",
+				HostName: "clickhouse02",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -85,9 +87,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse03",
-				HostName:  "clickhouse03",
-				IPAddress: "172.23.0.13",
+				Name:     "clickhouse03",
+				HostName: "clickhouse03",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -99,9 +100,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 			{
-				Name:      "clickhouse04",
-				HostName:  "clickhouse04",
-				IPAddress: "172.23.0.14",
+				Name:     "clickhouse04",
+				HostName: "clickhouse04",
 				Credentials: &clickhouse.CredentialsT{
 					Host:          "localhost",
 					User:          "rudder",
@@ -113,6 +113,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 		},
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	chClusterTest := Test.CHClusterTest
 	cleanup = func() {}
@@ -132,15 +133,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var chSetupError error
 	if chClusterTest.Network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-network",
-		IPAM: &dc.IPAMOptions{
-			Config: []dc.IPAMConfig{
-				{
-					Subnet: "172.23.0.0/24",
-				},
-			},
-		},
-	}); err != nil {
+		Name: "clickhouse-network"}); err != nil {
 		chSetupError = err
 		log.Println(fmt.Errorf("could not create clickhouse cluster network: %s", err.Error()))
 	}
@@ -176,10 +169,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	if chClusterTest.Network != nil {
 		if chClusterTest.Zookeeper != nil {
 			if err = pool.Client.ConnectNetwork(chClusterTest.Network.ID, dc.NetworkConnectionOptions{
-				Container: chClusterTest.Zookeeper.Container.Name,
-				EndpointConfig: &dc.EndpointConfig{
-					IPAddress: "172.23.0.10",
-				},
+				Container:      chClusterTest.Zookeeper.Container.Name,
+				EndpointConfig: &dc.EndpointConfig{},
 			}); err != nil {
 				chSetupError = err
 				log.Println(fmt.Errorf("could not configure clickhouse clutser zookeeper network: %s", err.Error()))

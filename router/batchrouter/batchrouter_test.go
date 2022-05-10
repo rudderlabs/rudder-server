@@ -6,7 +6,7 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -20,9 +20,9 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -95,12 +95,12 @@ func (c *testContext) Setup() {
 
 	// During Setup, router subscribes to backend config
 	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
-			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+			go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 		})
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
-	mockCall.Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) { tFunc() }).
+	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
@@ -139,7 +139,6 @@ var _ = Describe("BatchRouter", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
-		BatchRoutersManagerSetup()
 	})
 
 	AfterEach(func() {

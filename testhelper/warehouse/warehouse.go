@@ -1,27 +1,37 @@
 package warehouse_test
 
 import (
-	"database/sql"
+	"context"
+	"math/rand"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"math/rand"
 )
 
 type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
-	DB             *sql.DB
-	EventsCountMap EventsCountMap
-	WriteKey       string
-	UserId         string
-	Schema         string
+	Client             *client.Client
+	EventsCountMap     EventsCountMap
+	WriteKey           string
+	UserId             string
+	Schema             string
+	BQContext          context.Context
+	Tables             []string
+	PrimaryKeys        []string
+	MessageId          string
+	TableTestQueryFreq time.Duration
 }
 
 type WareHouseTest struct {
 	PGTest                     *PostgresTest
+	BQTest                     *BiqQueryTest
 	CHTest                     *ClickHouseTest
 	CHClusterTest              *ClickHouseClusterTest
 	MSSQLTest                  *MSSQLTest
@@ -98,4 +108,5 @@ func InitWHConfig() {
 	postgres.Init()
 	clickhouse.Init()
 	mssql.Init()
+	bq.Init()
 }

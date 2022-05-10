@@ -4,33 +4,28 @@ package backendconfig
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/rudderlabs/rudder-server/admin"
-
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/stats"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/types"
-
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
 	backendConfig                         BackendConfig
-	isMultiWorkspace                      bool
-	multiWorkspaceSecret                  string
-	multitenantWorkspaceSecret            string
-	configBackendURL, workspaceToken      string
+	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
 	configJSONPath                        string
@@ -50,8 +45,6 @@ var (
 	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
 )
-
-var Eb utils.PublishSubscriber = new(utils.EventBus)
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
 type Topic string
@@ -207,16 +200,19 @@ type TrackingPlanT struct {
 
 type BackendConfig interface {
 	SetUp()
+	AccessToken() string
 	Get(string) (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
-	Subscribe(channel chan utils.DataEvent, topic Topic)
-	StopPolling()
-	StartPolling(workspaces string)
+	Subscribe(channel chan pubsub.DataEvent, topic Topic)
+	Stop()
+	StartWithIDs(workspaces string)
+	IsConfigured() bool
 }
 type CommonBackendConfig struct {
+	eb               pubsub.PublishSubscriber
 	configEnvHandler types.ConfigEnvI
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -224,17 +220,11 @@ type CommonBackendConfig struct {
 }
 
 func loadConfig() {
-	// Rudder supporting multiple workspaces. false by default
-	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
-	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
-	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	workspaceToken = config.GetWorkspaceToken()
 
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
+	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 
-	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
+	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
@@ -286,7 +276,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func configUpdate(statConfigBackendError stats.RudderStats, workspaces string) {
+func configUpdate(eb pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
 
 	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
@@ -310,15 +300,15 @@ func configUpdate(statConfigBackendError stats.RudderStats, workspaces string) {
 		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
-		Eb.Publish(string(TopicBackendConfig), sourceJSON)
-		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+		eb.Publish(string(TopicBackendConfig), sourceJSON)
+		eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
 }
 
-func pollConfigUpdate(ctx context.Context, workspaces string) {
+func pollConfigUpdate(ctx context.Context, eb pubsub.PublishSubscriber, workspaces string) {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		configUpdate(statConfigBackendError, workspaces)
+		configUpdate(eb, statConfigBackendError, workspaces)
 
 		select {
 		case <-ctx.Done():
@@ -347,30 +337,21 @@ func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func Subscribe(channel chan utils.DataEvent, topic Topic) {
+func Subscribe(channel chan pubsub.DataEvent, topic Topic) {
 	backendConfig.Subscribe(channel, topic)
 }
 
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
-Channel will receive a new utils.DataEvent each time the backend configuration is updated.
+Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
 Data of the DataEvent should be a backendconfig.ConfigT struct.
 Available topics are:
 - TopicBackendConfig: Will receive complete backend configuration
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receeive all regulations
 */
-func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Topic) {
-	Eb.Subscribe(string(topic), channel)
-	curSourceJSONLock.RLock()
-
-	if topic == TopicProcessConfig {
-		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
-	} else if topic == TopicBackendConfig {
-		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
-	}
-	curSourceJSONLock.RUnlock()
+func (bc *CommonBackendConfig) Subscribe(channel chan pubsub.DataEvent, topic Topic) {
+	bc.eb.Subscribe(string(topic), channel)
 }
 
 /*
@@ -402,37 +383,68 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	return nil
 }
 
-// Setup backend config
-func Setup(configEnvHandler types.ConfigEnvI) {
-	if isMultiWorkspace && misc.IsMultiTenant() {
-		backendConfig = new(MultiTenantWorkspaceConfig)
-		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
-	} else if isMultiWorkspace {
-		backendConfig = new(MultiWorkspaceConfig)
-	} else {
-		backendConfig = new(WorkspaceConfig)
-		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
+func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+	var backendConfig BackendConfig
+
+	switch deploymentType {
+	case deployment.DedicatedType:
+		backendConfig = &SingleWorkspaceConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	case deployment.HostedType:
+		backendConfig = &HostedWorkspacesConfig{}
+	case deployment.MultiTenantType:
+		backendConfig = &MultiTenantWorkspacesConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	// Fallback to dedicated
+	default:
+		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
 	}
 
 	backendConfig.SetUp()
+	if !backendConfig.IsConfigured() {
+		return nil, fmt.Errorf("backend config token not available")
+	}
+
+	return backendConfig, nil
+}
+
+// Setup backend config
+func Setup(configEnvHandler types.ConfigEnvI) (err error) {
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("deployment type from env: %w", err)
+	}
+
+	backendConfig, err = newForDeployment(deploymentType, configEnvHandler)
+	if err != nil {
+		return err
+	}
 
 	DefaultBackendConfig = backendConfig
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+	return nil
 }
 
-func (bc *CommonBackendConfig) StartPolling(workspaces string) {
+func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	bc.ctx = ctx
 	bc.cancel = cancel
+	bc.eb = pubsub.NewPublishSubscriber(ctx)
 	bc.blockChan = make(chan struct{})
 	rruntime.Go(func() {
-		pollConfigUpdate(ctx, workspaces)
+		pollConfigUpdate(ctx, bc.eb, workspaces)
 		close(bc.blockChan)
 	})
 }
 
-func (bc *CommonBackendConfig) StopPolling() {
+func (bc *CommonBackendConfig) Stop() {
 	bc.cancel()
 	<-bc.blockChan
 	initializedLock.Lock()
@@ -442,17 +454,4 @@ func (bc *CommonBackendConfig) StopPolling() {
 
 func GetConfigBackendURL() string {
 	return configBackendURL
-}
-
-// Gets the workspace token data for a single workspace or multi workspace case
-func GetWorkspaceToken() (workspaceToken string) {
-	workspaceToken = config.GetWorkspaceToken()
-	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if misc.IsMultiTenant() && isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-	} else if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	}
-
-	return workspaceToken
 }
