@@ -66,6 +66,11 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	var timeout time.Duration
 
 	switch settings.Provider {
+	case "BLACK_HOLE":
+		pkgLogger.Infof("LoadTest: setting up BLACK_HOLE file manager for uploads")
+		return &BlackHoleFileManager{
+			Config: GetBlackHoleConfig(settings.Config),
+		}, nil
 	case "S3":
 		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.S3.timeout", "BatchRouter.timeout"}...)
 		return &S3Manager{
@@ -105,6 +110,11 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	providerConfig := make(map[string]interface{})
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
+
+	case "BlackHole":
+		providerConfig["lowerBound"] = config.GetEnvAsInt("DELAY_LOWER_BOUND", 100)
+		providerConfig["upperBound"] = config.GetEnvAsInt("DELAY_UPPER_BOUND", 1000)
+
 	case "S3":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
