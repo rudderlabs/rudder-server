@@ -524,7 +524,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int) time.Time {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) time.Time {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -532,7 +532,6 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	var stagingFilesInUpload []*StagingFileT
 	var counter int
 	uploadTriggered := isUploadTriggered(warehouse)
-	uploadStartAfter := getUploadStartAfterTime()
 
 	initUpload := func() {
 		wh.initUpload(warehouse, stagingFilesInUpload, uploadTriggered, priority, uploadStartAfter)
@@ -625,7 +624,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	uploadStartAfter := wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority)
+	uploadStartAfter := getUploadStartAfterTime()
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, getUploadStartAfterTime())
 	setLastProcessedMarker(warehouse, uploadStartAfter)
 	return nil
 }
@@ -969,19 +969,20 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				continue
 			}
 
-			sqlStatement = fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %[1]s WHERE source_id='%[2]s' AND destination_id='%[3]s' AND (status='%[4]s' OR status='%[5]s' OR status LIKE '%[6]s') AND updated_at > '%[7]s' );`,
+			sqlStatement = fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %s WHERE source_id = $1 AND destination_id = $2 AND ( status = $3 OR status = $4 OR status LIKE $5 ) AND updated_at > $6 );`,
 				warehouseutils.WarehouseUploadsTable,
+			)
+			sqlStatementArgs := []interface{}{
 				source.ID,
 				destination.ID,
 				ExportedData,
 				Aborted,
 				"%_failed",
 				createdAt.Time.Format(misc.RFC3339Milli),
-			)
-
+			}
 			var exists bool
 			var uploaded int
-			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
+			err = wh.dbHandle.QueryRow(sqlStatement, sqlStatementArgs...).Scan(&exists)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}

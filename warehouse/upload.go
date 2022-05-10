@@ -129,7 +129,6 @@ type UploadJobT struct {
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
 	destinationValidator configuration_testing.DestinationValidator
-	loadFilesMap         map[tableNameT]bool
 }
 
 type UploadColumnT struct {
@@ -456,7 +455,9 @@ func (job *UploadJobT) run() (err error) {
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
 
-			if err = job.populateLoadFilesTableMap(); err != nil {
+			loadFilesTableMap, err := job.populateLoadFilesTableMap()
+			if err != nil {
+				pkgLogger.Errorf("Unable to populate load files table map with error: %w", err)
 				break
 			}
 
@@ -474,7 +475,7 @@ func (job *UploadJobT) run() (err error) {
 					wg.Done()
 					return
 				}
-				err = job.exportUserTables()
+				err = job.exportUserTables(loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -505,7 +506,7 @@ func (job *UploadJobT) run() (err error) {
 
 			rruntime.GoForWarehouse(func() {
 				specialTables := append(userTables, identityTables...)
-				err = job.exportRegularTables(specialTables)
+				err = job.exportRegularTables(specialTables, loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -584,7 +585,7 @@ func (job *UploadJobT) run() (err error) {
 	return nil
 }
 
-func (job *UploadJobT) exportUserTables() (err error) {
+func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (err error) {
 	uploadSchema := job.upload.UploadSchema
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
@@ -592,7 +593,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		loadTimeStat.Start()
 		defer loadTimeStat.End()
 		var loadErrors []error
-		loadErrors, err = job.loadUserTables()
+		loadErrors, err = job.loadUserTables(loadFilesTableMap)
 		if err != nil {
 			return
 		}
@@ -631,14 +632,14 @@ func (job *UploadJobT) exportIdentities() (err error) {
 	return
 }
 
-func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
+func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTableMap map[tableNameT]bool) (err error) {
 	//[]string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	// Export all other tables
 	loadTimeStat := job.timerStat("other_tables_load_time")
 	loadTimeStat.Start()
 	defer loadTimeStat.End()
 
-	loadErrors := job.loadAllTablesExcept(specialTables)
+	loadErrors := job.loadAllTablesExcept(specialTables, loadFilesTableMap)
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
@@ -841,7 +842,7 @@ func (tse *TableSkipError) Error() string {
 	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d with error: %s", tse.tableName, tse.previousJobID, tse.previousJobError)
 }
 
-func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
+func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFilesTableMap map[tableNameT]bool) []error {
 	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
 	var ok bool
@@ -872,7 +873,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			wg.Done()
 			continue
 		}
-		hasLoadFiles := job.loadFilesMap[tableNameT(tableName)]
+		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
@@ -1003,7 +1004,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	return
 }
 
-func (job *UploadJobT) loadUserTables() ([]error, error) {
+func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
 	var hasLoadFiles bool
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 
@@ -1019,7 +1020,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		hasLoadFiles = job.loadFilesMap[tableNameT(tName)]
+		hasLoadFiles = loadFilesTableMap[tableNameT(tName)]
 		if hasLoadFiles {
 			// There is at least one table to load
 			break
@@ -1582,20 +1583,22 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
-	job.loadFilesMap = make(map[tableNameT]bool)
+func (job *UploadJobT) populateLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
+	loadFilesMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT distinct %[1]s.table_name FROM %[1]s WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.id >= %[4]v AND %[1]s.id <= %[5]v );`,
+	sqlStatement := fmt.Sprintf(`SELECT distinct table_name FROM %S WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 );`,
 		warehouseutils.WarehouseLoadFilesTable,
+	)
+	sqlStatementArgs := []interface{}{
 		sourceID,
 		destID,
 		job.upload.StartLoadFileID,
 		job.upload.EndLoadFileID,
-	)
-	rows, err := dbHandle.Query(sqlStatement)
+	}
+	rows, err := dbHandle.Query(sqlStatement, sqlStatementArgs...)
 	if err == sql.ErrNoRows {
 		err = nil
 		return
@@ -1613,7 +1616,7 @@ func (job *UploadJobT) populateLoadFilesTableMap() (err error) {
 			pkgLogger.Errorf("[WH] Error occurred while processing load files table map with error: %s", err.Error())
 			return
 		}
-		job.loadFilesMap[tableNameT(tableName)] = true
+		loadFilesMap[tableNameT(tableName)] = true
 	}
 	return
 }
