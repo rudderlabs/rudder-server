@@ -712,9 +712,7 @@ func TestPostgres(t *testing.T) {
 // Verify Event in Redis
 func TestRedis(t *testing.T) {
 	conn, err := redigo.Dial("tcp", RedisContainer.RedisAddress)
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 	require.Eventually(t, func() bool {
 		// Similarly, get the trait1 and convert it to a string.
@@ -895,8 +893,8 @@ func TestEventModelsJsonSchemas(t *testing.T) {
 	require.NotEqual(t, resBody, "[]")
 }
 
-// Verify beacon  EndPoint
-func TestBeaconBatch(t *testing.T) {
+// Verify beacon EndPoint
+func TestBeaconBatch(_ *testing.T) {
 	payload := strings.NewReader(`{
 		"batch":[
 			{
