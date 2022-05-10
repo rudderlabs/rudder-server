@@ -457,6 +457,7 @@ func (job *UploadJobT) run() (err error) {
 
 			loadFilesTableMap, err := job.getLoadFilesTableMap()
 			if err != nil {
+				err = fmt.Errorf("unable to get load files table map: %w", err)
 				break
 			}
 
@@ -1603,7 +1604,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 		return
 	}
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("error occurred while getting load files table map with error: %w", err)
+		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 		return
 	}
 	defer rows.Close()
@@ -1612,7 +1613,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 		var tableName string
 		err = rows.Scan(&tableName)
 		if err != nil {
-			err = fmt.Errorf("error occurred while processing load files table map with error: %w", err)
+			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 			return
 		}
 		loadFilesMap[tableNameT(tableName)] = true
