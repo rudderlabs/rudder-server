@@ -374,6 +374,7 @@ func TestProduce(t *testing.T) {
 func TestSendBatchedMessage(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
 		sc, res, err := sendBatchedMessage(
+			context.Background(),
 			json.RawMessage("{{{"),
 			nil,
 			"some-topic",
@@ -386,6 +387,7 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("invalid data", func(t *testing.T) {
 		sc, res, err := sendBatchedMessage(
+			context.Background(),
 			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
 			nil,
 			"some-topic",
@@ -399,6 +401,7 @@ func TestSendBatchedMessage(t *testing.T) {
 	t.Run("publisher error", func(t *testing.T) {
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		sc, res, err := sendBatchedMessage(
+			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
 			"some-topic",
@@ -417,6 +420,7 @@ func TestSendBatchedMessage(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		p := &pMockErr{error: nil}
 		sc, res, err := sendBatchedMessage(
+			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
 			"some-topic",
@@ -435,14 +439,14 @@ func TestSendBatchedMessage(t *testing.T) {
 
 func TestSendMessage(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
-		sc, res, err := sendMessage(json.RawMessage("{{{"), nil, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
 	})
 
 	t.Run("no message", func(t *testing.T) {
-		sc, res, err := sendMessage(json.RawMessage("{}"), nil, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -450,7 +454,7 @@ func TestSendMessage(t *testing.T) {
 
 	t.Run("no userId", func(t *testing.T) {
 		p := &pMockErr{error: nil}
-		sc, res, err := sendMessage(json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: some-topic", res)
 		require.Equal(t, "Message delivered to topic: some-topic", err)
@@ -465,6 +469,7 @@ func TestSendMessage(t *testing.T) {
 	t.Run("publisher error", func(t *testing.T) {
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		sc, res, err := sendMessage(
+			context.Background(),
 			json.RawMessage(`{"message":"ciao","userId":"123"}`),
 			p,
 			"some-topic",

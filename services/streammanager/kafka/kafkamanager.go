@@ -106,10 +106,9 @@ type logger interface {
 
 var (
 	clientCert, clientKey                []byte
-	kafkaDialTimeout                     time.Duration
-	kafkaWriteTimeout                    time.Duration
-	kafkaProducerRetryInterval           time.Duration
-	kafkaProducerMaxRetries              int
+	kafkaDialTimeout                     = 10 * time.Second
+	kafkaWriteTimeout                    = 2 * time.Second
+	kafkaProducerMaxRetries              = 10
 	kafkaBatchingEnabled                 bool
 	allowReqsWithoutUserIDAndAnonymousID bool
 
@@ -138,10 +137,6 @@ func Init() {
 	config.RegisterDurationConfigVariable(
 		2, &kafkaWriteTimeout, false, time.Second,
 		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
-	)
-	config.RegisterDurationConfigVariable(
-		1, &kafkaProducerRetryInterval, false, time.Second,
-		[]string{"Router.kafkaProducerRetryInterval", "Router.kafkaProducerRetryIntervalInSec"}...,
 	)
 	config.RegisterIntConfigVariable(10, &kafkaProducerMaxRetries, false, 1, "Router.kafkaProducerMaxRetries")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
@@ -217,9 +212,9 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		}
 
 		return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-			WriteTimeout:  kafkaWriteTimeout,
-			RetryInterval: kafkaProducerRetryInterval,
-			MaxRetries:    kafkaProducerMaxRetries,
+			DefaultOpTimeout: o.Timeout,
+			WriteTimeout:     kafkaWriteTimeout,
+			MaxRetries:       kafkaProducerMaxRetries,
 		})
 	}
 
@@ -264,9 +259,9 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout:  kafkaWriteTimeout,
-		RetryInterval: kafkaProducerRetryInterval,
-		MaxRetries:    kafkaProducerMaxRetries,
+		DefaultOpTimeout: o.Timeout,
+		WriteTimeout:     kafkaWriteTimeout,
+		MaxRetries:       kafkaProducerMaxRetries,
 	})
 }
 
@@ -309,9 +304,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout:  kafkaWriteTimeout,
-		RetryInterval: kafkaProducerRetryInterval,
-		MaxRetries:    kafkaProducerMaxRetries,
+		DefaultOpTimeout: o.Timeout,
+		WriteTimeout:     kafkaWriteTimeout,
+		MaxRetries:       kafkaProducerMaxRetries,
 	})
 }
 
@@ -388,14 +383,15 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
+	ctx := context.TODO()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(jsonData, p, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
 
-	return sendMessage(jsonData, p, conf.Topic)
+	return sendMessage(ctx, jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -408,7 +404,7 @@ func sendBatchedMessage(jsonData json.RawMessage, p producer, topic string) (int
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
 
-	err = p.Publish(context.TODO(), batchOfMessages...)
+	err = p.Publish(ctx, batchOfMessages...)
 	if err != nil {
 		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 	}
@@ -417,7 +413,7 @@ func sendBatchedMessage(jsonData json.RawMessage, p producer, topic string) (int
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -433,7 +429,7 @@ func sendMessage(jsonData json.RawMessage, p producer, topic string) (int, strin
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value, timestamp)
-	if err = p.Publish(context.TODO(), message); err != nil {
+	if err = p.Publish(ctx, message); err != nil {
 		return makeErrorResponse(err)
 	}
 

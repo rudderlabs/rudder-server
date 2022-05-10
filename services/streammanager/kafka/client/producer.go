@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -13,11 +12,11 @@ import (
 type ProducerConfig struct {
 	ClientID string
 	WriteTimeout,
-	ReadTimeout time.Duration
-	RetryInterval time.Duration
-	MaxRetries    int
-	Logger        Logger
-	ErrorLogger   Logger
+	ReadTimeout,
+	DefaultOpTimeout time.Duration
+	MaxRetries  int
+	Logger      Logger
+	ErrorLogger Logger
 }
 
 func (c *ProducerConfig) defaults() {
@@ -26,9 +25,6 @@ func (c *ProducerConfig) defaults() {
 	}
 	if c.ReadTimeout < 1 {
 		c.ReadTimeout = 10 * time.Second
-	}
-	if c.RetryInterval < 1 {
-		c.RetryInterval = time.Second
 	}
 	if c.MaxRetries < 1 {
 		c.MaxRetries = 10
@@ -79,6 +75,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
+			MaxAttempts:            producerConf.MaxRetries,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
@@ -132,19 +129,10 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 		}
 	}
 
-	var err error
-	for i := 0; i < p.config.MaxRetries; i++ {
-		err = p.writer.WriteMessages(ctx, messages...)
-		if errors.Is(err, kafka.LeaderNotAvailable) {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(p.config.RetryInterval):
-				continue
-			}
-		}
-		return err
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, p.config.DefaultOpTimeout)
+		defer cancel()
 	}
-
-	return fmt.Errorf("could not publish after %d retries: %w", p.config.MaxRetries, err)
+	return p.writer.WriteMessages(ctx, messages...)
 }
