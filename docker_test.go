@@ -169,7 +169,7 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	return f.Name()
 }
 
-func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
+func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
 	probe := time.NewTicker(interval)
 	timeout := time.After(atMost)
 	for {
@@ -177,7 +177,8 @@ func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.
 		case <-ctx.Done():
 			return
 		case <-timeout:
-			log.Panicf("application was not ready after %s\n", atMost)
+			log.Panicf("application was not ready after %s, for the end point: %s, caller: %s\n", atMost, endpoint,
+				caller)
 		case <-probe.C:
 			resp, err := http.Get(endpoint)
 			if err != nil {
@@ -359,6 +360,7 @@ func run(m *testing.M) (int, error) {
 		fmt.Sprintf("%s/health", TransformerContainer.TransformURL),
 		time.Minute,
 		time.Second,
+		"transformer",
 	)
 
 	MINIOContainer, err = destination.SetupMINIO(pool, cleanup)
@@ -469,6 +471,7 @@ func run(m *testing.M) (int, error) {
 		serviceHealthEndpoint,
 		time.Minute,
 		time.Second,
+		"serviceHealthEndpoint",
 	)
 	code := m.Run()
 	blockOnHold()

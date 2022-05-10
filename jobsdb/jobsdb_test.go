@@ -4,8 +4,7 @@ import (
 	"time"
 
 	uuid "github.com/gofrs/uuid"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -255,12 +254,6 @@ var sampleTestJob = JobT{
 type tContext struct {
 }
 
-func (c *tContext) Setup() {
-}
-
-func (c *tContext) Finish() {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -273,18 +266,12 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *tContext
-
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
 	})
 
 	AfterEach(func() {
-		c.Finish()
 	})
 
 	Context("getDSList", func() {
