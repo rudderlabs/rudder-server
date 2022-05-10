@@ -214,7 +214,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		}
 
 		return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-			WriteTimeout:  o.Timeout,
+			WriteTimeout:  kafkaWriteTimeout,
 			RetryInterval: kafkaProducerRetryInterval,
 			MaxRetries:    kafkaProducerMaxRetries,
 		})
@@ -258,7 +258,7 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout:  o.Timeout,
+		WriteTimeout:  kafkaWriteTimeout,
 		RetryInterval: kafkaProducerRetryInterval,
 		MaxRetries:    kafkaProducerMaxRetries,
 	})
@@ -300,7 +300,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	return c.NewProducer(destConfig.Topic, client.ProducerConfig{
-		WriteTimeout:  o.Timeout,
+		WriteTimeout:  kafkaWriteTimeout,
 		RetryInterval: kafkaProducerRetryInterval,
 		MaxRetries:    kafkaProducerMaxRetries,
 	})
