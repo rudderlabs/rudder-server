@@ -209,7 +209,10 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		if err != nil {
 			continue
 		}
-		if err = c.Ping(context.TODO()); err != nil {
+		ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+		err = c.Ping(ctx)
+		cancel()
+		if err != nil {
 			continue
 		}
 
@@ -253,7 +256,10 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	if err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot create client: %w", err)
 	}
-	if err = c.Ping(context.TODO()); err != nil {
+
+	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	defer cancel()
+	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
 
@@ -295,7 +301,10 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	if err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot create client: %w", err)
 	}
-	if err = c.Ping(context.TODO()); err != nil {
+
+	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	defer cancel()
+	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
