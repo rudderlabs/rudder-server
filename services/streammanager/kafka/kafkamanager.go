@@ -173,7 +173,9 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*client.Producer, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	clientConf := client.Config{}
+	clientConf := client.Config{
+		DialTimeout: kafkaDialTimeout,
+	}
 	if destConfig.SslEnabled {
 		if destConfig.CACertificate != "" {
 			clientConf.TLS = &client.TLS{
@@ -244,7 +246,9 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	c, err := client.NewAzureEventHubs(
-		destConfig.BootstrapServer, destConfig.EventHubsConnectionString, client.Config{},
+		destConfig.BootstrapServer, destConfig.EventHubsConnectionString, client.Config{
+			DialTimeout: kafkaDialTimeout,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot create client: %w", err)
@@ -284,7 +288,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*clien
 	}
 
 	c, err := client.NewConfluentCloud(
-		destConfig.BootstrapServer, destConfig.APIKey, destConfig.APISecret, client.Config{},
+		destConfig.BootstrapServer, destConfig.APIKey, destConfig.APISecret, client.Config{
+			DialTimeout: kafkaDialTimeout,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot create client: %w", err)
