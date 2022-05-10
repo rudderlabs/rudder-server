@@ -288,7 +288,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
@@ -301,7 +301,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 		})
@@ -311,7 +311,7 @@ var _ = Describe("Processor", func() {
 		var clearDB = false
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
@@ -881,7 +881,7 @@ var _ = Describe("Processor", func() {
 				Expect(message.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
 			}
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1015,7 +1015,7 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT
 
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1080,7 +1080,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle)
 
@@ -1106,7 +1106,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(gatewayCustomVal).Times(1)
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle)
 			defer processor.Shutdown()

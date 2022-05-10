@@ -102,19 +102,15 @@ func (mr *MockJobsDBMockRecorder) CommitTransaction(arg0 interface{}) *gomock.Ca
 }
 
 // DeleteExecuting mocks base method.
-func (m *MockJobsDB) DeleteExecuting(arg0 ...string) {
+func (m *MockJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{}
-	for _, a := range arg0 {
-		varargs = append(varargs, a)
-	}
-	m.ctrl.Call(m, "DeleteExecuting", varargs...)
+	m.ctrl.Call(m, "DeleteExecuting")
 }
 
 // DeleteExecuting indicates an expected call of DeleteExecuting.
-func (mr *MockJobsDBMockRecorder) DeleteExecuting(arg0 ...interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting), arg0...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting))
 }
 
 // GetExecuting mocks base method.

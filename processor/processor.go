@@ -2446,7 +2446,7 @@ func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(GWCustomVal)
+	proc.gatewayDB.DeleteExecuting()
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

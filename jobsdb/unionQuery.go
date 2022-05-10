@@ -26,7 +26,7 @@ type MultiTenantJobsDB interface {
 	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
-	DeleteExecuting(customValFilters ...string)
+	DeleteExecuting()
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64

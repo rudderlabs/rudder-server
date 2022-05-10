@@ -144,7 +144,7 @@ type JobsDB interface {
 
 	Status() interface{}
 	GetIdentifier() string
-	DeleteExecuting(customValFilters ...string)
+	DeleteExecuting()
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalDeleteEntry(opID int64)
@@ -4018,10 +4018,9 @@ func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting(customValFilters ...string) {
+func (jd *HandleT) DeleteExecuting() {
 	conditions := QueryConditions{
-		StateFilters:     []string{Executing.State},
-		CustomValFilters: customValFilters,
+		StateFilters: []string{Executing.State},
 	}
 	tags := StatTagsT{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
 	command := func() interface{} {
