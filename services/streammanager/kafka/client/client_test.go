@@ -43,6 +43,7 @@ func TestClient_Ping(t *testing.T) {
 }
 
 func TestProducerBatchConsumerGroup(t *testing.T) {
+	t.Skip("Skipping test for now on CI")
 	t.Parallel()
 
 	// Prepare cluster - Zookeeper + 3 Kafka brokers
@@ -185,6 +186,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 }
 
 func TestConsumer_Partition(t *testing.T) {
+	t.Skip("Skipping test for now on CI")
 	t.Parallel()
 
 	// Prepare cluster - Zookeeper and one Kafka broker
@@ -324,6 +326,7 @@ func TestConsumer_Partition(t *testing.T) {
 }
 
 func TestWithSASL(t *testing.T) {
+	t.Skip("Skipping test for now on CI")
 	t.Parallel()
 
 	// Prepare cluster - Zookeeper and one Kafka broker
@@ -418,6 +421,7 @@ func TestWithSASL(t *testing.T) {
 }
 
 func TestWithSASLBadCredentials(t *testing.T) {
+	t.Skip("Skipping test for now on CI")
 	t.Parallel()
 
 	// Prepare cluster - Zookeeper and one Kafka broker

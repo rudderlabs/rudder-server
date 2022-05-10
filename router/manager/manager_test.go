@@ -191,6 +191,7 @@ func TestRouterManager(t *testing.T) {
 		// on Subscribe, emulate a backend configuration event
 		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 	}).AnyTimes()
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 		gomock.Any()).Do(

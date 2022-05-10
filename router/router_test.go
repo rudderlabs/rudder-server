@@ -149,6 +149,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 		})
 	})
@@ -167,6 +168,7 @@ var _ = Describe("Router", func() {
 				netHandle:    mockNetHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -259,6 +261,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
@@ -351,6 +354,7 @@ var _ = Describe("Router", func() {
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
@@ -433,6 +437,7 @@ var _ = Describe("Router", func() {
 				netHandle:    mockNetHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			router.transformer = mockTransformer
@@ -496,6 +501,7 @@ var _ = Describe("Router", func() {
 			workspaceCountOut := workspaceCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut, map[string]float64{}).Times(1)
 
@@ -578,6 +584,7 @@ var _ = Describe("Router", func() {
 				netHandle:    mockNetHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
@@ -753,6 +760,7 @@ var _ = Describe("Router", func() {
 				netHandle:    mockNetHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
@@ -971,6 +979,7 @@ var _ = Describe("Router", func() {
 				netHandle:    mockNetHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
