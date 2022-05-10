@@ -6,6 +6,7 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,21 +54,26 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	}
 
 	workspaceCountMap := make(map[string]int)
-	workspaceCountMap[testWID] = 10
+	workspaceCountMap[testWID] = 1
+	payloadLimit := 100 * bytesize.MB
 	unprocessedListEmpty := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        1,
 		ParameterFilters: []ParameterFilterT{},
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 
 	require.Equal(t, 0, len(unprocessedListEmpty))
 	err := jobDB.Store([]*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
 	require.NoError(t, err)
 
+	payloadLimit = 100 * bytesize.MB
+	workspaceCountMap[testWID] = 3
 	unprocessedList := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 	require.Equal(t, 3, len(unprocessedList))
 
@@ -97,10 +103,13 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	err = jobDB.UpdateJobStatus([]*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
 	require.NoError(t, err)
 
+	payloadLimit = 100 * bytesize.MB
+	workspaceCountMap[testWID] = 3
 	jobs := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
+		PayloadSizeLimit: payloadLimit,
 	}, 10)
 	require.Equal(t, 3, len(jobs))
 }

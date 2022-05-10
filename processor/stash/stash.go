@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -27,6 +28,7 @@ var (
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
 	pkgLogger               logger.LoggerI
+	payloadLimit            int64
 )
 
 func Init() {
@@ -40,6 +42,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
+	config.RegisterInt64ConfigVariable(100*bytesize.MB, &payloadLimit, true, 1, "Processor.payloadLimit")
 }
 
 type StoreErrorOutputT struct {
@@ -71,7 +74,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	st.errorDB.DeleteExecuting()
 }
 
 func (st *HandleT) Start(ctx context.Context) {
@@ -234,9 +237,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
+			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
 			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
+			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
 
 			st.statErrDBR.End()
 
