@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -136,7 +137,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
@@ -150,17 +151,17 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "0_1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "2",
@@ -181,7 +182,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -196,12 +197,12 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -281,7 +282,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
 		})
 
 		AfterEach(func() {

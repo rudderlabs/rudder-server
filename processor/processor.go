@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -73,6 +74,7 @@ type HandleT struct {
 	statsFactory        stats.Stats
 	stats               processorStats
 	payloadLimit        int64
+	transientSources    transientsource.Service
 }
 
 type processorStats struct {
@@ -298,7 +300,7 @@ func (proc *HandleT) Status() interface{} {
 func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB,
 	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
-	multiTenantStat multitenant.MultiTenantI,
+	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -315,6 +317,8 @@ func (proc *HandleT) Setup(
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
+
+	proc.transientSources = transientSources
 
 	// Stats
 	proc.statsFactory = stats.DefaultStats
@@ -432,7 +436,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB)
+		st.Setup(proc.errorDB, proc.transientSources)
 		st.Start(ctx)
 		return nil
 	}))
@@ -975,6 +979,8 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			sampleEvent, err := jsonfast.Marshal(message)
 			if err != nil {
 				proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+			}
+			if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
 				sampleEvent = []byte(`{}`)
 			}
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
