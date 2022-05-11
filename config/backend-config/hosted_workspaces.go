@@ -34,7 +34,7 @@ type WorkspacesT struct {
 func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if multiWorkspaceConfig.Token == "" {
-		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_WORKSPACE_SECRET", "")
+		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
 }
 

@@ -75,15 +75,15 @@ func (mr *MockMultiTenantJobsDBMockRecorder) CommitTransaction(arg0 interface{})
 }
 
 // DeleteExecuting mocks base method.
-func (m *MockMultiTenantJobsDB) DeleteExecuting(arg0 jobsdb.GetQueryParamsT) {
+func (m *MockMultiTenantJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "DeleteExecuting", arg0)
+	m.ctrl.Call(m, "DeleteExecuting")
 }
 
 // DeleteExecuting indicates an expected call of DeleteExecuting.
-func (mr *MockMultiTenantJobsDBMockRecorder) DeleteExecuting(arg0 interface{}) *gomock.Call {
+func (mr *MockMultiTenantJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).DeleteExecuting), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).DeleteExecuting))
 }
 
 // GetAllJobs mocks base method.
