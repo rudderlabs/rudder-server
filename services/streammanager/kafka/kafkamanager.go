@@ -107,8 +107,8 @@ type producerImpl struct {
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
-	if p.timeout == 0 {
-		return kafkaWriteTimeout
+	if p.timeout < 1 {
+		return defaultPublishTimeout
 	}
 	return p.timeout
 }
@@ -121,6 +121,10 @@ type logger interface {
 	Error(args ...interface{})
 	Errorf(format string, args ...interface{})
 }
+
+const (
+	defaultPublishTimeout = 10 * time.Second
+)
 
 var (
 	_ producer = &producerImpl{}
