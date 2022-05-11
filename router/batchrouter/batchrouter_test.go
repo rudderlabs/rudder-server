@@ -6,7 +6,7 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -50,7 +50,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{backendconfig.DestinationT{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
@@ -139,7 +139,6 @@ var _ = Describe("BatchRouter", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
-		BatchRoutersManagerSetup()
 	})
 
 	AfterEach(func() {
@@ -225,8 +224,9 @@ var _ = Describe("BatchRouter", func() {
 				},
 			}
 
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize}).Return(toRetryJobsList).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
+			payloadLimit := batchrouter.payloadLimit
+			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(toRetryJobsList).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {

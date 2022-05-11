@@ -17,13 +17,13 @@ import (
 )
 
 func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
-	ct.infoRequest = &infoRequest{}
+
+	ct.infoRequest = &DestinationValidationRequest{}
 	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
 
-	resp := validationResponse{}
-
+	resp := DestinationValidationResponse{}
 	// check if req has specified a step in query params
 	if step != "" {
 		stepI, err := strconv.Atoi(step)
@@ -207,6 +207,11 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 	err = eventLoader.Write()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to write event with error: %s", err.Error())
+		return
+	}
+	err = writer.Close()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error while closing load file with error: %s", err.Error())
 		return
 	}
 	return

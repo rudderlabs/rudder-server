@@ -3,10 +3,12 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"log"
 	"time"
+
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 )
 
 type MSSQLTest struct {
@@ -15,7 +17,7 @@ type MSSQLTest struct {
 	DB                     *sql.DB
 	EventsMap              EventsCountMap
 	WriteKey               string
-	TableTestQueryFreqInMS time.Duration
+	TableTestQueryFreq     time.Duration
 }
 
 // SetWHMssqlDestination setup warehouse mssql destination
@@ -41,7 +43,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
-		TableTestQueryFreqInMS: 100,
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	mssqlTest := Test.MSSQLTest
 	credentials := mssqlTest.Credentials

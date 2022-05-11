@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"io"
 	"net/http"
 	"runtime"
@@ -829,13 +830,14 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}
 
 		uploadJob := UploadJobT{
-			upload:         &upload,
-			stagingFiles:   stagingFilesList,
-			stagingFileIDs: stagingFileIDs,
-			warehouse:      warehouse,
-			whManager:      whManager,
-			dbHandle:       wh.dbHandle,
-			pgNotifier:     &wh.notifier,
+			upload:               &upload,
+			stagingFiles:         stagingFilesList,
+			stagingFileIDs:       stagingFileIDs,
+			warehouse:            warehouse,
+			whManager:            whManager,
+			dbHandle:             wh.dbHandle,
+			pgNotifier:           &wh.notifier,
+			destinationValidator: configuration_testing.NewDestinationValidator(),
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)

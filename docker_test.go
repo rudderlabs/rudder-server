@@ -14,11 +14,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/config"
-	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"math/rand"
@@ -35,18 +30,24 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/joho/godotenv"
-
 	"github.com/Shopify/sarama"
 	"github.com/gofrs/uuid"
+	redigo "github.com/gomodule/redigo/redis"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
 	main "github.com/rudderlabs/rudder-server"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
-	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
 var (
@@ -168,7 +169,7 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	return f.Name()
 }
 
-func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
+func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
 	probe := time.NewTicker(interval)
 	timeout := time.After(atMost)
 	for {
@@ -176,7 +177,8 @@ func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.
 		case <-ctx.Done():
 			return
 		case <-timeout:
-			log.Panicf("application was not ready after %s\n", atMost)
+			log.Panicf("application was not ready after %s, for the end point: %s, caller: %s\n", atMost, endpoint,
+				caller)
 		case <-probe.C:
 			resp, err := http.Get(endpoint)
 			if err != nil {
@@ -317,6 +319,10 @@ func run(m *testing.M) (int, error) {
 			fmt.Printf("--- Teardown done (%s)\n", time.Since(tearDownStart))
 		}
 	}()
+
+	config.Load()
+	logger.Init()
+
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -326,7 +332,9 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup)
+	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&testLogger{
+		logger.NewLogger().Child("kafka"),
+	}))
 	if err != nil {
 		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
 	}
@@ -352,6 +360,7 @@ func run(m *testing.M) (int, error) {
 		fmt.Sprintf("%s/health", TransformerContainer.TransformURL),
 		time.Minute,
 		time.Second,
+		"transformer",
 	)
 
 	MINIOContainer, err = destination.SetupMINIO(pool, cleanup)
@@ -462,6 +471,7 @@ func run(m *testing.M) (int, error) {
 		serviceHealthEndpoint,
 		time.Minute,
 		time.Second,
+		"serviceHealthEndpoint",
 	)
 	code := m.Run()
 	blockOnHold()
@@ -942,11 +952,11 @@ func TestWHPostgresDestination(t *testing.T) {
 			SQL:  pgTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:         pgTest.EventsMap,
-		WriteKey:               pgTest.WriteKey,
-		UserId:                 "userId_postgres",
-		Schema:                 "postgres_wh_integration",
-		TableTestQueryFreqInMS: pgTest.TableTestQueryFreqInMS,
+		EventsCountMap:     pgTest.EventsMap,
+		WriteKey:           pgTest.WriteKey,
+		UserId:             "userId_postgres",
+		Schema:             "postgres_wh_integration",
+		TableTestQueryFreq: pgTest.TableTestQueryFreq,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -965,11 +975,11 @@ func TestWHClickHouseDestination(t *testing.T) {
 			SQL:  chTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:         chTest.EventsMap,
-		WriteKey:               chTest.WriteKey,
-		UserId:                 "userId_clickhouse",
-		Schema:                 "rudderdb",
-		TableTestQueryFreqInMS: chTest.TableTestQueryFreqInMS,
+		EventsCountMap:     chTest.EventsMap,
+		WriteKey:           chTest.WriteKey,
+		UserId:             "userId_clickhouse",
+		Schema:             "rudderdb",
+		TableTestQueryFreq: chTest.TableTestQueryFreq,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -988,11 +998,11 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 			SQL:  chClusterTest.GetResource().DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:         chClusterTest.EventsMap,
-		WriteKey:               chClusterTest.WriteKey,
-		UserId:                 "userId_clickhouse_cluster",
-		Schema:                 "rudderdb",
-		TableTestQueryFreqInMS: chClusterTest.TableTestQueryFreqInMS,
+		EventsCountMap:     chClusterTest.EventsMap,
+		WriteKey:           chClusterTest.WriteKey,
+		UserId:             "userId_clickhouse_cluster",
+		Schema:             "rudderdb",
+		TableTestQueryFreq: chClusterTest.TableTestQueryFreq,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1039,14 +1049,14 @@ func TestWHBigQuery(t *testing.T) {
 			BQ:   bqTest.DB,
 			Type: client.BQClient,
 		},
-		EventsCountMap:         bqTest.EventsMap,
-		WriteKey:               bqTest.WriteKey,
-		UserId:                 fmt.Sprintf("userId_bq_%s", randomness),
-		Schema:                 "rudderstack_sample_http_source",
-		BQContext:              bqTest.Context,
-		Tables:                 bqTest.Tables,
-		PrimaryKeys:            bqTest.PrimaryKeys,
-		TableTestQueryFreqInMS: bqTest.TableTestQueryFreqInMS,
+		EventsCountMap:     bqTest.EventsMap,
+		WriteKey:           bqTest.WriteKey,
+		UserId:             fmt.Sprintf("userId_bq_%s", randomness),
+		Schema:             "rudderstack_sample_http_source",
+		BQContext:          bqTest.Context,
+		Tables:             bqTest.Tables,
+		PrimaryKeys:        bqTest.PrimaryKeys,
+		TableTestQueryFreq: bqTest.TableTestQueryFreq,
 	}
 
 	whDestTest.MessageId = uuid.Must(uuid.NewV4()).String()
@@ -1116,11 +1126,11 @@ func TestWHMssqlDestination(t *testing.T) {
 			SQL:  MssqlTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:         MssqlTest.EventsMap,
-		WriteKey:               MssqlTest.WriteKey,
-		UserId:                 "userId_mssql",
-		Schema:                 "mssql_wh_integration",
-		TableTestQueryFreqInMS: MssqlTest.TableTestQueryFreqInMS,
+		EventsCountMap:     MssqlTest.EventsMap,
+		WriteKey:           MssqlTest.WriteKey,
+		UserId:             "userId_mssql",
+		Schema:             "mssql_wh_integration",
+		TableTestQueryFreq: MssqlTest.TableTestQueryFreq,
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1507,7 +1517,7 @@ func whTablesTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKeys[idx], wdt.UserId)
 			count, _ = getQueryCount(wdt.Client, sqlStatement)
 			return count == int64(tableCount)
-		}, 2*time.Minute, time.Duration(wdt.TableTestQueryFreqInMS)*time.Millisecond)
+		}, 2*time.Minute, wdt.TableTestQueryFreq)
 	}
 }
 
@@ -1632,3 +1642,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		}
 	}
 }
+
+type testLogger struct{ logger.LoggerI }
+
+func (t *testLogger) Log(args ...interface{}) { t.Debug(args...) }

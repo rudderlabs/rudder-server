@@ -115,7 +115,9 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return
 	}
 
-	err = bq.createTableView(tableName, columnMap)
+	if !isDedupEnabled {
+		err = bq.createTableView(tableName, columnMap)
+	}
 	return
 }
 

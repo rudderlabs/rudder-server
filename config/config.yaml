@@ -63,6 +63,7 @@ TransformationDebugger:
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
+  fairPickup: true
   jobDoneMigrateThres: 0.8
   jobStatusMigrateThres: 5
   maxDSSize: 100000
@@ -245,5 +246,3 @@ PgNotifier:
   retriggerCount: 500
   trackBatchInterval: 2s
   maxAttempt: 3
-EnableMultitenancy: false
-LegacyAppHandler: true

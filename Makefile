@@ -13,9 +13,9 @@ mocks: install-tools ## Generate all mocks
 
 test: enterprise-prepare-build mocks ## Run all unit tests
 ifdef package
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace $(package)
+	$(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
 else
-	$(GINKGO) -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace ./...
+	$(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./... 
 endif
 	echo "mode: atomic" > coverage.txt
 	find . -name "profile.out" | while read file;do grep -v 'mode: atomic' $${file} >> coverage.txt; rm $${file};done

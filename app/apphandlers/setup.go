@@ -44,7 +44,6 @@ type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
 	StartRudderCore(context.Context, *app.Options) error
-	LegacyStart(context.Context, *app.Options) error
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
@@ -122,7 +121,6 @@ func StartProcessor(
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processor.ManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
@@ -137,9 +135,6 @@ func StartRouter(
 		pkgLogger.Debug("processor started by an other go routine")
 		return
 	}
-
-	router.RoutersManagerSetup()
-	batchrouter.BatchRoutersManagerSetup()
 
 	routerFactory := router.Factory{
 		BackendConfig: backendconfig.DefaultBackendConfig,
@@ -173,8 +168,8 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	//rt / batch_rt tables and there would be a delay reading from channel `ch`
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
-	batchRouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	routerFactory.RouterDB.DeleteExecuting()
+	batchRouterFactory.RouterDB.DeleteExecuting()
 
 loop:
 	for {
@@ -212,16 +207,6 @@ loop:
 						}
 					}
 				}
-			}
-
-			rm, err := router.GetRoutersManager()
-			if rm != nil && err == nil {
-				rm.SetRoutersReady()
-			}
-
-			brm, err := batchrouter.GetBatchRoutersManager()
-			if brm != nil && err == nil {
-				brm.SetBatchRoutersReady()
 			}
 		}
 	}

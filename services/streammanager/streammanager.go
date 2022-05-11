@@ -54,10 +54,14 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "GOOGLEPUBSUB":
-		producer, err := googlepubsub.NewProducer(destinationConfig)
+		producer, err := googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig)
+		producer, err := googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "PERSONALIZE":
 		producer, err := personalize.NewProducer(destinationConfig, personalize.Opts{
@@ -65,7 +69,9 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		})
 		return producer, err
 	case "BQSTREAM":
-		producer, err := bqstream.NewProducer(destinationConfig)
+		producer, err := bqstream.NewProducer(destinationConfig, bqstream.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""

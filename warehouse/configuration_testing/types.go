@@ -2,6 +2,7 @@ package configuration_testing
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -12,7 +13,7 @@ type validationFunc struct {
 	Func func(json.RawMessage, string) (json.RawMessage, error)
 }
 
-type infoRequest struct {
+type DestinationValidationRequest struct {
 	Destination backendconfig.DestinationT `json:"destination"`
 }
 
@@ -30,14 +31,57 @@ type validationStepsResponse struct {
 	Steps []*validationStep `json:"steps"`
 }
 
-type validationResponse struct {
+type DestinationValidator interface {
+	ValidateCredentials(req *DestinationValidationRequest) (*DestinationValidationResponse, error)
+}
+
+//NewDestinationValidator encapsulates the process
+//to generate the destination validator.
+func NewDestinationValidator() DestinationValidator {
+	handler := &CTHandleT{}
+	return &DestinationValidatorImpl{
+		validateFunc: handler.validateDestinationFunc,
+	}
+}
+
+type DestinationValidatorImpl struct {
+	// validateFunc takes the `creds` as raw-message for backward
+	// compatibility and then results the response in raw-message
+	// which can decoded later into proper struct.
+	validateFunc func(json.RawMessage, string) (json.RawMessage, error)
+}
+
+// ValidateCredentials for now offloads the request to destination validation
+// to the validationFunc. This function runs through all the steps in the validation check
+// and then generate a valid response.
+func (dv *DestinationValidatorImpl) ValidateCredentials(req *DestinationValidationRequest) (*DestinationValidationResponse, error) {
+
+	byt, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get marshal validation request: %v", err)
+	}
+
+	bytResponse, err := dv.validateFunc(byt, "")
+	if err != nil {
+		return nil, fmt.Errorf("unable to perform validation on destination: %s credentials, error: %v",
+			req.Destination.ID,
+			err)
+	}
+
+	validationResponse := &DestinationValidationResponse{}
+	err = json.Unmarshal(bytResponse, validationResponse)
+
+	return validationResponse, err
+}
+
+type DestinationValidationResponse struct {
 	Success bool              `json:"success"`
 	Error   string            `json:"error"`
 	Steps   []*validationStep `json:"steps"`
 }
 
 type CTHandleT struct {
-	infoRequest      *infoRequest
+	infoRequest      *DestinationValidationRequest
 	client           client.Client
 	warehouse        warehouseutils.WarehouseT
 	stagingTableName string

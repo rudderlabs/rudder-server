@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -17,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	proc "github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -28,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -133,7 +134,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
-	if config.GetBool("EnableMultitenancy", false) {
+	if misc.UseFairPickup() {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
@@ -179,13 +180,28 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			})
 		}
 	}
+	var modeProvider cluster.ChangeEventProvider
 
-	var modeProvider *state.StaticProvider
-	// FIXME: hacky way to determine servermode
-	if enableProcessor && enableRouter {
-		modeProvider = state.NewStaticProvider(servermode.NormalMode)
-	} else {
-		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	switch deploymentType {
+	case deployment.MultiTenantType:
+		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		modeProvider = state.NewETCDDynamicProvider()
+	case deployment.HostedType, deployment.DedicatedType:
+		// FIXME: hacky way to determine servermode
+		pkgLogger.Info("using Static Cluster Manager")
+		if enableProcessor && enableRouter {
+			modeProvider = state.NewStaticProvider(servermode.NormalMode)
+		} else {
+			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+		}
+	default:
+		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
@@ -239,7 +255,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 }
 
 func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
 func startHealthWebHandler(ctx context.Context) error {
@@ -271,131 +287,4 @@ func startHealthWebHandler(ctx context.Context) error {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, &gatewayDB)
-}
-
-func (processor *ProcessorApp) LegacyStart(ctx context.Context, options *app.Options) error {
-	pkgLogger.Info("Processor starting")
-
-	var batchRouterDB jobsdb.HandleT
-	var procErrorDB jobsdb.HandleT
-
-	rudderCoreDBValidator()
-	rudderCoreWorkSpaceTableSetup()
-	rudderCoreNodeSetup()
-	rudderCoreBaseSetup()
-	g, ctx := errgroup.WithContext(ctx)
-
-	//Setting up reporting client
-	if processor.App.Features().Reporting != nil {
-		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-
-		g.Go(misc.WithBugsnag(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
-			return nil
-		}))
-	}
-
-	pkgLogger.Info("Clearing DB ", options.ClearDB)
-
-	transformationdebugger.Setup()
-	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
-
-	migrationMode := processor.App.Options().MigrationMode
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
-	defer gatewayDB.TearDown()
-
-	var routerDB jobsdb.HandleT = jobsdb.HandleT{}
-
-	var tenantRouterDB jobsdb.MultiTenantJobsDB
-	var multitenantStats multitenant.MultiTenantI
-
-	if enableProcessor || enableReplay {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
-		defer routerDB.TearDown()
-
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
-		defer batchRouterDB.TearDown()
-
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
-		defer procErrorDB.TearDown()
-
-		if config.GetBool("EnableMultitenancy", false) {
-			tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: &routerDB}
-			multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-				"rt":       tenantRouterDB,
-				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-			})
-		} else {
-			tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: &routerDB}
-			multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-				"rt":       tenantRouterDB,
-				"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: &batchRouterDB},
-			}))
-		}
-	}
-
-	reportingI := processor.App.Features().Reporting.GetReportingInstance()
-
-	if processor.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				clearDB := false
-				if enableProcessor {
-					g.Go(func() error {
-						StartProcessor(ctx, &clearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-						return nil
-					})
-				}
-			}
-			startRouterFunc := func() {
-				if enableRouter {
-					g.Go(func() error {
-						StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-						return nil
-					})
-				}
-			}
-			enableRouter = false
-			enableProcessor = false
-
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
-			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
-				return nil
-			})
-		}
-	}
-
-	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-
-	g.Go(misc.WithBugsnag(func() error {
-		return operationmanager.OperationManager.StartProcessLoop(ctx)
-	}))
-
-	if enableProcessor {
-		g.Go(func() error {
-			StartProcessor(ctx, &options.ClearDB, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-			return nil
-		})
-	}
-	if enableRouter {
-		g.Go(func() error {
-			StartRouter(ctx, tenantRouterDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
-			return nil
-		})
-	}
-
-	if enableReplay && processor.App.Features().Replay != nil {
-		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
-		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB, &batchRouterDB)
-	}
-
-	g.Go(func() error {
-		return startHealthWebHandler(ctx)
-	})
-	return g.Wait()
 }

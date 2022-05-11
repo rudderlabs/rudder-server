@@ -22,7 +22,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - (cd && go get github.com/onsi/ginkgo/ginkgo)
+      - (cd && go get github.com/onsi/ginkgo/ginkgo/v2)
       - (cd && go get github.com/golang/mock/mockgen)
       - docker pull confluentinc/cp-zookeeper:latest
       - docker pull confluentinc/cp-kafka:latest
@@ -30,6 +30,8 @@ phases:
       - docker pull redis:alpine3.14
       - docker pull postgres:11-alpine
       - docker pull rudderlabs/rudder-transformer:latest
+      - docker pull atzoum/simulator-google-sheets:latest
+      - docker pull messagebird/gcloud-pubsub-emulator:latest
       - go mod download
   build:
     commands:
@@ -40,7 +42,6 @@ phases:
       - echo Building the Docker image...
       - make test
       - go test -v ./docker_test.go -integration -count 1
-      - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       - echo tag.. $TAG

@@ -9,7 +9,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -45,10 +45,10 @@ var _ = Describe("tenantStats", func() {
 	})
 
 	Context("Tenant Stats Testing", func() {
-		mockCtrl := gomock.NewController(GinkgoT())
-		mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 		var tenantStats *MultitenantStatsT
 		BeforeEach(func() {
+			mockCtrl := gomock.NewController(GinkgoT())
+			mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 			// crash recovery check
 			mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
 			tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"rt": mockRouterJobsDB})
