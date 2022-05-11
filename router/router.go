@@ -772,10 +772,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								defer cancel()
 								//transformer proxy start
 								if worker.rt.transformerProxy {
+									var proxyStatsList []transformer.LogStats
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, worker.rt.destLatency)
+									respStatusCode, respBodyTemp, proxyStatsList = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, worker.rt.destLatency)
 									proxyDuration := time.Since(rtl_time)
 									worker.routerProxyStat.SendTiming(proxyDuration)
+									// Print all the stats gathered from ProxyRequest
+									for _, logStat := range proxyStatsList {
+										pkgLogger.Errorf("[NwLayer Latency], %v, %v, %v, %v", logStat.Stat, logStat.CurrentTime.Format(time.StampNano), worker.rt.destName, logStat.Latency)
+									}
 									pkgLogger.Errorf("[NwLayer Latency], %v, router_proxy_latency, %v, %v", time.Now().Format(time.StampNano), worker.rt.destName, proxyDuration.Milliseconds())
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
