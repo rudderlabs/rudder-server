@@ -132,7 +132,7 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 
 var tempError interface{ Temporary() bool }
 
-func IsProducerErrTemporary(err error) bool {
+func isProducerErrTemporary(err error) bool {
 	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
@@ -144,4 +144,17 @@ func IsProducerErrTemporary(err error) bool {
 		return tempError.Temporary()
 	}
 	return false
+}
+
+func IsProducerErrTemporary(err error) bool {
+	if we, ok := err.(kafka.WriteErrors); ok {
+		for _, err := range we {
+			// if at least one was temporary then we treat the whole batch as such
+			if isProducerErrTemporary(err) {
+				return true
+			}
+		}
+		return false
+	}
+	return isProducerErrTemporary(err)
 }

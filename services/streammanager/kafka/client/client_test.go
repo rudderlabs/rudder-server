@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
@@ -530,6 +531,78 @@ func TestProducer_Timeout(t *testing.T) {
 	defer pubCancel()
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestIsProducerErrTemporary(t *testing.T) {
+	// Prepare cluster - Zookeeper and one Kafka broker
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
+		destination.WithLogger(t),
+		destination.WithBrokers(1))
+	require.NoError(t, err)
+
+	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
+	require.NoError(t, c.Ping(ctx))
+
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.address)
+	require.Eventually(t, func() bool {
+		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
+		if err != nil {
+			t.Logf("Could not create topic: %v", err)
+		}
+		return err == nil
+	}, defaultTestTimeout, time.Second)
+
+	// Check that the topic has been created with the right number of partitions
+	topics, err := tc.ListTopics(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []testutil.TopicPartition{{Topic: t.Name(), Partition: 0}}, topics)
+
+	// Produce X messages in a single batch
+	producerConf := ProducerConfig{ClientID: "producer-01"}
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer("non-existent-topic", producerConf)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.Close(ctx); err != nil {
+			t.Logf("Error closing producer: %v", err)
+		}
+	})
+
+	p.writer.AllowAutoTopicCreation = false // important to cause side effects needed next
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	err = p.Publish(pubCtx, Message{
+		Key:   []byte("key-01"),
+		Value: []byte("value-01"),
+	}, Message{
+		Key:   []byte("key-02"),
+		Value: []byte("value-02"),
+	})
+	require.Truef(t, isProducerErrTemporary(err), "Expected temporary error, got %v instead", err)
+	pubCancel()
+}
+
+func TestWriteErrors(t *testing.T) {
+	err := make(kafka.WriteErrors, 0)
+	err = append(err, kafka.PolicyViolation)
+	require.False(t, IsProducerErrTemporary(err))
+	err = append(err, kafka.LeaderNotAvailable)
+	require.True(t, IsProducerErrTemporary(err))
 }
 
 func TestConfluentAzureCloud(t *testing.T) {
