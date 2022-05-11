@@ -779,7 +779,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 									worker.routerProxyStat.SendTiming(proxyDuration)
 									// Print all the stats gathered from ProxyRequest
 									for _, logStat := range proxyStatsList {
-										pkgLogger.Errorf("[NwLayer Latency], %v, %v, %v, %v", logStat.Stat, logStat.CurrentTime.Format(time.StampNano), worker.rt.destName, logStat.Latency)
+										pkgLogger.Errorf("[NwLayer Latency], %v, %v, %v, %v", logStat.CurrentTime.Format(time.StampNano), logStat.Stat, worker.rt.destName, logStat.Latency)
 									}
 									pkgLogger.Errorf("[NwLayer Latency], %v, router_proxy_latency, %v, %v", time.Now().Format(time.StampNano), worker.rt.destName, proxyDuration.Milliseconds())
 									authType := router_utils.GetAuthType(destinationJob.Destination)
