@@ -177,8 +177,6 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 
 	select {
 	case <-done:
-		require.Greater(t, atomic.LoadInt32(&c01Count), int32(0))
-		require.Greater(t, atomic.LoadInt32(&c02Count), int32(0))
 		require.EqualValues(t, noOfMessages, atomic.LoadInt32(&c01Count)+atomic.LoadInt32(&c02Count))
 	// the test won't end as long as we keep getting messages since the consumers reset the ticker
 	// when they receive a message
