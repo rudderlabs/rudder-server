@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -114,6 +115,7 @@ func rudderCoreBaseSetup() {
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+	transientSources transientsource.Service,
 ) {
 	if !processorLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
@@ -121,7 +123,7 @@ func StartProcessor(
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
@@ -130,6 +132,7 @@ func StartProcessor(
 func StartRouter(
 	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+	transientSources transientsource.Service,
 ) {
 	if !routerLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
@@ -137,19 +140,21 @@ func StartRouter(
 	}
 
 	routerFactory := router.Factory{
-		BackendConfig: backendconfig.DefaultBackendConfig,
-		Reporting:     reporting,
-		Multitenant:   multitenantStat,
-		RouterDB:      routerDB,
-		ProcErrorDB:   procErrorDB,
+		BackendConfig:    backendconfig.DefaultBackendConfig,
+		Reporting:        reporting,
+		Multitenant:      multitenantStat,
+		RouterDB:         routerDB,
+		ProcErrorDB:      procErrorDB,
+		TransientSources: transientSources,
 	}
 
 	batchRouterFactory := batchrouter.Factory{
-		BackendConfig: backendconfig.DefaultBackendConfig,
-		Reporting:     reporting,
-		Multitenant:   multitenantStat,
-		ProcErrorDB:   procErrorDB,
-		RouterDB:      batchRouterDB,
+		BackendConfig:    backendconfig.DefaultBackendConfig,
+		Reporting:        reporting,
+		Multitenant:      multitenantStat,
+		ProcErrorDB:      procErrorDB,
+		RouterDB:         batchRouterDB,
+		TransientSources: transientSources,
 	}
 
 	monitorDestRouters(ctx, &routerFactory, &batchRouterFactory)
@@ -168,8 +173,8 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	//rt / batch_rt tables and there would be a delay reading from channel `ch`
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
-	batchRouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	routerFactory.RouterDB.DeleteExecuting()
+	batchRouterFactory.RouterDB.DeleteExecuting()
 
 loop:
 	for {

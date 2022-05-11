@@ -293,7 +293,7 @@ func Run(ctx context.Context) {
 
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return startWarehouseService(ctx, application)
 		}))
 	}
