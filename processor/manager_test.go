@@ -179,7 +179,7 @@ func TestProcessorManager(t *testing.T) {
 	customVal := "GW"
 	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 0, len(unprocessedListEmpty))
@@ -229,7 +229,7 @@ func TestProcessorManager(t *testing.T) {
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
-				JobCount:         20,
+				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
@@ -254,14 +254,14 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			JobCount:         20,
+			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
-				JobCount:         20,
+				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
