@@ -266,7 +266,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	integrations.CollectDestErrorStats(respData)
 	err = jsonfast.Unmarshal(respData, &transformerResponse)
 	statsMap = append(statsMap, LogStats{
-		Stat:        "transformer_proxy_resp_marshal_time",
+		Stat:        "transformer_proxy_resp_unmarshal_time",
 		Latency:     time.Since(unmarshStTime).Milliseconds(),
 		CurrentTime: time.Now(),
 	})
