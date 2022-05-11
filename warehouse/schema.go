@@ -43,6 +43,13 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 		} else {
 			newColumnVal = int(floatVal)
 		}
+	} else if existingDataType == "json" && columnType != "json" {
+		var interfaceSliceSample []interface{}
+		if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = columnVal
+		} else {
+			newColumnVal = fmt.Sprintf(`"%v"`, columnVal)
+		}
 	} else {
 		return nil, false
 	}
