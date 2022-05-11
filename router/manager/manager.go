@@ -15,7 +15,7 @@ import (
 var (
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
+	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BLACK_HOLE"}
 	pkgLogger                 = logger.NewLogger().Child("router")
 )
 
