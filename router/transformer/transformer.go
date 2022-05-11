@@ -301,9 +301,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	// Just trying this out!! May not be the right solution
-	// http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing/
-	trans.tr = &http.Transport{MaxIdleConns: 120, MaxIdleConnsPerHost: 120}
+	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
