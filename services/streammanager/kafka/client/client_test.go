@@ -593,7 +593,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 		Key:   []byte("key-02"),
 		Value: []byte("value-02"),
 	})
-	require.Truef(t, isProducerErrTemporary(err), "Expected temporary error, got %v instead", err)
+	require.Truef(t, IsProducerErrTemporary(err), "Expected temporary error, got %v instead", err)
 	pubCancel()
 }
 
