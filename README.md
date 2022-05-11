@@ -86,7 +86,7 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 ### Step 2: Verify the installation
 
-Once you have installed RudderStack, [**send test events**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
+Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
 
 ## Architecture
 
