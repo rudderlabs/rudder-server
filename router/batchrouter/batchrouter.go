@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -122,6 +123,8 @@ type HandleT struct {
 	backgroundCtx    context.Context
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
+
+	payloadLimit int64
 }
 
 type BatchDestinationDataT struct {
@@ -303,7 +306,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 						}
 						parameterFilters = append(parameterFilters, parameterFilter)
 					}
-					importingJob := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: 1, ParameterFilters: parameterFilters})
+					importingJob := brt.jobsDB.GetImportingList(
+						jobsdb.GetQueryParamsT{
+							CustomValFilters: []string{brt.destType},
+							JobsLimit:        1,
+							ParameterFilters: parameterFilters,
+							PayloadSizeLimit: brt.payloadLimit,
+						},
+					)
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
@@ -342,7 +352,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							abortedJobs := make([]*jobsdb.JobT, 0)
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+								importingList := brt.jobsDB.GetImportingList(
+									jobsdb.GetQueryParamsT{
+										CustomValFilters: []string{brt.destType},
+										JobsLimit:        brt.maxEventsInABatch,
+										ParameterFilters: parameterFilters,
+										PayloadSizeLimit: brt.payloadLimit,
+									},
+								)
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -466,7 +483,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								brt.jobsDB.ReleaseUpdateJobStatusLocks()
 							} else if statusCode != 0 {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+								importingList := brt.jobsDB.GetImportingList(
+									jobsdb.GetQueryParamsT{
+										CustomValFilters: []string{brt.destType},
+										JobsLimit:        brt.maxEventsInABatch,
+										ParameterFilters: parameterFilters,
+										PayloadSizeLimit: brt.payloadLimit,
+									},
+								)
 								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -1410,7 +1434,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
+func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	var (
 		errorCode string
 		jobState  string
@@ -1526,9 +1550,24 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
-
-					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					retryList := brt.jobsDB.GetToRetry(
+						jobsdb.GetQueryParamsT{
+							CustomValFilters:              []string{brt.destType},
+							JobsLimit:                     toQuery,
+							ParameterFilters:              parameterFilters,
+							IgnoreCustomValFiltersInQuery: true,
+							PayloadSizeLimit:              brt.payloadLimit,
+						},
+					)
+					unprocessedList := brt.jobsDB.GetUnprocessed(
+						jobsdb.GetQueryParamsT{
+							CustomValFilters:              []string{brt.destType},
+							JobsLimit:                     toQuery,
+							ParameterFilters:              parameterFilters,
+							IgnoreCustomValFiltersInQuery: true,
+							PayloadSizeLimit:              brt.payloadLimit,
+						},
+					)
 					brtQueryStat.End()
 
 					combinedList = append(retryList, unprocessedList...)
@@ -1783,11 +1822,11 @@ func connectionIdentifier(batchDestination DestinationT) string {
 }
 
 func (brt *HandleT) warehouseConnectionIdentifier(connIdentifier string, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
-	namespace := brt.getNamespace(destination.Config, source, destination, brt.destType)
+	namespace := brt.getNamespace(destination.Config, source, brt.destType)
 	return fmt.Sprintf(`namespace:%s::%s`, namespace, connIdentifier)
 }
 
-func (brt *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+func (*HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if destType == "CLICKHOUSE" {
@@ -1864,9 +1903,21 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat.Start()
 		toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			retryList := brt.jobsDB.GetToRetry(
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: []string{brt.destType},
+					JobsLimit:        toQuery,
+					PayloadSizeLimit: brt.payloadLimit,
+				},
+			)
 			toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			unprocessedList := brt.jobsDB.GetUnprocessed(
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: []string{brt.destType},
+					JobsLimit:        toQuery,
+					PayloadSizeLimit: brt.payloadLimit,
+				},
+			)
 			brtQueryStat.End()
 
 			jobs = append(retryList, unprocessedList...)
@@ -1994,7 +2045,14 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
 	var importingList []*jobsdb.JobT
 	if IsAsyncDestination(brt.destType) {
-		importingList = brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: 1, ParameterFilters: parameterFilters})
+		importingList = brt.jobsDB.GetImportingList(
+			jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{brt.destType},
+				JobsLimit:        1,
+				ParameterFilters: parameterFilters,
+				PayloadSizeLimit: brt.payloadLimit,
+			},
+		)
 		return len(importingList) != 0
 	}
 	return false
@@ -2165,6 +2223,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
+	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "PayloadLimit", "BatchRouter.PayloadLimit"}...)
 	brt.uploadIntervalMap = map[string]time.Duration{}
 
 	tr := &http.Transport{}
