@@ -81,7 +81,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (Conf
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, workspace: %s, retrying after %v", err, workspace, t)
 	})
 
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,8 +27,8 @@ type BlackHoleFileManager struct {
 
 func GetBlackHoleConfig(config map[string]interface{}) *TimeBounds {
 
-	lowerBound := config["lowerBound"].(int)
-	upperBound := config["upperBound"].(int)
+	lowerBound, _ := strconv.Atoi(config["objectStorageLowerBound"].(string))
+	upperBound, _ := strconv.Atoi(config["objectStorageUpperBound"].(string))
 
 	pkgLogger.Infof("LoadTest: creating black hole config with bounds: lower: %d and upper: %d",
 		lowerBound,

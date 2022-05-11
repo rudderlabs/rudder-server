@@ -1743,6 +1743,7 @@ func (worker *workerT) workerProcess() {
 
 						destUploadStat.End()
 					case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
+						pkgLogger.Infof("[LoadTest]: batching events for destination type: %s\n", brt.destType)
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -1785,6 +1786,8 @@ func (worker *workerT) workerProcess() {
 }
 
 func (brt *HandleT) initWorkers() {
+
+	pkgLogger.Infof("LoadTest: Init workers are called for: %s\n", brt.destType)
 	brt.workers = make([]*workerT, brt.noOfWorkers)
 
 	g, _ := errgroup.WithContext(brt.backgroundCtx)

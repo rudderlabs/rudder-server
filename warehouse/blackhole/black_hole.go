@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -26,8 +27,8 @@ type timeBound struct {
 func (bh *BlackHole) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error {
 
 	// Pickup the variability from the destination config.
-	lowerBound := warehouse.Destination.Config["lowerBound"].(int)
-	upperBound := warehouse.Destination.Config["upperBound"].(int)
+	lowerBound, _ := strconv.Atoi(warehouse.Destination.Config["destLowerBound"].(string))
+	upperBound, _ := strconv.Atoi(warehouse.Destination.Config["destUpperBound"].(string))
 
 	if upperBound < lowerBound {
 		return fmt.Errorf("unable to setup destination as the upperbound: %d should be less than lowerbound: %d",

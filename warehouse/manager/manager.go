@@ -4,6 +4,7 @@ import (
 	"fmt"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/blackhole"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
@@ -52,6 +53,9 @@ type WarehouseOperations interface {
 //New is a Factory function that returns a ManagerI of a given destination-type
 func New(destType string) (ManagerI, error) {
 	switch destType {
+	case warehouseutils.BLACK_HOLE:
+		var bh blackhole.BlackHole
+		return &bh, nil
 	case warehouseutils.RS:
 		var rs redshift.HandleT
 		return &rs, nil

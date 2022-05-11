@@ -41,6 +41,7 @@ const (
 	S3_DATALAKE    = "S3_DATALAKE"
 	GCS_DATALAKE   = "GCS_DATALAKE"
 	AZURE_DATALAKE = "AZURE_DATALAKE"
+	BLACK_HOLE     = "BLACK_HOLE"
 )
 
 const (
@@ -154,7 +155,7 @@ func Init() {
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
-	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
+	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE, BLACK_HOLE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")

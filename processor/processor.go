@@ -1836,9 +1836,10 @@ func (proc *HandleT) transformSrcDest(
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
+	pkgLogger.Info("Events to transform: %v\n", eventsToTransform)
 	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
 	proc.saveFailedJobs(failedJobs)
-	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
+	proc.logger.Info("Supported messages filtering output size", len(eventsToTransform))
 
 	//REPORTING - START
 	if proc.isReportingEnabled() {
@@ -2212,6 +2213,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	s := time.Now()
 
 	unprocessedList := proc.getJobs()
+	pkgLogger.Infof("Received gateway pending jobs: %v\n", unprocessedList)
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
