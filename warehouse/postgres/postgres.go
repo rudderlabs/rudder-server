@@ -32,16 +32,20 @@ var (
 )
 
 const (
-	host                     = "host"
-	dbName                   = "database"
-	user                     = "user"
-	password                 = "password"
-	port                     = "port"
-	sslMode                  = "sslMode"
-	serverCAPem              = "serverCA"
-	clientSSLCert            = "clientCert"
-	clientSSLKey             = "clientKey"
-	verifyCA                 = "verify-ca"
+	host          = "host"
+	dbName        = "database"
+	user          = "user"
+	password      = "password"
+	port          = "port"
+	sslMode       = "sslMode"
+	serverCAPem   = "serverCA"
+	clientSSLCert = "clientCert"
+	clientSSLKey  = "clientKey"
+	verifyCA      = "verify-ca"
+)
+
+// load table transaction stages
+const (
 	createStagingTable       = "staging_table_creation"
 	copyInSchemaStagingTable = "staging_table_copy_in_schema"
 	openLoadFiles            = "load_files_opening"
