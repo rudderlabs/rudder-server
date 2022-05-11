@@ -122,6 +122,7 @@ var (
 
 	clientCert, clientKey                []byte
 	kafkaDialTimeout                     = 10 * time.Second
+	kafkaReadTimeout                     = 2 * time.Second
 	kafkaWriteTimeout                    = 2 * time.Second
 	kafkaBatchingEnabled                 bool
 	allowReqsWithoutUserIDAndAnonymousID bool
@@ -147,6 +148,10 @@ func Init() {
 	config.RegisterDurationConfigVariable(
 		10, &kafkaDialTimeout, false, time.Second,
 		[]string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...,
+	)
+	config.RegisterDurationConfigVariable(
+		2, &kafkaReadTimeout, false, time.Second,
+		[]string{"Router.kafkaReadTimeout", "Router.kafkaReadTimeoutInSec"}...,
 	)
 	config.RegisterDurationConfigVariable(
 		2, &kafkaWriteTimeout, false, time.Second,
@@ -225,6 +230,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 		}
 
 		p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+			ReadTimeout:  kafkaReadTimeout,
 			WriteTimeout: kafkaWriteTimeout,
 		})
 		if err != nil {
@@ -275,6 +281,7 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 	}
 
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
 	if err != nil {
@@ -322,6 +329,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 	}
 
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
 	if err != nil {
