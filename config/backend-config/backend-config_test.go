@@ -110,7 +110,7 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		os.Setenv("HOSTED_WORKSPACE_SECRET", "password")
+		os.Setenv("HOSTED_SERVICE_SECRET", "password")
 		config, err := newForDeployment(deployment.HostedType, nil)
 
 		Expect(err).To(BeNil())
