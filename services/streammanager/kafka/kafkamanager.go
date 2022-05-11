@@ -106,7 +106,12 @@ type producerImpl struct {
 	timeout time.Duration
 }
 
-func (p *producerImpl) getTimeout() time.Duration       { return p.timeout }
+func (p *producerImpl) getTimeout() time.Duration {
+	if p.timeout == 0 {
+		return kafkaWriteTimeout
+	}
+	return p.timeout
+}
 func (p *producerImpl) Close(ctx context.Context) error { return p.p.Close(ctx) }
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
