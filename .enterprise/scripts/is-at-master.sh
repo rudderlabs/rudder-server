@@ -1,6 +1,7 @@
 #!/bin/sh
 
 cd `dirname $0`/../..
+pwd
 source .enterprise/env
 
 # Check enterprise repo is loaded
