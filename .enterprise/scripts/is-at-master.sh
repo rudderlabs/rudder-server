@@ -1,24 +1,18 @@
 #!/bin/sh
 
 cd `dirname $0`/../..
-pwd
 . .enterprise/env
 
-# Check enterprise repo is loaded
-if [ ! -d "$ENTERPRISE_DIR" ]; then
-  echo "ERROR: Enterprise version is not initialised. Please run 'make enterprise-init'"
-  exit 1
-fi
-
-git fetch origin master
-
 # Compute the distance from the current branch to the remote master branch
-DISTANCE_ORIGIN_MASTER=`cd $ENTERPRISE_DIR; git rev-list --count HEAD..origin/master`
+ORIGIN_MASTER_COMMIT=`git ls-remote $ENTERPRISE_REPO master | cut -f 1`
+LOCAL_ENTERPRISE_COMMIT=`cat .enterprise-commit`
 
-if [ "$DISTANCE_ORIGIN_MASTER" -gt 0 ]; then
-  echo "ERROR: Enterprise repo is behind origin/master by $DISTANCE_ORIGIN_MASTER commit(s):"
-  cd $ENTERPRISE_DIR; git log --color HEAD..origin/master | cat
+if [ "$ORIGIN_MASTER_COMMIT" != "$LOCAL_ENTERPRISE_COMMIT" ]; then
+  echo "ERROR: .enterprise-commit is not pointing to enterprise origin/master"
+  echo "Update .enterprise-commit file:"
   echo ""
-  echo "Please, update .enterprise-commit file."
+  echo "\t echo $ORIGIN_MASTER_COMMIT > .enterprise-commit "
+  echo ""
+  echo ""
   exit 1
 fi
