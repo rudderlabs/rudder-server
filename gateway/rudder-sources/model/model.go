@@ -6,21 +6,8 @@ type JobFilter struct {
 	DestinationId *string
 }
 
-type JobTargetKey struct {
-	TaskRunId     string
-	SourceId      string
-	DestinationId string
-}
-
 type FailedRecords struct {
 }
-
-// type Job struct {
-// 	Id            string
-// 	TaskId        *string
-// 	SourceId      *string
-// 	DestinationId *string
-// }
 
 type JobStatus struct {
 	ID          string
