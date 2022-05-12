@@ -38,7 +38,7 @@ jobs:
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
   enterprise:
-    name: enterprise commit @ master
+    name: Check .enterprise-commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
