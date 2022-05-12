@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
+var sourcesStatCleanUpSleepTime = 24 * time.Hour
 
 type JobFilter struct {
 	TaskRunId []string
@@ -14,15 +16,19 @@ type JobFilter struct {
 }
 
 type JobTargetKey struct {
-	taskRunId     string
-	sourceId      string
-	destinationId string
+	TaskRunId     string
+	SourceId      string
+	DestinationId string
 }
 
 type Stats struct {
 	In     uint `json:"in"`
 	Out    uint `json:"out"`
 	Failed uint `json:"failed"`
+}
+
+func (r Stats) completed() bool {
+	return r.In == r.Out+r.Failed
 }
 
 type JobStatus struct {
@@ -40,6 +46,20 @@ type SourceStatus struct {
 	Completed          bool                `json:"completed"`
 	Stats              Stats               `json:"stats"`
 	DestinationsStatus []DestinationStatus `json:"destinations"`
+}
+
+func (sourceStatus *SourceStatus) calculateCompleted() {
+	if !sourceStatus.Stats.completed() {
+		sourceStatus.Completed = false
+		return
+	}
+	for _, destStatus := range sourceStatus.DestinationsStatus {
+		if !destStatus.Completed {
+			sourceStatus.Completed = false
+			return
+		}
+	}
+	sourceStatus.Completed = true
 }
 
 type DestinationStatus struct {
@@ -68,6 +88,33 @@ type JobService interface {
 
 	// TODO: future extension
 	GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error)
+}
+
+func NewJobService(db *sql.DB) JobService {
+	return &sourcesHandler{
+		extension:        newDefaultExtension(db),
+		jobRunIdTableMap: make(map[string]struct{}),
+	}
+}
+
+func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) JobService {
+	return &sourcesHandler{
+		extension: &multitenantExtension{
+			defaultExtension: newDefaultExtension(db),
+			sharedDB:         readDB,
+		},
+		jobRunIdTableMap: make(map[string]struct{}),
+	}
+}
+
+func newDefaultExtension(db *sql.DB) *defaultExtension {
+	defExtension := &defaultExtension{localDB: db}
+
+	go func(*defaultExtension) {
+		_ = defExtension.cleanUpTables(context.TODO())
+	}(defExtension)
+
+	return defExtension
 }
 
 func NewNoOpService() JobService {
