@@ -138,7 +138,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
 	var backendConfigMode string = "API"
-	if !jobsDB.CheckPGHealth() {
+	if jobsDB.Ping() != nil {
 		dbService = "DOWN"
 	}
 	if !config.GetBool("enableRouter", true) {

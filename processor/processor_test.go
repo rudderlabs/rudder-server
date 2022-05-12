@@ -332,7 +332,7 @@ var _ = Describe("Processor", func() {
 			Expect(didWork).To(Equal(false))
 		})
 
-		It("should process Unprocessed jobs to destination without user transformation", func() {
+		It("should process unprocessed jobs to destination without user transformation", func() {
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -489,17 +489,16 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
+				Do(func(txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 					}
 				})
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
@@ -509,7 +508,7 @@ var _ = Describe("Processor", func() {
 			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 
-		It("should process Unprocessed jobs to destination with only user transformation", func() {
+		It("should process unprocessed jobs to destination with only user transformation", func() {
 			messages := map[string]mockEventData{
 				// this message should only be delivered to destination B
 				"message-1": {
@@ -686,16 +685,15 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+				Do(func(txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 					}
 				})
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
@@ -706,7 +704,7 @@ var _ = Describe("Processor", func() {
 			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 
-		It("should process Unprocessed jobs to destination without user transformation with enabled Dedup", func() {
+		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-some-id-1": {
@@ -782,11 +780,10 @@ var _ = Describe("Processor", func() {
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Len(2)).Times(1)
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
@@ -903,19 +900,19 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
-			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
 			// will be used to save failed events to failed keys table
-			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Times(1)
-			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
+				_ = f(nil)
+			}).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -1038,18 +1035,18 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
-			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
-			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
-			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
+				_ = f(nil)
+			}).Return(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).

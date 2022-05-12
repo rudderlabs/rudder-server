@@ -18,12 +18,8 @@ type MultiTenantHandleT struct {
 type MultiTenantJobsDB interface {
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 
-	BeginGlobalTransaction() *sql.Tx
-	CommitTransaction(*sql.Tx)
-	AcquireUpdateJobStatusLocks()
-	ReleaseUpdateJobStatusLocks()
-
-	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	DeleteExecuting()
