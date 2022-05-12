@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -32,9 +31,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
-	flag.Parse()
-
+	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
+		overrideArm64Check = true
+	}
 	if runtime.GOARCH == "arm64" && !overrideArm64Check {
 		fmt.Println("arm64 is not supported yet")
 		os.Exit(0)
