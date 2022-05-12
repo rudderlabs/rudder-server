@@ -728,7 +728,7 @@ func TestRedis(t *testing.T) {
 }
 
 func TestKafka(t *testing.T) {
-	if runtime.GOARCH == "arm64" || overrideArm64Check {
+	if runtime.GOARCH == "arm64" && !overrideArm64Check {
 		t.Skip("arm64 is not supported yet")
 	}
 
