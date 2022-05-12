@@ -403,8 +403,8 @@ type HandleT struct {
 	migrationState                migrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	writeChannel                  chan *queuedDbRequest
-	readChannel                   chan *queuedDbRequest
+	writeCapacity                 chan struct{}
+	readCapacity                  chan struct{}
 	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
@@ -863,23 +863,14 @@ func (jd *HandleT) workersAndAuxSetup() {
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
 func (jd *HandleT) Start() {
-	jd.writeChannel = make(chan *queuedDbRequest)
-	jd.readChannel = make(chan *queuedDbRequest)
+	jd.writeCapacity = make(chan struct{}, jd.maxWriters)
+	jd.readCapacity = make(chan struct{}, jd.maxReaders)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
 	jd.backgroundCancel = cancel
 	jd.backgroundGroup = g
-
-	g.Go(func() error {
-		jd.initDBWriters(ctx)
-		return nil
-	})
-	g.Go(func() error {
-		jd.initDBReaders(ctx)
-		return nil
-	})
 
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType, jd.clearAll)
@@ -989,47 +980,11 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 
 }
 
-func (jd *HandleT) initDBWriters(ctx context.Context) {
-	g, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < jd.maxWriters; i++ {
-		g.Go(func() error {
-			jd.dbWriter(ctx)
-			return nil
-		})
-	}
-	_ = g.Wait()
-}
-
-func (jd *HandleT) dbWriter(ctx context.Context) {
-	for req := range jd.writeChannel {
-		req.response <- req.execute()
-	}
-}
-
-func (jd *HandleT) initDBReaders(ctx context.Context) {
-	g, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < jd.maxReaders; i++ {
-		g.Go(func() error {
-			jd.dbReader(ctx)
-			return nil
-		})
-	}
-	_ = g.Wait()
-}
-
-func (jd *HandleT) dbReader(ctx context.Context) {
-	for req := range jd.readChannel {
-		req.response <- req.execute()
-	}
-}
-
 // Stop stops the background goroutines and waits until they finish.
 // Stop should be called once only after Start.
 // Only Start and Close can be called after Stop.
 func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
-	close(jd.readChannel)
-	close(jd.writeChannel)
 	jd.backgroundGroup.Wait()
 }
 
