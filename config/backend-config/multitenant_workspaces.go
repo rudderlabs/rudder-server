@@ -80,6 +80,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	}
 	encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
 	if err != nil {
+		pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
 		return ConfigT{}, false
 	}
 	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
