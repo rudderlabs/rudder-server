@@ -42,11 +42,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout enterprise
-        uses: actions/checkout@v3
-        with:
-          repository: rudderlabs/rudder-server-enterprise
-          path: enterprise
-          ref: master
-          token: ${{ secrets.GH_PAT }}
+      - run: git config --global url."https://${{secrets.GH_PAT}}:x-oauth-basic@github.com/rudderlabs".insteadOf "git@github.com:rudderlabs"
       - run: make enterprise-is-at-master
