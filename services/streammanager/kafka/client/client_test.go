@@ -92,8 +92,15 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
-	topics, err := tc.ListTopics(ctx)
-	require.NoError(t, err)
+	var topics []testutil.TopicPartition
+	require.Eventually(t, func() bool {
+		topics, err = tc.ListTopics(ctx)
+		success := err == nil && len(topics) == 2
+		if !success {
+			t.Logf("List topics failure %+v: %v", topics, err)
+		}
+		return success
+	}, defaultTestTimeout, time.Second)
 	require.Equal(t, []testutil.TopicPartition{
 		{Topic: t.Name(), Partition: 0},
 		{Topic: t.Name(), Partition: 1},
