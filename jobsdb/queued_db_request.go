@@ -4,25 +4,20 @@ import (
 	"fmt"
 )
 
-type queuedDbRequest struct {
-	execute  func() interface{}
-	response chan interface{}
-}
-
 func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 	totalTimeStat := jd.getTimerStat(fmt.Sprintf("%s_total_time", c.name), c.tags)
 	totalTimeStat.Start()
 	defer totalTimeStat.End()
 
 	var queueEnabled bool
-	var queueChannel chan *queuedDbRequest
+	var queueCap chan struct{}
 	switch c.reqType {
 	case readReqType:
 		queueEnabled = jd.enableReaderQueue
-		queueChannel = jd.readChannel
+		queueCap = jd.readCapacity
 	case writeReqType:
 		queueEnabled = jd.enableWriterQueue
-		queueChannel = jd.writeChannel
+		queueCap = jd.writeCapacity
 	case undefinedReqType:
 		fallthrough
 	default:
@@ -32,11 +27,9 @@ func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 	if queueEnabled {
 		waitTimeStat := jd.getTimerStat(fmt.Sprintf("%s_wait_time", c.name), c.tags)
 		waitTimeStat.Start()
-		respCh := make(chan interface{})
-		queueChannel <- &queuedDbRequest{execute: c.command, response: respCh}
+		queueCap <- struct{}{}
+		defer func() { <-queueCap }()
 		waitTimeStat.End()
-		err := <-respCh
-		return err
 	}
 
 	return c.command()
