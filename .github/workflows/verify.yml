@@ -49,5 +49,4 @@ jobs:
           path: enterprise
           ref: master
           token: ${{ secrets.GH_PAT }}
-      - run: make enterprise-init
       - run: make enterprise-is-at-master
