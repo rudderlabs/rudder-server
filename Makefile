@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
+.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build enterprise-is-at-master
 
 GO=go
 GINKGO=ginkgo
@@ -68,6 +68,9 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 	else \
 		rm -f ./imports/enterprise.go; \
 	fi
+
+enterprise-is-at-master: ## Checks if enterprise repo commit matches the origin master
+	@.enterprise/scripts/is-at-master.sh
 
 install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \

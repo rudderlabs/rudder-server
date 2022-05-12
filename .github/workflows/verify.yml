@@ -37,4 +37,17 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
-
+  enterprise:
+    name: enterprise commit @ master
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Checkout enterprise
+        uses: actions/checkout@v3
+        with:
+          repository: rudderlabs/rudder-server-enterprise
+          path: enterprise
+          ref: master
+          token: ${{ secrets.GH_PAT }}
+      - run: make enterprise-init
+      - run: make enterprise-is-at-master
