@@ -42,7 +42,7 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{})
+	c, err := New("tcp", []string{kafkaHost}, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -66,7 +66,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -75,7 +75,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.address)
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -206,7 +206,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -215,7 +215,7 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.address)
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -366,7 +366,7 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", kafkaHost, Config{
+			c, err := New("tcp", []string{kafkaHost}, Config{
 				ClientID:    "some-client",
 				DialTimeout: 10 * time.Second,
 				SASL: &SASL{
@@ -447,7 +447,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{
+	c, err := New("tcp", []string{kafkaHost}, Config{
 		ClientID:    "some-client",
 		DialTimeout: 10 * time.Second,
 		SASL: &SASL{
@@ -481,13 +481,13 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.address)
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
@@ -549,7 +549,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -558,7 +558,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.address)
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 	require.Eventually(t, func() bool {
 		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
 		if err != nil {

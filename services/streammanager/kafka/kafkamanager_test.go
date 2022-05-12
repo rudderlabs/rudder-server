@@ -309,7 +309,7 @@ func TestCloseProducer(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("correct", func(t *testing.T) {
-		c, err := client.New("tcp", "localhost:9092", client.Config{})
+		c, err := client.New("tcp", []string{"localhost:9092"}, client.Config{})
 		require.NoError(t, err)
 		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
 		require.NoError(t, err)

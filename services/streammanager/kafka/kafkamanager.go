@@ -226,35 +226,31 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 		}
 	}
 
-	var c *client.Client
-	// The only component that supports multiple hosts is the consumer which we are not using here.
-	// It is also worth mentioning that internally the list of brokers should be populated accordingly anyway given
-	// that Kafka uses the "advertised.listeners" property to let clients know where they can connect.
-	// see: https://kafka.apache.org/documentation/#brokerconfigs_advertised.listeners
-	for _, host := range strings.Split(destConfig.HostName, ",") {
-		c, err = client.New("tcp", host+":"+destConfig.Port, clientConf)
-		if err != nil {
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
-		err = c.Ping(ctx)
-		cancel()
-		if err != nil {
-			continue
-		}
-
-		p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
-			ReadTimeout:  kafkaReadTimeout,
-			WriteTimeout: kafkaWriteTimeout,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return &producerImpl{p: p, timeout: o.Timeout}, nil
+	hostNames := strings.Split(destConfig.HostName, ",")
+	hosts := make([]string, len(hostNames))
+	for i, hostName := range hostNames {
+		hosts[i] = hostName + ":" + destConfig.Port
 	}
 
-	return nil, fmt.Errorf("could not create producer [%q at %s]: %w", destConfig.HostName, destConfig.Port, err)
+	c, err := client.New("tcp", hosts, clientConf)
+	if err != nil {
+		return nil, fmt.Errorf("could not create client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	defer cancel()
+	if err = c.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("could not ping: %w", err)
+	}
+
+	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+		ReadTimeout:  kafkaReadTimeout,
+		WriteTimeout: kafkaWriteTimeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &producerImpl{p: p, timeout: o.Timeout}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
