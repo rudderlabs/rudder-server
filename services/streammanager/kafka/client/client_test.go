@@ -3,10 +3,12 @@ package client
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,15 +16,33 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
-func TestClient_Ping(t *testing.T) {
-	t.Parallel()
+const (
+	defaultTestTimeout = 60 * time.Second
+)
 
+var (
+	overrideArm64Check bool
+)
+
+func TestMain(m *testing.M) {
+	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
+	flag.Parse()
+
+	if runtime.GOARCH == "arm64" && !overrideArm64Check {
+		fmt.Println("arm64 is not supported yet")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func TestClient_Ping(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -30,7 +50,7 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{})
+	c, err := New("tcp", []string{kafkaHost}, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -43,9 +63,6 @@ func TestClient_Ping(t *testing.T) {
 }
 
 func TestProducerBatchConsumerGroup(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper + 3 Kafka brokers
 	// We need more than one broker, or we'll be stuck with a "GROUP_COORDINATOR_NOT_AVAILABLE" error
 	pool, err := dockertest.NewPool("")
@@ -57,7 +74,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -66,11 +83,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.Client{
-			Dialer:  c.dialer,
-			Network: c.network,
-			Address: c.address,
-		}
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -84,14 +97,21 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 30*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
-	topics, err := tc.ListTopics(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		t.Name() + " [partition 0]",
-		t.Name() + " [partition 1]",
+	var topics []testutil.TopicPartition
+	require.Eventually(t, func() bool {
+		topics, err = tc.ListTopics(ctx)
+		success := err == nil && len(topics) == 2
+		if !success {
+			t.Logf("List topics failure %+v: %v", topics, err)
+		}
+		return success
+	}, defaultTestTimeout, time.Second)
+	require.Equal(t, []testutil.TopicPartition{
+		{Topic: t.Name(), Partition: 0},
+		{Topic: t.Name(), Partition: 1},
 	}, topics)
 
 	// Produce X messages in a single batch
@@ -172,8 +192,6 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 
 	select {
 	case <-done:
-		require.Greater(t, atomic.LoadInt32(&c01Count), int32(0))
-		require.Greater(t, atomic.LoadInt32(&c02Count), int32(0))
 		require.EqualValues(t, noOfMessages, atomic.LoadInt32(&c01Count)+atomic.LoadInt32(&c02Count))
 	// the test won't end as long as we keep getting messages since the consumers reset the ticker
 	// when they receive a message
@@ -186,9 +204,6 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 }
 
 func TestConsumer_Partition(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -199,7 +214,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -208,11 +223,7 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.Client{
-			Dialer:  c.dialer,
-			Network: c.network,
-			Address: c.address,
-		}
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -226,14 +237,14 @@ func TestConsumer_Partition(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 30*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		t.Name() + " [partition 0]",
-		t.Name() + " [partition 1]",
+	require.Equal(t, []testutil.TopicPartition{
+		{Topic: t.Name(), Partition: 0},
+		{Topic: t.Name(), Partition: 1},
 	}, topics)
 
 	// Produce X messages in a single batch
@@ -326,9 +337,6 @@ func TestConsumer_Partition(t *testing.T) {
 }
 
 func TestWithSASL(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	path, err := os.Getwd()
 	require.NoError(t, err)
@@ -347,8 +355,6 @@ func TestWithSASL(t *testing.T) {
 	for _, hashType := range hashTypes {
 		saslConfiguration := saslConfiguration // to avoid data race
 		t.Run(hashType.String(), func(t *testing.T) {
-			t.Parallel()
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -368,7 +374,7 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", kafkaHost, Config{
+			c, err := New("tcp", []string{kafkaHost}, Config{
 				ClientID:    "some-client",
 				DialTimeout: 10 * time.Second,
 				SASL: &SASL{
@@ -388,7 +394,7 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Ping error: %v", err)
 				}
 				return err == nil
-			}, 60*time.Second, 250*time.Millisecond)
+			}, defaultTestTimeout, 250*time.Millisecond)
 
 			var producerConf ProducerConfig
 			if testing.Verbose() {
@@ -415,15 +421,12 @@ func TestWithSASL(t *testing.T) {
 					t.Logf("Publish error: %v", err)
 				}
 				return err == nil
-			}, 60*time.Second, 100*time.Millisecond, "Could not publish within timeout")
+			}, defaultTestTimeout, 100*time.Millisecond, "Could not publish within timeout")
 		})
 	}
 }
 
 func TestWithSASLBadCredentials(t *testing.T) {
-	t.Skip("Skipping test for now on CI")
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	path, err := os.Getwd()
 	require.NoError(t, err)
@@ -452,7 +455,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{
+	c, err := New("tcp", []string{kafkaHost}, Config{
 		ClientID:    "some-client",
 		DialTimeout: 10 * time.Second,
 		SASL: &SASL{
@@ -472,12 +475,10 @@ func TestWithSASLBadCredentials(t *testing.T) {
 			t.Logf("Ping error: %v", err)
 		}
 		return strings.Contains(err.Error(), "SASL Authentication failed")
-	}, 30*time.Second, 250*time.Millisecond)
+	}, defaultTestTimeout, 250*time.Millisecond)
 }
 
 func TestProducer_Timeout(t *testing.T) {
-	t.Parallel()
-
 	// Prepare cluster - Zookeeper and one Kafka broker
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -488,17 +489,13 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", kafkaHost, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tc := testutil.Client{
-		Dialer:  c.dialer,
-		Network: c.network,
-		Address: c.address,
-	}
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
 
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
@@ -508,12 +505,12 @@ func TestProducer_Timeout(t *testing.T) {
 			t.Logf("Could not create topic: %v", err)
 		}
 		return err == nil
-	}, 60*time.Second, time.Second)
+	}, defaultTestTimeout, time.Second)
 
 	// Check that the topic has been created with the right number of partitions
 	topics, err := tc.ListTopics(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{t.Name() + " [partition 0]"}, topics)
+	require.Equal(t, []testutil.TopicPartition{{Topic: t.Name(), Partition: 0}}, topics)
 
 	// Produce X messages in a single batch
 	producerConf := ProducerConfig{ClientID: "producer-01"}
@@ -549,9 +546,79 @@ func TestProducer_Timeout(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-func TestConfluentAzureCloud(t *testing.T) {
-	t.Parallel()
+func TestIsProducerErrTemporary(t *testing.T) {
+	// Prepare cluster - Zookeeper and one Kafka broker
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
+	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
+		destination.WithLogger(t),
+		destination.WithBrokers(1))
+	require.NoError(t, err)
+
+	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
+	require.NoError(t, c.Ping(ctx))
+
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+	require.Eventually(t, func() bool {
+		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
+		if err != nil {
+			t.Logf("Could not create topic: %v", err)
+		}
+		return err == nil
+	}, defaultTestTimeout, time.Second)
+
+	// Check that the topic has been created with the right number of partitions
+	topics, err := tc.ListTopics(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []testutil.TopicPartition{{Topic: t.Name(), Partition: 0}}, topics)
+
+	// Produce X messages in a single batch
+	producerConf := ProducerConfig{ClientID: "producer-01"}
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer("non-existent-topic", producerConf)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.Close(ctx); err != nil {
+			t.Logf("Error closing producer: %v", err)
+		}
+	})
+
+	p.writer.AllowAutoTopicCreation = false // important to cause side effects needed next
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	err = p.Publish(pubCtx, Message{
+		Key:   []byte("key-01"),
+		Value: []byte("value-01"),
+	}, Message{
+		Key:   []byte("key-02"),
+		Value: []byte("value-02"),
+	})
+	require.Truef(t, IsProducerErrTemporary(err), "Expected temporary error, got %v instead", err)
+	pubCancel()
+}
+
+func TestWriteErrors(t *testing.T) {
+	err := make(kafka.WriteErrors, 0)
+	err = append(err, kafka.PolicyViolation)
+	require.False(t, IsProducerErrTemporary(err))
+	err = append(err, kafka.LeaderNotAvailable)
+	require.True(t, IsProducerErrTemporary(err))
+}
+
+func TestConfluentAzureCloud(t *testing.T) {
 	kafkaHost := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_HOST")
 	confluentCloudKey := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_KEY")
 	confluentCloudSecret := os.Getenv("TEST_KAFKA_CONFLUENT_CLOUD_SECRET")
@@ -597,13 +664,11 @@ func TestConfluentAzureCloud(t *testing.T) {
 }
 
 func TestAzureEventHubsCloud(t *testing.T) {
-	t.Parallel()
-
 	kafkaHost := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST")
 	azureEventHubName := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME")
 	azureEventHubsConnString := os.Getenv("TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING")
 
-	if kafkaHost == "" || azureEventHubsConnString == "" {
+	if kafkaHost == "" || azureEventHubName == "" || azureEventHubsConnString == "" {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
@@ -658,14 +723,18 @@ func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessage
 		}
 	}
 
-	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	start, end := time.Now(), time.Duration(0)
+	require.Eventually(t, func() bool {
+		pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+		err := p.Publish(pubCtx, messages...)
+		end = time.Since(start)
+		pubCancel()
+		if err != nil {
+			t.Logf("Got publish error: %v", err)
+		}
+		return err == nil
+	}, defaultTestTimeout, time.Second)
 
-	start := time.Now()
-	err := p.Publish(pubCtx, messages...)
-	end := time.Since(start)
-
-	pubCancel()
-	require.NoError(t, err)
 	t.Logf("Messages published (%d) in %s", noOfMessages, end)
 }
 

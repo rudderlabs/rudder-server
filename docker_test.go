@@ -1,6 +1,6 @@
 // This files implements integration tests for the rudder-server.
 // The code is responsible to run all dependencies using docker containers.
-// It then runs the service ensuring it is configurated to use the dependencies.
+// It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
 package main_test
@@ -22,6 +22,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +31,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
@@ -42,6 +42,8 @@ import (
 
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
+	kafkaclient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
@@ -51,14 +53,15 @@ import (
 )
 
 var (
-	hold                         bool = true
+	hold                         = true
 	db                           *sql.DB
 	httpPort                     string
-	webhookurl                   string
-	disableDestinationwebhookurl string
+	webhookURL                   string
+	disableDestinationWebhookURL string
 	webhook                      *WebhookRecorder
-	disableDestinationwebhook    *WebhookRecorder
+	disableDestinationWebhook    *WebhookRecorder
 	runIntegration               bool
+	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
 	KafkaContainer               *destination.KafkaResource
@@ -77,10 +80,6 @@ type WebhookRecorder struct {
 	requestDumps [][]byte
 }
 
-type User struct {
-	trait1 string `redis:"name"`
-}
-
 type eventSchemasObject struct {
 	EventID   string
 	EventType string
@@ -90,7 +89,6 @@ type eventSchemasObject struct {
 func NewWebhook() *WebhookRecorder {
 	whr := WebhookRecorder{}
 	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		dump, err := httputil.DumpRequest(r, true)
 		if err != nil {
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
@@ -101,7 +99,7 @@ func NewWebhook() *WebhookRecorder {
 		whr.requestsMu.Unlock()
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 
 	return &whr
@@ -132,20 +130,15 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id       string
-	user_id            string
-	count              string
-	context_myuniqueid string
-	context_id         string
-	context_ip         string
-	prop_key           string
-	myuniqueid         string
-	ip                 string
-}
-
-type Author struct {
-	Name string `json:"name"`
-	Age  int    `json:"age"`
+	anonymousID       string
+	userID            string
+	count             string
+	contextMyUniqueID string
+	contextID         string
+	contextIP         string
+	propKey           string
+	myUniqueID        string
+	ip                string
 }
 
 func createWorkspaceConfig(templatePath string, values map[string]string) string {
@@ -158,13 +151,12 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	if err != nil {
 		panic(err)
 	}
+	defer func() { _ = f.Close() }()
 
 	err = t.Execute(f, values)
 	if err != nil {
 		panic(err)
 	}
-
-	f.Close()
 
 	return f.Name()
 }
@@ -206,18 +198,18 @@ func blockOnHold() {
 	<-c
 }
 func GetEvent(url string, method string) (string, error) {
-	client := &http.Client{}
+	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
 		return "", err
 	}
 	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
-	res, err := client.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -254,7 +246,7 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 	log.Println(fmt.Sprintf("Sending %s Event", callType))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
 	method := "POST"
-	client := &http.Client{}
+	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 
 	if err != nil {
@@ -270,12 +262,12 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 		)),
 	)
 
-	res, err := client.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -293,6 +285,7 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
+	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
 	flag.Parse()
 
 	if !runIntegration {
@@ -332,11 +325,14 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	KafkaContainer, err = destination.SetupKafka(pool, cleanup, destination.WithLogger(&testLogger{
-		logger.NewLogger().Child("kafka"),
-	}))
-	if err != nil {
-		return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
+	if runtime.GOARCH != "arm64" || overrideArm64Check {
+		KafkaContainer, err = destination.SetupKafka(pool, cleanup,
+			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+			destination.WithBrokers(3),
+		)
+		if err != nil {
+			return 0, fmt.Errorf("setup Kafka Destination container: %w", err)
+		}
 	}
 
 	RedisContainer, err = destination.SetupRedis(pool, cleanup)
@@ -372,9 +368,9 @@ func run(m *testing.M) (int, error) {
 		fmt.Println("INFO: No .env file found.")
 	}
 
-	os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
-	os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
-	os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
+	_ = os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
+	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
+	_ = os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
 
 	wht.InitWHConfig()
 
@@ -388,38 +384,37 @@ func run(m *testing.M) (int, error) {
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		return 0, fmt.Errorf("Could not get free port for http: %w", err)
+		return 0, fmt.Errorf("could not get free port for http: %w", err)
 	}
 	httpPort = strconv.Itoa(httpPortInt)
-	os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
+	_ = os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
 	httpAdminPort, err := freeport.GetFreePort()
 	if err != nil {
-		return 0, fmt.Errorf("Could not get free port for http admin: %w", err)
+		return 0, fmt.Errorf("could not get free port for http admin: %w", err)
 	}
 
-	os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
-	os.Setenv("RSERVER_ENABLE_STATS", "false")
+	_ = os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = NewWebhook()
 	defer webhook.Close()
-	webhookurl = webhook.Server.URL
+	webhookURL = webhook.Server.URL
 
-	disableDestinationwebhook = NewWebhook()
-	defer disableDestinationwebhook.Close()
-	disableDestinationwebhookurl = disableDestinationwebhook.Server.URL
+	disableDestinationWebhook = NewWebhook()
+	defer disableDestinationWebhook.Close()
+	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	mapWorkspaceConfig := map[string]string{
-		"webhookUrl":                          webhookurl,
-		"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
+		"webhookUrl":                          webhookURL,
+		"disableDestinationwebhookUrl":        disableDestinationWebhookURL,
 		"writeKey":                            writeKey,
 		"workspaceId":                         workspaceID,
 		"postgresPort":                        PostgresContainer.Port,
 		"address":                             RedisContainer.RedisAddress,
 		"minioEndpoint":                       MINIOContainer.MinioEndpoint,
 		"minioBucketName":                     MINIOContainer.MinioBucketName,
-		"kafkaPort":                           KafkaContainer.Port,
 		"postgresEventWriteKey":               wht.Test.PGTest.WriteKey,
 		"clickHouseEventWriteKey":             wht.Test.CHTest.WriteKey,
 		"clickHouseClusterEventWriteKey":      wht.Test.CHClusterTest.WriteKey,
@@ -429,8 +424,10 @@ func run(m *testing.M) (int, error) {
 		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 	}
+	if runtime.GOARCH != "arm64" || overrideArm64Check {
+		mapWorkspaceConfig["kafkaPort"] = KafkaContainer.Port
+	}
 	if runBigQueryTest && wht.Test.BQTest != nil {
-
 		mapWorkspaceConfig["bqEventWriteKey"] = wht.Test.BQTest.WriteKey
 		mapWorkspaceConfig["rwhBQProject"] = wht.Test.BQTest.Credentials.ProjectID
 		mapWorkspaceConfig["rwhBQLocation"] = wht.Test.BQTest.Credentials.Location
@@ -446,14 +443,14 @@ func run(m *testing.M) (int, error) {
 		log.Println(err)
 	}()
 	log.Println("workspace config path:", workspaceConfigPath)
-	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	_ = os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_test")
 	if err != nil {
 		return 0, err
 	}
-	defer os.RemoveAll(rudderTmpDir)
-	os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
+	defer func() { _ = os.RemoveAll(rudderTmpDir) }()
+	_ = os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -487,7 +484,7 @@ func run(m *testing.M) (int, error) {
 func TestWebhook(t *testing.T) {
 	var err error
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	payload_1 := strings.NewReader(`{
+	payload1 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -504,8 +501,8 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_1, "identify", writeKey)
-	payload_2 := strings.NewReader(`{
+	SendEvent(payload1, "identify", writeKey)
+	payload2 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -522,10 +519,10 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_2, "identify", writeKey) //sending duplicate event to check dedup
+	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
 
 	// Sending Batch event
-	payload_Batch := strings.NewReader(`{
+	payloadBatch := strings.NewReader(`{
 		"batch":
 		[
 			{
@@ -548,10 +545,10 @@ func TestWebhook(t *testing.T) {
 			}
 		]
 	}`)
-	SendEvent(payload_Batch, "batch", writeKey)
+	SendEvent(payloadBatch, "batch", writeKey)
 
 	// Sending track event
-	payload_track := strings.NewReader(`{
+	payloadTrack := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -564,10 +561,10 @@ func TestWebhook(t *testing.T) {
 		  "review_body" : "Average product, expected much more."
 		}
 	  }`)
-	SendEvent(payload_track, "track", writeKey)
+	SendEvent(payloadTrack, "track", writeKey)
 
 	// Sending page event
-	payload_page := strings.NewReader(`{
+	payloadPage := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -578,10 +575,10 @@ func TestWebhook(t *testing.T) {
 		  "url": "http://www.rudderstack.com"
 		}
 	  }`)
-	SendEvent(payload_page, "page", writeKey)
+	SendEvent(payloadPage, "page", writeKey)
 
 	// Sending screen event
-	payload_screen := strings.NewReader(`{
+	payloadScreen := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -591,10 +588,10 @@ func TestWebhook(t *testing.T) {
 		  "prop_key": "prop_value"
 		}
 	  }`)
-	SendEvent(payload_screen, "screen", writeKey)
+	SendEvent(payloadScreen, "screen", writeKey)
 
 	// Sending alias event
-	payload_alias := strings.NewReader(`{
+	payloadAlias := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -602,10 +599,10 @@ func TestWebhook(t *testing.T) {
 		"previousId": "name@surname.com",
 		"userId": "12345"
 	  }`)
-	SendEvent(payload_alias, "alias", writeKey)
+	SendEvent(payloadAlias, "alias", writeKey)
 
 	// Sending group event
-	payload_group := strings.NewReader(`{
+	payloadGroup := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
@@ -618,7 +615,7 @@ func TestWebhook(t *testing.T) {
 		  "plan": "basic"
 		}
 	  }`)
-	SendEvent(payload_group, "group", writeKey)
+	SendEvent(payloadGroup, "group", writeKey)
 	SendPixelEvents(writeKey)
 
 	require.Eventually(t, func() bool {
@@ -655,77 +652,74 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
 
 	// Verify Disabled destination doesn't receive any event.
-	require.Equal(t, 0, len(disableDestinationwebhook.Requests()))
+	require.Equal(t, 0, len(disableDestinationWebhook.Requests()))
 }
 
 //Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
-	db.QueryRow(eventSql).Scan(&myEvent.count)
+	_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 	require.Equal(t, myEvent.count, "2")
 
 	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
-	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
-	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
-	require.Equal(t, myEvent.context_id, "0.0.0.0")
-	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+	_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+	require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.contextID, "0.0.0.0")
+	require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		eventSql = "select count(*) from dev_integration_test_1.users"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
+		_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
 
 	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
-	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
-	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
-	require.Equal(t, myEvent.context_id, "0.0.0.0")
-	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+	_ = db.QueryRow(eventSql).Scan(&myEvent.contextMyUniqueID, &myEvent.contextID, &myEvent.contextIP)
+	require.Equal(t, myEvent.contextMyUniqueID, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.contextID, "0.0.0.0")
+	require.Equal(t, myEvent.contextIP, "0.0.0.0")
 
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
+		return myEvent.anonymousID == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
 		eventSql = "select count(*) from dev_integration_test_1.screens"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
+		_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
 
 	// Verify User Transformation
 	require.Eventually(t, func() bool {
 		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
-		db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
-		return myEvent.myuniqueid == "identified_user_idanonymousId_1"
+		_ = db.QueryRow(eventSql).Scan(&myEvent.propKey, &myEvent.myUniqueID, &myEvent.ip)
+		return myEvent.myUniqueID == "identified_user_idanonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 
-	require.Equal(t, myEvent.prop_key, "prop_value_edited")
+	require.Equal(t, myEvent.propKey, "prop_value_edited")
 	require.Equal(t, myEvent.ip, "0.0.0.0")
 }
 
 // Verify Event in Redis
 func TestRedis(t *testing.T) {
 	conn, err := redigo.Dial("tcp", RedisContainer.RedisAddress)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
 	require.Eventually(t, func() bool {
 		// Similarly, get the trait1 and convert it to a string.
 		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
@@ -734,38 +728,33 @@ func TestRedis(t *testing.T) {
 }
 
 func TestKafka(t *testing.T) {
+	if runtime.GOARCH == "arm64" && !overrideArm64Check {
+		t.Skip("arm64 is not supported yet")
+	}
 
-	config := sarama.NewConfig()
-	config.ClientID = "go-kafka-consumer"
-	config.Consumer.Return.Errors = true
-
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", KafkaContainer.Port)
-	brokers := []string{kafkaEndpoint}
+	kafkaHost := fmt.Sprintf("localhost:%s", KafkaContainer.Port)
 
 	// Create new consumer
-	master, err := sarama.NewConsumer(brokers, config)
-	if err != nil {
-		panic(err)
-	}
-	topics, _ := master.Topics()
-	consumer, errors := consume(topics, master)
-	defer func() {
-		if err := master.Close(); err != nil {
-			panic(err)
-		}
-	}()
+	tc := testutil.New("tcp", kafkaHost)
+	topics, err := tc.ListTopics(context.TODO())
+	require.NoError(t, err)
+
+	c, err := kafkaclient.New("tcp", []string{kafkaHost}, kafkaclient.Config{})
+	require.NoError(t, err)
+
+	messages, errors := consume(t, c, topics)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
 	// Count how many message processed
 	msgCount := 0
-	// Get signnal for finish
+	// Get signal for finish
 	expectedCount := 10
 out:
 	for {
 		select {
-		case msg := <-consumer:
+		case msg := <-messages:
 			msgCount++
 			require.Equal(t, "identified_user_id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "identified_user_id")
@@ -775,45 +764,40 @@ out:
 			}
 		case consumerError := <-errors:
 			msgCount++
-			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
-			// Required
+			t.Log("Received consumerError", consumerError)
 		case <-time.After(time.Minute):
-			panic("timeout waiting on kafka message")
+			t.Error("timeout waiting on Kafka message")
 		}
 	}
-	log.Println("Processed", msgCount, "messages")
 
+	t.Log("Processed", msgCount, "messages")
 }
 
-func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
-	consumers := make(chan *sarama.ConsumerMessage)
-	errors := make(chan *sarama.ConsumerError)
-	for _, topic := range topics {
-		if strings.Contains(topic, "__consumer_offsets") {
-			continue
-		}
-		partitions, _ := master.Partitions(topic)
-		// this only consumes partition no 1, you would probably want to consume all partitions
-		consumer, err := master.ConsumePartition(topic, partitions[0], sarama.OffsetOldest)
-		if nil != err {
-			panic(err)
-		}
-		log.Println(" Start consuming topic ", topic)
-		go func(topic string, consumer sarama.PartitionConsumer) {
-			for {
-				select {
-				case consumerError := <-consumer.Errors():
-					errors <- consumerError
-					log.Println("consumerError: ", consumerError.Err)
+func consume(t *testing.T, client *kafkaclient.Client, topics []testutil.TopicPartition) (<-chan kafkaclient.Message, <-chan error) {
+	t.Helper()
+	errors := make(chan error)
+	messages := make(chan kafkaclient.Message)
 
-				case msg := <-consumer.Messages():
-					consumers <- msg
+	for _, topic := range topics {
+		consumer := client.NewConsumer(topic.Topic, kafkaclient.ConsumerConfig{
+			Partition:   topic.Partition,
+			StartOffset: kafkaclient.FirstOffset,
+		})
+
+		t.Logf("Start consuming topic %s:%d", topic.Topic, topic.Partition)
+		go func(topic testutil.TopicPartition, consumer *kafkaclient.Consumer) {
+			for {
+				msg, err := consumer.Receive(context.TODO())
+				if err != nil {
+					errors <- err
+				} else {
+					messages <- msg
 				}
 			}
 		}(topic, consumer)
 	}
 
-	return consumers, errors
+	return messages, errors
 }
 
 //Verify Event Models EndPoint
@@ -915,8 +899,8 @@ func TestEventModelsJsonSchemas(t *testing.T) {
 	require.NotEqual(t, resBody, "[]")
 }
 
-// Verify beacon  EndPoint
-func TestBeaconBatch(t *testing.T) {
+// Verify beacon EndPoint
+func TestBeaconBatch(_ *testing.T) {
 	payload := strings.NewReader(`{
 		"batch":[
 			{
@@ -1140,7 +1124,7 @@ func TestWHMssqlDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-func getMessagId(wdt *wht.WareHouseDestinationTest) string {
+func getMessageId(wdt *wht.WareHouseDestinationTest) string {
 	if wdt.MessageId == "" {
 		return uuid.Must(uuid.NewV4()).String()
 	}
@@ -1163,7 +1147,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  }
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -1182,7 +1166,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "rating" : 3.0,
 			  "review_body" : "Average product, expected much more."
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -1199,7 +1183,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "title": "Home | RudderStack",
 			  "url": "http://www.rudderstack.com"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -1215,7 +1199,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"properties": {
 			  "prop_key": "prop_value"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -1228,7 +1212,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com"
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -1247,7 +1231,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "employees": 450,
 			  "plan": "basic"
 			}
-		  }`, wdt.UserId, getMessagId(wdt)))
+		  }`, wdt.UserId, getMessageId(wdt)))
 			SendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
@@ -1423,7 +1407,7 @@ func whGatewayTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		rows, err := db.Query(jobSqlStatement)
 		require.Equal(t, err, nil)
 
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var jobId int64
 			err = rows.Scan(&jobId)
@@ -1468,7 +1452,7 @@ func whBatchRouterTest(t *testing.T, wdt *wht.WareHouseDestinationTest) {
 		rows, err := db.Query(jobSqlStatement)
 		require.Equal(t, err, nil)
 
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var jobId int64
 			err = rows.Scan(&jobId)
@@ -1631,7 +1615,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 
-	// ALter columns to all the cluster tables
+	// Alter columns to all the cluster tables
 	for _, chResource := range chClusterTest.Resources {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			for _, columnInfo := range columnInfos {
@@ -1645,4 +1629,4 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 
 type testLogger struct{ logger.LoggerI }
 
-func (t *testLogger) Log(args ...interface{}) { t.Debug(args...) }
+func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

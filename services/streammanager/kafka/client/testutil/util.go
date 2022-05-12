@@ -5,19 +5,37 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 )
 
+// NewWithDialer returns a client with a custom dialer
+func NewWithDialer(dialer *kafka.Dialer, network, address string) *Client {
+	return &Client{
+		dialer:  dialer,
+		network: network,
+		address: address,
+	}
+}
+
+// New returns a client with a default dialer
+func New(network, address string) *Client {
+	return NewWithDialer(&kafka.Dialer{
+		DualStack: true,
+		Timeout:   10 * time.Second,
+	}, network, address)
+}
+
 type Client struct {
-	Dialer           *kafka.Dialer
-	Network, Address string
+	dialer           *kafka.Dialer
+	network, address string
 }
 
 func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, replicationFactor int) error {
-	conn, err := c.Dialer.DialContext(ctx, c.Network, c.Address)
+	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
 	if err != nil {
-		return fmt.Errorf("could not dial %s/%s: %w", c.Network, c.Address, err)
+		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
 	}
 
 	defer func() {
@@ -52,7 +70,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	case broker = <-brokers:
 	}
 
-	controllerConn, err := kafka.DialContext(ctx, c.Network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
+	controllerConn, err := kafka.DialContext(ctx, c.network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
 	if err != nil {
 		return fmt.Errorf("could not dial via controller: %w", err)
 	}
@@ -77,10 +95,15 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	}
 }
 
-func (c *Client) ListTopics(ctx context.Context) ([]string, error) {
-	conn, err := c.Dialer.DialContext(ctx, c.Network, c.Address)
+type TopicPartition struct {
+	Topic     string
+	Partition int
+}
+
+func (c *Client) ListTopics(ctx context.Context) ([]TopicPartition, error) {
+	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
 	if err != nil {
-		return nil, fmt.Errorf("could not dial %s/%s: %w", c.Network, c.Address, err)
+		return nil, fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
 	}
 
 	defer func() {
@@ -107,9 +130,12 @@ func (c *Client) ListTopics(ctx context.Context) ([]string, error) {
 	case err = <-errors:
 		return nil, fmt.Errorf("could not read partitions: %w", err)
 	case partitions := <-done:
-		var topics []string
+		var topics []TopicPartition
 		for i := range partitions {
-			topics = append(topics, fmt.Sprintf("%s [partition %d]", partitions[i].Topic, partitions[i].ID))
+			topics = append(topics, TopicPartition{
+				Topic:     partitions[i].Topic,
+				Partition: partitions[i].ID,
+			})
 		}
 		return topics, nil
 	}

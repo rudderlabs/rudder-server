@@ -24,12 +24,26 @@ func (s ScramHashGenerator) String() string {
 	case ScramPlainText:
 		return "plain"
 	case ScramSHA256:
-		return "sha-256"
+		return "sha256"
 	case ScramSHA512:
-		return "sha-512"
+		return "sha512"
 	default:
 		panic(fmt.Errorf("scram hash generator out of the known domain %d", s))
 	}
+}
+
+// ScramHashGeneratorFromString returns the proper ScramHashGenerator from its string counterpart
+func ScramHashGeneratorFromString(s string) (ScramHashGenerator, error) {
+	switch s {
+	case "plain":
+		return ScramPlainText, nil
+	case "sha256":
+		return ScramSHA256, nil
+	case "sha512":
+		return ScramSHA512, nil
+	}
+	var hg ScramHashGenerator
+	return hg, fmt.Errorf("scram hash generator out of the known domain: %s", s)
 }
 
 type Config struct {
