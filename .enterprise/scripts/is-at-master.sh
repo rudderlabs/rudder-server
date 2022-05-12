@@ -2,7 +2,7 @@
 
 cd `dirname $0`/../..
 pwd
-source .enterprise/env
+. .enterprise/env
 
 # Check enterprise repo is loaded
 if [ ! -d "$ENTERPRISE_DIR" ]; then
