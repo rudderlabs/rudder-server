@@ -73,7 +73,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
-			MaxAttempts:            1,
+			MaxAttempts:            3,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
