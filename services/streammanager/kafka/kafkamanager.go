@@ -12,6 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -127,6 +128,11 @@ type logger interface {
 	Errorf(format string, args ...interface{})
 }
 
+type managerStats struct {
+	missingUserID  stats.RudderStats
+	missingMessage stats.RudderStats
+}
+
 const (
 	defaultPublishTimeout = 10 * time.Second
 )
@@ -141,7 +147,8 @@ var (
 	kafkaBatchingEnabled                 bool
 	allowReqsWithoutUserIDAndAnonymousID bool
 
-	pkgLogger logger
+	kafkaStats managerStats
+	pkgLogger  logger
 )
 
 func Init() {
@@ -177,6 +184,10 @@ func Init() {
 	)
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
+	kafkaStats = managerStats{
+		missingUserID:  stats.DefaultStats.NewStat("router.kafka.missing_user_id", stats.CountType),
+		missingMessage: stats.DefaultStats.NewStat("router.kafka.missing_message", stats.CountType),
+	}
 }
 
 // NewProducer creates a producer based on destination config
@@ -364,13 +375,13 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 	for _, data := range batch {
 		message, ok := data["message"]
 		if !ok {
-			// TODO bump metric
+			kafkaStats.missingMessage.Increment()
 			pkgLogger.Errorf("batch from topic %s is missing the message attribute", topic)
 			continue
 		}
 		userID, ok := data["userId"].(string)
 		if !ok && !allowReqsWithoutUserIDAndAnonymousID {
-			// TODO bump metric
+			kafkaStats.missingUserID.Increment()
 			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
 			continue
 		}
