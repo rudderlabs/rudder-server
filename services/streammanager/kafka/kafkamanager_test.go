@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
+	mockStats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -242,6 +244,14 @@ func TestProducerForConfluentCloud(t *testing.T) {
 }
 
 func TestPrepareBatchOfMessages(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockSkippedDueToUserID := mockStats.NewMockRudderStats(ctrl)
+	mockSkippedDueToMessage := mockStats.NewMockRudderStats(ctrl)
+	kafkaStats = managerStats{
+		missingUserID:  mockSkippedDueToUserID,
+		missingMessage: mockSkippedDueToMessage,
+	}
+
 	t.Run("nil", func(t *testing.T) {
 		now := time.Now()
 		var data []map[string]interface{}
@@ -251,6 +261,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 	})
 
 	t.Run("no message", func(t *testing.T) {
+		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
+
 		now := time.Now()
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
@@ -261,6 +273,9 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 	})
 
 	t.Run("with message and user id", func(t *testing.T) {
+		mockSkippedDueToUserID.EXPECT().Increment().Times(1)
+		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
+
 		now := time.Now()
 		data := []map[string]interface{}{
 			{"not-interesting": "some value"},
@@ -287,6 +302,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 	})
 
 	t.Run("with empty user id and allow empty", func(t *testing.T) {
+		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
+
 		now := time.Now()
 		allowReqsWithoutUserIDAndAnonymousID = true
 		data := []map[string]interface{}{
