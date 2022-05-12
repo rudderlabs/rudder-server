@@ -102,15 +102,15 @@ func (mr *MockJobsDBMockRecorder) CommitTransaction(arg0 interface{}) *gomock.Ca
 }
 
 // DeleteExecuting mocks base method.
-func (m *MockJobsDB) DeleteExecuting(arg0 jobsdb.GetQueryParamsT) {
+func (m *MockJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "DeleteExecuting", arg0)
+	m.ctrl.Call(m, "DeleteExecuting")
 }
 
 // DeleteExecuting indicates an expected call of DeleteExecuting.
-func (mr *MockJobsDBMockRecorder) DeleteExecuting(arg0 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting))
 }
 
 // GetExecuting mocks base method.

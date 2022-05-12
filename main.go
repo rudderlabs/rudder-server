@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime/pprof"
 
@@ -11,7 +10,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
-	"strconv"
 	"strings"
 
 	"net/http"
@@ -22,14 +20,12 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/gorilla/mux"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
@@ -102,7 +98,6 @@ var (
 	IdleTimeout               time.Duration
 	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
-	legacyAppHandler          bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -117,7 +112,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-	config.RegisterBoolConfigVariable(false, &legacyAppHandler, false, "LegacyAppHandler")
 }
 
 func Init() {
@@ -204,8 +198,6 @@ func runAllInit() {
 	routertransformer.Init()
 	router.Init()
 	router.InitRouterAdmin()
-	operationmanager.Init()
-	operationmanager.Init2()
 	ratelimiter.Init()
 	sourcedebugger.Init()
 	gateway.Init()
@@ -275,8 +267,12 @@ func Run(ctx context.Context) {
 		configEnvHandler = application.Features().ConfigEnv.Setup()
 	}
 
-	backendconfig.Setup(configEnvHandler)
-	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
+	if err := backendconfig.Setup(configEnvHandler); err != nil {
+		pkgLogger.Errorf("Unable to setup backend config: %s", err)
+		return
+	}
+
+	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -288,29 +284,18 @@ func Run(ctx context.Context) {
 	})
 
 	misc.AppStartTime = time.Now().Unix()
-	//If the server is standby mode, then no major services (gateway, processor, routers...) run
-	if options.StandByMode {
+	if canStartServer() {
 		appHandler.HandleRecovery(options)
-		g.Go(func() error {
-			return startStandbyWebHandler(ctx)
-		})
-	} else {
-		if canStartServer() {
-			appHandler.HandleRecovery(options)
-			g.Go(misc.WithBugsnag(func() error {
-				if legacyAppHandler {
-					return appHandler.LegacyStart(ctx, options)
-				}
-				return appHandler.StartRudderCore(ctx, options)
-			}))
-		}
+		g.Go(misc.WithBugsnag(func() error {
+			return appHandler.StartRudderCore(ctx, options)
+		}))
+	}
 
-		// initialize warehouse service after core to handle non-normal recovery modes
-		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			g.Go(misc.WithBugsnag(func() error {
-				return startWarehouseService(ctx, application)
-			}))
-		}
+	// initialize warehouse service after core to handle non-normal recovery modes
+	if appTypeStr != app.GATEWAY && canStartWarehouse() {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return startWarehouseService(ctx, application)
+		}))
 	}
 
 	var ctxDoneTime time.Time
@@ -366,60 +351,4 @@ func Run(ctx context.Context) {
 		logger.Log.Sync()
 	}
 	stats.StopPeriodicStats()
-}
-
-func startStandbyWebHandler(ctx context.Context) error {
-	webPort := getWebPort()
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", standbyHealthHandler)
-	srvMux.HandleFunc("/", standbyHealthHandler)
-	srvMux.HandleFunc("/version", versionHandler)
-
-	// route everything else to defaultHandler:
-	srvMux.PathPrefix("/").HandlerFunc(standbyDefaultHandler)
-
-	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(webPort),
-		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       ReadTimeout,
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    MaxHeaderBytes,
-	}
-	func() {
-		<-ctx.Done()
-		srv.Shutdown(context.Background())
-	}()
-
-	if err := srv.ListenAndServe(); err != nil {
-		return fmt.Errorf("web server: %w", err)
-	}
-	return nil
-}
-
-func getWebPort() int {
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	switch appTypeStr {
-	case app.GATEWAY:
-		return config.GetInt("Gateway.webPort", 8080)
-	case app.PROCESSOR:
-		return config.GetInt("Processor.webPort", 8086)
-	case app.EMBEDDED:
-		return config.GetInt("Gateway.webPort", 8080)
-	}
-
-	panic(errors.New("invalid app type"))
-}
-
-//StandbyHealthHandler is the http handler for health endpoint
-func standbyHealthHandler(w http.ResponseWriter, r *http.Request) {
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	healthVal := fmt.Sprintf(`{"appType": "%s", "mode":"%s"}`, appTypeStr, strings.ToUpper(db.CurrentMode))
-	w.Write([]byte(healthVal))
-}
-
-//StandbyDefaultHandler is the http handler for health endpoint
-func standbyDefaultHandler(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Server is in standby mode. Please retry after sometime", 500)
 }

@@ -4,6 +4,7 @@ package backendconfig
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -19,14 +20,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
 	backendConfig                         BackendConfig
-	isMultiWorkspace                      bool
-	multiWorkspaceSecret                  string
-	multitenantWorkspaceSecret            string
-	configBackendURL, workspaceToken      string
+	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
 	configJSONPath                        string
@@ -201,6 +200,7 @@ type TrackingPlanT struct {
 
 type BackendConfig interface {
 	SetUp()
+	AccessToken() string
 	Get(string) (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
@@ -209,6 +209,7 @@ type BackendConfig interface {
 	Subscribe(channel chan pubsub.DataEvent, topic Topic)
 	Stop()
 	StartWithIDs(workspaces string)
+	IsConfigured() bool
 }
 type CommonBackendConfig struct {
 	eb               pubsub.PublishSubscriber
@@ -219,13 +220,7 @@ type CommonBackendConfig struct {
 }
 
 func loadConfig() {
-	// Rudder supporting multiple workspaces. false by default
-	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
-	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
-	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	workspaceToken = config.GetWorkspaceToken()
 
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 
@@ -388,23 +383,53 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	return nil
 }
 
-// Setup backend config
-func Setup(configEnvHandler types.ConfigEnvI) {
-	if isMultiWorkspace && misc.IsMultiTenant() {
-		backendConfig = new(MultiTenantWorkspaceConfig)
-		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
-	} else if isMultiWorkspace {
-		backendConfig = new(MultiWorkspaceConfig)
-	} else {
-		backendConfig = new(WorkspaceConfig)
-		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
+func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+	var backendConfig BackendConfig
+
+	switch deploymentType {
+	case deployment.DedicatedType:
+		backendConfig = &SingleWorkspaceConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	case deployment.HostedType:
+		backendConfig = &HostedWorkspacesConfig{}
+	case deployment.MultiTenantType:
+		backendConfig = &MultiTenantWorkspacesConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				configEnvHandler: configEnvHandler,
+			},
+		}
+	// Fallback to dedicated
+	default:
+		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
 	}
 
 	backendConfig.SetUp()
+	if !backendConfig.IsConfigured() {
+		return nil, fmt.Errorf("backend config token not available")
+	}
+
+	return backendConfig, nil
+}
+
+// Setup backend config
+func Setup(configEnvHandler types.ConfigEnvI) (err error) {
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("deployment type from env: %w", err)
+	}
+
+	backendConfig, err = newForDeployment(deploymentType, configEnvHandler)
+	if err != nil {
+		return err
+	}
 
 	DefaultBackendConfig = backendConfig
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+	return nil
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
@@ -429,17 +454,4 @@ func (bc *CommonBackendConfig) Stop() {
 
 func GetConfigBackendURL() string {
 	return configBackendURL
-}
-
-// Gets the workspace token data for a single workspace or multi workspace case
-func GetWorkspaceToken() (workspaceToken string) {
-	workspaceToken = config.GetWorkspaceToken()
-	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if misc.IsMultiTenant() && isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-	} else if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	}
-
-	return workspaceToken
 }

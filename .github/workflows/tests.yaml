@@ -26,7 +26,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - name: Integration test
-      run: go test -v ./docker_test.go -integration -bigqueryintegration -count 1
+      run: go test -v ./docker_test.go -integration -count 1
       env:
         RSERVER_ENABLE_MULTITENANCY: false
         BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
@@ -40,7 +40,7 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - name: Checkout enterprise 
+    - name: Checkout enterprise
       uses: actions/checkout@v3
       with:
         repository: rudderlabs/rudder-server-enterprise
@@ -62,7 +62,7 @@ jobs:
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: make enterprise-init
     - name: Integration test
-      run: go test -v ./docker_test.go -integration -bigqueryintegration -count 1
+      run: go test -v ./docker_test.go -integration -count 1
       env:
         RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
         BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
@@ -86,7 +86,8 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
+    - run: ginkgo version
     - run: make test
 
   unit-enterprise:
@@ -96,7 +97,7 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - name: Checkout enterprise 
+    - name: Checkout enterprise
       uses: actions/checkout@v3
       with:
         repository: rudderlabs/rudder-server-enterprise
@@ -116,7 +117,8 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
+    - run: ginkgo version
     - run: make enterprise-init
     - run: make test
     - uses: codecov/codecov-action@v2

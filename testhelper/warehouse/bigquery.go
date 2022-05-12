@@ -1,26 +1,27 @@
 package warehouse_test
 
 import (
-	bq "cloud.google.com/go/bigquery"
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"os"
 	"strings"
 	"time"
+
+	bq "cloud.google.com/go/bigquery"
+	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 )
 
 type BiqQueryTest struct {
-	Credentials            *BigQueryCredentials
-	DB                     *bq.Client
-	Context                context.Context
-	EventsMap              EventsCountMap
-	WriteKey               string
-	Tables                 []string
-	PrimaryKeys            []string
-	TableTestQueryFreqInMS time.Duration
+	Credentials        *BigQueryCredentials
+	DB                 *bq.Client
+	Context            context.Context
+	EventsMap          EventsCountMap
+	WriteKey           string
+	Tables             []string
+	PrimaryKeys        []string
+	TableTestQueryFreq time.Duration
 }
 type BigQueryCredentials struct {
 	ProjectID          string            `json:"projectID"`
@@ -73,10 +74,10 @@ func SetWHBigQueryDestination() (cleanup func()) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
-		Context:                context.Background(),
-		Tables:                 []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
-		PrimaryKeys:            []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
-		TableTestQueryFreqInMS: 5000,
+		Context:            context.Background(),
+		Tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		PrimaryKeys:        []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"},
+		TableTestQueryFreq: 5000 * time.Millisecond,
 	}
 
 	bqTest := Test.BQTest

@@ -308,3 +308,9 @@ func (manager *ETCDManager) Close() {
 		_ = manager.Client.Close()
 	}
 }
+
+func NewETCDDynamicProvider() *ETCDManager {
+	return &ETCDManager{
+		Config: EnvETCDConfig(),
+	}
+}

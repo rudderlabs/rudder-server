@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	_ "encoding/json"
 	"fmt"
+	"log"
+
 	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
-	"log"
+	"github.com/ory/dockertest/v3"
 )
 
 type PostgresResource struct {
@@ -16,6 +17,7 @@ type PostgresResource struct {
 	Database string
 	Password string
 	User     string
+	Host     string
 	Port     string
 }
 
@@ -60,6 +62,7 @@ func SetupPostgres(pool *dockertest.Pool, d deferer) (*PostgresResource, error) 
 		Database: database,
 		Password: password,
 		User:     user,
+		Host:     "localhost",
 		Port:     postgresContainer.GetPort("5432/tcp"),
 	}, nil
 }
