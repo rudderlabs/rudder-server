@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,9 +74,16 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (Conf
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
-	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
-	workspacesString := ""
-	url = url + workspacesString
+	wIds := strings.Split(workspaceArr, ",")
+	for i := range wIds {
+		wIds[i] = strings.Trim(wIds[i], " ")
+	}
+	encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
+	if err != nil {
+		pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
+		return ConfigT{}, false
+	}
+	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
 	url = url + "&fetchAll=true"
 	var respBody []byte
 	var statusCode int
@@ -87,7 +95,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 

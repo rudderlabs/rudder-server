@@ -170,7 +170,7 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 	}
 	d.BackendConfig.Stop()
 	d.BackendConfig.StartWithIDs(workspaces)
-
+	d.currentWorkspaceIDs = workspaces
 	return d.BackendConfig.WaitForConfig(ctx)
 }
 
