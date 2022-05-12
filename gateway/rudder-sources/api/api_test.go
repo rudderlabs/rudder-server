@@ -1,8 +1,6 @@
 package api_test
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,34 +9,32 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
+	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDelete(t *testing.T) {
-	gateway.Init()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-
-	mockSvc := api.NewMockSourcesService(mockCtrl)
-	gw := gateway.HandleT{
-		SourcesAPI: api.Source{
-			SVC: mockSvc,
-		},
+	mockSVC := api.NewMockSourcesService(mockCtrl)
+	sAPI := api.API{
+		SVC: mockSVC,
 	}
-	gw.StartWebHandler(context.Background())
 
 	var tests = []struct {
-		name      string
-		endpoint  string
-		method    string
-		arguments []map[string]string
+		name                 string
+		jobID                string
+		endpoint             string
+		method               string
+		expectedResponseCode int
 	}{
 		{
-			name:     "basic test",
-			endpoint: prepURL("/v1/job-status/{job_id}", "123"),
+			name:                 "basic test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			method:               "DELETE",
+			expectedResponseCode: 200,
 		},
 	}
 
@@ -46,38 +42,142 @@ func TestDelete(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
-			url := fmt.Sprintf()
-			req, err := http.NewRequest(tt.method, "http://localhost:8080"+tt.endpoint, bytes.NewBuffer(tt.reqBody))
+
+			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(nil).Times(1)
+
+			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			req, err := http.NewRequest(tt.method, url, nil)
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
-			h := (&api.ManageAPI{Svc: tt.mockRegSvc}).Handler()
+			h := sAPI.Handler()
 			h.ServeHTTP(resp, req)
-			body, err := ioutil.ReadAll(resp.Body)
-			t.Log(string(body))
+			_, err = ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
-			if tt.responseCode < 400 {
-				require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
-			}
-			require.Equal(t, tt.responseCode, resp.Code, "Response code mismatch")
-			if tt.expectedResponseBody != "" {
-				require.Equal(t, tt.expectedResponseBody, string(body))
 
-			}
-			if len(tt.expectedPostRegulations) > 0 {
-				for i := 0; i < len(tt.expectedPostRegulations); i++ {
-					tt.expectedPostRegulations[i].Id = tt.mockRegSvc.createdRegulations[i].Id
-				}
-				require.Equal(t, tt.expectedPostRegulations, tt.mockRegSvc.createdRegulations)
-				require.Equal(t, tt.expectedDest, tt.mockRegSvc.receivedDest, "actual destination received is different than expected")
-			}
-			if tt.expCancelReg.regulationId != "" {
-				require.Equal(t, tt.expCancelReg, tt.mockRegSvc.actualCancelRegulation)
-			}
-			require.Equal(t, tt.expectedPageSize, tt.mockRegSvc.pageSize, "actual page size different than expected")
+			require.Equal(t, tt.expectedResponseCode, resp.Code, "required error different than expected")
 		})
 	}
+}
+
+func TestGetStatus(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockSVC := api.NewMockSourcesService(mockCtrl)
+	sAPI := api.API{
+		SVC: mockSVC,
+	}
+
+	var tests = []struct {
+		name                 string
+		jobID                string
+		endpoint             string
+		method               string
+		expectedResponseCode int
+		filter               map[string]string
+		jobStatus            model.JobStatus
+		respBody             string
+	}{
+		{
+			name:                 "basic test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			method:               "GET",
+			expectedResponseCode: 200,
+			filter: map[string]string{
+				"task_id":        "t1",
+				"source_id":      "s1",
+				"destination_id": "d1",
+			},
+			jobStatus: model.JobStatus{
+				ID: "123",
+				TasksStatus: []model.TaskStatus{
+					{
+						ID: "t1",
+						SourcesStatus: []model.SourceStatus{
+							{
+								ID:        "s1",
+								Completed: false,
+								Stats: model.Stats{
+									In:     1,
+									Out:    1,
+									Failed: 0,
+								},
+								DestinationsStatus: []model.DestinationStatus{
+									{
+										ID:        "d1",
+										Completed: false,
+										Stats: model.Stats{
+											In:     1,
+											Out:    1,
+											Failed: 0,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			respBody: `{"id":"123","tasks":[{"id":"t1","sources":[{"id":"s1","completed":false,"stats":{"in":1,"out":1,"failed":0},"destinations":[{"id":"d1","completed":false,"stats":{"in":1,"out":1,"failed":0}}]}]}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log("endpoint tested:", tt.endpoint)
+
+			filterArg := getArgumentFilter(tt.filter)
+			mockSVC.EXPECT().GetStatus(gomock.Any(), tt.jobID, filterArg).Return(tt.jobStatus, nil).Times(1)
+
+			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			url := withFilter(basicUrl, tt.filter)
+			req, err := http.NewRequest(tt.method, url, nil)
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+
+			h := sAPI.Handler()
+			h.ServeHTTP(resp, req)
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
+			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
+		})
+	}
+}
+
+func getArgumentFilter(filter map[string]string) model.JobFilter {
+	var filterArg model.JobFilter
+
+	if filter["task_id"] != "" {
+		tID := filter["task_id"]
+		filterArg.TaskRunId = &tID
+	}
+	if filter["source_id"] != "" {
+		sID := filter["source_id"]
+		filterArg.SourceId = &sID
+	}
+	if filter["destination_id"] != "" {
+		dID := filter["destination_id"]
+		filterArg.DestinationId = &dID
+	}
+	return filterArg
+}
+
+func withFilter(basicUrl string, filters map[string]string) string {
+	if len(filters) == 0 {
+		return basicUrl
+	}
+
+	newURL := basicUrl + "?"
+	for key, val := range filters {
+		newURL = newURL + key + "=" + val + "&"
+	}
+	return newURL[:len(newURL)-1]
 }
 
 func prepURL(url string, params ...string) string {

@@ -31,11 +31,19 @@ type SourcesService interface {
 	GetFailedRecords(ctx context.Context, tx sql.Tx, jobRunId string, filter model.JobFilter) (model.FailedRecords, error)
 }
 
-type Source struct {
+type API struct {
 	SVC SourcesService
 }
 
-func (s *Source) Delete(w http.ResponseWriter, r *http.Request) {
+func (a *API) Handler() http.Handler {
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/v1/job-status/{job_id}", a.getStatus).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_id}", a.delete).Methods("DELETE")
+
+	return srvMux
+}
+
+func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobId string
 	var ok bool
@@ -44,7 +52,7 @@ func (s *Source) Delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job_id not found", http.StatusBadRequest)
 	}
 
-	err := s.SVC.Delete(ctx, jobId)
+	err := a.SVC.Delete(ctx, jobId)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
@@ -53,27 +61,31 @@ func (s *Source) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Source) GetStatus(w http.ResponseWriter, r *http.Request) {
+func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobId string
 	var taskId, sourceId, destinationId *string
 	var ok bool
+
 	jobId, ok = mux.Vars(r)["job_id"]
 	if !ok {
 		http.Error(w, "job_id not found", http.StatusBadRequest)
 	}
+
 	tId, ok := r.URL.Query()["task_id"]
 	if ok {
 		if len(tId) > 0 {
 			taskId = &tId[0]
 		}
 	}
+
 	sId, ok := r.URL.Query()["source_id"]
 	if ok {
 		if len(sId) > 0 {
 			sourceId = &sId[0]
 		}
 	}
+
 	dId, ok := r.URL.Query()["destination_id"]
 	if ok {
 		if len(dId) > 0 {
@@ -93,7 +105,7 @@ func (s *Source) GetStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 
 	body, err := json.Marshal(mapJobToPayload(jobStatus))
 	if err != nil {
@@ -108,6 +120,7 @@ func (s *Source) GetStatus(w http.ResponseWriter, r *http.Request) {
 
 }
 
+//to map jobStatus output from internal data type to external data type.
 func mapJobToPayload(job model.JobStatus) JobStatusSchema {
 
 	taskStatusList := make([]TaskStatusSchema, len(job.TasksStatus))

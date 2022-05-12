@@ -35,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
 	sources "github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
@@ -180,7 +179,6 @@ type HandleT struct {
 	netHandle                                                  *http.Client
 	httpTimeout                                                time.Duration
 	httpWebServer                                              *http.Server
-	SourcesAPI                                                 api.Source
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
 }
@@ -1418,10 +1416,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.stat(gateway.fetchFailedEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.stat(gateway.clearFailedEventsHandler)).Methods("POST")
 
+	sAPI := sources.API{}
 	//rudder-sources new APIs
-	srvMux.HandleFunc("/v1/job-status/{job_id}", gateway.SourcesAPI.GetStatus).Methods("GET")
-	srvMux.HandleFunc("/v1/job-status/{job_id}", gateway.SourcesAPI.Delete).Methods("DELETE")
-
+	srvMux.PathPrefix("/workspaces").Handler(sAPI.Handler())
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -1626,7 +1623,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gatewayAdmin := GatewayAdmin{handle: gateway}
 	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
 
-	gateway.SourcesAPI = sources.Source{}
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
