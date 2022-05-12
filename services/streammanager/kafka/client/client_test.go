@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -26,8 +27,15 @@ const (
 	defaultTestTimeout = 60 * time.Second
 )
 
+var (
+	overrideArm64Check bool
+)
+
 func TestMain(m *testing.M) {
-	if runtime.GOARCH == "arm64" {
+	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
+	flag.Parse()
+
+	if runtime.GOARCH == "arm64" && !overrideArm64Check {
 		fmt.Println("arm64 is not supported yet")
 		os.Exit(0)
 	}

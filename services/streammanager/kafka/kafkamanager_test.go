@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"runtime"
@@ -17,7 +18,14 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
+var (
+	overrideArm64Check bool
+)
+
 func TestMain(m *testing.M) {
+	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
+	flag.Parse()
+
 	pkgLogger = &nopLogger{}
 	os.Exit(m.Run())
 }
@@ -68,7 +76,7 @@ func TestNewProducer(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
-		if runtime.GOARCH == "arm64" {
+		if runtime.GOARCH == "arm64" && !overrideArm64Check {
 			t.Skip("arm64 is not supported yet")
 		}
 

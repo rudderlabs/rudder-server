@@ -61,6 +61,7 @@ var (
 	webhook                      *WebhookRecorder
 	disableDestinationWebhook    *WebhookRecorder
 	runIntegration               bool
+	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
 	KafkaContainer               *destination.KafkaResource
@@ -284,6 +285,7 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
+	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
 	flag.Parse()
 
 	if !runIntegration {
@@ -323,7 +325,7 @@ func run(m *testing.M) (int, error) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	if runtime.GOARCH != "arm64" {
+	if runtime.GOARCH != "arm64" || overrideArm64Check {
 		KafkaContainer, err = destination.SetupKafka(pool, cleanup,
 			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
 			destination.WithBrokers(3),
@@ -422,7 +424,7 @@ func run(m *testing.M) (int, error) {
 		"rwhClickHouseClusterDestinationPort": wht.Test.CHClusterTest.GetResource().Credentials.Port,
 		"rwhMSSqlDestinationPort":             wht.Test.MSSQLTest.Credentials.Port,
 	}
-	if runtime.GOARCH != "arm64" {
+	if runtime.GOARCH != "arm64" || overrideArm64Check {
 		mapWorkspaceConfig["kafkaPort"] = KafkaContainer.Port
 	}
 	if runBigQueryTest && wht.Test.BQTest != nil {
@@ -726,7 +728,7 @@ func TestRedis(t *testing.T) {
 }
 
 func TestKafka(t *testing.T) {
-	if runtime.GOARCH == "arm64" {
+	if runtime.GOARCH == "arm64" || overrideArm64Check {
 		t.Skip("arm64 is not supported yet")
 	}
 
@@ -737,7 +739,7 @@ func TestKafka(t *testing.T) {
 	topics, err := tc.ListTopics(context.TODO())
 	require.NoError(t, err)
 
-	c, err := kafkaclient.New("tcp", kafkaHost, kafkaclient.Config{})
+	c, err := kafkaclient.New("tcp", []string{kafkaHost}, kafkaclient.Config{})
 	require.NoError(t, err)
 
 	messages, errors := consume(t, c, topics)
