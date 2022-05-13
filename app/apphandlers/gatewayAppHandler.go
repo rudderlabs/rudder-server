@@ -95,7 +95,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	dm := cluster.Dynamic{
 		Provider:         modeProvider,
 		GatewayComponent: true,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
 	}
 	g.Go(func() error {
 		return dm.Run(ctx)
