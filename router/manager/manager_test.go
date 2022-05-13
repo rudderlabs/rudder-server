@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -209,18 +210,20 @@ func TestRouterManager(t *testing.T) {
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
-		Reporting:     &reportingNOOP{},
-		Multitenant:   mockMTI,
-		BackendConfig: mockBackendConfig,
-		RouterDB:      tDb,
-		ProcErrorDB:   errDB,
+		Reporting:        &reportingNOOP{},
+		Multitenant:      mockMTI,
+		BackendConfig:    mockBackendConfig,
+		RouterDB:         tDb,
+		ProcErrorDB:      errDB,
+		TransientSources: transientsource.NewEmptyService(),
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:     &reportingNOOP{},
-		Multitenant:   mockMTI,
-		BackendConfig: mockBackendConfig,
-		RouterDB:      brtDB,
-		ProcErrorDB:   errDB,
+		Reporting:        &reportingNOOP{},
+		Multitenant:      mockMTI,
+		BackendConfig:    mockBackendConfig,
+		RouterDB:         brtDB,
+		ProcErrorDB:      errDB,
+		TransientSources: transientsource.NewEmptyService(),
 	}
 	r := New(rtFactory, brtFactory, mockBackendConfig)
 

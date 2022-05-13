@@ -90,6 +90,7 @@ JobsDB:
       failedOnly: false
   gw:
     enableWriterQueue: false
+    maxOpenConnections: 64
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
