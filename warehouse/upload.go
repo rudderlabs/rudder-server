@@ -454,8 +454,9 @@ func (job *UploadJobT) run() (err error) {
 
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
+			var loadFilesTableMap map[tableNameT]bool
 
-			loadFilesTableMap, err := job.getLoadFilesTableMap()
+			loadFilesTableMap, err = job.getLoadFilesTableMap()
 			if err != nil {
 				err = fmt.Errorf("unable to get load files table map: %w", err)
 				break
