@@ -1340,7 +1340,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	sAPI := sources.API{}
 	//rudder-sources new APIs
-	srvMux.PathPrefix("/workspaces").Handler(sAPI.Handler())
+	srvMux.PathPrefix("/v1/job-status").Handler(sAPI.Handler())
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,

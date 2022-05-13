@@ -8,6 +8,11 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+)
+
+var (
+	pkgLogger logger.LoggerI
 )
 
 // JobService manages information about jobs created by rudder-sources
@@ -35,6 +40,10 @@ type API struct {
 	SVC SourcesService
 }
 
+func Init() {
+	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
+}
+
 func (a *API) Handler() http.Handler {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/job-status/{job_id}", a.getStatus).Methods("GET")
@@ -57,8 +66,7 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +122,7 @@ func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = w.Write(body)
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		pkgLogger.Errorf("error while writing response body: %v", err)
 		return
 	}
 
