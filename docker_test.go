@@ -282,10 +282,13 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 }
 
 func TestMain(m *testing.M) {
+	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
+		overrideArm64Check = true
+	}
+
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
-	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
 	flag.Parse()
 
 	if !runIntegration {

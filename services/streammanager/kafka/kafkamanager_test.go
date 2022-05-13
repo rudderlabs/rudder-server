@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"runtime"
@@ -25,9 +24,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&overrideArm64Check, "override-arm64", false, "override arm64 check")
-	flag.Parse()
-
+	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
+		overrideArm64Check = true
+	}
 	pkgLogger = &nopLogger{}
 	os.Exit(m.Run())
 }
