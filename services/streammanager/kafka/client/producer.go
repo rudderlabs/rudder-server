@@ -2,8 +2,11 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -29,10 +32,11 @@ func (c *ProducerConfig) defaults() {
 // Producer provides a high-level API for producing messages to Kafka
 type Producer struct {
 	writer *kafka.Writer
+	config ProducerConfig
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) {
+func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
@@ -61,13 +65,15 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 	}
 
 	p = &Producer{
+		config: producerConf,
 		writer: &kafka.Writer{
-			Addr:                   c,
+			Addr:                   kafka.TCP(c.addresses...),
 			Topic:                  topic,
 			Balancer:               &kafka.ReferenceHash{}, // TODO replace: https://github.com/segmentio/kafka-go/pull/906
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
+			MaxAttempts:            3,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
@@ -84,7 +90,10 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 func (p *Producer) Close(ctx context.Context) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- p.writer.Close()
+		if p.writer != nil {
+			done <- p.writer.Close()
+		}
+		close(done)
 	}()
 
 	select {
@@ -117,5 +126,35 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 			Headers: headers,
 		}
 	}
+
 	return p.writer.WriteMessages(ctx, messages...)
+}
+
+var tempError interface{ Temporary() bool }
+
+func isErrTemporary(err error) bool {
+	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE)
+	if isTransientNetworkError {
+		return true
+	}
+	if errors.As(err, &tempError) {
+		return tempError.Temporary()
+	}
+	return false
+}
+
+func IsProducerErrTemporary(err error) bool {
+	if we, ok := err.(kafka.WriteErrors); ok {
+		for _, err := range we {
+			// if at least one was temporary then we treat the whole batch as such
+			if isErrTemporary(err) {
+				return true
+			}
+		}
+		return false
+	}
+	return isErrTemporary(err)
 }

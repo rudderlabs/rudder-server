@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
