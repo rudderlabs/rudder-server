@@ -39,6 +39,8 @@ type configLifecycle interface {
 type Dynamic struct {
 	Provider ChangeEventProvider
 
+	GatewayComponent bool
+
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
 	BatchRouterDB lifecycle
@@ -178,6 +180,11 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	if !newMode.Valid() {
 		return fmt.Errorf("unsupported mode: %s", newMode)
 	}
+	if d.GatewayComponent {
+		d.logger.Info("Not transiting the server because this is only Gateway App")
+		return nil
+	}
+
 	if d.currentMode == newMode {
 		// TODO add logging
 		return nil
