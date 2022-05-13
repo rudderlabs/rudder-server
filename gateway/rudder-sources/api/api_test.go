@@ -14,60 +14,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// func TestDelete(t *testing.T) {
-// 	mockCtrl := gomock.NewController(t)
-// 	defer mockCtrl.Finish()
-// 	mockSVC := api.NewMockSourcesService(mockCtrl)
-// 	sAPI := api.API{
-// 		SVC: mockSVC,
-// 	}
+func TestDelete(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockSVC := api.NewMockSourcesService(mockCtrl)
+	sAPI := api.API{
+		SVC: mockSVC,
+	}
 
-// 	var tests = []struct {
-// 		name                 string
-// 		jobID                string
-// 		endpoint             string
-// 		method               string
-// 		expectedResponseCode int
-// 		serviceReturnError   error
-// 	}{
-// 		{
-// 			name:                 "basic test",
-// 			jobID:                "123",
-// 			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
-// 			method:               "DELETE",
-// 			expectedResponseCode: 204,
-// 		},
-// 		{
-// 			name:                 "service returns error test",
-// 			jobID:                "123",
-// 			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
-// 			method:               "DELETE",
-// 			expectedResponseCode: 500,
-// 			serviceReturnError:   fmt.Errorf("something when wrong"),
-// 		},
-// 	}
+	var tests = []struct {
+		name                 string
+		jobID                string
+		endpoint             string
+		method               string
+		expectedResponseCode int
+		serviceReturnError   error
+	}{
+		{
+			name:                 "basic test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			method:               "DELETE",
+			expectedResponseCode: 204,
+		},
+		{
+			name:                 "service returns error test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			method:               "DELETE",
+			expectedResponseCode: 500,
+			serviceReturnError:   fmt.Errorf("something when wrong"),
+		},
+	}
 
-// 	for _, tt := range tests {
+	for _, tt := range tests {
 
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			t.Log("endpoint tested:", tt.endpoint)
-// 			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log("endpoint tested:", tt.endpoint)
+			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
 
-// 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
-// 			req, err := http.NewRequest(tt.method, url, nil)
-// 			require.NoError(t, err)
-// 			req.Header.Set("Content-Type", "application/json")
-// 			resp := httptest.NewRecorder()
+			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			req, err := http.NewRequest(tt.method, url, nil)
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
 
-// 			h := sAPI.Handler()
-// 			h.ServeHTTP(resp, req)
-// 			_, err = ioutil.ReadAll(resp.Body)
-// 			require.NoError(t, err)
+			h := sAPI.Handler()
+			h.ServeHTTP(resp, req)
+			_, err = ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
 
-// 			require.Equal(t, tt.expectedResponseCode, resp.Code, "required error different than expected")
-// 		})
-// 	}
-// }
+			require.Equal(t, tt.expectedResponseCode, resp.Code, "required error different than expected")
+		})
+	}
+}
 
 func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
