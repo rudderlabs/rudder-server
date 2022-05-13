@@ -524,7 +524,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) time.Time {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -554,7 +554,6 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	if uploadTriggered {
 		clearTriggeredUpload(warehouse)
 	}
-	return uploadStartAfter
 }
 
 func getUploadStartAfterTime() time.Time {
@@ -625,7 +624,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	uploadStartAfter := getUploadStartAfterTime()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, getUploadStartAfterTime())
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
 	return nil
 }
