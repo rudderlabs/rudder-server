@@ -28,13 +28,22 @@ func TestDelete(t *testing.T) {
 		endpoint             string
 		method               string
 		expectedResponseCode int
+		serviceReturnError   error
 	}{
 		{
 			name:                 "basic test",
 			jobID:                "123",
 			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
 			method:               "DELETE",
-			expectedResponseCode: 200,
+			expectedResponseCode: 204,
+		},
+		{
+			name:                 "service returns error test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			method:               "DELETE",
+			expectedResponseCode: 500,
+			serviceReturnError:   fmt.Errorf("something when wrong"),
 		},
 	}
 
@@ -42,8 +51,7 @@ func TestDelete(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
-
-			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(nil).Times(1)
+			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
 
 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			req, err := http.NewRequest(tt.method, url, nil)
