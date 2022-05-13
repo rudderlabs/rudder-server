@@ -72,7 +72,7 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobId string
-	var taskId, sourceId, destinationId *string
+	var taskId, sourceId *[]string
 	var ok bool
 
 	jobId, ok = mux.Vars(r)["job_id"]
@@ -83,21 +83,15 @@ func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 	tId, ok := r.URL.Query()["task_id"]
 	if ok {
 		if len(tId) > 0 {
-			taskId = &tId[0]
+
+			taskId = &tId
 		}
 	}
 
 	sId, ok := r.URL.Query()["source_id"]
 	if ok {
 		if len(sId) > 0 {
-			sourceId = &sId[0]
-		}
-	}
-
-	dId, ok := r.URL.Query()["destination_id"]
-	if ok {
-		if len(dId) > 0 {
-			destinationId = &dId[0]
+			sourceId = &sId
 		}
 	}
 
@@ -105,9 +99,8 @@ func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 		ctx,
 		jobId,
 		model.JobFilter{
-			TaskRunId:     taskId,
-			SourceId:      sourceId,
-			DestinationId: destinationId,
+			TaskRunId: taskId,
+			SourceId:  sourceId,
 		})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

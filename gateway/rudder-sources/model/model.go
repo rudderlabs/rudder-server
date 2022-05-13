@@ -1,9 +1,8 @@
 package model
 
 type JobFilter struct {
-	TaskRunId     *string
-	SourceId      *string
-	DestinationId *string
+	TaskRunId *[]string
+	SourceId  *[]string
 }
 
 type FailedRecords struct {
