@@ -3,6 +3,10 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -64,6 +68,37 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
+
+	var modeProvider cluster.ChangeEventProvider
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	switch deploymentType {
+	case deployment.MultiTenantType:
+		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		modeProvider = state.NewETCDDynamicProvider()
+	case deployment.HostedType, deployment.DedicatedType:
+		pkgLogger.Info("using Static Cluster Manager")
+		if enableProcessor && enableRouter {
+			modeProvider = state.NewStaticProvider(servermode.NormalMode)
+		} else {
+			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+		}
+	default:
+		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+	}
+
+	dm := cluster.Dynamic{
+		Provider:         modeProvider,
+		GatewayComponent: true,
+	}
+	g.Go(func() error {
+		return dm.Run(ctx)
+	})
 
 	if enableGateway {
 		var gw gateway.HandleT

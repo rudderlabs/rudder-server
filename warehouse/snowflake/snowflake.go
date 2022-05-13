@@ -161,15 +161,13 @@ func (sf *HandleT) columnExists(columnName string, tableName string) (exists boo
 	return
 }
 
-func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
-	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s'`, sf.Namespace)
-	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+func (sf *HandleT) schemaExists() (exists bool, err error) {
+	sqlStatement := "SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = $1 )"
+	err = sf.Db.QueryRow(sqlStatement, sf.Namespace).Scan(&exists)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
 	}
-	exists = count > 0
 	return
 }
 
@@ -602,7 +600,7 @@ func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql
 
 func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	schemaExists, err = sf.schemaExists(sf.Namespace)
+	schemaExists, err = sf.schemaExists()
 	if err != nil {
 		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", sf.Namespace, err)
 		return err

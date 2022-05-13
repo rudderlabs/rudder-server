@@ -15,7 +15,7 @@ import (
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd AssertInterface, dbHandle *sql.DB, tablePrefix string) []dataSetT {
+func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataSetT {
 	datasetList := []dataSetT{}
 
 	//Read the table names from PG
@@ -82,7 +82,7 @@ func getDSList(jd AssertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
 but this sort handles the general case
 */
-func sortDnumList(jd AssertInterface, dnumList []string) {
+func sortDnumList(jd assertInterface, dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		src := strings.Split(dnumList[i], "_")
 		dst := strings.Split(dnumList[j], "_")
@@ -138,7 +138,7 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 }
 
 //getAllTableNames Function to get all table names form Postgres
-func getAllTableNames(jd AssertInterface, dbHandle *sql.DB) []string {
+func getAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
 	//Read the table names from PG
 	stmt, err := dbHandle.Prepare(`SELECT tablename
                                         FROM pg_catalog.pg_tables
@@ -163,7 +163,7 @@ func getAllTableNames(jd AssertInterface, dbHandle *sql.DB) []string {
 }
 
 //checkValidJobState Function to check validity of states
-func checkValidJobState(jd AssertInterface, stateFilters []string) {
+func checkValidJobState(jd assertInterface, stateFilters []string) {
 	jobStateMap := make(map[string]jobStateT)
 	for _, js := range jobStates {
 		jobStateMap[js.State] = js
@@ -176,7 +176,7 @@ func checkValidJobState(jd AssertInterface, stateFilters []string) {
 }
 
 //constructQuery construct and return query
-func constructQuery(jd AssertInterface, paramKey string, paramList []string, queryType string) string {
+func constructQuery(jd assertInterface, paramKey string, paramList []string, queryType string) string {
 	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
 	var queryList []string
 	for _, p := range paramList {
@@ -237,7 +237,7 @@ func Init3() {
 	admin.RegisterAdminHandler("JobsdbUtilsHandler", jobsdbUtilsHandler)
 }
 
-func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err error) {
+func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -264,7 +264,7 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	return err
 }
 
-func (jd *HandleT) getTimerStat(stat string, tags *StatTagsT) stats.RudderStats {
+func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.RudderStats {
 	timingTags := map[string]string{
 		"tablePrefix": jd.tablePrefix,
 	}
