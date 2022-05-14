@@ -156,7 +156,6 @@ var (
 )
 
 func init() {
-	setMaxParallelLoads()
 	initializeStateMachine()
 }
 
