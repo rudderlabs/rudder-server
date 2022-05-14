@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -910,8 +909,8 @@ var _ = Describe("Processor", func() {
 				})
 
 			// will be used to save failed events to failed keys table
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx jobsdb.Tx) error) {
+				_ = f(jobsdb.EmptyTx())
 			}).Times(1)
 
 			// One Store call is expected for all events
@@ -1044,8 +1043,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
 
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx jobsdb.Tx) error) {
+				_ = f(jobsdb.EmptyTx())
 			}).Return(nil).Times(1)
 
 			// One Store call is expected for all events
