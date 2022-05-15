@@ -21,7 +21,7 @@ type metricStatsCollector struct {
 // newMetricStatsCollector creates a new metricStatsCollector.
 func newMetricStatsCollector() metricStatsCollector {
 	return metricStatsCollector{
-		pauseDur: 60 * time.Second,
+		pauseDur: 10 * time.Second,
 		done:     make(chan struct{}),
 	}
 }
