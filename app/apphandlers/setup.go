@@ -114,7 +114,7 @@ func rudderCoreBaseSetup() {
 //StartProcessor atomically starts processor process if not already started
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
-	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+	procErrorDB jobsdb.JobsDB, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service,
 ) {
 	if !processorLoaded.First() {
@@ -130,8 +130,8 @@ func StartProcessor(
 
 //StartRouter atomically starts router process if not already started
 func StartRouter(
-	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
-	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
+	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB jobsdb.JobsDB,
+	procErrorDB jobsdb.JobsDB, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service,
 ) {
 	if !routerLoaded.First() {

@@ -27,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
-	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -98,7 +97,7 @@ type testContext struct {
 	asyncHelper testutils.AsyncTestHelper
 
 	mockCtrl          *gomock.Controller
-	mockJobsDB        *mocksJobsDB.MockJobsDB
+	mockJobsDB        *jobsdb.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 	mockApp           *mocksApp.MockInterface
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
@@ -125,7 +124,7 @@ func (c *testContext) initializeEnterprizeAppFeatures() {
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockJobsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)

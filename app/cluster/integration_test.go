@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -194,8 +194,8 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+			"rt":       &jobsdb.MultiTenantHandleT{JobsDB: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{JobsDB: brtDB},
 		},
 	}
 
@@ -206,7 +206,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockTransformer.EXPECT().Setup().Times(1)
 
-	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+	tDb := &jobsdb.MultiTenantHandleT{JobsDB: rtDB}
 	rtFactory := &router.Factory{
 		Reporting:        &reportingNOOP{},
 		Multitenant:      mockMTI,

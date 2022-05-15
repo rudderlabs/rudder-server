@@ -1,7 +1,7 @@
 package jobsdb
 
 type MultiTenantLegacy struct {
-	*HandleT
+	JobsDB
 }
 
 func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, _ int) []*JobT {

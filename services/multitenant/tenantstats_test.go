@@ -13,7 +13,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
@@ -48,7 +47,7 @@ var _ = Describe("tenantStats", func() {
 		var tenantStats *MultitenantStatsT
 		BeforeEach(func() {
 			mockCtrl := gomock.NewController(GinkgoT())
-			mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
+			mockRouterJobsDB := jobsdb.NewMockMultiTenantJobsDB(mockCtrl)
 			// crash recovery check
 			mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
 			tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"rt": mockRouterJobsDB})

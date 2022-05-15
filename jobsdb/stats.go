@@ -11,11 +11,11 @@ var statesIndex map[string]jobStateT
 var once sync.Once
 
 type statsHandle struct {
-	*HandleT
+	JobsDB
 }
 
 func (r *statsHandle) Store(jobList []*JobT) error {
-	err := r.HandleT.Store(jobList)
+	err := r.JobsDB.Store(jobList)
 	if err != nil {
 		return err
 	}
@@ -24,7 +24,7 @@ func (r *statsHandle) Store(jobList []*JobT) error {
 }
 
 func (r *statsHandle) StoreInTx(tx StoreSafeTx, jobList []*JobT) error {
-	err := r.HandleT.StoreInTx(tx, jobList)
+	err := r.JobsDB.StoreInTx(tx, jobList)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (r *statsHandle) StoreInTx(tx StoreSafeTx, jobList []*JobT) error {
 }
 
 func (r *statsHandle) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-	res := r.HandleT.StoreWithRetryEach(jobList)
+	res := r.JobsDB.StoreWithRetryEach(jobList)
 
 	var successful []*JobT
 	for i := range jobList {
@@ -47,7 +47,7 @@ func (r *statsHandle) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 }
 
 func (r *statsHandle) StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string {
-	res := r.HandleT.StoreWithRetryEachInTx(tx, jobList)
+	res := r.JobsDB.StoreWithRetryEachInTx(tx, jobList)
 
 	var successful []*JobT
 	for i := range jobList {
@@ -65,7 +65,7 @@ func (r *statsHandle) StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) ma
 
 }
 func (r *statsHandle) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	err := r.HandleT.UpdateJobStatus(statusList, customValFilters, parameterFilters)
+	err := r.JobsDB.UpdateJobStatus(statusList, customValFilters, parameterFilters)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (r *statsHandle) UpdateJobStatus(statusList []*JobStatusT, customValFilters
 }
 
 func (r *statsHandle) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	err := r.HandleT.UpdateJobStatusInTx(tx, statusList, customValFilters, parameterFilters)
+	err := r.JobsDB.UpdateJobStatusInTx(tx, statusList, customValFilters, parameterFilters)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (r *statsHandle) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStat
 }
 
 func (r *statsHandle) add(jobList []*JobT) {
-	metric.PendingEvents(r.tablePrefix, "GLOBAL", "GLOBAL").Add(float64(len(jobList)))
+	metric.PendingEvents(r.Identifier(), "GLOBAL", "GLOBAL").Add(float64(len(jobList)))
 }
 
 func (r *statsHandle) dec(statusList []*JobStatusT) {
@@ -101,7 +101,7 @@ func (r *statsHandle) dec(statusList []*JobStatusT) {
 			count++
 		}
 	}
-	metric.PendingEvents(r.tablePrefix, "GLOBAL", "GLOBAL").Sub(float64(count))
+	metric.PendingEvents(r.Identifier(), "GLOBAL", "GLOBAL").Sub(float64(count))
 }
 
 func WithStats(handle *HandleT) JobsDB {

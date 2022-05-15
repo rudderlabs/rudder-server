@@ -557,7 +557,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
 
-	mtl := jobsdb.MultiTenantLegacy{HandleT: &jobDB}
+	mtl := jobsdb.MultiTenantLegacy{JobsDB: &jobDB}
 
 	eventsPerJob := 10
 	// Create 30 jobs
@@ -640,7 +640,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
 
-	mtl := jobsdb.MultiTenantHandleT{HandleT: &jobDB}
+	mtl := jobsdb.MultiTenantHandleT{JobsDB: &jobDB}
 
 	eventsPerJob := 10
 
@@ -960,19 +960,16 @@ func BenchmarkLifecycle(b *testing.B) {
 	initJobsDB()
 	stats.Setup()
 
-	jobDB := jobsdb.NewForReadWrite("test")
-	defer jobDB.Close()
-
 	const writeConcurrency = 10
 	const newJobs = 100
-
 	dsSize := writeConcurrency * newJobs
 	triggerAddNewDS := make(chan time.Time)
 
-	jobDB.MaxDSSize = &dsSize
-	jobDB.TriggerAddNewDS = func() <-chan time.Time {
-		return triggerAddNewDS
-	}
+	jobDB := jobsdb.NewForReadWrite("test",
+		jobsdb.WithMaxDsSize(dsSize),
+		jobsdb.WithTriggerAddNewDs(func() <-chan time.Time { return triggerAddNewDS }),
+	)
+	defer jobDB.Close()
 
 	b.Run("Start, Work, Stop, Repeat", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -996,7 +993,7 @@ func BenchmarkLifecycle(b *testing.B) {
 	})
 }
 
-func consume(t testing.TB, db *jobsdb.HandleT, count int) {
+func consume(t testing.TB, db jobsdb.JobsDB, count int) {
 	t.Helper()
 
 	unprocessedList := db.GetUnprocessed(jobsdb.GetQueryParamsT{

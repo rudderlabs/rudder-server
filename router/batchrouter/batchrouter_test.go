@@ -14,7 +14,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
-	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -73,8 +72,8 @@ type testContext struct {
 	jobQueryBatchSize int
 
 	mockCtrl               *gomock.Controller
-	mockBatchRouterJobsDB  *mocksJobsDB.MockJobsDB
-	mockProcErrorsDB       *mocksJobsDB.MockJobsDB
+	mockBatchRouterJobsDB  *jobsdb.MockJobsDB
+	mockProcErrorsDB       *jobsdb.MockJobsDB
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
 	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
 	mockFileManager        *mocksFileManager.MockFileManager
@@ -87,8 +86,8 @@ type testContext struct {
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockBatchRouterJobsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
+	c.mockProcErrorsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockFileManagerFactory = mocksFileManager.NewMockFileManagerFactory(c.mockCtrl)
 	c.mockFileManager = mocksFileManager.NewMockFileManager(c.mockCtrl)

@@ -208,7 +208,7 @@ func TestRouterManager(t *testing.T) {
 	defer rtDB.Close()
 	defer brtDB.Close()
 	defer errDB.Close()
-	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
+	tDb := &jobsdb.MultiTenantHandleT{JobsDB: rtDB}
 	rtFactory := &router.Factory{
 		Reporting:        &reportingNOOP{},
 		Multitenant:      mockMTI,

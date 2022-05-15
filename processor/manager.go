@@ -18,10 +18,10 @@ type LifecycleManager struct {
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        *errgroup.Group
-	gatewayDB        *jobsdb.HandleT
-	routerDB         *jobsdb.HandleT
-	batchRouterDB    *jobsdb.HandleT
-	errDB            *jobsdb.HandleT
+	gatewayDB        jobsdb.JobsDB
+	routerDB         jobsdb.JobsDB
+	batchRouterDB    jobsdb.JobsDB
+	errDB            jobsdb.JobsDB
 	clearDB          *bool
 	MultitenantStats multitenant.MultiTenantI // need not initialize again
 	ReportingI       types.ReportingI         // need not initialize again
@@ -60,7 +60,7 @@ func (proc *LifecycleManager) Stop() {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb jobsdb.JobsDB,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},

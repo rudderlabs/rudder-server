@@ -19,13 +19,14 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	migrationMode := ""
 
 	maxDSSize := 2
-	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
+	handle := &HandleT{MaxDSSize: &maxDSSize}
+	jobDB := MultiTenantHandleT{JobsDB: handle}
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
 
-	jobDB.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
-	defer jobDB.TearDown()
+	handle.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	defer handle.TearDown()
 
 	customVal := "MOCKDS"
 	testWID := "testWorkspaceID"

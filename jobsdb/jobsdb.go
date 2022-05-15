@@ -17,7 +17,7 @@ mostly serviced from memory cache.
 
 package jobsdb
 
-//go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
+//go:generate mockgen -source=jobsdb.go -destination=mock_jobsdb.go -package=jobsdb  JobsDB
 
 import (
 	"bytes"
@@ -121,97 +121,115 @@ var getTimeNowFunc = func() time.Time {
 	return time.Now()
 }
 
-/*
-JobsDB interface contains public methods to access JobsDB data
-*/
-type JobsDB interface {
+type (
+	jobsdbcommand interface {
+		// WithTx begins a new transaction that can be used by the provided function.
+		// If the function returns an error, the transaction will rollback and return the error,
+		// otherwise the transaction will be commited and a nil error will be returned.
+		WithTx(func(tx Tx) error) error
 
-	// Identifier returns the jobsdb's identifier, a.k.a. table prefix
-	Identifier() string
+		// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
+		// that can be used by the provided function.
+		WithStoreSafeTx(func(tx StoreSafeTx) error) error
 
-	/* Commands */
+		// Store stores the provided jobs to the database
+		Store(jobList []*JobT) error
 
-	// WithTx begins a new transaction that can be used by the provided function.
-	// If the function returns an error, the transaction will rollback and return the error,
-	// otherwise the transaction will be commited and a nil error will be returned.
-	WithTx(func(tx Tx) error) error
+		// StoreInTx stores the provided jobs to the database using an existing transaction.
+		// Please ensure that you are using an StoreSafeTx, e.g.
+		//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
+		//	      jobsdb.StoreInTx(tx, jobList)
+		//    })
+		StoreInTx(tx StoreSafeTx, jobList []*JobT) error
 
-	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
-	// that can be used by the provided function.
-	WithStoreSafeTx(func(tx StoreSafeTx) error) error
+		// StoreWithRetryEach tries to store all the provided jobs to the database and returns the job uuids which failed
+		StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 
-	// Store stores the provided jobs to the database
-	Store(jobList []*JobT) error
+		// StoreWithRetryEachInTx tries to store all the provided jobs to the database and returns the job uuids which failed, using an existing transaction.
+		// Please ensure that you are using an StoreSafeTx, e.g.
+		//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
+		//	      jobsdb.StoreWithRetryEachInTx(tx, jobList)
+		//    })
+		StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
 
-	// StoreInTx stores the provided jobs to the database using an existing transaction.
-	// Please ensure that you are using an StoreSafeTx, e.g.
-	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
-	//	      jobsdb.StoreInTx(tx, jobList)
-	//    })
-	StoreInTx(tx StoreSafeTx, jobList []*JobT) error
+		// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
+		// that can be used by the provided function. An update-safe transaction shall be used if the provided function
+		// needs to call UpdateJobStatusInTx.
+		WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
 
-	// StoreWithRetryEach tries to store all the provided jobs to the database and returns the job uuids which failed
-	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
+		// UpdateJobStatus updates the provided job statuses
+		UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
-	// StoreWithRetryEachInTx tries to store all the provided jobs to the database and returns the job uuids which failed, using an existing transaction.
-	// Please ensure that you are using an StoreSafeTx, e.g.
-	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
-	//	      jobsdb.StoreWithRetryEachInTx(tx, jobList)
-	//    })
-	StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
+		// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
+		// Please ensure that you are using an UpdateSafeTx, e.g.
+		//    jobsdb.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
+		//	      jobsdb.UpdateJobStatusInTx(tx, statusList, customValFilters, parameterFilters)
+		//    })
+		UpdateJobStatusInTx(txHandler UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	}
 
-	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
-	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
-	// needs to call UpdateJobStatusInTx.
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	jobsdbquery interface {
+		// GetUnprocessed finds unprocessed jobs. Unprocessed are new
+		// jobs whose state hasn't been marked in the database yet
+		GetUnprocessed(params GetQueryParamsT) []*JobT
 
-	// UpdateJobStatus updates the provided job statuses
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+		// GetProcessed finds jobs in some state, i.e. not unprocessed
+		GetProcessed(params GetQueryParamsT) []*JobT
 
-	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
-	// Please ensure that you are using an UpdateSafeTx, e.g.
-	//    jobsdb.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
-	//	      jobsdb.UpdateJobStatusInTx(tx, statusList, customValFilters, parameterFilters)
-	//    })
-	UpdateJobStatusInTx(txHandler UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+		// GetToRetry finds jobs in failed state
+		GetToRetry(params GetQueryParamsT) []*JobT
 
-	/* Queries */
+		// GetToRetry finds jobs in waiting state
+		GetWaiting(params GetQueryParamsT) []*JobT
 
-	// GetUnprocessed finds unprocessed jobs. Unprocessed are new
-	// jobs whose state hasn't been marked in the database yet
-	GetUnprocessed(params GetQueryParamsT) []*JobT
+		// GetExecuting finds jobs in executing state
+		GetExecuting(params GetQueryParamsT) []*JobT
 
-	// GetProcessed finds jobs in some state, i.e. not unprocessed
-	GetProcessed(params GetQueryParamsT) []*JobT
+		// GetImporting finds jobs in importing state
+		GetImporting(params GetQueryParamsT) []*JobT
 
-	// GetToRetry finds jobs in failed state
-	GetToRetry(params GetQueryParamsT) []*JobT
+		// GetPileUpCounts returns statistics (counters) of incomplete jobs
+		// grouped by workspaceId and destination type
+		GetPileUpCounts(statMap map[string]map[string]int)
+	}
 
-	// GetToRetry finds jobs in waiting state
-	GetWaiting(params GetQueryParamsT) []*JobT
+	jobsdbadmin interface {
+		Status() interface{}
+		Ping() error
+		DeleteExecuting()
+	}
 
-	// GetExecuting finds jobs in executing state
-	GetExecuting(params GetQueryParamsT) []*JobT
+	jobsdbjournal interface {
+		GetJournalEntries(opType string) (entries []JournalEntryT)
+		JournalDeleteEntry(opID int64)
+		JournalMarkStart(opType string, opPayload json.RawMessage) int64
+	}
 
-	// GetImporting finds jobs in importing state
-	GetImporting(params GetQueryParamsT) []*JobT
+	jobsdblifecycle interface {
+		Start()
+		Stop()
+		Close()
+		TearDown()
+	}
+	jobsdbdeprecated interface {
+		// Deprecated: implementation leak warning, only used in unionQuery and enterprise features
+		HandleT() *HandleT
+	}
 
-	// GetPileUpCounts returns statistics (counters) of incomplete jobs
-	// grouped by workspaceId and destination type
-	GetPileUpCounts(statMap map[string]map[string]int)
-
-	/* Admin */
-
-	Status() interface{}
-	Ping() error
-	DeleteExecuting()
-
-	/* Journal */
-
-	GetJournalEntries(opType string) (entries []JournalEntryT)
-	JournalDeleteEntry(opID int64)
-	JournalMarkStart(opType string, opPayload json.RawMessage) int64
-}
+	/*
+		JobsDB interface contains public methods to access JobsDB data
+	*/
+	JobsDB interface {
+		// Identifier returns the jobsdb's identifier, a.k.a. table prefix
+		Identifier() string
+		jobsdbcommand
+		jobsdbquery
+		jobsdbadmin
+		jobsdbjournal
+		jobsdblifecycle
+		jobsdbdeprecated
+	}
+)
 
 /*
 assertInterface contains public assert methods
@@ -379,6 +397,10 @@ type HandleT struct {
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
+}
+
+func (r *HandleT) HandleT() *HandleT {
+	return r
 }
 
 type QueryFiltersT struct {
@@ -627,59 +649,19 @@ func GetConnectionString() string {
 
 }
 
-type OptsFunc func(jd *HandleT)
-
-// WithClearDB, if set to true it will remove all existing tables
-func WithClearDB(clearDB bool) OptsFunc {
-	return func(jd *HandleT) {
-		jd.clearAll = clearDB
-	}
-}
-
-func WithRetention(period time.Duration) OptsFunc {
-	return func(jd *HandleT) {
-		jd.dsRetentionPeriod = period
-	}
-}
-
-func WithQueryFilterKeys(filters QueryFiltersT) OptsFunc {
-	return func(jd *HandleT) {
-		jd.queryFilterKeys = filters
-	}
-}
-
-func WithMigrationMode(mode string) OptsFunc {
-	return func(jd *HandleT) {
-		jd.migrationState.migrationMode = mode
-	}
-}
-
-func WithStatusHandler() OptsFunc {
-	return func(jd *HandleT) {
-		jd.registerStatusHandler = true
-	}
-}
-
-// WithPreBackupHandlers, sets pre-backup handlers
-func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
-	return func(jd *HandleT) {
-		jd.preBackupHandlers = preBackupHandlers
-	}
-}
-
-func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForRead(tablePrefix string, opts ...OptsFunc) JobsDB {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
 
-func NewForWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForWrite(tablePrefix string, opts ...OptsFunc) JobsDB {
 	return newOwnerType(Write, tablePrefix, opts...)
 }
 
-func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
+func NewForReadWrite(tablePrefix string, opts ...OptsFunc) JobsDB {
 	return newOwnerType(ReadWrite, tablePrefix, opts...)
 }
 
-func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
+func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) JobsDB {
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,

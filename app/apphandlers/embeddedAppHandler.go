@@ -122,16 +122,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
 	if misc.UseFairPickup() {
-		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
+		tenantRouterDB = &jobsdb.MultiTenantHandleT{JobsDB: routerDB}
 		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{JobsDB: batchRouterDB},
 		})
 	} else {
-		tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
+		tenantRouterDB = &jobsdb.MultiTenantLegacy{JobsDB: routerDB}
 		multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{JobsDB: batchRouterDB},
 		}))
 	}
 
@@ -162,10 +162,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			enableProcessor = false
 			enableGateway = migrationMode != db.EXPORT
 
-			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor, routerDB, batchRouterDB)
+			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor.HandleT(), routerDB.HandleT(), batchRouterDB.HandleT())
 
 			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
+				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor.HandleT(), routerDB.HandleT(), batchRouterDB.HandleT(), startProcessorFunc,
 					startRouterFunc) //TODO
 				return nil
 			})
@@ -214,7 +214,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
+		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor.HandleT(), routerDB.HandleT(), batchRouterDB.HandleT())
 	}
 
 	if enableGateway {
@@ -224,7 +224,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-		gatewayDB = *jobsdb.NewForWrite(
+		gatewayDB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
 			jobsdb.WithRetention(gwDBRetention),
@@ -237,7 +237,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, embedded.VersionHandler)
 		defer gw.Shutdown()
 
 		g.Go(func() error {

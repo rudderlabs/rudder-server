@@ -19,7 +19,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
-	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -48,10 +47,10 @@ type testContext struct {
 
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
-	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
-	mockRouterJobsDB      *mocksJobsDB.MockJobsDB
-	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
-	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
+	mockGatewayJobsDB     *jobsdb.MockJobsDB
+	mockRouterJobsDB      *jobsdb.MockJobsDB
+	mockBatchRouterJobsDB *jobsdb.MockJobsDB
+	mockProcErrorsDB      *jobsdb.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
 	MockDedup             *mockDedup.MockDedupI
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
@@ -60,10 +59,10 @@ type testContext struct {
 func (c *testContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockGatewayJobsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
+	c.mockRouterJobsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
+	c.mockBatchRouterJobsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
+	c.mockProcErrorsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
 
 	c.configInitialised = false
 	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).

@@ -3,11 +3,12 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -63,7 +64,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			enableGateway = (migrationMode != db.EXPORT)
 
-			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
+			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB.HandleT(), nil, nil)
 		}
 	}
 

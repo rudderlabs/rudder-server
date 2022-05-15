@@ -204,8 +204,8 @@ func TestProcessorManager(t *testing.T) {
 	ctx := context.Background()
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+			"rt":       &jobsdb.MultiTenantHandleT{JobsDB: rtDB},
+			"batch_rt": &jobsdb.MultiTenantLegacy{JobsDB: brtDB},
 		},
 	}
 	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService())

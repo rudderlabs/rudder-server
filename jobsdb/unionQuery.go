@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../mocks/jobsdb/mock_unionQuery.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb MultiTenantJobsDB
+//go:generate mockgen -destination=mock_unionQuery.go -package=jobsdb github.com/rudderlabs/rudder-server/jobsdb MultiTenantJobsDB
 
 package jobsdb
 
@@ -12,22 +12,12 @@ import (
 )
 
 type MultiTenantHandleT struct {
-	*HandleT
+	JobsDB
 }
 
 type MultiTenantJobsDB interface {
+	JobsDB
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
-
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
-	UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
-
-	DeleteExecuting()
-
-	GetJournalEntries(opType string) (entries []JournalEntryT)
-	JournalMarkStart(opType string, opPayload json.RawMessage) int64
-	JournalDeleteEntry(opID int64)
-	GetPileUpCounts(map[string]map[string]int)
 }
 
 func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
@@ -65,12 +55,12 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	mj.dsMigrationLock.RLock()
-	mj.dsListLock.RLock()
-	defer mj.dsMigrationLock.RUnlock()
-	defer mj.dsListLock.RUnlock()
+	mj.HandleT().dsMigrationLock.RLock()
+	mj.HandleT().dsListLock.RLock()
+	defer mj.HandleT().dsMigrationLock.RUnlock()
+	defer mj.HandleT().dsListLock.RUnlock()
 
-	dsList := mj.getDSList(false)
+	dsList := mj.HandleT().getDSList(false)
 	outJobs := make([]*JobT, 0)
 
 	workspacePayloadLimitMap := make(map[string]int64)
@@ -104,9 +94,9 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 		}
 	}
 
-	mj.unionQueryTime.SendTiming(time.Since(start))
+	mj.HandleT().unionQueryTime.SendTiming(time.Since(start))
 
-	mj.tablesQueriedStat.Gauge(tablesQueried)
+	mj.HandleT().tablesQueriedStat.Gauge(tablesQueried)
 
 	return outJobs
 }
@@ -119,7 +109,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 		return jobList
 	}
 	for _, workspace := range workspacesToQuery {
-		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
+		mj.HandleT().markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 			willTryToSet, nil)
 	}
 
@@ -131,22 +121,22 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 	var rows *sql.Rows
 	var err error
 
-	stmt, err := mj.dbHandle.Prepare(queryString)
-	mj.logger.Debug(queryString)
-	mj.assertError(err)
+	stmt, err := mj.HandleT().dbHandle.Prepare(queryString)
+	mj.HandleT().logger.Debug(queryString)
+	mj.HandleT().assertError(err)
 	defer func(stmt *sql.Stmt) {
 		err := stmt.Close()
 		if err != nil {
-			mj.logger.Errorf("failed to closed the sql statement: %s", err.Error())
+			mj.HandleT().logger.Errorf("failed to closed the sql statement: %s", err.Error())
 		}
 	}(stmt)
 
 	rows, err = stmt.Query(getTimeNowFunc())
-	mj.assertError(err)
+	mj.HandleT().assertError(err)
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
 		if err != nil {
-			mj.logger.Errorf("failed to closed the result of sql query: %s", err.Error())
+			mj.HandleT().logger.Errorf("failed to closed the result of sql query: %s", err.Error())
 		}
 	}(rows)
 
@@ -168,7 +158,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &_null,
 			&_nullJS, &_nullA, &_nullET, &_nullRT, &_nullEC, &_nullER, &_nullSP)
 
-		mj.assertError(err)
+		mj.HandleT().assertError(err)
 
 		job.LastJobStatus = JobStatusT{}
 		if _nullJS.Valid {
@@ -213,13 +203,13 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
-		mj.assertError(err)
+		mj.HandleT().assertError(err)
 	}
 
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
-		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
+		mj.HandleT().markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
@@ -231,11 +221,11 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, conditions, workspaceCount)
 
 	for workspace, count := range workspaceCount {
-		if mj.isEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters) {
+		if mj.HandleT().isEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters) {
 			continue
 		}
 		if count <= 0 {
-			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
+			mj.HandleT().logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
 			continue
 		}
 		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, count, workspacePayloadLimitMap[workspace]))
@@ -269,7 +259,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
+			constructQuery(mj.HandleT(), "jobs.custom_val", customValFilters, "OR")
 	} else {
 		customValQuery = ""
 	}

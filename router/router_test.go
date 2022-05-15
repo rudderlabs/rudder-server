@@ -18,7 +18,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
-	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -85,8 +84,8 @@ type testContext struct {
 	dbReadBatchSize int
 
 	mockCtrl          *gomock.Controller
-	mockRouterJobsDB  *mocksJobsDB.MockMultiTenantJobsDB
-	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
+	mockRouterJobsDB  *jobsdb.MockMultiTenantJobsDB
+	mockProcErrorsDB  *jobsdb.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 }
 
@@ -94,8 +93,8 @@ type testContext struct {
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
-	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockRouterJobsDB = jobsdb.NewMockMultiTenantJobsDB(c.mockCtrl)
+	c.mockProcErrorsDB = jobsdb.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
