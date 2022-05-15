@@ -679,7 +679,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) Job
 
 	j.init()
 
-	return j
+	return WithStats(j)
 }
 
 /*
