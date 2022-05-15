@@ -1023,7 +1023,7 @@ func getPayloadSize(t *testing.T, jobsDB jobsdb.JobsDB, job *jobsdb.JobT) (int64
 	var size int64
 	var tables []string
 	err := jobsDB.WithTx(func(tx jobsdb.Tx) error {
-		rows, err := tx.Tx().Query(fmt.Sprintf("SELECT tablename FROM pg_catalog.pg_tables where tablename like '%s_jobs_%%'", jobsDB.Identifier()))
+		rows, err := tx.SqlTx().Query(fmt.Sprintf("SELECT tablename FROM pg_catalog.pg_tables where tablename like '%s_jobs_%%'", jobsDB.Identifier()))
 		require.NoError(t, err)
 		for rows.Next() {
 			var table string
@@ -1034,7 +1034,7 @@ func getPayloadSize(t *testing.T, jobsDB jobsdb.JobsDB, job *jobsdb.JobT) (int64
 		_ = rows.Close()
 
 		for _, table := range tables {
-			stmt, err := tx.Tx().Prepare(fmt.Sprintf("select pg_column_size(event_payload) from %s where uuid=$1", table))
+			stmt, err := tx.SqlTx().Prepare(fmt.Sprintf("select pg_column_size(event_payload) from %s where uuid=$1", table))
 			require.NoError(t, err)
 			err = stmt.QueryRow(job.UUID).Scan(&size)
 			_ = stmt.Close()

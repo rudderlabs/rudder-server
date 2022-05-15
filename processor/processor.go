@@ -1634,7 +1634,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			return err
 		}
 		if proc.isReportingEnabled() {
-			proc.reporting.Report(in.reportMetrics, tx.Tx())
+			proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 		}
 
 		if enableDedup {
@@ -2054,7 +2054,7 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 
 		_ = proc.errorDB.WithTx(func(tx jobsdb.Tx) error {
 			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 			return nil
 		})
 

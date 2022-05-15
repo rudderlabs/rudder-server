@@ -3,7 +3,7 @@ package jobsdb
 import "database/sql"
 
 type Tx interface {
-	Tx() *sql.Tx
+	SqlTx() *sql.Tx
 	AddSuccessListener(listener func())
 	commit() error
 }
@@ -13,7 +13,7 @@ type internalTx struct {
 	tx               *sql.Tx
 }
 
-func (r *internalTx) Tx() *sql.Tx {
+func (r *internalTx) SqlTx() *sql.Tx {
 	return r.tx
 }
 
@@ -45,7 +45,7 @@ type StoreSafeTx interface {
 }
 
 type storeSafeTx struct {
-	*internalTx
+	Tx
 	identity string
 }
 
@@ -55,7 +55,7 @@ func (r *storeSafeTx) storeSafeTxIdentifier() string {
 
 // EmptyStoreSafeTx returns an empty interface usable only for tests
 func EmptyStoreSafeTx() StoreSafeTx {
-	return &storeSafeTx{}
+	return &storeSafeTx{Tx: &internalTx{}}
 }
 
 // UpdateSafeTx sealed interface
@@ -64,7 +64,7 @@ type UpdateSafeTx interface {
 	updateSafeTxSealIdentifier() string
 }
 type updateSafeTx struct {
-	*internalTx
+	Tx
 	identity string
 }
 
@@ -74,5 +74,5 @@ func (r *updateSafeTx) updateSafeTxSealIdentifier() string {
 
 // EmptyUpdateSafeTx returns an empty interface usable only for tests
 func EmptyUpdateSafeTx() UpdateSafeTx {
-	return &updateSafeTx{}
+	return &updateSafeTx{Tx: &internalTx{}}
 }

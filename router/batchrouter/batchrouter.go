@@ -1314,10 +1314,10 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 		//Save msgids of aborted jobs
 		if len(jobRunIDAbortedEventsMap) > 0 {
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 		}
 		if brt.reporting != nil && brt.reportingEnabled {
-			brt.reporting.Report(reportMetrics, tx.Tx())
+			brt.reporting.Report(reportMetrics, tx.SqlTx())
 		}
 		return nil
 	})

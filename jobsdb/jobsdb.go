@@ -260,7 +260,7 @@ func (jd *HandleT) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT
 		}
 		tags := statTags{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
 		command := func() interface{} {
-			return jd.internalUpdateJobStatusInTx(tx.Tx(), statusList, customValFilters, parameterFilters)
+			return jd.internalUpdateJobStatusInTx(tx.SqlTx(), statusList, customValFilters, parameterFilters)
 		}
 		err, _ := jd.executeDbRequest(newWriteDbRequest("update_job_status", &tags, command)).(error)
 		return err
@@ -1618,33 +1618,33 @@ func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
-		_, err := tx.Tx().Exec(sqlStatement)
+		_, err := tx.SqlTx().Exec(sqlStatement)
 		if err != nil {
 			return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
 		}
 		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
-		_, err = tx.Tx().Exec(sqlStatement)
+		_, err = tx.SqlTx().Exec(sqlStatement)
 		if err != nil {
 			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 		}
 		for _, preBackupHandler := range jd.preBackupHandlers {
-			err = preBackupHandler.Handle(context.TODO(), tx.Tx(), renamedJobTable, renamedJobStatusTable)
+			err = preBackupHandler.Handle(context.TODO(), tx.SqlTx(), renamedJobTable, renamedJobStatusTable)
 			if err != nil {
 				return err
 			}
 		}
 		// if jobs table is left empty after prebackup handlers, drop the dataset
 		sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM "%s") THEN 1 ELSE 0 END`, renamedJobTable)
-		row := tx.Tx().QueryRow(sqlStatement)
+		row := tx.SqlTx().QueryRow(sqlStatement)
 		var count int
 		if err = row.Scan(&count); err != nil {
 			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 		}
 		if count == 0 {
-			if _, err = tx.Tx().Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobStatusTable)); err != nil {
+			if _, err = tx.SqlTx().Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobStatusTable)); err != nil {
 				return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
 			}
-			if _, err = tx.Tx().Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobTable)); err != nil {
+			if _, err = tx.SqlTx().Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobTable)); err != nil {
 				return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
 			}
 		}
@@ -1659,13 +1659,13 @@ func (jd *HandleT) renameDS(ds dataSetT) error {
 	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
-		_, err := tx.Tx().Exec(sqlStatement)
+		_, err := tx.SqlTx().Exec(sqlStatement)
 		if err != nil {
 			return err
 		}
 
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
-		_, err = tx.Tx().Exec(sqlStatement)
+		_, err = tx.SqlTx().Exec(sqlStatement)
 		if err != nil {
 			return err
 		}
@@ -1774,7 +1774,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	noJobsMigrated = len(jobsToMigrate)
 
 	err = jd.WithTx(func(tx Tx) error {
-		if err := jd.copyJobsDS(tx.Tx(), destDS, jobsToMigrate); err != nil {
+		if err := jd.copyJobsDS(tx.SqlTx(), destDS, jobsToMigrate); err != nil {
 			return err
 		}
 		//Now copy over the latest status of the unfinished jobs
@@ -1793,7 +1793,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		return jd.copyJobStatusDS(tx.Tx(), destDS, statusList, []string{}, nil)
+		return jd.copyJobStatusDS(tx.SqlTx(), destDS, statusList, []string{}, nil)
 	})
 	jd.assertError(err)
 	return
@@ -1849,8 +1849,7 @@ func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { 
 func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
 	return jd.inStoreSafeCtx(func() error {
 		return jd.WithTx(func(tx Tx) error {
-			internalTx, _ := tx.(*internalTx)
-			return f(&storeSafeTx{internalTx: internalTx, identity: jd.tablePrefix})
+			return f(&storeSafeTx{Tx: tx, identity: jd.tablePrefix})
 		})
 	})
 }
@@ -1865,8 +1864,7 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
 	return jd.inUpdateSafeCtx(func() error {
 		return jd.WithTx(func(tx Tx) error {
-			internalTx, _ := tx.(*internalTx)
-			return f(&updateSafeTx{internalTx: internalTx, identity: jd.tablePrefix})
+			return f(&updateSafeTx{Tx: tx, identity: jd.tablePrefix})
 		})
 	})
 }
@@ -3684,7 +3682,7 @@ func (jd *HandleT) StoreInTx(tx StoreSafeTx, jobList []*JobT) error {
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList(false)
-			err := jd.internalStoreJobsInTx(tx.Tx(), dsList[len(dsList)-1], jobList)
+			err := jd.internalStoreJobsInTx(tx.SqlTx(), dsList[len(dsList)-1], jobList)
 			return err
 		}
 		err, _ := jd.executeDbRequest(newWriteDbRequest("store", nil, command)).(error)
@@ -3713,7 +3711,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[u
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList(false)
-			return jd.internalStoreWithRetryEachInTx(tx.Tx(), dsList[len(dsList)-1], jobList)
+			return jd.internalStoreWithRetryEachInTx(tx.SqlTx(), dsList[len(dsList)-1], jobList)
 		}
 		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
 		return nil
