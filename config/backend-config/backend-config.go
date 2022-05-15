@@ -217,6 +217,13 @@ type CommonBackendConfig struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	blockChan        chan struct{}
+	once             sync.Once
+}
+
+func (bc *CommonBackendConfig) init() {
+	bc.once.Do(func() {
+		bc.eb = pubsub.NewPublishSubscriber(context.TODO())
+	})
 }
 
 func loadConfig() {
@@ -433,10 +440,10 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
+	bc.init()
 	ctx, cancel := context.WithCancel(context.Background())
 	bc.ctx = ctx
 	bc.cancel = cancel
-	bc.eb = pubsub.NewPublishSubscriber(ctx)
 	bc.blockChan = make(chan struct{})
 	rruntime.Go(func() {
 		pollConfigUpdate(ctx, bc.eb, workspaces)

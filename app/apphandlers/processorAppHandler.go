@@ -235,14 +235,15 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
 	dm := cluster.Dynamic{
-		Provider:        modeProvider,
-		GatewayDB:       gwDBForProcessor,
-		RouterDB:        routerDB,
-		BatchRouterDB:   batchRouterDB,
-		ErrorDB:         errDB,
-		Processor:       p,
-		Router:          rt,
-		MultiTenantStat: multitenantStats,
+		Provider:         modeProvider,
+		GatewayComponent: false,
+		GatewayDB:        gwDBForProcessor,
+		RouterDB:         routerDB,
+		BatchRouterDB:    batchRouterDB,
+		ErrorDB:          errDB,
+		Processor:        p,
+		Router:           rt,
+		MultiTenantStat:  multitenantStats,
 	}
 
 	if enableReplay && processor.App.Features().Replay != nil {
