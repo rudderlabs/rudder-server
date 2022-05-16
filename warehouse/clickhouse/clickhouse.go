@@ -714,17 +714,16 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	return
 }
 
-func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT 1`)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
-			pkgLogger.Debugf("CH: No database found while checking for schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
-			return false, nil
-		}
-		return false, err
+func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
+	var count int
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM system.databases WHERE name = '%s'`, schemaName)
+	err = ch.Db.QueryRow(sqlStatement).Scan(&count)
+	// ignore err if no results for query
+	if err == sql.ErrNoRows {
+		err = nil
 	}
-	return true, nil
+	exists = count > 0
+	return
 }
 
 // createSchema creates a database in clickhouse
@@ -800,7 +799,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 		sortKeyFields = []string{"received_at"}
 	}
 	if strings.HasPrefix(tableName, warehouseutils.CTStagingTablePrefix) {
-		sortKeyFields = []string{}
+		sortKeyFields = []string{"id"}
 	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
