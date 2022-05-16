@@ -125,7 +125,7 @@ func clusterSequences(cli *clientv3.Client) {
 	var result string
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
-	instance_id := strings.Split(GetEnv("INSTANCE_ID", "_1"), "_")[3]
+	instance_id := strings.Split(GetEnv("INSTANCE_ID", "-1"), "-")[3]
 	newWorkspaceGWKey := "/" + GetEnv("RELEASE_NAME", `multitenantv1`) + "/SERVER/" + instance_id + "/gateway/WORKSPACES"
 	newWorkspaceGWKVS, err := cli.Get(ctx, newWorkspaceGWKey)
 	newWorkspaceGWVersion := int64(0)
