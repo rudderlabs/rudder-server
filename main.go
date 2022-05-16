@@ -106,7 +106,7 @@ func main() {
 }
 
 func setupETCDClient() *clientv3.Client {
-	etcdHosts := strings.Split(GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
+	etcdHosts := strings.Split(GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:            etcdHosts,
 		DialTimeout:          20 * time.Second,
