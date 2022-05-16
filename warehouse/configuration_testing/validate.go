@@ -35,7 +35,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 	if step != "" {
 		stepI, err := strconv.Atoi(step)
 		if err != nil {
-			resp.Error = fmt.Sprintf("%s: %s", InvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -49,7 +49,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		}
 
 		if v == nil {
-			resp.Error = fmt.Sprintf("%s: %s", InvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -113,7 +113,7 @@ func (ct *CTHandleT) initManager() (err error) {
 	if err != nil {
 		return
 	}
-	
+
 	// Setting test connection timeout
 	ct.manager.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 

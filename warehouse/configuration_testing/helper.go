@@ -11,11 +11,6 @@ import (
 	"strings"
 )
 
-const (
-	InvalidStep        = "Invalid step"
-	StagingTablePrefix = "setup_test_staging"
-)
-
 var (
 	TestTableSchemaMap = map[string]string{
 		"id":  "int",
@@ -82,5 +77,5 @@ func randomString() string {
 }
 
 func stagingTableName() string {
-	return fmt.Sprintf(`%s_%s`, StagingTablePrefix, randomString())
+	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, randomString())
 }

@@ -799,6 +799,9 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
 	}
+	if strings.HasSuffix(tableName, warehouseutils.CTStagingTablePrefix) {
+		sortKeyFields = []string{}
+	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
