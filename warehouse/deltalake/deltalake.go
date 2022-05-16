@@ -95,11 +95,12 @@ var primaryKeyMap = map[string]string{
 }
 
 type HandleT struct {
-	dbHandleT     *databricks.DBHandleT
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	dbHandleT      *databricks.DBHandleT
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 // Init initializes the delta lake warehouse
@@ -172,7 +173,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
+func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
@@ -214,6 +215,10 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 	}
 
 	// Getting timeout context
+	timeout := grpcTimeout
+	if dl.ConnectTimeout != 0 {
+		timeout = dl.ConnectTimeout
+	}
 	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -668,10 +673,6 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
-	return dl.connectToWarehouseWithTimeout(grpcTimeout)
-}
-
-func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -685,7 +686,7 @@ func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databr
 		SSL:             ssl,
 		UserAgentEntry:  userAgent,
 	}
-	return dl.connect(credT, timeout)
+	return dl.connect(credT)
 }
 
 // CreateTable creates tables with table name and columns
@@ -825,8 +826,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
-	timeout := warehouseutils.TestConnectionTimeout
-	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
+	dl.dbHandleT, err = dl.connectToWarehouse()
 	return
 }
 
@@ -1036,4 +1036,8 @@ func (dl *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 
 	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
 	return
+}
+
+func (dl *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	dl.ConnectTimeout = timeout
 }

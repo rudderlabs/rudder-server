@@ -2,12 +2,12 @@ package datalake
 
 import (
 	"fmt"
-
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"time"
 )
 
 var (
@@ -112,4 +112,7 @@ func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 func (wh *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) error {
 	return fmt.Errorf("datalake err :not implemented")
+}
+
+func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
 }

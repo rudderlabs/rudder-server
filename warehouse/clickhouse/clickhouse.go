@@ -37,7 +37,6 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
-	connectTimeout              time.Duration
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -129,12 +128,13 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
-	stats         stats.Stats
+	Db             *sql.DB
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	stats          stats.Stats
+	ConnectTimeout time.Duration
 }
 
 type CredentialsT struct {
@@ -146,6 +146,7 @@ type CredentialsT struct {
 	Secure        string
 	SkipVerify    string
 	TLSConfigName string
+	timeout       time.Duration
 }
 
 type clickHouseStatT struct {
@@ -197,16 +198,12 @@ func Init() {
 
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
-	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
-}
-
-func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t&timeout=%d",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
 		cred.Host,
 		cred.Port,
 		cred.User,
@@ -221,8 +218,10 @@ func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Du
 		readTimeout,
 		writeTimeout,
 		compress,
-		timeout/time.Second,
 	)
+	if cred.timeout != 0 {
+		url += fmt.Sprintf("&timeout=%d", cred.timeout/time.Second)
+	}
 
 	var err error
 	var db *sql.DB
@@ -245,10 +244,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-
-	// Default timeout overrides the values to what ever we pass in dsn
-	// Setting connectTimeout value as clickhouse driver default timeout
-	config.RegisterDurationConfigVariable(int64(clickhouse.DefaultConnTimeout/time.Second), &connectTimeout, true, time.Second, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -282,6 +277,7 @@ func (ch *HandleT) getConnectionCredentials() CredentialsT {
 		Secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
 		SkipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
 		TLSConfigName: tlsName,
+		timeout:       ch.ConnectTimeout,
 	}
 	return credentials
 }
@@ -862,19 +858,18 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, timeOut)
+	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
 	defer cancel()
 
 	err = ch.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", ch.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -1060,4 +1055,8 @@ func (ch *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 		return
 	}
 	return
+}
+
+func (ch *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	ch.ConnectTimeout = timeout
 }

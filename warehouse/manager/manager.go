@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -41,6 +42,7 @@ type ManagerI interface {
 type SuperManagerI interface {
 	ManagerI
 	DropTable(tableName string) (err error)
+	SetConnectionTimeout(timeout time.Duration)
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type

@@ -31,7 +31,6 @@ var (
 	setVarCharMax      bool
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	connectTimeout     time.Duration
 )
 
 func Init() {
@@ -42,14 +41,14 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
-	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {
-	Db        *sql.DB
-	Namespace string
-	Warehouse warehouseutils.WarehouseT
-	Uploader  warehouseutils.UploaderI
+	Db             *sql.DB
+	Namespace      string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 // String constants for redshift destination config
@@ -515,21 +514,20 @@ type RedshiftCredentialsT struct {
 	dbName   string
 	username string
 	password string
+	timeout  time.Duration
 }
 
 func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	return connectWithTimeout(cred, connectTimeout)
-}
-
-func connectWithTimeout(cred RedshiftCredentialsT, timeout time.Duration) (*sql.DB, error) {
-	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
+	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
 		cred.username,
 		cred.password,
 		cred.host,
 		cred.port,
 		cred.dbName,
-		timeout/time.Second,
 	)
+	if cred.timeout != 0 {
+		url += fmt.Sprintf("connect_timeout=%d", cred.timeout/time.Second)
+	}
 
 	var err error
 	var db *sql.DB
@@ -578,13 +576,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 }
 
 func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
-	return connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	return connect(rs.getConnectionCredentials())
 }
 
 func (rs *HandleT) CreateSchema() (err error) {
@@ -608,17 +600,22 @@ func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType s
 	return
 }
 
-// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(RedshiftCredentialsT{
+func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
+	return RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+		timeout:  rs.ConnectTimeout,
+	}
+}
+
+// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+	rs.Warehouse = warehouse
+	rs.Namespace = warehouse.Namespace
+	dbHandle, err := connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -672,25 +669,18 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	}, timeOut)
+	rs.Db, err = connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
 
 	err = rs.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", rs.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -709,13 +699,7 @@ func (rs *HandleT) Cleanup() {
 func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	rs.Db, err = connect(rs.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
@@ -761,13 +745,7 @@ func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	dbHandle, err := connect(rs.getConnectionCredentials())
 
 	if err != nil {
 		return client.Client{}, err
@@ -813,4 +791,8 @@ func (rs *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 
 	_, err = rs.Db.Exec(sqlStatement)
 	return
+}
+
+func (rs *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	rs.ConnectTimeout = timeout
 }

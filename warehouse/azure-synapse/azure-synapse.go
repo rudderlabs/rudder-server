@@ -16,8 +16,6 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/config"
-
 	mssql "github.com/denisenkom/go-mssqldb"
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -31,7 +29,6 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
-	connectTimeout       time.Duration
 )
 
 const (
@@ -87,11 +84,12 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	Db             *sql.DB
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 type credentialsT struct {
@@ -101,6 +99,7 @@ type credentialsT struct {
 	password string
 	port     string
 	sslMode  string
+	timeout  time.Duration
 }
 
 var primaryKeyMap = map[string]string{
@@ -115,10 +114,6 @@ var partitionKeyMap = map[string]string{
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
-	return connectWithTimeout(cred, connectTimeout)
-}
-
-func connectWithTimeout(cred credentialsT, timeout time.Duration) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -129,7 +124,9 @@ func connectWithTimeout(cred credentialsT, timeout time.Duration) (*sql.DB, erro
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
-	query.Add("dial timeout", fmt.Sprintf("%d", timeout/time.Second))
+	if cred.timeout != 0 {
+		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
+	}
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
@@ -157,10 +154,6 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-
-	// Default timeout overrides the values to what ever we pass in dsn
-	// Setting connectTimeout value as mssql driver default timeout
-	config.RegisterDurationConfigVariable(int64(warehouseutils.TestConnectionTimeout/time.Second), &connectTimeout, true, time.Second, "Warehouse.azure_synapse.connectTimeout")
 }
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
@@ -171,6 +164,7 @@ func (as *HandleT) getConnectionCredentials() credentialsT {
 		password: warehouseutils.GetConfigValue(password, as.Warehouse),
 		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
 		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
+		timeout:  as.ConnectTimeout,
 	}
 }
 
@@ -679,19 +673,18 @@ func (as *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	as.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	as.Db, err = connectWithTimeout(as.getConnectionCredentials(), timeOut)
+	as.Db, err = connect(as.getConnectionCredentials())
 	if err != nil {
 		return
 	}
 	defer as.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
 	defer cancel()
 
 	err = as.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", as.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -856,4 +849,8 @@ func (as *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 	)
 	_, err = as.Db.Exec(sqlStatement)
 	return
+}
+
+func (as *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	as.ConnectTimeout = timeout
 }

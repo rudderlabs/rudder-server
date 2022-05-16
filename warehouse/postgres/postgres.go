@@ -28,7 +28,6 @@ var (
 	pkgLogger                     logger.LoggerI
 	skipComputingUserLatestTraits bool
 	txnRollbackTimeout            time.Duration
-	connectTimeout                time.Duration
 )
 
 const (
@@ -86,11 +85,12 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	Db             *sql.DB
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 type CredentialsT struct {
@@ -101,6 +101,7 @@ type CredentialsT struct {
 	Port     string
 	SSLMode  string
 	SSLDir   string
+	timeout  time.Duration
 }
 
 var primaryKeyMap = map[string]string{
@@ -115,19 +116,17 @@ var partitionKeyMap = map[string]string{
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-	return connectWithTimeout(cred, connectTimeout)
-}
-
-func connectWithTimeout(cred CredentialsT, timeout time.Duration) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v connect_timeout=%d",
+	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
 		cred.User,
 		cred.Password,
 		cred.Host,
 		cred.Port,
 		cred.DBName,
 		cred.SSLMode,
-		timeout/time.Second,
 	)
+	if cred.timeout != 0 {
+		url += fmt.Sprintf("connect_timeout=%d", cred.timeout/time.Second)
+	}
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
@@ -148,7 +147,6 @@ func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
-	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.postgres.connectTimeout")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -161,6 +159,7 @@ func (pg *HandleT) getConnectionCredentials() CredentialsT {
 		Port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
 		SSLMode:  sslMode,
 		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
+		timeout:  pg.ConnectTimeout,
 	}
 }
 
@@ -646,19 +645,18 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		}
 	}
 	pg.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	pg.Db, err = connectWithTimeout(pg.getConnectionCredentials(), timeOut)
+	pg.Db, err = Connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
 	defer pg.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), pg.ConnectTimeout)
 	defer cancel()
 
 	err = pg.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", pg.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -833,4 +831,8 @@ func (pg *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 	)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
+}
+
+func (pg *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	pg.ConnectTimeout = timeout
 }

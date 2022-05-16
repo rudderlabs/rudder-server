@@ -108,11 +108,16 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 func (ct *CTHandleT) initManager() (err error) {
 	ct.warehouse = warehouse(ct.infoRequest)
 
+	// Initializing manager
 	ct.manager, err = manager.NewSuperManager(ct.warehouse.Destination.DestinationDefinition.Name)
 	if err != nil {
 		return
 	}
+	
+	// Setting test connection timeout
+	ct.manager.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 
+	// setting up the manager
 	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{})
 	return
 }

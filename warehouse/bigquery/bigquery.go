@@ -1076,3 +1076,7 @@ func (bq *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 	}
 	return
 }
+
+func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
+
+}
