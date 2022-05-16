@@ -2,351 +2,454 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"runtime/pprof"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"strings"
-
+	"io"
+	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go/v2"
-	_ "go.uber.org/automaxprocs"
-	"golang.org/x/sync/errgroup"
+	uuid "github.com/gofrs/uuid"
 
-	"github.com/rudderlabs/rudder-server/gateway"
-	"github.com/rudderlabs/rudder-server/gateway/webhook"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/stash"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
 
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-
-	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
-	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
-	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
-	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
-
-	event_schema "github.com/rudderlabs/rudder-server/event-schema"
-
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/admin/profiler"
-
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/app/apphandlers"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/alert"
-	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
-
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
-	"github.com/rudderlabs/rudder-server/services/dedup"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-
-	destination_connection_tester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
+	"github.com/rs/cors"
 )
 
 var (
-	application               app.Interface
-	warehouseMode             string
-	enableSuppressUserFeature bool
-	pkgLogger                 logger.LoggerI
-	appHandler                apphandlers.AppHandler
-	ReadTimeout               time.Duration
-	ReadHeaderTimeout         time.Duration
-	WriteTimeout              time.Duration
-	IdleTimeout               time.Duration
-	gracefulShutdownTimeout   time.Duration
-	MaxHeaderBytes            int
+	host, user, password, dbname, sslmode, configBackendURL string
+	port                                                    int
+	globalDBHandle                                          *sql.DB
+	multitenantSecret                                       string
+	configString                                            string
+	writeKeyToWorkspaceIDMap                                map[string]string
+	dbWriteLock                                             sync.RWMutex
+	job_id                                                  int64
+	isInitialized                                           bool
+	cbeInitialised                                          chan string
 )
 
-var version = "Not an official release. Get the latest release from the github repo."
-var major, minor, commit, buildDate, builtBy, gitURL, patch string
-
-func loadConfig() {
-	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
-	config.RegisterBoolConfigVariable(true, &enableSuppressUserFeature, false, "Gateway.enableSuppressUserFeature")
-	config.RegisterDurationConfigVariable(0, &ReadTimeout, false, time.Second, []string{"ReadTimeOut", "ReadTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(0, &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(10, &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
-	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+type DestinationT struct {
+	ID      string `json:"id,omitempty"`
+	Enabled bool   `json:"enabled,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
 }
 
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("main")
+type SourceT struct {
+	ID           string         `json:"id,omitempty"`
+	Enabled      bool           `json:"enabled,omitempty"`
+	Deleted      bool           `json:"deleted,omitempty"`
+	WorkspaceID  string         `json:"workspaceId,omitempty"`
+	Destinations []DestinationT `json:"destinations,omitempty"`
+	WriteKey     string         `json:"writeKey,omitempty"`
 }
 
-func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}
+type WorkspacesStruct struct {
+	Ack_key    string `json:"ack_key,omitempty"`
+	Workspaces string `json:"workspaces,omitempty"`
 }
 
-func versionHandler(w http.ResponseWriter, r *http.Request) {
-	var version = versionInfo()
-	versionFormatted, _ := json.Marshal(&version)
-	w.Write(versionFormatted)
+type ServerModeStruct struct {
+	Status_key string `json:"status_key,omitempty"`
+	Mode       string `json:"mode,omitempty"`
 }
 
-func printVersion() {
-	version := versionInfo()
-	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	fmt.Printf("Version Info %s\n", versionFormatted)
-}
-
-func startWarehouseService(ctx context.Context, application app.Interface) error {
-	return warehouse.Start(ctx, application)
-}
-
-func canStartServer() bool {
-	pkgLogger.Info("warehousemode ", warehouseMode)
-	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode || warehouseMode == config.PooledWHSlaveMode
-}
-
-func canStartWarehouse() bool {
-	return warehouseMode != config.OffMode
-}
-
-func runAllInit() {
-	config.Load()
-	admin.Init()
-	app.Init()
-	logger.Init()
-	misc.Init()
-	stats.Init()
-	stats.Setup()
-	db.Init()
-	diagnostics.Init()
-	backendconfig.Init()
-	warehouseutils.Init()
-	bigquery.Init()
-	clickhouse.Init()
-	archiver.Init()
-	destinationdebugger.Init()
-	pgnotifier.Init()
-	jobsdb.Init()
-	jobsdb.Init2()
-	jobsdb.Init3()
-	destination_connection_tester.Init()
-	warehouse.Init()
-	warehouse.Init2()
-	warehouse.Init3()
-	warehouse.Init4()
-	warehouse.Init5()
-	warehouse.Init6()
-	configuration_testing.Init()
-	azuresynapse.Init()
-	mssql.Init()
-	postgres.Init()
-	redshift.Init()
-	snowflake.Init()
-	deltalake.Init()
-	transformer.Init()
-	webhook.Init()
-	batchrouter.Init()
-	batchrouter.Init2()
-	asyncdestinationmanager.Init()
-	batchrouterutils.Init()
-	dedup.Init()
-	event_schema.Init()
-	event_schema.Init2()
-	stash.Init()
-	transformationdebugger.Init()
-	processor.Init()
-	kafka.Init()
-	customdestinationmanager.Init()
-	routertransformer.Init()
-	router.Init()
-	router.InitRouterAdmin()
-	ratelimiter.Init()
-	sourcedebugger.Init()
-	gateway.Init()
-	apphandlers.Init()
-	apphandlers.Init2()
-	rruntime.Init()
-	integrations.Init()
-	alert.Init()
-	multitenant.Init()
-	oauth.Init()
-	Init()
-
+func init() {
+	host = GetEnv("JOBS_DB_HOST", "localhost")
+	user = GetEnv("JOBS_DB_USER", "rudder")
+	dbname = GetEnv("JOBS_DB_DB_NAME", "jobsdb")
+	port, _ = strconv.Atoi(GetEnv("JOBS_DB_PORT", "6432"))
+	password = GetEnv("JOBS_DB_PASSWORD", "password") // Reading secrets from
+	sslmode = GetEnv("JOBS_DB_SSL_MODE", "disable")
+	configBackendURL = GetEnv("CONFIG_BACKEND_URL", "http://api.dev.rudderlabs.com")
+	multitenantSecret = GetEnv("MULTITENANT_SECRET", "xL%A=8fw3W")
 }
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		cancel()
-	}()
+	setupDB()
+	cbeInitialised = make(chan string)
+	go setupConfigBackendData()
+	cli := setupETCDClient()
+	go clusterSequences(cli)
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/v1/batch", mockGatewayHandler).Methods("POST")
+	srvMux.HandleFunc("/health", mockHealthHandler).Methods("GET")
 
-	Run(ctx)
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  reflectOrigin,
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+		MaxAge:           900, // 15 mins
+	})
+
+	httpWebServer := &http.Server{
+		Addr:              ":" + strconv.Itoa(8000),
+		Handler:           c.Handler(srvMux),
+		ReadTimeout:       0 * time.Second,
+		ReadHeaderTimeout: 0 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       720 * time.Second,
+		MaxHeaderBytes:    524288,
+	}
+	<-cbeInitialised
+	httpWebServer.ListenAndServe()
 }
 
-func Run(ctx context.Context) {
-	runAllInit()
+func setupETCDClient() *clientv3.Client {
+	etcdHosts := strings.Split(GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:            etcdHosts,
+		DialTimeout:          20 * time.Second,
+		DialKeepAliveTime:    30 * time.Second,
+		DialKeepAliveTimeout: 10 * time.Second,
+		DialOptions: []grpc.DialOption{
+			grpc.WithBlock(), // block until the underlying connection is up
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return cli
+}
+func clusterSequences(cli *clientv3.Client) {
+	var result string
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+	instance_id := strings.Split(GetEnv("INSTANCE_ID", "_1"), "_")[3]
+	newWorkspaceGWKey := "/" + GetEnv("RELEASE_NAME", `multitenantv1`) + "/SERVER/" + instance_id + "/gateway/WORKSPACES"
+	newWorkspaceGWKVS, err := cli.Get(ctx, newWorkspaceGWKey)
+	newWorkspaceGWVersion := int64(0)
+	if err != nil {
+		panic(err)
+	}
+	if len(newWorkspaceGWKVS.Kvs) > 0 {
+		result = string(newWorkspaceGWKVS.Kvs[0].Value)
+		newWorkspaceGWVersion = newWorkspaceGWKVS.Header.Revision
+	} else {
+		result = ``
+	}
+	var workspaceGWKey WorkspacesStruct
+	if result != "" {
+		err = json.Unmarshal([]byte(result), &workspaceGWKey)
+		if err != nil {
+			panic(err)
+		}
+		_, err = cli.Put(ctx, workspaceGWKey.Ack_key, `{
+            "status": "RELOADED"
+        }`)
+		if err != nil {
+			panic(err)
+		}
+	}
+	newWorkspaceProcKey := "/" + GetEnv("RELEASE_NAME", `multitenantv1`) + "/SERVER/" + instance_id + "/processor/WORKSPACES"
+	newWorkspaceProcKVS, err := cli.Get(ctx, newWorkspaceProcKey)
+	newWorkspaceProcVersion := int64(0)
+	if err != nil {
+		panic(err)
+	}
+	if len(newWorkspaceProcKVS.Kvs) > 0 {
+		result = string(newWorkspaceProcKVS.Kvs[0].Value)
+		newWorkspaceProcVersion = newWorkspaceProcKVS.Header.Revision
+	} else {
+		result = ``
+	}
+	var workspaceProcKey WorkspacesStruct
+	if result != "" {
+		err = json.Unmarshal([]byte(result), &workspaceProcKey)
+		if err != nil {
+			panic(err)
+		}
+		_, err = cli.Put(ctx, workspaceProcKey.Ack_key, `{
+            "status": "RELOADED"
+        }`)
+		if err != nil {
+			panic(err)
+		}
+	}
+	serverModeKey := "/" + GetEnv("RELEASE_NAME", `multitenantv1`) + "/SERVER/" + instance_id + "/MODE"
+	serverModeKVS, err := cli.Get(ctx, serverModeKey)
+	serverModeVersion := int64(0)
+	if err != nil {
+		panic(err)
+	}
+	if len(serverModeKVS.Kvs) > 0 {
+		result = string(serverModeKVS.Kvs[0].Value)
+		serverModeVersion = serverModeKVS.Header.Revision
+	} else {
+		result = ``
+	}
+	var serverModeKeyStruct ServerModeStruct
+	if result != "" {
+		err = json.Unmarshal([]byte(result), &serverModeKeyStruct)
+		if err != nil {
+			panic(err)
+		}
+		_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": %v}`, serverModeKeyStruct.Mode))
+		if err != nil {
+			panic(err)
+		}
+	}
+	workspacesWatchGWChan := WatchForKey(cli, ctx, newWorkspaceGWKey, newWorkspaceGWVersion)
+	workspacesWatchProcChan := WatchForKey(cli, ctx, newWorkspaceProcKey, newWorkspaceProcVersion)
+	serverModeKeyChan := WatchForKey(cli, ctx, serverModeKey, serverModeVersion)
+	for {
+		select {
+		case val := <-workspacesWatchGWChan:
+			var workspaceKey WorkspacesStruct
+			log.Println("Inside Workspaes For Loop (GW)", val)
+			if val != "" {
+				err = json.Unmarshal([]byte(val), &workspaceKey)
+				if err != nil {
+					panic(err)
+				}
+				_, err = cli.Put(ctx, workspaceKey.Ack_key, `{"status": "RELOADED"}`)
+				if err != nil {
+					panic(err)
+				}
+			}
+		case val := <-workspacesWatchProcChan:
+			var workspaceKey WorkspacesStruct
+			log.Println("Inside Workspaes For Loop (Proc)", val)
+			if val != "" {
+				err = json.Unmarshal([]byte(val), &workspaceKey)
+				if err != nil {
+					panic(err)
+				}
+				_, err = cli.Put(ctx, workspaceKey.Ack_key, `{"status": "RELOADED"}`)
+				if err != nil {
+					panic(err)
+				}
+			}
+		case val := <-serverModeKeyChan:
+			var serverModeKeyStruct ServerModeStruct
+			if val != "" {
+				err = json.Unmarshal([]byte(val), &serverModeKeyStruct)
+				if err != nil {
+					panic(err)
+				}
+				_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": %v}`, serverModeKeyStruct.Mode))
+				if err != nil {
+					panic(err)
+				}
+			}
+		default:
+			log.Println("Inside Default Sleeping for 10s")
+			time.Sleep(10 * time.Second)
+		}
+	}
+}
 
-	options := app.LoadOptions()
-	if options.VersionFlag {
-		printVersion()
+func WatchForKey(cli *clientv3.Client, ctx context.Context, key string, version int64) chan string {
+	resultChan := make(chan string)
+	go func(returnChan chan string, ctx context.Context, key string) {
+		opts := []clientv3.OpOption{clientv3.WithRev(version), clientv3.WithPrefix()}
+		etcdWatchChan := cli.Watch(ctx, key, opts...)
+		for watchResp := range etcdWatchChan {
+			for _, event := range watchResp.Events {
+				switch event.Type {
+				case mvccpb.PUT:
+					log.Println("PUT:", string(event.Kv.Value))
+					returnChan <- string(event.Kv.Value)
+				}
+			}
+		}
+		// close(resultChan)
+	}(resultChan, ctx, key)
+	return resultChan
+}
+
+func setupDB() {
+	var err error
+	psqlInfo := GetConnectionString()
+	globalDBHandle, err = sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	createDS()
+	var maxID sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM "%s"`, "gw_jobs_1")
+	rows, err := globalDBHandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	for rows.Next() {
+		err := rows.Scan(&maxID)
+		if err != nil {
+			panic(err)
+		}
+		break
+	}
+	if maxID.Valid {
+		job_id = int64(maxID.Int64)
+	}
+	rows.Close()
+}
+
+func setupConfigBackendData() {
+	writeKeyToWorkspaceIDMap = make(map[string]string)
+	for {
+		req, err := http.NewRequest("GET", configBackendURL+"/allWorkspaceConfigUpdates", nil)
+		if err != nil {
+			panic(err)
+		}
+		req.SetBasicAuth(multitenantSecret, "")
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			panic(err)
+		}
+		var respBody []byte
+		if resp != nil && resp.Body != nil {
+			respBody, _ = io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+		}
+
+		var workspaces map[string][]SourceT
+		err = json.Unmarshal(respBody, &workspaces)
+		if err != nil {
+			panic(err)
+		}
+		for workspaceID, Sources := range workspaces {
+			for _, source := range Sources {
+				writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
+			}
+		}
+		if !isInitialized {
+			isInitialized = true
+			close(cbeInitialised)
+		}
+		time.Sleep(100 * time.Second)
+	}
+}
+
+func GetConnectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
+}
+
+func createDS() {
+	jobsTables := []string{"gw_jobs_1", "rt_jobs_1", "batch_rt_jobs_1", "proc_error_jobs_1"}
+	jobStatusTables := []string{"gw_job_status_1", "rt_job_status_1", "batch_rt_job_status_1", "proc_error_job_status_1"}
+
+	for i, jobTable := range jobsTables {
+		//Create the jobs and job_status tables
+		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (
+                job_id BIGSERIAL PRIMARY KEY,
+                workspace_id TEXT NOT NULL DEFAULT '',
+                uuid UUID NOT NULL,
+                user_id TEXT NOT NULL,
+                parameters JSONB NOT NULL,
+                custom_val VARCHAR(64) NOT NULL,
+                event_payload JSONB NOT NULL,
+                event_count INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, jobTable)
+
+		_, err := globalDBHandle.Exec(sqlStatement)
+		if err != nil {
+			panic(err)
+		}
+
+		sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (
+            id BIGSERIAL,
+            job_id BIGINT REFERENCES "%s"(job_id),
+            job_state VARCHAR(64),
+            attempt SMALLINT,
+            exec_time TIMESTAMP,
+            retry_time TIMESTAMP,
+            error_code VARCHAR(32),
+            error_response JSONB DEFAULT '{}'::JSONB,
+            parameters JSONB DEFAULT '{}'::JSONB,
+            PRIMARY KEY (job_id, job_state, id));`, jobStatusTables[i], jobTable)
+		_, err = globalDBHandle.Exec(sqlStatement)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func Store(uuid, user_id, custom_val, workspace_id string, parameters, event_payload json.RawMessage, job_id int64) {
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id , job_id)
+    VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json , $6 , $7) RETURNING job_id`, "gw_jobs_1")
+	stmt, err := globalDBHandle.Prepare(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(uuid, user_id, custom_val, string(parameters), string(event_payload), workspace_id, job_id)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func GetEnv(key string, defaultVal string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultVal
+}
+
+func reflectOrigin(origin string) bool {
+	return true
+}
+
+func mockHealthHandler(w http.ResponseWriter, r *http.Request) {
+	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, "EMBEDDED", "UP", "true", "UP", 1234, "UP", "UP", "UP")
+	_, _ = w.Write([]byte(healthVal))
+}
+
+func mockGatewayHandler(w http.ResponseWriter, r *http.Request) {
+	payload, writeKey, err := getPayloadAndWriteKey(w, r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	workspaceID := writeKeyToWorkspaceIDMap[writeKey]
+	log.Println(workspaceID)
+	uid := uuid.Must(uuid.NewV4()).String()
+	dbWriteLock.Lock()
+	job_id = job_id + 1
+	Store(uid, uid, "GW", workspaceID, []byte(`"{key:value}"`), payload, job_id)
+	dbWriteLock.Unlock()
 
-	application = app.New(options)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+}
 
-	//application & backend setup should be done before starting any new goroutines.
-	application.Setup()
+func getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
+	var err error
+	writeKey, _, ok := r.BasicAuth()
+	if !ok || writeKey == "" {
+		return []byte{}, "", err
+	}
+	payload, err := getPayloadFromRequest(r)
+	if err != nil {
+		return []byte{}, writeKey, fmt.Errorf("read payload from request: %w", err)
+	}
+	return payload, writeKey, err
+}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
-
-	version := versionInfo()
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetEnv("GO_ENV", "development"),
-		// The import paths for the Go packages containing your source files
-		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
-		// more configuration options
-		AppType:      appHandler.GetAppType(),
-		AppVersion:   version["Version"].(string),
-		PanicHandler: func() {},
-	})
-	ctx = bugsnag.StartSession(ctx)
-	defer misc.BugsnagNotify(ctx, "Core")()
-
-	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
-		pkgLogger.Info("Suppress User feature is either disabled or enterprise only. Unable to poll regulations.")
+func getPayloadFromRequest(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return []byte{}, errors.New("response.RequestBodyNil")
 	}
 
-	var configEnvHandler types.ConfigEnvI
-	if application.Features().ConfigEnv != nil {
-		configEnvHandler = application.Features().ConfigEnv.Setup()
+	payload, err := io.ReadAll(r.Body)
+	r.Body.Close()
+	if err != nil {
+		return payload, fmt.Errorf("read all request body: %w", err)
 	}
-
-	if err := backendconfig.Setup(configEnvHandler); err != nil {
-		pkgLogger.Errorf("Unable to setup backend config: %s", err)
-		return
-	}
-
-	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return admin.StartServer(ctx)
-	})
-
-	g.Go(func() error {
-		p := &profiler.Profiler{}
-		return p.StartServer(ctx)
-	})
-
-	misc.AppStartTime = time.Now().Unix()
-	if canStartServer() {
-		appHandler.HandleRecovery(options)
-		g.Go(misc.WithBugsnag(func() error {
-			return appHandler.StartRudderCore(ctx, options)
-		}))
-	}
-
-	// initialize warehouse service after core to handle non-normal recovery modes
-	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return startWarehouseService(ctx, application)
-		}))
-	}
-
-	var ctxDoneTime time.Time
-	g.Go(func() error {
-		<-ctx.Done()
-		ctxDoneTime = time.Now()
-		return nil
-	})
-
-	g.Go(func() error {
-		<-ctx.Done()
-		backendconfig.DefaultBackendConfig.Stop()
-		return nil
-	})
-
-	go func() {
-		<-ctx.Done()
-		<-time.After(gracefulShutdownTimeout)
-		// Assume graceful shutdown failed, log remain goroutines and force kill
-		pkgLogger.Errorf(
-			"Graceful termination failed after %s, goroutine dump:\n",
-			gracefulShutdownTimeout,
-		)
-
-		fmt.Print("\n\n")
-		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
-		fmt.Print("\n\n")
-
-		application.Stop()
-		if logger.Log != nil {
-			logger.Log.Sync()
-		}
-		stats.StopPeriodicStats()
-		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
-			os.Exit(1)
-		}
-	}()
-
-	err := g.Wait()
-	if err != nil && err != context.Canceled {
-		pkgLogger.Error(err)
-	}
-
-	application.Stop()
-
-	pkgLogger.Infof(
-		"Graceful terminal after %s, with %d go-routines",
-		time.Since(ctxDoneTime),
-		runtime.NumGoroutine(),
-	)
-	// clearing zap Log buffer to std output
-	if logger.Log != nil {
-		logger.Log.Sync()
-	}
-	stats.StopPeriodicStats()
+	return payload, nil
 }
