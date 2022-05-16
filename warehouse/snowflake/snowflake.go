@@ -574,7 +574,7 @@ func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql
 		Database:     cred.dbName,
 		Schema:       cred.schemaName,
 		Warehouse:    cred.whName,
-		LoginTimeout: timeout / time.Second,
+		LoginTimeout: timeout,
 		Application:  "Rudderstack",
 	}
 
