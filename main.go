@@ -298,7 +298,9 @@ func setupDB() {
 func setupConfigBackendData() {
 	writeKeyToWorkspaceIDMap = make(map[string]string)
 	for {
-		req, err := http.NewRequest("GET", configBackendURL+"/allWorkspaceConfigUpdates", nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "GET", configBackendURL+"/allWorkspaceConfigUpdates", nil)
+		defer cancel()
 		if err != nil {
 			panic(err)
 		}
@@ -325,7 +327,9 @@ func setupConfigBackendData() {
 				writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
 			}
 		}
+		log.Println("Before isInitialised")
 		if !isInitialized {
+			log.Println("Inside isInitialised True")
 			isInitialized = true
 			close(cbeInitialised)
 		}
