@@ -526,7 +526,7 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 		cred.dbName,
 	)
 	if cred.timeout != 0 {
-		url += fmt.Sprintf("connect_timeout=%d", cred.timeout/time.Second)
+		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
 	}
 
 	var err error
