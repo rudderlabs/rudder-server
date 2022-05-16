@@ -221,12 +221,6 @@ type CommonBackendConfig struct {
 	once             sync.Once
 }
 
-func (bc *CommonBackendConfig) init() {
-	bc.once.Do(func() {
-		bc.eb = pubsub.NewPublishSubscriber(context.TODO())
-	})
-}
-
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
@@ -441,7 +435,6 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
-	bc.init()
 	ctx, cancel := context.WithCancel(context.Background())
 	bc.ctx = ctx
 	bc.cancel = cancel
