@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +31,8 @@ var (
 )
 
 const (
-	modeRequestKeyPattern        = `/%s/server/%s/mode`       // /<releaseName>/server/<serverIndex>/mode
-	workspacesRequestsKeyPattern = `/%s/server/%s/workspaces` // /<releaseName>/server/<serverIndex>/workspaces
+	modeRequestKeyPattern        = `/%s/server/%s/mode`          // /<releaseName>/server/<serverIndex>/mode
+	workspacesRequestsKeyPattern = `/%s/server/%s/%s/workspaces` // /<releaseName>/server/<serverIndex>/<app_type>/workspaces
 
 	defaultACKTimeout = 15 * time.Second
 )
@@ -262,7 +263,8 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(err)
 	}
 
-	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex, appTypeStr)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)
