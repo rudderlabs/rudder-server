@@ -218,7 +218,6 @@ type CommonBackendConfig struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	blockChan        chan struct{}
-	once             sync.Once
 }
 
 func loadConfig() {
