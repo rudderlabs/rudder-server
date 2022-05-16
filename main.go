@@ -93,7 +93,7 @@ func main() {
 	})
 
 	httpWebServer := &http.Server{
-		Addr:              ":" + strconv.Itoa(8000),
+		Addr:              ":" + strconv.Itoa(8080),
 		Handler:           c.Handler(srvMux),
 		ReadTimeout:       0 * time.Second,
 		ReadHeaderTimeout: 0 * time.Second,
