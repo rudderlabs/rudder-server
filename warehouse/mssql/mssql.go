@@ -124,7 +124,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.DBName)
 	query.Add("encrypt", cred.SSLMode)
-	if cred.timeout != 0 {
+	if cred.timeout > 0 {
 		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
 	query.Add("TrustServerCertificate", "true")

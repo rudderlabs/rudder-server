@@ -571,7 +571,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 		Application: "Rudderstack",
 	}
 
-	if cred.timeout != 0 {
+	if cred.timeout > 0 {
 		urlConfig.LoginTimeout = cred.timeout
 	}
 

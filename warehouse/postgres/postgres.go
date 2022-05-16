@@ -124,7 +124,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.DBName,
 		cred.SSLMode,
 	)
-	if cred.timeout != 0 {
+	if cred.timeout > 0 {
 		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
 	}
 	if cred.SSLMode == verifyCA {
