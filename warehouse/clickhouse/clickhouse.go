@@ -823,6 +823,17 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
+func (ch *HandleT) DropTable(tableName string) (err error) {
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`DROP TABLE "%s"."%s" %s `, ch.Warehouse.Namespace, tableName, clusterClause)
+	_, err = ch.Db.Exec(sqlStatement)
+	return nil
+}
+
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
@@ -1013,7 +1024,7 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1024,11 +1035,11 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
-		stagingTableName,
+		tableName,
 		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
 		generateArgumentString("?", len(columns)),
 	)
-	txn, err := client.SQL.Begin()
+	txn, err := ch.Db.Begin()
 	if err != nil {
 		return
 	}

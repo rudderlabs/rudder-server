@@ -49,6 +49,10 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
+func (wh *HandleT) DropTable(tableName string) (err error) {
+	return fmt.Errorf("datalake err :not implemented")
+}
+
 func (wh *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	return wh.SchemaRepository.AddColumn(tableName, columnName, columnType)
 }
@@ -106,6 +110,6 @@ func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) error {
+func (wh *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }

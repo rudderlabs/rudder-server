@@ -160,6 +160,7 @@ Warehouse:
     maxParallelLoads: 3
   bigquery:
     maxParallelLoads: 20
+    isDedupEnabled: true
   postgres:
     maxParallelLoads: 3
   mssql:

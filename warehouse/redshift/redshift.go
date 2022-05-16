@@ -150,6 +150,13 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
+func (rs *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("RS: Dropping table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rs.Db.Exec(fmt.Sprintf(sqlStatement, rs.Namespace, tableName))
+	return
+}
+
 func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
@@ -769,10 +776,10 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (rs *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
-		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
+		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return
 	}
 
@@ -785,7 +792,7 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -794,7 +801,7 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
 			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 			manifestS3Location,
 			tempAccessKeyId,
@@ -804,6 +811,6 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		)
 	}
 
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
 	return
 }

@@ -622,6 +622,13 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return sf.createTable(tableName, columnMap)
 }
 
+func (sf *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("SF: Dropping table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = sf.Db.Exec(fmt.Sprintf(sqlStatement, sf.Namespace, tableName))
+	return
+}
+
 func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
@@ -911,17 +918,17 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (sf *HandleT) LoadTestTable(location string, tablename string, payloadMap map[string]interface{}, format string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
 
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
-		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName),
+		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, tablename),
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		loadFolder,
 		sf.authString(),
 	)
 
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
 	return
 }

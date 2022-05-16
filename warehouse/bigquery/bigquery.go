@@ -128,6 +128,17 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return
 }
 
+func (bq *HandleT) DropTable(tableName string) (err error) {
+	err = bq.DeleteTable(tableName)
+	if err != nil {
+		return
+	}
+	if !isDedupEnabled {
+		err = bq.DeleteTable(tableName + "_view")
+	}
+	return
+}
+
 func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
@@ -743,7 +754,6 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	bq.Uploader = uploader
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 
-	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.BQContext = context.Background()
 	bq.Db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.ProjectID,
@@ -1041,15 +1051,15 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (bq *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	outputTable := partitionedTable(stagingTableName, time.Now().Format("2006-01-02"))
-	loader := client.BQ.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+	outputTable := partitionedTable(tableName, time.Now().Format("2006-01-02"))
+	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(bq.BQContext)
 	if err != nil {

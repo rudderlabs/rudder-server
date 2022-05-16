@@ -614,6 +614,13 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
+func (as *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	return
+}
+
 func (pg *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
@@ -817,13 +824,13 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		pg.Namespace,
-		stagingTableName,
+		tableName,
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = pg.Db.Exec(sqlStatement)
 	return
 }

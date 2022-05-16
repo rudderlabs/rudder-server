@@ -697,6 +697,20 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
+func (dl *HandleT) DropTable(tableName string) (err error) {
+	pkgLogger.Infof("%s Dropping table %s", dl.GetLogIdentifier(), tableName)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, tableName)
+	dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
+		Config:       dl.dbHandleT.CredConfig,
+		Identifier:   dl.dbHandleT.CredIdentifier,
+		SqlStatement: sqlStatement,
+	})
+	if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+		return
+	}
+	return
+}
+
 // AddColumn adds column for column name and type
 func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
@@ -982,14 +996,14 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(stagingTableName, location)
+	loadFolder, err := dl.getLoadFolder(tableName, location)
 	if err != nil {
 		return
 	}
@@ -1001,7 +1015,7 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, "id", "val"),
 			loadFolder,
 			auth,
@@ -1013,13 +1027,13 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			loadFolder,
 			auth,
 		)
 	}
 
-	err = dl.ExecuteSQLClient(client.DBHandleT, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
 	return
 }

@@ -661,6 +661,13 @@ func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
+func (as *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	return
+}
+
 func (as *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	err = as.addColumn(as.Namespace+"."+tableName, columnName, columnType)
 	return err
@@ -840,13 +847,13 @@ func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (as *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (as *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		as.Namespace,
-		stagingTableName,
+		tableName,
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	return
 }

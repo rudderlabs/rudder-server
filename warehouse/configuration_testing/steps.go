@@ -20,7 +20,6 @@ func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.Ra
 // validationSteps returns series of validation steps for
 // a particular destination.
 func (ct *CTHandleT) validationSteps() []*validationStep {
-
 	steps := []*validationStep{{
 		ID:        1,
 		Name:      "Verifying Object Storage",
@@ -59,6 +58,5 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 			Validator: ct.verifyingLoadTable,
 		},
 	)
-
 	return steps
 }
