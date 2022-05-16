@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -115,7 +116,7 @@ func rudderCoreBaseSetup() {
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
-	transientSources transientsource.Service,
+	transientSources transientsource.Service, rsourcesService rsources.JobService,
 ) {
 	if !processorLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
@@ -123,7 +124,7 @@ func StartProcessor(
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
@@ -132,7 +133,7 @@ func StartProcessor(
 func StartRouter(
 	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
-	transientSources transientsource.Service,
+	transientSources transientsource.Service, rsourcesService rsources.JobService,
 ) {
 	if !routerLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
@@ -146,6 +147,7 @@ func StartRouter(
 		RouterDB:         routerDB,
 		ProcErrorDB:      procErrorDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 
 	batchRouterFactory := batchrouter.Factory{
@@ -155,6 +157,7 @@ func StartRouter(
 		ProcErrorDB:      procErrorDB,
 		RouterDB:         batchRouterDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 
 	monitorDestRouters(ctx, &routerFactory, &batchRouterFactory)

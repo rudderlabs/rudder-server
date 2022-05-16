@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 
@@ -108,7 +109,15 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsources.NewNoOpService())
+		localDb, err := sql.Open("postgres", jobsdb.GetConnectionString())
+		if err != nil {
+			return err
+		}
+		rsourcesService, err := rsources.NewJobService(localDb)
+		if err != nil {
+			return err
+		}
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsourcesService)
 		defer gw.Shutdown()
 
 		g.Go(func() error {

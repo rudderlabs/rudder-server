@@ -27,6 +27,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -152,6 +153,7 @@ type HandleT struct {
 
 	payloadLimit     int64
 	transientSources transientsource.Service
+	rsourcesService  rsources.JobService
 }
 
 type jobResponseT struct {
@@ -1532,6 +1534,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
+	var jobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
@@ -1578,12 +1581,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
+			jobsList = append(jobsList, resp.JobT)
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+			jobsList = append(jobsList, resp.JobT)
 		}
 
 		//REPORTING - ROUTER - END
@@ -1651,6 +1656,17 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 				return err
 			}
+
+			// rsources stats
+			rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
+			rsourcesStats.BeginProcessing(jobsList)
+			rsourcesStats.JobStatusesUpdated(statusList)
+			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while publishing rsources stats. Err: %v", err)
+				return err
+			}
+
 			//Save msgids of aborted jobs
 			if len(jobRunIDAbortedEventsMap) > 0 {
 				GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
@@ -2106,15 +2122,23 @@ func (rt *HandleT) readAndProcess() int {
 		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
 			if err != nil {
-				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				rt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %w", rt.destName, err)
 				return err
 			}
+			// rsources stats
+			rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
+			rsourcesStats.BeginProcessing(drainJobList)
+			rsourcesStats.JobStatusesUpdated(drainList)
+			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			if err != nil {
+				pkgLogger.Errorf("Error occurred while publishing rsources stats. Err: %w", err)
+				return err
+			}
+
 			rt.Reporting.Report(reportMetrics, tx.Tx())
 			return nil
 		})
-
 		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
 		for destID, destDrainStat := range drainStatsbyDest {
@@ -2163,7 +2187,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 
 	rt.resultSetMeta = make(map[int64]*resultSetT)
 	rt.lastResultSet = &resultSetT{}
@@ -2180,6 +2204,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.logger.Info("Router started: ", destName)
 
 	rt.transientSources = transientSources
+	rt.rsourcesService = rsourcesService
 
 	//waiting for reporting client setup
 	rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)

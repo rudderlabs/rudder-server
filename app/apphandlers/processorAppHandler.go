@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -100,6 +102,14 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
+	localDb, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	if err != nil {
+		return err
+	}
+	rsourcesService, err := rsources.NewJobService(localDb)
+	if err != nil {
+		return err
+	}
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
@@ -166,7 +176,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 					if enableProcessor {
 						StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources,
+							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)
 					}
 					return nil
@@ -175,7 +185,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			startRouterFunc := func() {
 				if enableRouter {
 					g.Go(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources)
+						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
 						return nil
 					})
 				}
@@ -214,7 +224,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, rsourcesService)
 
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
@@ -223,6 +233,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		RouterDB:         tenantRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -231,6 +242,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 

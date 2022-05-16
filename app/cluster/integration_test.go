@@ -15,6 +15,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
@@ -179,6 +180,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
 	defer gwDB.Close()
@@ -199,7 +201,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -214,6 +216,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         tDb,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reportingNOOP{},
@@ -222,6 +225,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         brtDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
