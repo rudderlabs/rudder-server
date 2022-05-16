@@ -385,6 +385,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 		})
 		if err != nil {
 			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), err)
+			continue
 		}
 		if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
 			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())

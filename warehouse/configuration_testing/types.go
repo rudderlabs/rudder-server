@@ -84,7 +84,7 @@ type DestinationValidationResponse struct {
 type CTHandleT struct {
 	infoRequest *DestinationValidationRequest
 	warehouse   warehouseutils.WarehouseT
-	manager     manager.SuperManagerI
+	manager     manager.WarehouseOperations
 }
 
 type CTUploadJob struct {

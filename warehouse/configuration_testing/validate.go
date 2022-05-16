@@ -109,7 +109,7 @@ func (ct *CTHandleT) initManager() (err error) {
 	ct.warehouse = warehouse(ct.infoRequest)
 
 	// Initializing manager
-	ct.manager, err = manager.NewSuperManager(ct.warehouse.Destination.DestinationDefinition.Name)
+	ct.manager, err = manager.NewWarehouseOperations(ct.warehouse.Destination.DestinationDefinition.Name)
 	if err != nil {
 		return
 	}

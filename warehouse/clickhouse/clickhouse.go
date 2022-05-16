@@ -716,8 +716,8 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM system.databases WHERE name = '%s'`, schemaName)
-	err = ch.Db.QueryRow(sqlStatement).Scan(&count)
+	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = $1"
+	err = ch.Db.QueryRow(sqlStatement, schemaName).Scan(&count)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil

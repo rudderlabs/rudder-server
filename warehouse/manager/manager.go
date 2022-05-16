@@ -37,12 +37,16 @@ type ManagerI interface {
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	LoadTestTable(location string, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
+	SetConnectionTimeout(timeout time.Duration)
 }
 
-type SuperManagerI interface {
-	ManagerI
+type WarehouseDelete interface {
 	DropTable(tableName string) (err error)
-	SetConnectionTimeout(timeout time.Duration)
+}
+
+type WarehouseOperations interface {
+	ManagerI
+	WarehouseDelete
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type
@@ -79,8 +83,8 @@ func New(destType string) (ManagerI, error) {
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }
 
-//NewSuperManager is a Factory function that returns a SuperManagerI of a given destination-type
-func NewSuperManager(destType string) (SuperManagerI, error) {
+//NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
+func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
 		var rs redshift.HandleT

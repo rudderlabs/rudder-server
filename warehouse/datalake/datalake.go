@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TODO: Handle error using error types.
 var (
 	pkgLogger logger.LoggerI
 )
