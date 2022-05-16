@@ -256,7 +256,8 @@ func Test_Workspaces(t *testing.T) {
 		}
 		defer provider.Close()
 		appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
-		requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex, appType)
+		requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace,
+			provider.Config.ServerIndex, appType)
 
 		ch := provider.WorkspaceIDs(ctx)
 
@@ -279,7 +280,8 @@ func Test_Workspaces(t *testing.T) {
 	defer provider.Close()
 
 	appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
-	requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex, appType)
+	requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex,
+		appType)
 
 	t.Run("key is missing initially", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
