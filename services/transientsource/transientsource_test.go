@@ -59,7 +59,7 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
-	var ch chan pubsub.DataEvent
+	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
 	ready.Add(2)
@@ -71,9 +71,9 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
 	).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-			ch = channel
+		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
 			ready.Done()
+			return configCh
 		})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,7 +95,7 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 	Expect(sourceIds).To(BeEmpty())
 
 	// When the config backend publishes an event with two skipped sources
-	ch <- pubsub.DataEvent{
+	configCh <- pubsub.DataEvent{
 		Data: backendconfig.ConfigT{
 			Sources: []backendconfig.SourceT{
 				{
@@ -130,8 +130,9 @@ func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
 	).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
 			ready.Done()
+			return make(chan pubsub.DataEvent)
 		})
 	ctx, cancel := context.WithCancel(context.Background())
 

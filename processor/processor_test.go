@@ -68,17 +68,24 @@ func (c *testContext) Setup() {
 
 	c.configInitialised = false
 	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-			// on Subscribe, emulate a backend configuration event
-			go func() {
-				channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-				c.configInitialised = true
-			}()
-		})
-	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
-		Return().Times(1)
+		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			c.configInitialised = true
 
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		})
+
+	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+	mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+		tFunc()
+
+		return nil
+	})
 	c.dbReadBatchSize = 10000
 	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)

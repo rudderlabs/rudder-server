@@ -101,13 +101,22 @@ func (c *testContext) Setup() {
 
 	// During Setup, router subscribes to backend config
 	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
-			go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
 		})
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
-	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
-		Return().Times(1)
+	mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+		tFunc()
+
+		return nil
+	})
 	c.dbReadBatchSize = 10000
 }
 
