@@ -799,7 +799,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
 	}
-	if strings.HasSuffix(tableName, warehouseutils.CTStagingTablePrefix) {
+	if strings.HasPrefix(tableName, warehouseutils.CTStagingTablePrefix) {
 		sortKeyFields = []string{}
 	}
 	var sqlStatement string
@@ -815,7 +815,17 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	var orderByClause string
+	if len(sortKeyFields) > 0 {
+		orderByClause = fmt.Sprintf(`ORDER BY %s`, getSortKeyTuple(sortKeyFields))
+	}
+
+	var partitionByClause string
+	if _, ok := columns["received_at"]; ok {
+		partitionByClause = fmt.Sprintf(`PARTITION BY toDate(%s)`, partitionField)
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
