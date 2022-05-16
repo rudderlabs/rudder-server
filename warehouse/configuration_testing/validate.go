@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,18 +15,27 @@ import (
 )
 
 func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
-
 	ct.infoRequest = &DestinationValidationRequest{}
-	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
+	if err := parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
+
+	destination := ct.infoRequest.Destination
+	destinationID := destination.ID
+	destinationType := destination.DestinationDefinition.Name
+
+	pkgLogger.Infof("Validating destination configuration for destinationId: %s, destinationType: %s, step: %s",
+		destinationID,
+		destinationType,
+		step,
+	)
 
 	resp := DestinationValidationResponse{}
 	// check if req has specified a step in query params
 	if step != "" {
 		stepI, err := strconv.Atoi(step)
 		if err != nil {
-			resp.Error = fmt.Sprintf("%s: %s", InvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -42,7 +49,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		}
 
 		if v == nil {
-			resp.Error = fmt.Sprintf("%s: %s", InvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -56,6 +63,12 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		stepError := s.Validator()
 		if stepError != nil {
 			resp.Steps[idx].Error = stepError.Error()
+			pkgLogger.Errorf("error occurred while destination configuration validation for destinationId: %s, destinationType: %s, step: %s with error: %s",
+				destinationID,
+				destinationType,
+				s.Name,
+				stepError.Error(),
+			)
 		} else {
 			resp.Steps[idx].Success = true
 		}
@@ -76,89 +89,112 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 
 func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 	// creating load file
-	tempPath, err := ct.createLoadFile()
+	tempPath, err := createLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
 
 	// uploading load file to object storage
-	uploadOutput, err := ct.uploadLoadFile(tempPath)
+	uploadOutput, err := uploadLoadFile(ct.infoRequest, tempPath)
 	if err != nil {
 		return
 	}
 
 	// downloading load file from object storage
-	err = ct.downloadLoadFile(uploadOutput.ObjectName)
+	err = downloadLoadFile(ct.infoRequest, uploadOutput.ObjectName)
+	return
+}
+
+func (ct *CTHandleT) initManager() (err error) {
+	ct.warehouse = warehouse(ct.infoRequest)
+
+	// Initializing manager
+	ct.manager, err = manager.NewWarehouseOperations(ct.warehouse.Destination.DestinationDefinition.Name)
+	if err != nil {
+		return
+	}
+
+	// Setting test connection timeout
+	ct.manager.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
+
+	// setting up the manager
+	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
+		infoRequest: ct.infoRequest,
+	})
 	return
 }
 
 func (ct *CTHandleT) verifyingConnections() (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
+	err = ct.initManager()
 	if err != nil {
 		return
 	}
 
-	// calling test connection on warehouse
-	err = whManager.TestConnection(ct.warehouseAdapter())
+	err = ct.manager.TestConnection(ct.warehouse)
 	return
 }
 
 func (ct *CTHandleT) verifyingCreateSchema() (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
+	err = ct.initManager()
 	if err != nil {
 		return
 	}
-	ct.warehouse = ct.warehouseAdapter()
 
-	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
-	if err != nil {
-		return
-	}
-	defer ct.client.Close()
-
-	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		return bqHandle.VerifyCreateSchema(&ct.client, ct.warehouse, context.TODO())
-	}
-
-	// Creating schema query and running over the warehouse
-	_, err = ct.client.Query(ct.CreateSchemaQuery(), client.Write)
+	err = ct.manager.CreateSchema()
 	return
 }
 
-func (ct *CTHandleT) verifyingCreateTable() (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
-	if err != nil {
-		return
-	}
-	ct.warehouse = ct.warehouseAdapter()
-
-	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
+func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
+	err = ct.initManager()
 	if err != nil {
 		return
 	}
 
-	// Cleanup
-	defer ct.cleanup()
+	stagingTableName := stagingTableName()
 
 	// Create table
-	return ct.createTable()
+	err = ct.manager.CreateTable(stagingTableName, TestTableSchemaMap)
+	if err != nil {
+		return
+	}
+
+	// Drop table
+	defer ct.manager.DropTable(stagingTableName)
+
+	// Alter table
+	for columnName, columnType := range AlterColumnMap {
+		err = ct.manager.AddColumn(stagingTableName, columnName, columnType)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (ct *CTHandleT) verifyingFetchSchema() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
+	_, err = ct.manager.FetchSchema(ct.warehouse)
+	return
 }
 
 func (ct *CTHandleT) verifyingLoadTable() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	// creating load file
-	tempPath, err := ct.createLoadFile()
+	tempPath, err := createLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
 
 	// uploading load file
-	uploadOutput, err := ct.uploadLoadFile(tempPath)
+	uploadOutput, err := uploadLoadFile(ct.infoRequest, tempPath)
 	if err != nil {
 		return
 	}
@@ -168,8 +204,9 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	return
 }
 
-func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
-	destination := ct.infoRequest.Destination
+func createLoadFile(req *DestinationValidationRequest) (filePath string, err error) {
+	destination := req.Destination
+	destinationType := destination.DestinationDefinition.Name
 
 	// creating temp directory path
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -179,7 +216,7 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 	}
 
 	// creating file path for temporary file
-	filePath = fmt.Sprintf("%v/%v/%v.%v.%v", tmpDirPath, connectionTestingFolder, ct.GetDestinationType(), time.Now().Unix(), warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
+	filePath = fmt.Sprintf("%v/%v/%v.%v.%v", tmpDirPath, connectionTestingFolder, destinationType, time.Now().Unix(), warehouseutils.GetLoadFileFormat(destinationType))
 	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("[DCT] Failed to make dir filePath: %s with error: %s", filePath, err.Error())
@@ -188,8 +225,8 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 
 	// creating writer for writing to temporary file based on file type
 	var writer warehouseutils.LoadFileWriterI
-	if warehouseutils.GetLoadFileType(ct.GetDestinationType()) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		writer, err = warehouseutils.CreateParquetWriter(TestTableSchemaMap, filePath, ct.GetDestinationType())
+	if warehouseutils.GetLoadFileType(destinationType) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		writer, err = warehouseutils.CreateParquetWriter(TestTableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
 	}
@@ -200,8 +237,8 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 
 	// creating event loader to add columns to temporary file
 	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, warehouseutils.GetLoadFileType(destination.DestinationDefinition.Name), writer)
-	eventLoader.AddColumn("id", TestTableSchemaMap["id"], 1)
-	eventLoader.AddColumn("val", TestTableSchemaMap["val"], "RudderStack")
+	eventLoader.AddColumn("id", TestTableSchemaMap["id"], TestPayloadMap["id"])
+	eventLoader.AddColumn("val", TestTableSchemaMap["val"], TestPayloadMap["val"])
 
 	// writing to file
 	err = eventLoader.Write()
@@ -209,6 +246,8 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 		pkgLogger.Errorf("[WH]: Failed to write event with error: %s", err.Error())
 		return
 	}
+
+	// closing writer
 	err = writer.Close()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error while closing load file with error: %s", err.Error())
@@ -217,9 +256,12 @@ func (ct *CTHandleT) createLoadFile() (filePath string, err error) {
 	return
 }
 
-func (ct *CTHandleT) uploadLoadFile(filePath string) (uploadOutput filemanager.UploadOutput, err error) {
+func uploadLoadFile(req *DestinationValidationRequest, filePath string) (uploadOutput filemanager.UploadOutput, err error) {
+	destination := req.Destination
+	destinationType := destination.DestinationDefinition.Name
+
 	// getting file manager
-	uploader, err := ct.fileManagerAdapter()
+	fm, err := fileManager(req)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager with error: %s", err.Error())
 		return
@@ -237,8 +279,8 @@ func (ct *CTHandleT) uploadLoadFile(filePath string) (uploadOutput filemanager.U
 	defer uploadFile.Close()
 
 	// uploading file to object storage
-	keyPrefixes := []string{connectionTestingFolder, ct.GetDestinationType(), GetRandomString(), time.Now().Format("01-02-2006")}
-	uploadOutput, err = uploader.Upload(context.TODO(), uploadFile, keyPrefixes...)
+	keyPrefixes := []string{connectionTestingFolder, destinationType, randomString(), time.Now().Format("01-02-2006")}
+	uploadOutput, err = fm.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to upload filePath: %s with error: %s", filePath, err.Error())
 		return
@@ -246,9 +288,12 @@ func (ct *CTHandleT) uploadLoadFile(filePath string) (uploadOutput filemanager.U
 	return uploadOutput, err
 }
 
-func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
+func downloadLoadFile(req *DestinationValidationRequest, location string) (err error) {
+	destination := req.Destination
+	destinationType := destination.DestinationDefinition.Name
+
 	// getting file manager
-	downloader, err := ct.fileManagerAdapter()
+	fm, err := fileManager(req)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config with error: %s", err.Error())
 		return
@@ -262,7 +307,7 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 	}
 
 	// creating file path for temporary file
-	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.%v", tmpDirPath, connectionTestingFolder, ct.GetDestinationType(), GetRandomString(), time.Now().Unix(), warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
+	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.%v", tmpDirPath, connectionTestingFolder, destinationType, randomString(), time.Now().Unix(), warehouseutils.GetLoadFileFormat(destinationType))
 	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to create directory at tempFilePath %s: with error: %s", testFilePath, err.Error())
@@ -281,7 +326,7 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 	defer testFile.Close()
 
 	// downloading temporary file to specified from object storage location
-	err = downloader.Download(context.TODO(), testFile, location)
+	err = fm.Download(context.TODO(), testFile, location)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to download tempFilePath: %s with error: %s", location, err.Error())
 		return
@@ -290,58 +335,21 @@ func (ct *CTHandleT) downloadLoadFile(location string) (err error) {
 }
 
 func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
-	// Getting warehouse manager
-	whManager, err := manager.New(ct.GetDestinationType())
-	if err != nil {
-		return
-	}
-	ct.warehouse = ct.warehouseAdapter()
+	destination := ct.infoRequest.Destination
+	destinationType := destination.DestinationDefinition.Name
 
-	// Getting warehouse client
-	ct.client, err = whManager.Connect(ct.warehouse)
-	if err != nil {
-		return
-	}
-
-	// Cleanup
-	defer ct.cleanup()
+	stagingTableName := stagingTableName()
 
 	// Create table
-	err = ct.createTable()
+	err = ct.manager.CreateTable(stagingTableName, TestTableSchemaMap)
 	if err != nil {
 		return
 	}
 
+	// Drop table
+	defer ct.manager.DropTable(stagingTableName)
+
 	// loading test table from staging file
-	err = whManager.LoadTestTable(&ct.client, loadFileLocation, ct.warehouseAdapter(), ct.stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(ct.GetDestinationType()))
+	err = ct.manager.LoadTestTable(loadFileLocation, stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))
 	return
-}
-
-func (ct *CTHandleT) createTable() (err error) {
-	// Set staging table name
-	ct.stagingTableName = fmt.Sprintf(`%s%s`,
-		StagingTablePrefix,
-		GetRandomString(),
-	)
-	// Creating create table query and running over the warehouse
-	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		err = bqHandle.CreateTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
-	} else {
-		_, err = ct.client.Query(ct.CreateTableQuery(), client.Write)
-	}
-	return
-}
-
-func (ct *CTHandleT) cleanup() {
-	// Dropping table
-	if ct.GetDestinationType() == warehouseutils.BQ {
-		bqHandle := bigquery.HandleT{}
-		bqHandle.DeleteTestTable(&ct.client, ct.warehouse, ct.stagingTableName, TestTableSchemaMap, context.TODO())
-	} else {
-		ct.client.Query(ct.DropTableQuery(), client.Write)
-	}
-
-	// Closing connection
-	ct.client.Close()
 }

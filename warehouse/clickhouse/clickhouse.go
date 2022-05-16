@@ -37,7 +37,6 @@ var (
 	poolSize                    string
 	readTimeout                 string
 	writeTimeout                string
-	connectTimeout              time.Duration
 	compress                    bool
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
@@ -129,12 +128,13 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
-	stats         stats.Stats
+	Db             *sql.DB
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	stats          stats.Stats
+	ConnectTimeout time.Duration
 }
 
 type CredentialsT struct {
@@ -146,6 +146,7 @@ type CredentialsT struct {
 	Secure        string
 	SkipVerify    string
 	TLSConfigName string
+	timeout       time.Duration
 }
 
 type clickHouseStatT struct {
@@ -197,16 +198,12 @@ func Init() {
 
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
-	return connectWithTimeout(cred, includeDBInConn, connectTimeout)
-}
-
-func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Duration) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t&timeout=%d",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
 		cred.Host,
 		cred.Port,
 		cred.User,
@@ -221,8 +218,10 @@ func connectWithTimeout(cred CredentialsT, includeDBInConn bool, timeout time.Du
 		readTimeout,
 		writeTimeout,
 		compress,
-		timeout/time.Second,
 	)
+	if cred.timeout != 0 {
+		url += fmt.Sprintf("&timeout=%d", cred.timeout/time.Second)
+	}
 
 	var err error
 	var db *sql.DB
@@ -245,10 +244,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-
-	// Default timeout overrides the values to what ever we pass in dsn
-	// Setting connectTimeout value as clickhouse driver default timeout
-	config.RegisterDurationConfigVariable(int64(clickhouse.DefaultConnTimeout/time.Second), &connectTimeout, true, time.Second, "Warehouse.clickhouse.connectTimeout")
 }
 
 /*
@@ -282,6 +277,7 @@ func (ch *HandleT) getConnectionCredentials() CredentialsT {
 		Secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
 		SkipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
 		TLSConfigName: tlsName,
+		timeout:       ch.ConnectTimeout,
 	}
 	return credentials
 }
@@ -718,17 +714,16 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	return
 }
 
-func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT 1`)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
-			pkgLogger.Debugf("CH: No database found while checking for schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
-			return false, nil
-		}
-		return false, err
+func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
+	var count int64
+	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
+	err = ch.Db.QueryRow(sqlStatement, schemaName).Scan(&count)
+	// ignore err if no results for query
+	if err == sql.ErrNoRows {
+		err = nil
 	}
-	return true, nil
+	exists = count > 0
+	return
 }
 
 // createSchema creates a database in clickhouse
@@ -803,6 +798,9 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
 	}
+	if strings.HasPrefix(tableName, warehouseutils.CTStagingTablePrefix) {
+		sortKeyFields = []string{"id"}
+	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
@@ -816,9 +814,30 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	var orderByClause string
+	if len(sortKeyFields) > 0 {
+		orderByClause = fmt.Sprintf(`ORDER BY %s`, getSortKeyTuple(sortKeyFields))
+	}
+
+	var partitionByClause string
+	if _, ok := columns[partitionField]; ok {
+		partitionByClause = fmt.Sprintf(`PARTITION BY toDate(%s)`, partitionField)
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = ch.Db.Exec(sqlStatement)
+	return
+}
+
+func (ch *HandleT) DropTable(tableName string) (err error) {
+	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`DROP TABLE "%s"."%s" %s `, ch.Warehouse.Namespace, tableName, clusterClause)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
 }
@@ -851,19 +870,18 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	ch.Db, err = connectWithTimeout(ch.getConnectionCredentials(), true, timeOut)
+	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
 	defer ch.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
 	defer cancel()
 
 	err = ch.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", ch.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -1013,7 +1031,7 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1024,11 +1042,11 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
-		stagingTableName,
+		tableName,
 		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
 		generateArgumentString("?", len(columns)),
 	)
-	txn, err := client.SQL.Begin()
+	txn, err := ch.Db.Begin()
 	if err != nil {
 		return
 	}
@@ -1049,4 +1067,8 @@ func (ch *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		return
 	}
 	return
+}
+
+func (ch *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	ch.ConnectTimeout = timeout
 }

@@ -95,11 +95,12 @@ var primaryKeyMap = map[string]string{
 }
 
 type HandleT struct {
-	dbHandleT     *databricks.DBHandleT
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	dbHandleT      *databricks.DBHandleT
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 // Init initializes the delta lake warehouse
@@ -172,7 +173,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
+func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
@@ -214,6 +215,10 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT, timeout time.Duration)
 	}
 
 	// Getting timeout context
+	timeout := grpcTimeout
+	if dl.ConnectTimeout != 0 {
+		timeout = dl.ConnectTimeout
+	}
 	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -270,7 +275,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	defer fetchTablesExecTime.End()
 
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
-		Config:     dl.dbHandleT.CredConfig,
+		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
 		Schema:     sqlStatement,
 	})
@@ -378,11 +383,12 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 			Identifier:   dl.dbHandleT.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
-		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
-			continue
-		}
 		if err != nil {
 			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), err)
+			continue
+		}
+		if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
 		}
 	}
 }
@@ -664,15 +670,10 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 	// Drop staging tables
 	dl.dropStagingTables(filteredTablesNames)
-	return
 }
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
-	return dl.connectToWarehouseWithTimeout(grpcTimeout)
-}
-
-func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databricks.DBHandleT, error) {
 	credT := &databricks.CredentialsT{
 		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
@@ -686,7 +687,7 @@ func (dl *HandleT) connectToWarehouseWithTimeout(timeout time.Duration) (*databr
 		SSL:             ssl,
 		UserAgentEntry:  userAgent,
 	}
-	return dl.connect(credT, timeout)
+	return dl.connect(credT)
 }
 
 // CreateTable creates tables with table name and columns
@@ -695,6 +696,24 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
+	return
+}
+
+func (dl *HandleT) DropTable(tableName string) (err error) {
+	pkgLogger.Infof("%s Dropping table %s", dl.GetLogIdentifier(), tableName)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, tableName)
+	dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
+		Config:       dl.dbHandleT.CredConfig,
+		Identifier:   dl.dbHandleT.CredIdentifier,
+		SqlStatement: sqlStatement,
+	})
+	if err != nil {
+		return
+	}
+	if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+		err = fmt.Errorf("%s Error while droping table with response: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
+		return
+	}
 	return
 }
 
@@ -812,8 +831,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
-	timeout := warehouseutils.TestConnectionTimeout
-	dl.dbHandleT, err = dl.connectToWarehouseWithTimeout(timeout)
+	dl.dbHandleT, err = dl.connectToWarehouse()
 	return
 }
 
@@ -983,14 +1001,14 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(stagingTableName, location)
+	loadFolder, err := dl.getLoadFolder(tableName, location)
 	if err != nil {
 		return
 	}
@@ -1002,7 +1020,7 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
 			fmt.Sprintf(`%s, %s`, "id", "val"),
 			loadFolder,
 			auth,
@@ -1014,13 +1032,17 @@ func (dl *HandleT) LoadTestTable(client *client.Client, location string, warehou
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName),
+			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			loadFolder,
 			auth,
 		)
 	}
 
-	err = dl.ExecuteSQLClient(client.DBHandleT, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
 	return
+}
+
+func (dl *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	dl.ConnectTimeout = timeout
 }
