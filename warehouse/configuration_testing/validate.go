@@ -30,19 +30,6 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		step,
 	)
 
-	ct.warehouse = warehouse(ct.infoRequest)
-
-	// Getting warehouse manager
-	var err error
-	if ct.manager, err = manager.NewSuperManager(destinationType); err != nil {
-		return nil, err
-	}
-
-	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{})
-	if err != nil {
-		return nil, err
-	}
-
 	resp := DestinationValidationResponse{}
 	// check if req has specified a step in query params
 	if step != "" {
@@ -118,17 +105,44 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 	return
 }
 
+func (ct *CTHandleT) initManager() (err error) {
+	ct.warehouse = warehouse(ct.infoRequest)
+
+	ct.manager, err = manager.NewSuperManager(ct.warehouse.Destination.DestinationDefinition.Name)
+	if err != nil {
+		return
+	}
+
+	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{})
+	return
+}
+
 func (ct *CTHandleT) verifyingConnections() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	err = ct.manager.TestConnection(ct.warehouse)
 	return
 }
 
 func (ct *CTHandleT) verifyingCreateSchema() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	err = ct.manager.CreateSchema()
 	return
 }
 
 func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	stagingTableName := stagingTableName()
 
 	// Create table
@@ -151,11 +165,21 @@ func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
 }
 
 func (ct *CTHandleT) verifyingFetchSchema() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	_, err = ct.manager.FetchSchema(ct.warehouse)
 	return
 }
 
 func (ct *CTHandleT) verifyingLoadTable() (err error) {
+	err = ct.initManager()
+	if err != nil {
+		return
+	}
+
 	// creating load file
 	tempPath, err := createLoadFile(ct.infoRequest)
 	if err != nil {
