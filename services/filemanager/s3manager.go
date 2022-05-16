@@ -177,7 +177,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	}
 	var region string
 	var err error
-	if manager.Config.Region == nil {
+	if !manager.Config.UseGlue || manager.Config.Region == nil {
 		getRegionSession := session.Must(session.NewSession())
 
 		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
@@ -276,7 +276,7 @@ func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey, startAfter string
 	var continuationToken, endPoint, region *string
-	var enableSSE, ok bool
+	var enableSSE, ok, useGlue bool
 	var s3ForcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
 		tmp, ok := config["bucketName"].(string)
@@ -305,6 +305,12 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	if config["enableSSE"] != nil {
 		if enableSSE, ok = config["enableSSE"].(bool); !ok {
 			enableSSE = false
+		}
+	}
+	if config["useGlue"] != nil {
+		tmp, ok := config["useGlue"].(bool)
+		if ok {
+			useGlue = tmp
 		}
 	}
 	if config["startAfter"] != nil {
@@ -352,6 +358,7 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		IsTruncated:       true,
 		S3ForcePathStyle:  s3ForcePathStyle,
 		DisableSSL:        disableSSL,
+		UseGlue:           useGlue,
 	}
 }
 
@@ -369,4 +376,5 @@ type S3Config struct {
 	Endpoint          *string
 	S3ForcePathStyle  *bool
 	DisableSSL        *bool
+	UseGlue           bool
 }
