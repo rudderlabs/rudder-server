@@ -79,7 +79,7 @@ func New(destType string) (ManagerI, error) {
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }
 
-//New is a Factory function that returns a ManagerI of a given destination-type
+//NewSuperManager is a Factory function that returns a SuperManagerI of a given destination-type
 func NewSuperManager(destType string) (SuperManagerI, error) {
 	switch destType {
 	case warehouseutils.RS:
