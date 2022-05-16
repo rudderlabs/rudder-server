@@ -118,7 +118,9 @@ func (ct *CTHandleT) initManager() (err error) {
 	ct.manager.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 
 	// setting up the manager
-	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{})
+	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
+		infoRequest: ct.infoRequest,
+	})
 	return
 }
 

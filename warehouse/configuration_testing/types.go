@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"time"
@@ -88,6 +89,7 @@ type CTHandleT struct {
 }
 
 type CTUploadJob struct {
+	infoRequest *DestinationValidationRequest
 }
 
 func (job *CTUploadJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
@@ -118,11 +120,11 @@ func (job *CTUploadJob) ShouldOnDedupUseNewRecord() bool {
 	return false
 }
 func (job *CTUploadJob) UseRudderStorage() bool {
-	return false
+	return misc.IsConfiguredToUseRudderObjectStorage(job.infoRequest.Destination.Config)
 }
 func (job *CTUploadJob) GetLoadFileGenStartTIme() time.Time {
 	return time.Time{}
 }
 func (job *CTUploadJob) GetLoadFileType() string {
-	return ""
+	return warehouseutils.GetLoadFileType(job.infoRequest.Destination.DestinationDefinition.Name)
 }
