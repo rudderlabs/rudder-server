@@ -1,8 +1,10 @@
 package customdestinationmanager
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/sony/gobreaker"
 	"reflect"
 	"sync"
 	"time"
@@ -14,8 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/sony/gobreaker"
 )
 
 const (
@@ -53,6 +53,8 @@ type CustomManagerT struct {
 	timeout                  time.Duration
 	breakerTimeout           time.Duration
 	backendConfigInitialized chan struct{}
+
+	mapLock sync.RWMutex
 }
 
 //clientHolder keeps the config of a destination and corresponding producer for a stream destination
@@ -236,6 +238,7 @@ func (customManager *CustomManagerT) onNewDestination(destination backendconfig.
 	err = customManager.onConfigChange(destination.ID, destination.Config)
 	return err
 }
+
 func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig map[string]interface{}) error {
 	_, hasOpenClient := customManager.client[destID]
 	breaker, hasCircuitBreaker := customManager.breaker[destID]
@@ -312,10 +315,9 @@ func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} 
 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
-	for {
-		config := <-ch
+	ch := backendconfig.Subscribe(context.TODO(), "backendConfig")
+	for config := range ch {
+		customManager.mapLock.Lock()
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
@@ -324,6 +326,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
+		customManager.mapLock.Unlock()
 		once.Do(func() {
 			close(customManager.backendConfigInitialized)
 		})

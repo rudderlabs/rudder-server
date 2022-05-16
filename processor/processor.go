@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -581,10 +580,8 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
-	for {
-		config := <-ch
+	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}

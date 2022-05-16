@@ -225,10 +225,18 @@ func TestDynamicClusterManager(t *testing.T) {
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
-		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any().String()).Do(func(
+		ctx context.Context, topic backendConfig.Topic) chan pubsub.DataEvent {
+
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+
+		go func() {
+			<-ctx.Done()
+			close(ch)
+		}()
+
+		return ch
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),

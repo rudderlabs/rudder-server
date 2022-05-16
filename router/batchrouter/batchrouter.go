@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -168,8 +167,7 @@ type JobParametersT struct {
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	brt.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := brt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		brt.configSubscriberLock.Lock()

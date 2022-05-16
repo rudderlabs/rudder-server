@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -2331,8 +2330,7 @@ func (rt *HandleT) Shutdown() {
 }
 
 func (rt *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	rt.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
