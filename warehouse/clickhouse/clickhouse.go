@@ -820,7 +820,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	}
 
 	var partitionByClause string
-	if _, ok := columns["received_at"]; ok {
+	if _, ok := columns[partitionField]; ok {
 		partitionByClause = fmt.Sprintf(`PARTITION BY toDate(%s)`, partitionField)
 	}
 
