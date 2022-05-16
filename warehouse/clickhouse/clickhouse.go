@@ -827,7 +827,7 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`DROP TABLE "%s"."%s" %s `, ch.Warehouse.Namespace, tableName, clusterClause)
 	_, err = ch.Db.Exec(sqlStatement)
-	return nil
+	return
 }
 
 // AddColumn adds column:columnName with dataType columnType to the tableName

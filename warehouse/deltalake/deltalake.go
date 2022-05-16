@@ -383,11 +383,11 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 			Identifier:   dl.dbHandleT.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
-		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
-			continue
-		}
 		if err != nil {
 			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), err)
+		}
+		if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
 		}
 	}
 }
@@ -706,7 +706,11 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 		Identifier:   dl.dbHandleT.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
-	if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+	if err != nil {
+		return
+	}
+	if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
+		err = fmt.Errorf("%s Error while droping table with response: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
 		return
 	}
 	return
