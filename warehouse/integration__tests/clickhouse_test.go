@@ -2,8 +2,10 @@ package integration__tests
 
 import (
 	"fmt"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integration__tests/testhelper"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +55,7 @@ func TestClickHouse(t *testing.T) {
 	t.Parallel()
 
 	chTest := CHTest
+	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
@@ -61,14 +64,15 @@ func TestClickHouse(t *testing.T) {
 		},
 		EventsCountMap:     chTest.EventsMap,
 		WriteKey:           chTest.WriteKey,
-		UserId:             "userId_clickhouse",
+		UserId:             fmt.Sprintf("userId_clickhouse_%s", randomness),
 		Schema:             "rudderdb",
 		TableTestQueryFreq: chTest.TableTestQueryFreq,
 	}
 	sendEvents(whDestTest)
 	destinationTest(t, whDestTest)
 
-	whDestTest.UserId = "userId_clickhouse_1"
+	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_%s", randomness)
 	sendUpdatedEvents(whDestTest)
 	destinationTest(t, whDestTest)
 }

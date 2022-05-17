@@ -109,7 +109,7 @@ func run(m *testing.M) (int, error) {
 
 	// Loading env variables
 	if err := godotenv.Load("testhelper/.env"); err != nil {
-		log.Println("INFO: No .env file found.")
+		log.Println("Error occurred while loading .env file.")
 	}
 
 	// Setting up env variables

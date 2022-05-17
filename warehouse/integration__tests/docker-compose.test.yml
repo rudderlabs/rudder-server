@@ -60,7 +60,7 @@ services:
     ports:
       - "54324:9000"
     volumes:
-      - ${PWD}/testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
+      - ./testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
     depends_on:
       - zookeeper
   clickhouse02:
@@ -72,7 +72,7 @@ services:
     ports:
       - "54325:9000"
     volumes:
-      - ${PWD}/testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
+      - ./testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
     depends_on:
       - zookeeper
   clickhouse03:
@@ -84,7 +84,7 @@ services:
     ports:
       - "54326:9000"
     volumes:
-      - ${PWD}/testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
+      - ./testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
     depends_on:
       - zookeeper
   clickhouse04:
@@ -96,7 +96,7 @@ services:
     ports:
       - "54327:9000"
     volumes:
-      - ${PWD}/testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
+      - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
       - zookeeper
   jobsDb:

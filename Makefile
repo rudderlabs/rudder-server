@@ -75,3 +75,9 @@ enterprise-is-at-master: ## Checks if enterprise repo commit matches the origin 
 install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
+
+cleanup-warehouse-integration:
+	docker-compose -f warehouse/integration__tests/docker-compose.test.yml down --volumes
+
+setup-warehouse-integration: cleanup-warehouse-integration
+	docker-compose -f warehouse/integration__tests/docker-compose.test.yml up --build --abort-on-container-exit

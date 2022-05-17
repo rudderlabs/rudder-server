@@ -2,9 +2,11 @@ package integration__tests
 
 import (
 	"fmt"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integration__tests/testhelper"
 	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
 	"time"
 
@@ -226,6 +228,7 @@ func TestClickHouseCluster(t *testing.T) {
 	t.Parallel()
 
 	chClusterTest := CHClusterTest
+	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
@@ -234,7 +237,7 @@ func TestClickHouseCluster(t *testing.T) {
 		},
 		EventsCountMap:     chClusterTest.EventsMap,
 		WriteKey:           chClusterTest.WriteKey,
-		UserId:             "userId_clickhouse_cluster",
+		UserId:             fmt.Sprintf("userId_clickhouse_cluster_%s", randomness),
 		Schema:             "rudderdb",
 		TableTestQueryFreq: chClusterTest.TableTestQueryFreq,
 	}
@@ -243,7 +246,8 @@ func TestClickHouseCluster(t *testing.T) {
 
 	initializeClickhouseClusterMode(t)
 
-	whDestTest.UserId = "userId_clickhouse_cluster_1"
+	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_cluster%s", randomness)
 	sendUpdatedEvents(whDestTest)
 
 	// Update events count Map

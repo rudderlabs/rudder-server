@@ -88,7 +88,7 @@ func TestSnowflake(t *testing.T) {
 		},
 		EventsCountMap:     rsTest.EventsMap,
 		WriteKey:           rsTest.WriteKey,
-		UserId:             fmt.Sprintf("userId_sf_%s", randomness),
+		UserId:             fmt.Sprintf("userId_snowflake_%s", randomness),
 		Schema:             "rudderstack_sample_http_source",
 		TableTestQueryFreq: rsTest.TableTestQueryFreq,
 	}
@@ -97,7 +97,7 @@ func TestSnowflake(t *testing.T) {
 	destinationTest(t, whDestTest)
 
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	whDestTest.UserId = fmt.Sprintf("userId_sf_%s", randomness)
+	whDestTest.UserId = fmt.Sprintf("userId_snowflake_%s", randomness)
 	sendUpdatedEvents(whDestTest)
 	destinationTest(t, whDestTest)
 }
