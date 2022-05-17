@@ -25,6 +25,8 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 
@@ -35,7 +37,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
-	sources "github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -184,7 +185,8 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
-	sourcesSvc                                                 sources.SourcesService
+
+	rsourcesService rsources.JobService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -1339,9 +1341,12 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
-	sAPI := sources.NewSourcesSvc(gateway.sourcesSvc)
 	//rudder-sources new APIs
-	srvMux.PathPrefix("/v1/job-status").Handler(sAPI.Handler())
+	rsourcesHandler := rsources_http.NewHandler(
+		gateway.rsourcesService,
+		gateway.logger.Child("rsources"))
+	srvMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,

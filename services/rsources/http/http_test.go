@@ -1,4 +1,4 @@
-package api_test
+package http_test
 
 import (
 	"fmt"
@@ -9,16 +9,17 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/api"
-	"github.com/rudderlabs/rudder-server/gateway/rudder-sources/model"
+	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDelete(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-	mockSVC := api.NewMockSourcesService(mockCtrl)
-	sAPI := api.NewSourcesSvc(mockSVC)
+	service := rsources.NewMockJobService(mockCtrl)
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
 
 	var tests = []struct {
 		name                 string
@@ -49,7 +50,7 @@ func TestDelete(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
-			mockSVC.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
+			service.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
 
 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			req, err := http.NewRequest(tt.method, url, nil)
@@ -57,8 +58,7 @@ func TestDelete(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
-			h := sAPI.Handler()
-			h.ServeHTTP(resp, req)
+			handler.ServeHTTP(resp, req)
 			_, err = ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
 
@@ -70,8 +70,8 @@ func TestDelete(t *testing.T) {
 func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-	mockSVC := api.NewMockSourcesService(mockCtrl)
-	sAPI := api.NewSourcesSvc(mockSVC)
+	service := rsources.NewMockJobService(mockCtrl)
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
 
 	var tests = []struct {
 		name                 string
@@ -80,7 +80,7 @@ func TestGetStatus(t *testing.T) {
 		method               string
 		expectedResponseCode int
 		filter               map[string][]string
-		jobStatus            model.JobStatus
+		jobStatus            rsources.JobStatus
 		respBody             string
 	}{
 		{
@@ -94,25 +94,25 @@ func TestGetStatus(t *testing.T) {
 
 				"source_id": {"s1"},
 			},
-			jobStatus: model.JobStatus{
+			jobStatus: rsources.JobStatus{
 				ID: "123",
-				TasksStatus: []model.TaskStatus{
+				TasksStatus: []rsources.TaskStatus{
 					{
 						ID: "t1",
-						SourcesStatus: []model.SourceStatus{
+						SourcesStatus: []rsources.SourceStatus{
 							{
 								ID:        "s1",
 								Completed: false,
-								Stats: model.Stats{
+								Stats: rsources.Stats{
 									In:     1,
 									Out:    1,
 									Failed: 0,
 								},
-								DestinationsStatus: []model.DestinationStatus{
+								DestinationsStatus: []rsources.DestinationStatus{
 									{
 										ID:        "d1",
 										Completed: false,
-										Stats: model.Stats{
+										Stats: rsources.Stats{
 											In:     1,
 											Out:    1,
 											Failed: 0,
@@ -124,20 +124,20 @@ func TestGetStatus(t *testing.T) {
 					},
 					{
 						ID: "t2",
-						SourcesStatus: []model.SourceStatus{
+						SourcesStatus: []rsources.SourceStatus{
 							{
 								ID:        "s1",
 								Completed: false,
-								Stats: model.Stats{
+								Stats: rsources.Stats{
 									In:     1,
 									Out:    1,
 									Failed: 0,
 								},
-								DestinationsStatus: []model.DestinationStatus{
+								DestinationsStatus: []rsources.DestinationStatus{
 									{
 										ID:        "d2",
 										Completed: false,
-										Stats: model.Stats{
+										Stats: rsources.Stats{
 											In:     1,
 											Out:    1,
 											Failed: 0,
@@ -159,7 +159,7 @@ func TestGetStatus(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
 
 			filterArg := getArgumentFilter(tt.filter)
-			mockSVC.EXPECT().GetStatus(gomock.Any(), tt.jobID, filterArg).Return(tt.jobStatus, nil).Times(1)
+			service.EXPECT().GetStatus(gomock.Any(), tt.jobID, filterArg).Return(tt.jobStatus, nil).Times(1)
 
 			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			url := withFilter(basicUrl, tt.filter)
@@ -168,8 +168,7 @@ func TestGetStatus(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
-			h := sAPI.Handler()
-			h.ServeHTTP(resp, req)
+			handler.ServeHTTP(resp, req)
 			body, err := ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
 
@@ -179,16 +178,16 @@ func TestGetStatus(t *testing.T) {
 	}
 }
 
-func getArgumentFilter(filter map[string][]string) model.JobFilter {
-	var filterArg model.JobFilter
+func getArgumentFilter(filter map[string][]string) rsources.JobFilter {
+	var filterArg rsources.JobFilter
 
 	if len(filter["task_id"]) != 0 {
 		tID := filter["task_id"]
-		filterArg.TaskRunId = &tID
+		filterArg.TaskRunId = tID
 	}
 	if len(filter["source_id"]) != 0 {
 		sID := filter["source_id"]
-		filterArg.SourceId = &sID
+		filterArg.SourceId = sID
 	}
 
 	return filterArg
