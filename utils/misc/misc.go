@@ -1252,6 +1252,7 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 		if r := recover(); r != nil {
 			fmt.Println("----bugsnag called----")
 			notifyOnce.Do(func() {
+				fmt.Println("inside notifyOnce")
 				RecordAppError(fmt.Errorf("%v", r))
 				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
