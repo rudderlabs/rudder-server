@@ -263,7 +263,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(err)
 	}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appTypeStr := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
 	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex, appTypeStr)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)
