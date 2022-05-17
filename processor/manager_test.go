@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/multitenant"
-
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -26,10 +28,10 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -173,13 +175,13 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters)
+	tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer tempDB.TearDown()
 
 	customVal := "GW"
 	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		JobCount:         1,
+		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 0, len(unprocessedListEmpty))
@@ -206,7 +208,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{})
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService())
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()
@@ -229,7 +231,7 @@ func TestProcessorManager(t *testing.T) {
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
-				JobCount:         20,
+				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
@@ -254,14 +256,14 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			JobCount:         20,
+			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
-				JobCount:         20,
+				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}))
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))

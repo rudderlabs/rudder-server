@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -46,16 +48,16 @@ func main() {
 func Run(ctx context.Context) {
 
 	dest := &destination.DestMiddleware{
-		Dest: &backendconfig.WorkspaceConfig{},
+		Dest: &backendconfig.SingleWorkspaceConfig{},
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
-		panic("error while getting workspaceId")
+		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{},
+			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)},
 			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
@@ -67,7 +69,7 @@ func Run(ctx context.Context) {
 				FMFactory: &filemanager.FileManagerFactoryT{},
 			},
 			&api.APIManager{
-				Client:           &http.Client{},
+				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)},
 				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
 			}),
 	}

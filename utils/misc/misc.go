@@ -1390,8 +1390,8 @@ func ReverseInt(s []int) []int {
 	return s
 }
 
-func IsMultiTenant() bool {
-	return config.GetBool("EnableMultitenancy", false)
+func UseFairPickup() bool {
+	return config.GetBool("JobsDB.fairPickup", false) || config.GetBool("EnableMultitenancy", false)
 }
 
 // lookup map recursively and return value
@@ -1410,4 +1410,12 @@ func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 		return MapLookup(nextMap, keys[1:]...)
 	}
 	return nil
+}
+
+func CopyStringMap(originalMap map[string]string) map[string]string {
+	newMap := make(map[string]string)
+	for key, value := range originalMap {
+		newMap[key] = value
+	}
+	return newMap
 }

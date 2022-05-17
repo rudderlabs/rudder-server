@@ -72,11 +72,9 @@ func (m *MockUploaderI) EXPECT() *MockUploaderIMockRecorder {
 }
 
 // RecordEvent mocks base method.
-func (m *MockUploaderI) RecordEvent(arg0 interface{}) bool {
+func (m *MockUploaderI) RecordEvent(arg0 interface{}) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordEvent", arg0)
-	ret0, _ := ret[0].(bool)
-	return ret0
+	m.ctrl.Call(m, "RecordEvent", arg0)
 }
 
 // RecordEvent indicates an expected call of RecordEvent.
@@ -95,4 +93,16 @@ func (m *MockUploaderI) Start() {
 func (mr *MockUploaderIMockRecorder) Start() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockUploaderI)(nil).Start))
+}
+
+// Stop mocks base method.
+func (m *MockUploaderI) Stop() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Stop")
+}
+
+// Stop indicates an expected call of Stop.
+func (mr *MockUploaderIMockRecorder) Stop() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockUploaderI)(nil).Stop))
 }

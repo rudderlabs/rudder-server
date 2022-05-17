@@ -120,8 +120,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
-	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
+	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
+	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
 }
 
 type TransformerResponseT struct {
@@ -207,11 +207,6 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 	sTags := statsTags(clientEvents[0])
 
 	s := time.Now()
-	defer stats.NewTaggedStat(
-		"processor.transformation_time",
-		stats.TimerType,
-		sTags,
-	).Since(s)
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
@@ -281,7 +276,7 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(context.TODO(), clientEvents, url, batchSize)
 }
 
-func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
+func (_ *HandleT) requestTime(s stats.Tags, d time.Duration) {
 	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
 }
 

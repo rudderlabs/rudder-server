@@ -1,0 +1,17 @@
+name: 'Pull Request Description'
+on:
+  pull_request:
+    types: 
+      - opened
+      - edited
+      - reopened
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: rudderlabs/pr-description-enforcer@v1.0.0
+        with:
+          repo-token: '${{ secrets.GITHUB_TOKEN }}'
+          placeholder-regex: '< Replace .* >'

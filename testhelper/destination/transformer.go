@@ -3,10 +3,10 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
-	_ "github.com/Shopify/sarama"
-	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
 	"log"
+
+	_ "github.com/lib/pq"
+	"github.com/ory/dockertest/v3"
 )
 
 type TransformerResource struct {

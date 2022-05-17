@@ -12,6 +12,7 @@ services:
   backend:
     depends_on:
       - db
+      - metrics-exporter
       - d-transformer
     image: rudderlabs/rudder-server:1-alpine
     entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
@@ -26,23 +27,28 @@ services:
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
       - WORKSPACE_TOKEN=<your_workspace_token>
+      - STATSD_SERVER_URL=metrics-exporter:9125
       # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
       # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
     # Uncomment the following lines to mount workspaceConfig file
     # volumes:
     #   - <absolute_path_to_workspace_config>:<workspace_config_filepath_in_container> # Value for <workspace_config_filepath_in_container> should be same as the value provided for RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH
   d-transformer:
+    depends_on:
+      - metrics-exporter
     image: rudderlabs/rudder-transformer:latest
     ports:
       - "9090:9090"
+    environment:
+      - STATSD_SERVER_HOST=metrics-exporter
+      - STATSD_SERVER_PORT="9125"
   # minio:
   #   image: minio/minio
   #   ports:
   #     - "9000:9000"
   #   command: server /data
-
-
-
-
-
-  
+  metrics-exporter:
+    image:
+      prom/statsd-exporter:v0.22.4
+    ports:
+      - "9102:9102"

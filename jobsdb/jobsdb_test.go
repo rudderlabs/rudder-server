@@ -4,11 +4,11 @@ import (
 	"time"
 
 	uuid "github.com/gofrs/uuid"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -137,7 +137,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
@@ -151,17 +151,17 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "0_1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "2",
@@ -182,7 +182,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -197,12 +197,12 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -252,15 +252,6 @@ var sampleTestJob = JobT{
 	CustomVal:    "MOCKDS",
 }
 
-type tContext struct {
-}
-
-func (c *tContext) Setup() {
-}
-
-func (c *tContext) Finish() {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -273,18 +264,9 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *tContext
-
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
 	})
 
 	Context("getDSList", func() {
@@ -294,7 +276,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
 		})
 
 		AfterEach(func() {

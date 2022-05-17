@@ -16,6 +16,8 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -27,6 +29,7 @@ var (
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
 	pkgLogger               logger.LoggerI
+	payloadLimit            int64
 )
 
 func Init() {
@@ -36,10 +39,11 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterDurationConfigVariable(time.Duration(30), &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
+	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
+	config.RegisterInt64ConfigVariable(100*bytesize.MB, &payloadLimit, true, 1, "Processor.payloadLimit")
 }
 
 type StoreErrorOutputT struct {
@@ -55,23 +59,25 @@ type HandleT struct {
 	statErrDBR      stats.RudderStats
 	statErrDBW      stats.RudderStats
 	logger          logger.LoggerI
+	transientSource transientsource.Service
 }
 
 func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+	st.transientSource = transientSource
 	st.crashRecover()
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	st.errorDB.DeleteExecuting()
 }
 
 func (st *HandleT) Start(ctx context.Context) {
@@ -93,12 +99,12 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func (st *HandleT) setupFileUploader() {
-	if errorStashEnabled {
+	if errorStashEnabled && jobsdb.IsMasterBackupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
 			var err error
-			st.errFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
 				Config:   filemanager.GetProviderConfigFromEnv(),
 			})
@@ -229,11 +235,14 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
+			if !(errorStashEnabled && jobsdb.IsMasterBackupEnabled()) {
+				continue
+			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
+			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
 			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
+			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
 
 			st.statErrDBR.End()
 
@@ -247,13 +256,18 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			hasFileUploader := st.errFileUploader != nil
 
 			jobState := jobsdb.Executing.State
+
+			var filteredJobList []*jobsdb.JobT
+
 			// abort jobs if file uploader not configured to store them to object storage
 			if !hasFileUploader {
 				jobState = jobsdb.Aborted.State
+				filteredJobList = combinedList
 			}
-
 			var statusList []*jobsdb.JobStatusT
+
 			for _, job := range combinedList {
+
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -265,6 +279,15 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					Parameters:    []byte(`{}`),
 					WorkspaceId:   job.WorkspaceId,
 				}
+
+				if hasFileUploader {
+					if st.transientSource.ApplyJob(job) {
+						// if it is a transient source, we don't process the job and mark it as aborted
+						status.JobState = jobsdb.Aborted.State
+					} else {
+						filteredJobList = append(filteredJobList, job)
+					}
+				}
 				statusList = append(statusList, &status)
 			}
 
@@ -274,8 +297,8 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				panic(err)
 			}
 
-			if hasFileUploader {
-				st.errProcessQ <- combinedList
+			if hasFileUploader && len(filteredJobList) > 0 {
+				st.errProcessQ <- filteredJobList
 			}
 		}
 	}

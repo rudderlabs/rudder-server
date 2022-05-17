@@ -1,9 +1,10 @@
 package debugger
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("cache", func() {
@@ -37,7 +38,7 @@ var _ = Describe("cache", func() {
 			Expect(len(c.cacheMap)).To(Equal(1))
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
-			Eventually(func() int {return len(c.cacheMap)}).Should(Equal(0))
+			Eventually(func() int { return len(c.cacheMap) }).Should(Equal(0))
 		})
 
 		It("Cache readAndPopData", func() {

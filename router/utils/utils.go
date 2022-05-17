@@ -39,13 +39,13 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(720), &JobRetention, true, time.Hour, "Router.jobRetention")
+	config.RegisterDurationConfigVariable(720, &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
 func getRetentionTimeForDestination(destID string) time.Duration {
 	destJobRetentionFound := config.IsSet("Router." + destID + ".jobRetention")
 	if destJobRetentionFound {
-		return config.GetDuration("Router"+"."+destID+"jobRetention", time.Duration(720), time.Hour)
+		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
 	}
 
 	return JobRetention

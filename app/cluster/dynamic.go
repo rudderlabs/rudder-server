@@ -3,12 +3,16 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"strings"
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
 var (
@@ -16,9 +20,9 @@ var (
 	controllertype string = "Dynamic"
 )
 
-type ModeProvider interface {
-	ServerMode() (<-chan servermode.Ack, error)
-	Close()
+type ChangeEventProvider interface {
+	ServerMode(ctx context.Context) <-chan servermode.ChangeEvent
+	WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent
 }
 
 type lifecycle interface {
@@ -26,8 +30,16 @@ type lifecycle interface {
 	Stop()
 }
 
+type configLifecycle interface {
+	Stop()
+	StartWithIDs(workspaces string)
+	WaitForConfig(ctx context.Context) error
+}
+
 type Dynamic struct {
-	Provider ModeProvider
+	Provider ChangeEventProvider
+
+	GatewayComponent bool
 
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
@@ -39,12 +51,14 @@ type Dynamic struct {
 
 	MultiTenantStat lifecycle
 
-	currentMode servermode.Mode
+	currentMode         servermode.Mode
+	currentWorkspaceIDs string
 
 	serverStartTimeStat  stats.RudderStats
 	serverStopTimeStat   stats.RudderStats
 	serverStartCountStat stats.RudderStats
 	serverStopCountStat  stats.RudderStats
+	BackendConfig        configLifecycle
 
 	logger logger.LoggerI
 
@@ -62,17 +76,21 @@ func (d *Dynamic) init() {
 	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
 	d.serverStartCountStat = stats.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
 	d.serverStopCountStat = stats.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
+
+	if d.BackendConfig == nil {
+		d.BackendConfig = backendconfig.DefaultBackendConfig
+	}
 }
 
 func (d *Dynamic) Run(ctx context.Context) error {
-	d.once.Do(func() {
-		d.init()
-	})
-	defer d.Provider.Close()
-	modeChan, err := d.Provider.ServerMode()
-	if err != nil {
-		return err
-	}
+	d.once.Do(d.init)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	serverModeChan := d.Provider.ServerMode(ctx)
+	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -80,15 +98,38 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				d.stop()
 			}
 			return nil
-		case newMode := <-modeChan:
-			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", newMode.Mode(), d.currentMode)
-			err = d.handleModeChange(newMode.Mode())
+		case req := <-serverModeChan:
+			if req.Err() != nil {
+				return req.Err()
+			}
+
+			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			err := d.handleModeChange(req.Mode())
 			if err != nil {
 				d.logger.Error(err)
 				return err
 			}
-			d.logger.Debugf("Acknowledging the mode change.")
-			newMode.Ack()
+			d.logger.Debugf("Acknowledging the mode change")
+
+			if err := req.Ack(ctx); err != nil {
+				return fmt.Errorf("ack mode change: %w", err)
+			}
+		case req := <-workspaceIDsChan:
+			if req.Err() != nil {
+				return req.Err()
+			}
+			ids := strings.Join(req.WorkspaceIDs(), ",")
+
+			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
+			err := d.handleWorkspaceChange(ctx, ids)
+			if err != nil {
+				return err
+			}
+			d.logger.Debugf("Acknowledging the workspaceIDs change")
+
+			if err := req.Ack(ctx); err != nil {
+				return fmt.Errorf("ack workspaceIDs change: %w", err)
+			}
 		}
 	}
 }
@@ -125,10 +166,25 @@ func (d *Dynamic) stop() {
 	d.serverStopCountStat.Increment()
 }
 
+func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) error {
+	if d.currentWorkspaceIDs == workspaces {
+		return nil
+	}
+	d.BackendConfig.Stop()
+	d.BackendConfig.StartWithIDs(workspaces)
+	d.currentWorkspaceIDs = workspaces
+	return d.BackendConfig.WaitForConfig(ctx)
+}
+
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	if !newMode.Valid() {
 		return fmt.Errorf("unsupported mode: %s", newMode)
 	}
+	if d.GatewayComponent {
+		d.logger.Info("Not transiting the server because this is only Gateway App")
+		return nil
+	}
+
 	if d.currentMode == newMode {
 		// TODO add logging
 		return nil
