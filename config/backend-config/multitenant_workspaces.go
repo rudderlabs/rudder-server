@@ -74,7 +74,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (Conf
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
-	// added this to avoid unnecessary calls to backend config until workspace IDs are not present
+	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
 	if workspaceArr == workspaceConfig.Token {
 		pkgLogger.Infof("no workspace IDs provided, skipping backend config fetch")
 		return ConfigT{}, false
