@@ -9,30 +9,29 @@ type FailedRecords struct {
 }
 
 type JobStatus struct {
-	ID          string
-	TasksStatus []TaskStatus
+	ID          string       `json:"id"`
+	TasksStatus []TaskStatus `json:"tasks"`
 }
 
 type TaskStatus struct {
-	ID            string
-	SourcesStatus []SourceStatus
+	ID            string         `json:"id"`
+	SourcesStatus []SourceStatus `json:"sources"`
 }
 
 type SourceStatus struct {
-	ID                 string
-	Completed          bool
-	Stats              Stats
-	DestinationsStatus []DestinationStatus
+	ID                 string              `json:"id"`
+	Completed          bool                `json:"completed"`
+	Stats              Stats               `json:"stats"`
+	DestinationsStatus []DestinationStatus `json:"destinations"`
 }
 
 type DestinationStatus struct {
-	ID        string
-	Completed bool
-	Stats     Stats
+	ID        string `json:"id"`
+	Completed bool   `json:"completed"`
+	Stats     Stats  `json:"stats"`
 }
-
 type Stats struct {
-	In     uint
-	Out    uint
-	Failed uint
+	In     uint `json:"in"`
+	Out    uint `json:"out"`
+	Failed uint `json:"failed"`
 }

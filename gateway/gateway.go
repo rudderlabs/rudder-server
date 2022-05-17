@@ -184,6 +184,7 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
+	sourcesSvc                                                 sources.SourcesService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -1338,7 +1339,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
-	sAPI := sources.API{}
+	sAPI := sources.NewSourcesSvc(gateway.sourcesSvc)
 	//rudder-sources new APIs
 	srvMux.PathPrefix("/v1/job-status").Handler(sAPI.Handler())
 	c := cors.New(cors.Options{

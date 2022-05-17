@@ -18,9 +18,7 @@ func TestDelete(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockSVC := api.NewMockSourcesService(mockCtrl)
-	sAPI := api.API{
-		SVC: mockSVC,
-	}
+	sAPI := api.NewSourcesSvc(mockSVC)
 
 	var tests = []struct {
 		name                 string
@@ -73,9 +71,7 @@ func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockSVC := api.NewMockSourcesService(mockCtrl)
-	sAPI := api.API{
-		SVC: mockSVC,
-	}
+	sAPI := api.NewSourcesSvc(mockSVC)
 
 	var tests = []struct {
 		name                 string

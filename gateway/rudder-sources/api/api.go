@@ -36,7 +36,13 @@ type SourcesService interface {
 	GetFailedRecords(ctx context.Context, tx sql.Tx, jobRunId string, filter model.JobFilter) (model.FailedRecords, error)
 }
 
-type API struct {
+func NewSourcesSvc(svc SourcesService) api {
+	return api{
+		SVC: svc,
+	}
+}
+
+type api struct {
 	SVC SourcesService
 }
 
@@ -44,7 +50,7 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
 }
 
-func (a *API) Handler() http.Handler {
+func (a *api) Handler() http.Handler {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/job-status/{job_id}", a.getStatus).Methods("GET")
 	srvMux.HandleFunc("/v1/job-status/{job_id}", a.delete).Methods("DELETE")
@@ -52,7 +58,7 @@ func (a *API) Handler() http.Handler {
 	return srvMux
 }
 
-func (a *API) delete(w http.ResponseWriter, r *http.Request) {
+func (a *api) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobId string
 	var ok bool
@@ -69,7 +75,7 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
+func (s *api) getStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobId string
 	var taskId, sourceId *[]string
@@ -108,7 +114,7 @@ func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	body, err := json.Marshal(mapJobToPayload(jobStatus))
+	body, err := json.Marshal(jobStatus)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -119,37 +125,4 @@ func (s *API) getStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-}
-
-//to map jobStatus output from internal data type to external data type.
-func mapJobToPayload(job model.JobStatus) JobStatusSchema {
-
-	taskStatusList := make([]TaskStatusSchema, len(job.TasksStatus))
-	for i, taskStatus := range job.TasksStatus {
-		sourceStatusList := make([]SourceStatusSchema, len(taskStatus.SourcesStatus))
-		for j, sourceStatus := range taskStatus.SourcesStatus {
-			destStatusList := make([]DestinationStatusSchema, len(sourceStatus.DestinationsStatus))
-			for k, destStatus := range sourceStatus.DestinationsStatus {
-				destStatusList[k] = DestinationStatusSchema{
-					ID:        destStatus.ID,
-					Completed: destStatus.Completed,
-					Stats:     StatsSchema(destStatus.Stats),
-				}
-			}
-			sourceStatusList[j] = SourceStatusSchema{
-				ID:                 sourceStatus.ID,
-				Completed:          sourceStatus.Completed,
-				Stats:              StatsSchema(sourceStatus.Stats),
-				DestinationsStatus: destStatusList,
-			}
-		}
-		taskStatusList[i] = TaskStatusSchema{
-			ID:            taskStatus.ID,
-			SourcesStatus: sourceStatusList,
-		}
-	}
-	return JobStatusSchema{
-		ID:          job.ID,
-		TasksStatus: taskStatusList,
-	}
 }
