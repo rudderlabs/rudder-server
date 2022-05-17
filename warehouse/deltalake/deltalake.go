@@ -3,6 +3,7 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"github.com/iancoleman/strcase"
 	"strings"
 	"time"
 
@@ -518,7 +519,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var handler = loadTableHandler()
-	sqlStatement = handler.GenerateLoadSQLStatement(
+	sqlStatement = handler.SqlStatement(
 		dl.Namespace,
 		tableName,
 		stagingTableName,
@@ -526,8 +527,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
-	// Executing merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LT::Merge")
+	// Executing load table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -537,11 +538,11 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-func loadTableHandler() LoadTableStrategy {
+func loadTableHandler() LoadTable {
 	if loadTableStrategy == "APPEND" {
-		return &ByAppend{}
+		return &Append{}
 	}
-	return &ByMerge{}
+	return &Merge{}
 }
 
 // loadUserTables Loads users table
@@ -614,30 +615,20 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	// Dropping staging users table
 	defer dl.dropStagingTables([]string{stagingTableName})
 
-	// Creating the Primary Key
-	primaryKey := "id"
-
 	// Creating the column Keys
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	// Creating the merge sql statement to copy from staging users table to the main users table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-									   USING ( SELECT %[5]s FROM %[1]s.%[3]s ) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[6]s
-									   WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s);`,
+	var handler = loadTableHandler()
+	sqlStatement = handler.SqlStatement(
 		dl.Namespace,
 		warehouseutils.UsersTable,
 		stagingTableName,
-		primaryKey,
-		columnNames(columnKeys),
-		columnsWithValues(columnKeys),
-		stagingColumnNames(columnKeys),
+		columnKeys,
 	)
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
-	// Executing the merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LUT::Merge")
+	// Executing the load users table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
