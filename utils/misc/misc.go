@@ -1247,6 +1247,7 @@ func WithBugsnagForWarehouse(fn func() error) func() error {
 func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
+			fmt.Println("bugsnag notify called")
 			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 				"GoRoutines": {
 					"Number": runtime.NumGoroutine(),

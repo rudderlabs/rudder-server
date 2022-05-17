@@ -308,6 +308,7 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 
 		if gwAllowPartialWriteWithErrors {
 			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+			panic("test")
 		} else {
 			err := gateway.jobsDB.Store(jobList)
 			if err != nil {
