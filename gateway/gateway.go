@@ -1506,10 +1506,12 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
+
+	gateway.rsourcesService = rsourcesService
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	config.RegisterDurationConfigVariable(30, &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
