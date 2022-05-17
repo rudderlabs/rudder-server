@@ -60,7 +60,7 @@ type WorkspacesStruct struct {
 }
 
 type ServerModeStruct struct {
-	Status_key string `json:"status_key,omitempty"`
+	Status_key string `json:"ack_key,omitempty"`
 	Mode       string `json:"mode,omitempty"`
 }
 
