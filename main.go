@@ -194,7 +194,7 @@ func clusterSequences(cli *clientv3.Client) {
 		if err != nil {
 			panic(err)
 		}
-		_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": %v}`, serverModeKeyStruct.Mode))
+		_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": "%v"}`, serverModeKeyStruct.Mode))
 		if err != nil {
 			panic(err)
 		}
@@ -237,7 +237,7 @@ func clusterSequences(cli *clientv3.Client) {
 				if err != nil {
 					panic(err)
 				}
-				_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": %v}`, serverModeKeyStruct.Mode))
+				_, err = cli.Put(ctx, serverModeKeyStruct.Status_key, fmt.Sprintf(`{"status": "%v"}`, serverModeKeyStruct.Mode))
 				if err != nil {
 					panic(err)
 				}
