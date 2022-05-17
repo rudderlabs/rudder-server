@@ -188,6 +188,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 	}
 
 	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
+	manager.logger.Infof("Mode Lookup Key: %s", modeRequestKey)
 	revision := int64(0)
 
 	resultChan := make(chan servermode.ChangeEvent, 1)
@@ -265,6 +266,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 
 	appTypeStr := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
 	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex, appTypeStr)
+	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)
 	resp, err := manager.Client.Get(ctx, modeRequestKey)
