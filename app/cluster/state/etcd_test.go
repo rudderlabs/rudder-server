@@ -129,7 +129,7 @@ func Test_ServerMode(t *testing.T) {
 			ServerIndex: "0",
 		},
 	}
-	modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.Namespace, provider.Config.ServerIndex)
+	modeRequestKey := fmt.Sprintf("/%s/SERVER/%s/MODE", provider.Config.Namespace, provider.Config.ServerIndex)
 	defer provider.Close()
 
 	t.Run("key is missing initially", func(t *testing.T) {
@@ -164,7 +164,7 @@ func Test_ServerMode(t *testing.T) {
 				ACKTimeout:  time.Duration(1),
 			},
 		}
-		modeRequestKey := fmt.Sprintf("/%s/server/%s/mode", provider.Config.Namespace, provider.Config.ServerIndex)
+		modeRequestKey := fmt.Sprintf("/%s/SERVER/%s/MODE", provider.Config.Namespace, provider.Config.ServerIndex)
 
 		ch := provider.ServerMode(ctx)
 
@@ -256,7 +256,7 @@ func Test_Workspaces(t *testing.T) {
 		}
 		defer provider.Close()
 		appType := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
-		requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace,
+		requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.Namespace,
 			provider.Config.ServerIndex, appType)
 
 		ch := provider.WorkspaceIDs(ctx)
@@ -280,7 +280,7 @@ func Test_Workspaces(t *testing.T) {
 	defer provider.Close()
 
 	appType := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
-	requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex,
+	requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.Namespace, provider.Config.ServerIndex,
 		appType)
 
 	t.Run("key is missing initially", func(t *testing.T) {
