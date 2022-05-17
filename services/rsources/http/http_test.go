@@ -23,7 +23,7 @@ func TestDelete(t *testing.T) {
 
 	var tests = []struct {
 		name                 string
-		jobID                string
+		jobRunId             string
 		endpoint             string
 		method               string
 		expectedResponseCode int
@@ -31,15 +31,15 @@ func TestDelete(t *testing.T) {
 	}{
 		{
 			name:                 "basic test",
-			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			jobRunId:             "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "DELETE",
 			expectedResponseCode: 204,
 		},
 		{
 			name:                 "service returns error test",
-			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			jobRunId:             "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "DELETE",
 			expectedResponseCode: 500,
 			serviceReturnError:   fmt.Errorf("something when wrong"),
@@ -50,7 +50,7 @@ func TestDelete(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
-			service.EXPECT().Delete(gomock.Any(), tt.jobID).Return(tt.serviceReturnError).Times(1)
+			service.EXPECT().Delete(gomock.Any(), tt.jobRunId).Return(tt.serviceReturnError).Times(1)
 
 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			req, err := http.NewRequest(tt.method, url, nil)
@@ -86,11 +86,11 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:                 "basic test",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_id}", "123"),
+			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "GET",
 			expectedResponseCode: 200,
 			filter: map[string][]string{
-				"task_id": {"t1", "t2"},
+				"task_run_id": {"t1", "t2"},
 
 				"source_id": {"s1"},
 			},
@@ -181,8 +181,8 @@ func TestGetStatus(t *testing.T) {
 func getArgumentFilter(filter map[string][]string) rsources.JobFilter {
 	var filterArg rsources.JobFilter
 
-	if len(filter["task_id"]) != 0 {
-		tID := filter["task_id"]
+	if len(filter["task_run_id"]) != 0 {
+		tID := filter["task_run_id"]
 		filterArg.TaskRunId = tID
 	}
 	if len(filter["source_id"]) != 0 {

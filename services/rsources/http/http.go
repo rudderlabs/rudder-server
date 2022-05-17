@@ -1,10 +1,10 @@
 package http
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -15,8 +15,8 @@ func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler
 		logger:  logger,
 	}
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/v1/job-status/{job_id}", h.getStatus).Methods("GET")
-	srvMux.HandleFunc("/v1/job-status/{job_id}", h.delete).Methods("DELETE")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.getStatus).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.delete).Methods("DELETE")
 	return srvMux
 }
 
@@ -27,14 +27,14 @@ type handler struct {
 
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var jobId string
+	var jobRunId string
 	var ok bool
-	jobId, ok = mux.Vars(r)["job_id"]
+	jobRunId, ok = mux.Vars(r)["job_run_id"]
 	if !ok {
-		http.Error(w, "job_id not found", http.StatusBadRequest)
+		http.Error(w, "job_run_id not found", http.StatusBadRequest)
 	}
 
-	err := h.service.Delete(ctx, jobId)
+	err := h.service.Delete(ctx, jobRunId)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
@@ -44,20 +44,19 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var jobId string
-	var taskId, sourceId []string
+	var jobRunId string
+	var taskRunId, sourceId []string
 	var ok bool
 
-	jobId, ok = mux.Vars(r)["job_id"]
+	jobRunId, ok = mux.Vars(r)["job_run_id"]
 	if !ok {
-		http.Error(w, "job_id not found", http.StatusBadRequest)
+		http.Error(w, "job_run_id not found", http.StatusBadRequest)
 	}
 
-	tId, ok := r.URL.Query()["task_id"]
+	tId, ok := r.URL.Query()["task_run_id"]
 	if ok {
 		if len(tId) > 0 {
-
-			taskId = tId
+			taskRunId = tId
 		}
 	}
 
@@ -70,9 +69,9 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 
 	jobStatus, err := h.service.GetStatus(
 		ctx,
-		jobId,
+		jobRunId,
 		rsources.JobFilter{
-			TaskRunId: taskId,
+			TaskRunId: taskRunId,
 			SourceId:  sourceId,
 		})
 	if err != nil {
@@ -81,7 +80,7 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	body, err := json.Marshal(jobStatus)
+	body, err := jsoniter.Marshal(jobStatus)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
