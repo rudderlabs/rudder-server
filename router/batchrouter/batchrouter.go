@@ -308,7 +308,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 						}
 						parameterFilters = append(parameterFilters, parameterFilter)
 					}
-					importingJob := brt.jobsDB.GetImporting(
+					job := brt.jobsDB.GetImporting(
 						jobsdb.GetQueryParamsT{
 							CustomValFilters: []string{brt.destType},
 							JobsLimit:        1,
@@ -316,6 +316,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							PayloadSizeLimit: brt.payloadLimit,
 						},
 					)
+					importingJob := job.JobsList
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
@@ -354,7 +355,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							abortedJobs := make([]*jobsdb.JobT, 0)
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImporting(
+								list := brt.jobsDB.GetImporting(
 									jobsdb.GetQueryParamsT{
 										CustomValFilters: []string{brt.destType},
 										JobsLimit:        brt.maxEventsInABatch,
@@ -362,6 +363,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										PayloadSizeLimit: brt.payloadLimit,
 									},
 								)
+								importingList := list.JobsList
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -489,7 +491,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								}
 							} else if statusCode != 0 {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImporting(
+								list := brt.jobsDB.GetImporting(
 									jobsdb.GetQueryParamsT{
 										CustomValFilters: []string{brt.destType},
 										JobsLimit:        brt.maxEventsInABatch,
@@ -497,6 +499,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										PayloadSizeLimit: brt.payloadLimit,
 									},
 								)
+								importingList := list.JobsList
 								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -1563,7 +1566,7 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
-					retryList := brt.jobsDB.GetToRetry(
+					retryJob := brt.jobsDB.GetToRetry(
 						jobsdb.GetQueryParamsT{
 							CustomValFilters:              []string{brt.destType},
 							JobsLimit:                     toQuery,
@@ -1572,7 +1575,7 @@ func (worker *workerT) workerProcess() {
 							PayloadSizeLimit:              brt.payloadLimit,
 						},
 					)
-					unprocessedList := brt.jobsDB.GetUnprocessed(
+					unprocessedJob := brt.jobsDB.GetUnprocessed(
 						jobsdb.GetQueryParamsT{
 							CustomValFilters:              []string{brt.destType},
 							JobsLimit:                     toQuery,
@@ -1583,9 +1586,9 @@ func (worker *workerT) workerProcess() {
 					)
 					brtQueryStat.End()
 
-					combinedList = append(retryList, unprocessedList...)
+					combinedList = append(retryJob.JobsList, unprocessedJob.JobsList...)
 
-					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
+					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryJob.JobsList), len(unprocessedJob.JobsList), len(combinedList))
 				}
 			} else {
 				for _, job := range batchDestData.jobs {
@@ -1916,15 +1919,15 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat.Start()
 		toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetToRetry(
+			retryJob := brt.jobsDB.GetToRetry(
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{brt.destType},
 					JobsLimit:        toQuery,
 					PayloadSizeLimit: brt.payloadLimit,
 				},
 			)
-			toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessed(
+			toQuery -= len(retryJob.JobsList)
+			unprocessedJob := brt.jobsDB.GetUnprocessed(
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{brt.destType},
 					JobsLimit:        toQuery,
@@ -1933,7 +1936,7 @@ func (brt *HandleT) readAndProcess() {
 			)
 			brtQueryStat.End()
 
-			jobs = append(retryList, unprocessedList...)
+			jobs = append(retryJob.JobsList, unprocessedJob.JobsList...)
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
 			var wg sync.WaitGroup
@@ -2056,7 +2059,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 }
 
 func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
-	var importingList []*jobsdb.JobT
+	var importingList jobsdb.JobsT
 	if IsAsyncDestination(brt.destType) {
 		importingList = brt.jobsDB.GetImporting(
 			jobsdb.GetQueryParamsT{
@@ -2066,7 +2069,7 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 				PayloadSizeLimit: brt.payloadLimit,
 			},
 		)
-		return len(importingList) != 0
+		return len(importingList.JobsList) != 0
 	}
 	return false
 }

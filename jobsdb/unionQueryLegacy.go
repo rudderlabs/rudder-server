@@ -15,21 +15,21 @@ func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params Ge
 	payloadLimitEnabled := params.PayloadSizeLimit > 0
 
 	retryList := mj.GetToRetry(params)
-	list = append(list, retryList...)
-	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, retryList)
+	list = append(list, retryList.JobsList...)
+	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, retryList.JobsList)
 	if limitsReached(eventsLimitEnabled, payloadLimitEnabled, params) {
 		return list
 	}
 
-	waitList := mj.GetWaiting(params)
-	list = append(list, waitList...)
-	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, waitList)
+	waitJob := mj.GetWaiting(params)
+	list = append(list, waitJob.JobsList...)
+	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, waitJob.JobsList)
 	if limitsReached(eventsLimitEnabled, payloadLimitEnabled, params) {
 		return list
 	}
 
 	unprocessedList := mj.GetUnprocessed(params)
-	list = append(list, unprocessedList...)
+	list = append(list, unprocessedList.JobsList...)
 	return list
 }
 

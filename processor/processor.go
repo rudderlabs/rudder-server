@@ -2137,12 +2137,12 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	})
 	totalEvents := 0
 	totalPayloadBytes := 0
-	for i, job := range unprocessedList {
+	for i, job := range unprocessedList.JobsList {
 		totalEvents += job.EventCount
 		totalPayloadBytes += len(job.EventPayload)
 
 		if !enableEventCount && totalEvents > maxEventsToProcess {
-			unprocessedList = unprocessedList[:i]
+			unprocessedList.JobsList = unprocessedList.JobsList[:i]
 			break
 		}
 
@@ -2159,15 +2159,15 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	defer proc.stats.statDBR.SendTiming(dbReadTime)
 
 	// check if there is work to be done
-	if len(unprocessedList) == 0 {
+	if len(unprocessedList.JobsList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.stats.pStatsDBR.Rate(0, time.Since(s))
-		return unprocessedList
+		return unprocessedList.JobsList
 	}
 
 	eventSchemasStart := time.Now()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
-		for _, unprocessedJob := range unprocessedList {
+		for _, unprocessedJob := range unprocessedList.JobsList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
@@ -2175,15 +2175,15 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	eventSchemasTime := time.Since(eventSchemasStart)
 	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
-	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
-	proc.stats.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
-	proc.stats.statGatewayDBR.Count(len(unprocessedList))
+	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.JobsList), totalEvents)
+	proc.stats.pStatsDBR.Rate(len(unprocessedList.JobsList), time.Since(s))
+	proc.stats.statGatewayDBR.Count(len(unprocessedList.JobsList))
 
-	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList)))
+	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList.JobsList)))
 	proc.stats.statDBReadEvents.Observe(float64(totalEvents))
 	proc.stats.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
 
-	return unprocessedList
+	return unprocessedList.JobsList
 }
 
 func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
