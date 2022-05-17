@@ -40,7 +40,7 @@ const (
 var _ cluster.ChangeEventProvider = &ETCDManager{}
 
 type ETCDConfig struct {
-	Namespace            string
+	ReleaseName          string
 	ServerIndex          string
 	Endpoints            []string
 	dialKeepAliveTime    time.Duration
@@ -69,7 +69,7 @@ type workspacesAckValue struct {
 
 func EnvETCDConfig() *ETCDConfig {
 	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
-	namespace := config.GetKubeNamespace()
+	releaseName := config.GetReleaseName()
 	serverIndex := config.GetInstanceID()
 	var ackTimeout time.Duration
 
@@ -82,7 +82,7 @@ func EnvETCDConfig() *ETCDConfig {
 
 	return &ETCDConfig{
 		Endpoints:            endpoints,
-		Namespace:            namespace,
+		ReleaseName:          releaseName,
 		ServerIndex:          serverIndex,
 		ACKTimeout:           ackTimeout,
 		dialTimeout:          dialTimeout,
@@ -187,7 +187,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 		return errChModeRequest(err)
 	}
 
-	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex)
+	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
 	manager.logger.Infof("Mode Lookup Key: %s", modeRequestKey)
 	revision := int64(0)
 
@@ -265,7 +265,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 	}
 
 	appTypeStr := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
-	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.Namespace, manager.Config.ServerIndex, appTypeStr)
+	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
 	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)

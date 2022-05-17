@@ -797,8 +797,18 @@ func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")
 }
 
+func GetReleaseName() string {
+	return GetEnv("RELEASE_NAME", "")
+}
+
 func GetInstanceID() string {
-	return GetEnv("INSTANCE_ID", "1")
+	instance := GetEnv("INSTANCE_ID", "")
+	if instance == "" {
+		fmt.Println("wrong INSTANCE_ID provided")
+		return ""
+	}
+	instanceArr := strings.Split(instance, "-")
+	return instanceArr[len(instanceArr)-1]
 }
 
 func SetWHSchemaVersion(version string) {
