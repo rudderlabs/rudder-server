@@ -30,12 +30,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-  # minio:
-  #   image: minio/minio
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   environment:
-  #     - MINIO_ROOT_USER=root
-  #     - MINIO_ROOT_PASSWORD=password
-  #   command: server --console-address :9001 /data
+  minio:
+    image: minio/minio
+    profiles:
+      - storage
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=root
+      - MINIO_ROOT_PASSWORD=password
+    command: server --console-address :9001 /data
+  mode-provider:
+    image: docker.io/bitnami/etcd:3
+    profiles:
+      - multi-tenant
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_NAME=mode-provider
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://mode-provider:2379
+    ports:
+      - "2379:2379"

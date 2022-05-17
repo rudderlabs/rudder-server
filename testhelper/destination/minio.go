@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	_ "github.com/Shopify/sarama"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"

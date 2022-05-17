@@ -143,27 +143,30 @@ type userWebRequestWorkerT struct {
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
-	application                                                app.Interface
-	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
-	jobsDB                                                     jobsdb.JobsDB
-	ackCount                                                   uint64
-	recvCount                                                  uint64
-	backendConfig                                              backendconfig.BackendConfig
-	rateLimiter                                                ratelimiter.RateLimiter
-	stats                                                      stats.Stats
-	batchSizeStat                                              stats.RudderStats
-	requestSizeStat                                            stats.RudderStats
-	dbWritesStat                                               stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
-	bodyReadTimeStat                                           stats.RudderStats
-	addToWebRequestQWaitTime                                   stats.RudderStats
-	ProcessRequestTime                                         stats.RudderStats
-	addToBatchRequestQWaitTime                                 stats.RudderStats
-	trackSuccessCount                                          int
-	trackFailureCount                                          int
-	requestMetricLock                                          sync.RWMutex
-	diagnosisTicker                                            *time.Ticker
+	application                  app.Interface
+	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
+	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
+	jobsDB                       jobsdb.JobsDB
+	ackCount                     uint64
+	recvCount                    uint64
+	backendConfig                backendconfig.BackendConfig
+	rateLimiter                  ratelimiter.RateLimiter
+
+	stats                                         stats.Stats
+	batchSizeStat                                 stats.RudderStats
+	requestSizeStat                               stats.RudderStats
+	dbWritesStat                                  stats.RudderStats
+	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
+	bodyReadTimeStat                              stats.RudderStats
+	addToWebRequestQWaitTime                      stats.RudderStats
+	ProcessRequestTime                            stats.RudderStats
+	addToBatchRequestQWaitTime                    stats.RudderStats
+
+	diagnosisTicker   *time.Ticker
+	requestMetricLock sync.Mutex
+	trackSuccessCount int
+	trackFailureCount int
+
 	webRequestBatchCount                                       uint64
 	userWebRequestWorkers                                      []*userWebRequestWorkerT
 	webhookHandler                                             *webhook.HandleT
@@ -1168,7 +1171,7 @@ func (gateway *HandleT) collectMetrics(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-gateway.diagnosisTicker.C:
-				gateway.requestMetricLock.RLock()
+				gateway.requestMetricLock.Lock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
 					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
 						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
@@ -1177,7 +1180,7 @@ func (gateway *HandleT) collectMetrics(ctx context.Context) {
 					gateway.trackSuccessCount = 0
 					gateway.trackFailureCount = 0
 				}
-				gateway.requestMetricLock.RUnlock()
+				gateway.requestMetricLock.Unlock()
 			}
 		}
 	}

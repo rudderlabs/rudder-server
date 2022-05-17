@@ -83,6 +83,11 @@ const (
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
+const (
+	CTInvalidStep        = "Invalid step"
+	CTStagingTablePrefix = "setup_test_staging"
+)
+
 var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string

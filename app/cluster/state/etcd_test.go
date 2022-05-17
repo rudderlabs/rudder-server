@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -253,8 +255,9 @@ func Test_Workspaces(t *testing.T) {
 			},
 		}
 		defer provider.Close()
-
-		requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
+		appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+		requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace,
+			provider.Config.ServerIndex, appType)
 
 		ch := provider.WorkspaceIDs(ctx)
 
@@ -276,7 +279,9 @@ func Test_Workspaces(t *testing.T) {
 	}
 	defer provider.Close()
 
-	requestKey := fmt.Sprintf("/%s/server/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex)
+	appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	requestKey := fmt.Sprintf("/%s/server/%s/%s/workspaces", provider.Config.Namespace, provider.Config.ServerIndex,
+		appType)
 
 	t.Run("key is missing initially", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
