@@ -49,6 +49,7 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
+	loadTableStrategy  string
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -122,6 +123,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
+	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -515,25 +517,12 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	// Getting the primary key for the merge sql statement
-	primaryKey := "id"
-	if column, ok := primaryKeyMap[tableName]; ok {
-		primaryKey = column
-	}
-
-	// Creating merge sql statement to copy from staging table to the main table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-                                       USING ( SELECT * FROM ( SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[1]s.%[3]s ) AS q WHERE _rudder_staging_row_number = 1) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[5]s
-									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
+	var handler = loadTableHandler()
+	sqlStatement = handler.GenerateLoadSQLStatement(
 		dl.Namespace,
 		tableName,
 		stagingTableName,
-		primaryKey,
-		columnsWithValues(sortedColumnKeys),
-		columnNames(sortedColumnKeys),
-		stagingColumnNames(sortedColumnKeys),
+		warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
 	)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
@@ -546,6 +535,13 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	pkgLogger.Infof("%v Complete load for table\n", dl.GetLogIdentifier(tableName))
 	return
+}
+
+func loadTableHandler() LoadTableStrategy {
+	if loadTableStrategy == "APPEND" {
+		return &ByAppend{}
+	}
+	return &ByMerge{}
 }
 
 // loadUserTables Loads users table

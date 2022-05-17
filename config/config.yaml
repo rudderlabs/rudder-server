@@ -173,6 +173,8 @@ Warehouse:
     poolSize: 10
     disableNullable: false
     enableArraySupport: false
+  deltalake:
+    loadTableStrategy: MERGE
 Processor:
   webPort: 8086
   loopSleep: 10ms
