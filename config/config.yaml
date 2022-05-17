@@ -152,6 +152,7 @@ Warehouse:
   stagingFilesBatchSize: 960
   enableIDResolution: false
   populateHistoricIdentities: false
+  enableJitterForSyncs: false
   redshift:
     maxParallelLoads: 3
     setVarCharMax: false
