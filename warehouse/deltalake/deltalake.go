@@ -539,9 +539,9 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 func loadTableHandler() LoadTable {
 	if loadTableStrategy == "APPEND" {
-		return &Append{}
+		return &LTAppend{}
 	}
-	return &Merge{}
+	return &LTMerge{}
 }
 
 // loadUserTables Loads users table

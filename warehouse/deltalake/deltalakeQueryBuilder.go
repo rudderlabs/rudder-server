@@ -5,11 +5,11 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type Merge struct {
-}
+// LTMerge loads table by merge strategy
+type LTMerge struct{}
 
-type Append struct {
-}
+// LTAppend loads table by append strategy
+type LTAppend struct{}
 
 type LoadTable interface {
 	SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string)
@@ -41,7 +41,7 @@ func stagingSqlStatement(namespace string, tableName string, stagingTableName st
 	return
 }
 
-func (*Merge) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func (*LTMerge) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
@@ -60,7 +60,7 @@ func (*Merge) SqlStatement(namespace string, tableName string, stagingTableName 
 	return
 }
 
-func (*Append) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func (*LTAppend) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s ) AS r;`,
 		namespace,
