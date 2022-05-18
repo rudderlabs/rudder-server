@@ -169,7 +169,7 @@ func GetTransformerURL() string {
 func GetDestinationURL(destType string) string {
 
 	log.Println("LoadTest: GetDestinationURL: destType", destType)
-	if destType == "BLACK_HOLE" {
+	if strings.Contains(destType, "BLACK_HOLE") {
 		destType = "POSTGRES"
 	}
 

@@ -111,7 +111,7 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
 
-	case "BlackHole":
+	case "BLACK_HOLE":
 		providerConfig["lowerBound"] = config.GetEnvAsInt("DELAY_LOWER_BOUND", 100)
 		providerConfig["upperBound"] = config.GetEnvAsInt("DELAY_UPPER_BOUND", 1000)
 

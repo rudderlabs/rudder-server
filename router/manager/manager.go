@@ -15,8 +15,9 @@ import (
 var (
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BLACK_HOLE"}
-	pkgLogger                 = logger.NewLogger().Child("router")
+	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
+		"BLACK_HOLE", "BLACK_HOLE_BQ", "BLACK_HOLE_POSTGRES", "BLACK_HOLE_SNOWFLAKE", "BLACK_HOLE_CLICKHOUSE"}
+	pkgLogger = logger.NewLogger().Child("router")
 )
 
 type LifecycleManager struct {

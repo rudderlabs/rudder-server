@@ -77,10 +77,10 @@ func (bh *BlackHoleFileManager) Download(ctx context.Context, output *os.File, k
 	switch {
 
 	case strings.Contains(key, "staging"):
-		fname = "services/filemanager/load-test/staging.json.gz"
+		fname = "staging.json.gz"
 
 	case strings.Contains(key, "load-objects"):
-		fname = "services/filemanager/load-test/load-objects.csv.gz"
+		fname = "load-objects.csv.gz"
 
 	default:
 		panic("Unrecognized key: " + key)

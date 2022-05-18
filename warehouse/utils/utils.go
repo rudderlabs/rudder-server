@@ -30,18 +30,22 @@ import (
 )
 
 const (
-	RS             = "RS"
-	BQ             = "BQ"
-	SNOWFLAKE      = "SNOWFLAKE"
-	POSTGRES       = "POSTGRES"
-	CLICKHOUSE     = "CLICKHOUSE"
-	MSSQL          = "MSSQL"
-	AZURE_SYNAPSE  = "AZURE_SYNAPSE"
-	DELTALAKE      = "DELTALAKE"
-	S3_DATALAKE    = "S3_DATALAKE"
-	GCS_DATALAKE   = "GCS_DATALAKE"
-	AZURE_DATALAKE = "AZURE_DATALAKE"
-	BLACK_HOLE     = "BLACK_HOLE"
+	RS                    = "RS"
+	BQ                    = "BQ"
+	SNOWFLAKE             = "SNOWFLAKE"
+	POSTGRES              = "POSTGRES"
+	CLICKHOUSE            = "CLICKHOUSE"
+	MSSQL                 = "MSSQL"
+	AZURE_SYNAPSE         = "AZURE_SYNAPSE"
+	DELTALAKE             = "DELTALAKE"
+	S3_DATALAKE           = "S3_DATALAKE"
+	GCS_DATALAKE          = "GCS_DATALAKE"
+	AZURE_DATALAKE        = "AZURE_DATALAKE"
+	BLACK_HOLE            = "BLACK_HOLE"
+	BLACK_HOLE_BQ         = "BLACK_HOLE_BQ"
+	BLACK_HOLE_CLICKHOUSE = "BLACK_HOLE_CLICKHOUSE"
+	BLACK_HOLE_SNOWFLAKE  = "BLACK_HOLE_SNOWFLAKE"
+	BLACK_HOLE_POSTGRES   = "BLACK_HOLE_POSTGRES"
 )
 
 const (
@@ -155,7 +159,7 @@ func Init() {
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
-	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE, BLACK_HOLE}
+	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE, BLACK_HOLE, BLACK_HOLE_BQ, BLACK_HOLE_SNOWFLAKE, BLACK_HOLE_CLICKHOUSE, BLACK_HOLE_POSTGRES}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
