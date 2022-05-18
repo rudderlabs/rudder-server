@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -48,6 +49,7 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
+	loadTableStrategy  string
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -120,6 +122,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(time.Duration(15), &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
+	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -508,30 +511,16 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	// Getting the primary key for the merge sql statement
-	primaryKey := "id"
-	if column, ok := primaryKeyMap[tableName]; ok {
-		primaryKey = column
-	}
-
-	// Creating merge sql statement to copy from staging table to the main table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-                                       USING ( SELECT * FROM ( SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[1]s.%[3]s ) AS q WHERE _rudder_staging_row_number = 1) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[5]s
-									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
+	sqlStatement = loadTableHandler().SqlStatement(
 		dl.Namespace,
 		tableName,
 		stagingTableName,
-		primaryKey,
-		columnsWithValues(sortedColumnKeys),
-		columnNames(sortedColumnKeys),
-		stagingColumnNames(sortedColumnKeys),
+		warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
 	)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
-	// Executing merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LT::Merge")
+	// Executing load table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -539,6 +528,13 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	pkgLogger.Infof("%v Complete load for table\n", dl.GetLogIdentifier(tableName))
 	return
+}
+
+func loadTableHandler() LoadTable {
+	if loadTableStrategy == "APPEND" {
+		return &LTAppend{}
+	}
+	return &LTMerge{}
 }
 
 // loadUserTables Loads users table
@@ -574,7 +570,6 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 	// Creating create table sql statement for staging users table
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA AS (SELECT DISTINCT * FROM
@@ -596,7 +591,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		strings.Join(firstValProps, ","),
 		warehouseutils.UsersTable,
 		identifyStagingTable,
-		quotedUserColNames,
+		columnNames(userColNames),
 	)
 
 	// Executing create sql statement
@@ -611,30 +606,19 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	// Dropping staging users table
 	defer dl.dropStagingTables([]string{stagingTableName})
 
-	// Creating the Primary Key
-	primaryKey := "id"
-
 	// Creating the column Keys
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	// Creating the merge sql statement to copy from staging users table to the main users table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-									   USING ( SELECT %[5]s FROM %[1]s.%[3]s ) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[6]s
-									   WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s);`,
+	sqlStatement = loadTableHandler().SqlStatement(
 		dl.Namespace,
 		warehouseutils.UsersTable,
 		stagingTableName,
-		primaryKey,
-		columnNames(columnKeys),
-		columnsWithValues(columnKeys),
-		stagingColumnNames(columnKeys),
+		columnKeys,
 	)
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
-	// Executing the merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LUT::Merge")
+	// Executing the load users table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
