@@ -264,7 +264,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(err)
 	}
 
-	appTypeStr := strings.ToLower(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
 	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
 	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
 
