@@ -139,6 +139,8 @@ type ErrorResponseT struct {
 func Init4() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse")
+
+	setMaxParallelLoads()
 }
 
 func loadConfig() {
