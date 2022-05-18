@@ -76,7 +76,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (Conf
 func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
 	var url string
 	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
-	if config.GetBool("BackendConfig.useHostedBackendConfig", true) {
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 	} else {
 		// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
@@ -153,7 +153,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 		return []byte{}, 400, err
 	}
 	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
-	if config.GetBool("BackendConfig.useHostedBackendConfig", true) {
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
 	} else {
 		req.SetBasicAuth(workspaceConfig.Token, "")
