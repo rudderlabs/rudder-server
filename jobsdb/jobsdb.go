@@ -322,6 +322,11 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
+func (r *JobStatusT) sanitizeJson() {
+	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
+	r.Parameters = sanitizeJson(r.Parameters)
+}
+
 /*
 JobT is the basic type for creating jobs. The JobID is generated
 by the system and LastJobStatus is populated when reading a processed
@@ -344,6 +349,11 @@ type JobT struct {
 
 func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
+}
+
+func (job *JobT) sanitizeJson() {
+	job.EventPayload = sanitizeJson(job.EventPayload)
+	job.Parameters = sanitizeJson(job.Parameters)
 }
 
 //The struct fields need to be exposed to JSON package
@@ -445,11 +455,11 @@ type ParameterFilterT struct {
 	Optional bool
 }
 
-var dbErrorMap = map[string]string{
-	"Invalid JSON":             "22P02",
-	"Invalid Unicode":          "22P05",
-	"Invalid Escape Sequence":  "22025",
-	"Invalid Escape Character": "22019",
+var dbInvalidJsonErrors = map[string]struct{}{
+	"22P02": {},
+	"22P05": {},
+	"22025": {},
+	"22019": {},
 }
 
 // registers the backup settings depending on jobdb type the gateway, the router and the processor
@@ -2205,36 +2215,59 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 }
 
 func (*HandleT) doStoreJobsInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
-	var stmt *sql.Stmt
-	var err error
+	store := func() error {
+		var stmt *sql.Stmt
+		var err error
 
-	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
-	if err != nil {
-		return err
-	}
-
-	defer stmt.Close()
-
-	for _, job := range jobList {
-		eventCount := 1
-		if job.EventCount > 1 {
-			eventCount = job.EventCount
-		}
-
-		if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+		if err != nil {
 			return err
 		}
+
+		defer stmt.Close()
+		for _, job := range jobList {
+			eventCount := 1
+			if job.EventCount > 1 {
+				eventCount = job.EventCount
+			}
+
+			if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+				return err
+			}
+		}
+		_, err = stmt.Exec()
+		return err
 	}
-	_, err = stmt.Exec()
+	const (
+		savepointSql = "SAVEPOINT doStoreJobsInTx"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+	if _, err := txHandler.Exec(savepointSql); err != nil {
+		return err
+	}
+	err := store()
+	var e *pq.Error
+	if err != nil && errors.As(err, &e) {
+		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
+			if _, err := txHandler.Exec(rollbackSql); err != nil {
+				return err
+			}
+			for i := range jobList {
+				jobList[i].sanitizeJson()
+			}
+			return store()
+		}
+	}
 	return err
 }
 
 func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
-	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json , $6) RETURNING job_id`, ds.JobTable)
+	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
+	job.sanitizeJson()
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
@@ -2246,8 +2279,7 @@ func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	pqErr, ok := err.(*pq.Error)
 	if ok {
 		errCode := string(pqErr.Code)
-		if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] ||
-			errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
+		if _, ok := dbInvalidJsonErrors[errCode]; ok {
 			return errors.New("Invalid JSON")
 		}
 	}
@@ -2790,44 +2822,61 @@ func (jd *HandleT) updateJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	queryStat := jd.getTimerStat("update_job_status_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
-
-	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-		"retry_time", "error_code", "error_response", "parameters"))
-	if err != nil {
-		return
-	}
-
 	updatedStatesMap := map[string]map[string]bool{}
-	for _, status := range statusList {
-		//  Handle the case when google analytics returns gif in response
-		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
-			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
-		}
-		updatedStatesMap[status.WorkspaceId][status.JobState] = true
-		if !utf8.ValidString(string(status.ErrorResponse)) {
-			status.ErrorResponse = []byte(`{}`)
-		}
-		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
+	store := func() error {
+		stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+			"retry_time", "error_code", "error_response", "parameters"))
 		if err != nil {
-			return
+			return err
 		}
-	}
-	updatedStates = make(map[string][]string)
-	for k := range updatedStatesMap {
-		if _, ok := updatedStates[k]; !ok {
-			updatedStates[k] = make([]string, 0, len(updatedStatesMap[k]))
+		for _, status := range statusList {
+			//  Handle the case when google analytics returns gif in response
+			if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
+				updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
+			}
+			updatedStatesMap[status.WorkspaceId][status.JobState] = true
+			if !utf8.ValidString(string(status.ErrorResponse)) {
+				status.ErrorResponse = []byte(`{}`)
+			}
+			_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
+				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
+			if err != nil {
+				return err
+			}
 		}
-		for state := range updatedStatesMap[k] {
-			updatedStates[k] = append(updatedStates[k], state)
+		updatedStates = make(map[string][]string)
+		for k := range updatedStatesMap {
+			if _, ok := updatedStates[k]; !ok {
+				updatedStates[k] = make([]string, 0, len(updatedStatesMap[k]))
+			}
+			for state := range updatedStatesMap[k] {
+				updatedStates[k] = append(updatedStates[k], state)
+			}
 		}
-	}
 
-	_, err = stmt.Exec()
-	if err != nil {
+		_, err = stmt.Exec()
+		return err
+	}
+	const (
+		savepointSql = "SAVEPOINT updateJobStatusDSInTx"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+	if _, err = txHandler.Exec(savepointSql); err != nil {
 		return
 	}
-
+	err = store()
+	var e *pq.Error
+	if err != nil && errors.As(err, &e) {
+		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
+			if _, err = txHandler.Exec(rollbackSql); err != nil {
+				return
+			}
+			for i := range statusList {
+				statusList[i].sanitizeJson()
+			}
+			err = store()
+		}
+	}
 	return
 }
 
@@ -4205,4 +4254,12 @@ func (jd *HandleT) GetLastJob() *JobT {
 		jd.assertError(err)
 	}
 	return &job
+}
+
+func sanitizeJson(input json.RawMessage) json.RawMessage {
+	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+	if len(v) == 0 {
+		v = []byte(`{}`)
+	}
+	return v
 }
