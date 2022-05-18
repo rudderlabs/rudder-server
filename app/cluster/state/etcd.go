@@ -254,6 +254,7 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
+			manager.logger.Infof("Workspace ID Change Acknowledgement Key: %s", req.AckKey)
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			return err
 		})
