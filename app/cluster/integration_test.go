@@ -225,8 +225,8 @@ func TestDynamicClusterManager(t *testing.T) {
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		ctx context.Context, topic backendConfig.Topic) chan pubsub.DataEvent {
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(
+		ctx context.Context, topic backendConfig.Topic) pubsub.DataChannel {
 
 		ch := make(chan pubsub.DataEvent, 1)
 		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}

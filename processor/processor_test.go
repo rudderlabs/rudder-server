@@ -67,8 +67,11 @@ func (c *testContext) Setup() {
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 
 	c.configInitialised = false
-	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+
+	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 			c.configInitialised = true
@@ -79,13 +82,6 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-
-	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-	mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
-		tFunc()
-
-		return nil
-	})
 	c.dbReadBatchSize = 10000
 	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)

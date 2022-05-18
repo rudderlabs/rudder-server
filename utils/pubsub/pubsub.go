@@ -11,7 +11,7 @@ type DataEvent struct {
 }
 
 // DataChannel is a channel which can accept an DataEvent
-type DataChannel chan DataEvent
+type DataChannel <-chan DataEvent
 
 // PublishSubscriber stores the information about subscribers interested for a particular topic
 type PublishSubscriber struct {
@@ -49,9 +49,9 @@ func (eb *PublishSubscriber) Subscribe(ctx context.Context, topic string) DataCh
 	eb.lastEventMutex.RLock()
 	defer eb.lastEventMutex.RUnlock()
 
-	ch := make(DataChannel)
+	ch := make(chan DataEvent)
 
-	newSubPublisher := &subPublisher{channel: ch}
+	newSubPublisher := newListener(ch)
 	if prev, found := eb.subscriptions[topic]; found {
 		eb.subscriptions[topic] = append(prev, newSubPublisher)
 	} else {
@@ -73,7 +73,7 @@ func (eb *PublishSubscriber) Subscribe(ctx context.Context, topic string) DataCh
 	return ch
 }
 
-func (eb *PublishSubscriber) removePubSub(topic string, r *subPublisher) {
+func (eb *PublishSubscriber) removePubSub(topic string, r *listener) {
 	eb.subscriptionsMutex.Lock()
 	defer eb.subscriptionsMutex.Unlock()
 	eb.lastEventMutex.RLock()
@@ -107,12 +107,13 @@ func (eb *PublishSubscriber) Close() {
 	eb.subscriptions = nil
 }
 
-// subPublishers is a slice of subPublisher pointers
-type subPublishers []*subPublisher
+// listener is a slice of subPublisher pointers
+type subPublishers []*listener
 
-// subPublisher is responsible to publish events to a single subscription (channel).
-type subPublisher struct {
+// listener is responsible to publish events to a single subscription (channel).
+type listener struct {
 	bgCtx context.Context
+
 	// the channel of the subscription where events are published
 	channel chan DataEvent
 
@@ -126,22 +127,26 @@ type subPublisher struct {
 	ping chan struct{}
 }
 
+func newListener(channel chan DataEvent) *listener {
+	return &listener{
+		ping:    make(chan struct{}, 1),
+		channel: channel,
+	}
+}
+
 // publish sets the publisher's lastValue and starts the
 // internal goroutine if it is not already started
-func (r *subPublisher) publish(data *DataEvent) {
-	r.startedOnce.Do(func() {
-		r.bgCtx = context.Background()
-		r.ping = make(chan struct{}, 1)
-		go r.startLoop()
-	})
-
+func (r *listener) publish(data *DataEvent) {
 	r.lastValueLock.Lock()
 	r.lastValue = data
 	r.lastValueLock.Unlock()
 
+	r.startedOnce.Do(func() {
+		r.ping = make(chan struct{}, 1)
+		go r.startLoop()
+	})
+
 	select {
-	case <-r.bgCtx.Done():
-		return
 	case r.ping <- struct{}{}: // signals the startLoop that it has to read the value
 	default:
 		// do nothing - leaky bucket
@@ -149,7 +154,7 @@ func (r *subPublisher) publish(data *DataEvent) {
 }
 
 // startLoop publishes lastValues to the subscription's channel until there is no other lastValue to publish
-func (r *subPublisher) startLoop() {
+func (r *listener) startLoop() {
 	for range r.ping {
 		r.lastValueLock.Lock()
 		v := r.lastValue
@@ -161,7 +166,8 @@ func (r *subPublisher) startLoop() {
 	close(r.channel)
 }
 
-func (r *subPublisher) close() {
-	r.bgCtx.Done()
-	close(r.ping)
+func (r *listener) close() {
+	if r.ping != nil {
+		close(r.ping)
+	}
 }

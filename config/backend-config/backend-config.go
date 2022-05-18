@@ -207,7 +207,7 @@ type BackendConfig interface {
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
-	Subscribe(ctx context.Context, topic Topic) chan pubsub.DataEvent
+	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(workspaces string)
 	IsConfigured() bool
@@ -338,7 +338,7 @@ func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func Subscribe(ctx context.Context, topic Topic) chan pubsub.DataEvent {
+func Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return backendConfig.Subscribe(ctx, topic)
 }
 
@@ -351,7 +351,7 @@ Available topics are:
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receeive all regulations
 */
-func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) chan pubsub.DataEvent {
+func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 

@@ -69,7 +69,7 @@ var _ = Describe("eventUploader", func() {
 		recordingEvent = `{"t":"a"}`
 		disableEventUploads = false
 		mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-			Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				ch := make(chan pubsub.DataEvent, 1)
 				ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 				// on Subscribe, emulate a backend configuration event
@@ -90,7 +90,7 @@ var _ = Describe("eventUploader", func() {
 	Context("RecordEvent", func() {
 		It("returns false if disableEventUploads is true", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			mockCall.DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
 				return nil
 			}).Times(1)
@@ -102,7 +102,7 @@ var _ = Describe("eventUploader", func() {
 
 		It("returns false if writeKey is not part of uploadEnabledWriteKeys", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			mockCall.DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
 				return nil
 			}).Times(1)
@@ -113,7 +113,7 @@ var _ = Describe("eventUploader", func() {
 
 		It("transforms payload properly", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			mockCall.DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
 				return nil
 			}).Times(1)
@@ -131,7 +131,7 @@ var _ = Describe("eventUploader", func() {
 
 		It("ignores improperly built payload", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			mockCall.DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
 				return nil
 			}).Times(1)
@@ -146,7 +146,7 @@ var _ = Describe("eventUploader", func() {
 
 		It("records events", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+			mockCall.DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
 				return nil
 			}).Times(1)

@@ -187,10 +187,17 @@ func TestRouterManager(t *testing.T) {
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
-		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).DoAndReturn(func(
+		ctx context.Context, topic backendConfig.Topic) pubsub.DataChannel {
 		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+		go func() {
+			<-ctx.Done()
+			close(ch)
+		}()
+		return ch
 	}).AnyTimes()
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()

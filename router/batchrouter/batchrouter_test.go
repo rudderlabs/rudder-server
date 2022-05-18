@@ -95,9 +95,13 @@ func (c *testContext) Setup() {
 	c.mockFileManager = mocksFileManager.NewMockFileManager(c.mockCtrl)
 	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
+	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
+
 	// During Setup, router subscribes to backend config
-	mockCall := c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			tFunc()
+
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -107,12 +111,6 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
-	mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
-		tFunc()
-
-		return nil
-	})
 	c.jobQueryBatchSize = 100000
 	c.mockConfigPrefix = sampleConfigPrefix
 	c.mockFileObjects = sampleFileObjects

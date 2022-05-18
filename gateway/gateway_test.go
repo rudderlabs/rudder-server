@@ -140,8 +140,12 @@ func (c *testContext) Setup() {
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config")
 	mockCall.Do(func(interface{}) { tFunc() })
 
+	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
+
 	mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			tFunc()
+
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -151,12 +155,6 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
-	mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) chan pubsub.DataEvent {
-		tFunc()
-
-		return nil
-	}).Return().Times(1)
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
