@@ -83,7 +83,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	for i := range wIds {
 		wIds[i] = strings.Trim(wIds[i], " ")
 	}
-	encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
+	encodedWorkspaces, err := jsonfast.MarshalToString(wIds[:249])
 	if err != nil {
 		pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
 		return ConfigT{}, false
