@@ -192,7 +192,7 @@ func TestJobsDB(t *testing.T) {
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-	unprocessedListEmpty := unprocessedJobEmpty.JobsList
+	unprocessedListEmpty := unprocessedJobEmpty.Jobs
 	require.Equal(t, 0, len(unprocessedListEmpty))
 	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestJobsDB(t *testing.T) {
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-	unprocessedList := unprocessedJob.JobsList
+	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
 	status := jobsdb.JobStatusT{
@@ -225,7 +225,7 @@ func TestJobsDB(t *testing.T) {
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-	unprocessedList = uj.JobsList
+	unprocessedList = uj.Jobs
 	require.Equal(t, 0, len(unprocessedList))
 
 	t.Run("multi events per job", func(t *testing.T) {
@@ -248,7 +248,7 @@ func TestJobsDB(t *testing.T) {
 			JobsLimit:        100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		JobLimitList := JobLimitJob.JobsList
+		JobLimitList := JobLimitJob.Jobs
 		require.Equal(t, jobCount, len(JobLimitList))
 
 		t.Log("GetUnprocessed with event count limit")
@@ -258,7 +258,7 @@ func TestJobsDB(t *testing.T) {
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		eventLimitList := eventLimitJob.JobsList
+		eventLimitList := eventLimitJob.Jobs
 		require.Equal(t, 20, len(eventLimitList))
 		t.Log("GetUnprocessed jobs should have the expected event count")
 		for _, j := range eventLimitList {
@@ -272,8 +272,8 @@ func TestJobsDB(t *testing.T) {
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		require.Equal(t, 20, len(eventLimitListRepeat.JobsList))
-		require.Equal(t, eventLimitList, eventLimitListRepeat.JobsList)
+		require.Equal(t, 20, len(eventLimitListRepeat.Jobs))
+		require.Equal(t, eventLimitList, eventLimitListRepeat.Jobs)
 
 		statuses := make([]*jobsdb.JobStatusT, len(JobLimitList))
 
@@ -299,7 +299,7 @@ func TestJobsDB(t *testing.T) {
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 		})
-		require.Equal(t, jobCount, len(retryJobLimitList.JobsList))
+		require.Equal(t, jobCount, len(retryJobLimitList.Jobs))
 
 		t.Log("GetToRetry with event count limit")
 		retryEventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
@@ -307,7 +307,7 @@ func TestJobsDB(t *testing.T) {
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 		})
-		require.Equal(t, 20, len(retryEventLimitList.JobsList))
+		require.Equal(t, 20, len(retryEventLimitList.Jobs))
 		t.Log("GetToRetry jobs should have the expected event count")
 		for _, j := range eventLimitList {
 			require.Equal(t, eventsPerJob, j.EventCount)
@@ -354,8 +354,8 @@ func TestJobsDB(t *testing.T) {
 			EventsLimit:      trickyEventCount,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		requireSequential(t, eventLimitList.JobsList)
-		require.Equal(t, jobCountPerDS-1, len(eventLimitList.JobsList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 
 		t.Log("Prepare GetToRetry")
 		{
@@ -365,11 +365,11 @@ func TestJobsDB(t *testing.T) {
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
 
-			statuses := make([]*jobsdb.JobStatusT, len(allJobs.JobsList))
+			statuses := make([]*jobsdb.JobStatusT, len(allJobs.Jobs))
 			n := time.Now().Add(time.Hour * -1)
 			for i := range statuses {
 				statuses[i] = &jobsdb.JobStatusT{
-					JobID:         allJobs.JobsList[i].JobID,
+					JobID:         allJobs.Jobs[i].JobID,
 					JobState:      jobsdb.Failed.State,
 					AttemptNum:    1,
 					ExecTime:      n,
@@ -392,8 +392,8 @@ func TestJobsDB(t *testing.T) {
 				EventsLimit:      trickyEventCount,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
-			requireSequential(t, eventLimitList.JobsList)
-			require.Equal(t, jobCountPerDS-1, len(eventLimitList.JobsList))
+			requireSequential(t, eventLimitList.Jobs)
+			require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 		}
 
 	})
@@ -433,8 +433,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, payloadLimitList.JobsList)
-		require.Equal(t, 3, len(payloadLimitList.JobsList))
+		requireSequential(t, payloadLimitList.Jobs)
+		require.Equal(t, 3, len(payloadLimitList.Jobs))
 	})
 
 	t.Run("querying with an payload size limit should return at least one job even if limit is exceeded", func(t *testing.T) {
@@ -464,8 +464,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, payloadLimitList.JobsList)
-		require.Equal(t, 1, len(payloadLimitList.JobsList))
+		requireSequential(t, payloadLimitList.Jobs)
+		require.Equal(t, 1, len(payloadLimitList.Jobs))
 	})
 
 	t.Run("querying with an event count limit should return at least one job even if limit is exceeded", func(t *testing.T) {
@@ -493,8 +493,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, eventLimitList.JobsList)
-		require.Equal(t, 1, len(eventLimitList.JobsList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, 1, len(eventLimitList.Jobs))
 	})
 
 	t.Run("should stay within event count limits", func(t *testing.T) {
@@ -533,8 +533,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, eventLimitList.JobsList)
-		require.Equal(t, 3, len(eventLimitList.JobsList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, 3, len(eventLimitList.Jobs))
 	})
 }
 
@@ -569,7 +569,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
 	require.NoError(t, err)
 	j := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 100}) // read to get Ids
-	jobs = j.JobsList
+	jobs = j.Jobs
 	require.Equal(t, 30, len(jobs), "should get all 30 jobs")
 
 	// Mark 1-10 as failed
@@ -664,7 +664,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	require.NoError(t, jobDB.Store(jobs))
 
 	unprocessedJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 90}) // read to get all Ids
-	allJobs := unprocessedJobs.JobsList
+	allJobs := unprocessedJobs.Jobs
 	require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
 	workspaceAJobs := filterWorkspaceJobs(allJobs, workspaceA)
 	workspaceBJobs := filterWorkspaceJobs(allJobs, workspaceB)
@@ -787,7 +787,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-	unprocessedList := unprocessedJob.JobsList
+	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
 	t.Run("validate fetched event", func(t *testing.T) {
@@ -893,7 +893,7 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *jobsdb.HandleT, totalJobs
 						CustomValFilters: []string{customVal},
 						JobsLimit:        pageSize,
 					})
-					unprocessedList := unprocessedJob.JobsList
+					unprocessedList := unprocessedJob.Jobs
 					status := make([]*jobsdb.JobStatusT, len(unprocessedList))
 					for i, j := range unprocessedList {
 						status[i] = &jobsdb.JobStatusT{
@@ -1009,8 +1009,8 @@ func consume(t testing.TB, db *jobsdb.HandleT, count int) {
 		JobsLimit: count,
 	})
 
-	status := make([]*jobsdb.JobStatusT, len(unprocessedList.JobsList))
-	for i, j := range unprocessedList.JobsList {
+	status := make([]*jobsdb.JobStatusT, len(unprocessedList.Jobs))
+	for i, j := range unprocessedList.Jobs {
 		status[i] = &jobsdb.JobStatusT{
 			JobID:         j.JobID,
 			JobState:      "succeeded",
