@@ -2,6 +2,8 @@ package manager
 
 import (
 	"fmt"
+	"time"
+
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -12,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -38,6 +39,7 @@ type ManagerI interface {
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	LoadTestTable(location string, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
 }
 
 type WarehouseDelete interface {

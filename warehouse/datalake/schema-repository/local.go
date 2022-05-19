@@ -90,3 +90,7 @@ func (ls *LocalSchemaRepository) AlterColumn(tableName string, columnName string
 	// update schema
 	return ls.uploader.UpdateLocalSchema(schema)
 }
+
+func (*LocalSchemaRepository) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) error {
+	return nil
+}

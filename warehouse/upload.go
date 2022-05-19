@@ -4,12 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -421,7 +422,25 @@ func (job *UploadJobT) run() (err error) {
 
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
-
+			// Refresh partitions if exists
+			if job.warehouse.Type == "S3_DATALAKE" && warehouseutils.GetConfigValueBoolString("useGlue", job.warehouse) == "true" {
+				for tableName := range job.upload.UploadSchema {
+					loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+						Table:   tableName,
+						StartID: startLoadFileID,
+						EndID:   endLoadFileID,
+					})
+					// This is best done every 100 files, since it's a batch request for updates in Glue
+					partitionBatchSize := 99
+					for i := 0; i < len(loadFiles); i += partitionBatchSize {
+						end := i + partitionBatchSize
+						if end > len(loadFiles) {
+							end = len(loadFiles)
+						}
+						whManager.RefreshPartitions(tableName, loadFiles[i:end])
+					}
+				}
+			}
 			newStatus = nextUploadState.completed
 
 		case UpdatedTableUploadsCounts:
@@ -1759,6 +1778,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+			}
+
+			if job.warehouse.Type == "S3_DATALAKE" && warehouseutils.GetConfigValueBoolString("useGlue", job.warehouse) == "true" {
+				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.GlueTimeWindowFormat)
 			}
 
 			// set merged schema as upload schema if the load file type is parquet

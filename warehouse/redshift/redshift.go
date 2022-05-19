@@ -796,3 +796,7 @@ func (rs *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 func (rs *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	rs.ConnectTimeout = timeout
 }
+
+func (*HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
+}

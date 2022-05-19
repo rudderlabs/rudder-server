@@ -2,12 +2,13 @@ package datalake
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"time"
 )
 
 // TODO: Handle error using error types.
@@ -116,4 +117,8 @@ func (wh *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 }
 
 func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
+}
+
+func (wh *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
+	return wh.SchemaRepository.RefreshPartitions(tableName, loadFiles)
 }
