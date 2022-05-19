@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -126,6 +127,6 @@ func (bh *BlackHoleFileManager) SetTimeout(*time.Duration) {
 // delay simply delays the execution of function in which it is called
 // based on the added lower and upper bounds.
 func (bh *BlackHoleFileManager) delay() {
-	interval := bh.Config.LowerBound + (bh.Config.UpperBound - bh.Config.LowerBound)
+	interval := bh.Config.LowerBound + rand.Intn(bh.Config.UpperBound-bh.Config.LowerBound)
 	time.Sleep(time.Millisecond * time.Duration(interval))
 }
