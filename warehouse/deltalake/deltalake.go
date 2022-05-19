@@ -518,11 +518,15 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
+	columnKeys := sortedColumnKeys
+	if loadTableStrategy == "APPEND" {
+		columnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)
+	}
 	sqlStatement = loadTableHandler().SqlStatement(
 		dl.Namespace,
 		tableName,
 		stagingTableName,
-		warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
+		columnKeys,
 	)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
