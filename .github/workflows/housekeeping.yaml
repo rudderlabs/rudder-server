@@ -34,7 +34,7 @@ jobs:
             repo_token: ${{ github.token }}
             date: '2 months ago'
             dry_run: false
-            delete_tags: true
-            extra_protected_branch_regex: ^(main|master|release|rudder-saas)
+            delete_tags: false
+            extra_protected_branch_regex: ^(main|master|release.*|rudder-saas)$
             exclude_open_pr_branches: true
 
