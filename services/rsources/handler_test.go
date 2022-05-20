@@ -8,9 +8,12 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/gofrs/uuid"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -69,36 +72,44 @@ func TestMain(m *testing.M) {
 }
 
 func TestSourcesHandler(t *testing.T) {
-	sh := NewJobService(db)
 	ctx := context.Background()
-	key := JobTargetKey{
-		SourceId:      "source_id",
-		DestinationId: "destination_id",
-		TaskRunId:     "task_run_id",
-	}
 	stats := Stats{
 		In:     10,
 		Out:    4,
 		Failed: 6,
 	}
-	tx, err := db.Begin()
-	require.NoError(t, err, "it should be able to begin the transaction")
 
-	require.NoError(t, sh.IncrementStats(ctx, tx, "jobRunId", key, stats), "it should be able to increment stats")
+	prepareService := func() (JobService, string) {
+		jobRunId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+		sh := NewJobService(db)
 
-	require.NoError(t, tx.Commit(), "it should be able to commit the transaction")
+		key := JobTargetKey{
+			SourceId:      "source_id",
+			DestinationId: "destination_id",
+			TaskRunId:     "task_run_id",
+		}
+
+		tx, err := db.Begin()
+		require.NoError(t, err, "it should be able to begin the transaction")
+
+		require.NoError(t, sh.IncrementStats(ctx, tx, jobRunId, key, stats), "it should be able to increment stats")
+
+		require.NoError(t, tx.Commit(), "it should be able to commit the transaction")
+		return sh, jobRunId
+	}
 
 	t.Run("Get Status", func(t *testing.T) {
+		sh, jobRunId := prepareService()
 		jobFilters := JobFilter{
 			SourceId:  []string{"source_id"},
 			TaskRunId: []string{"task_run_id"},
 		}
-		status, err := sh.GetStatus(ctx, "jobRunId", jobFilters)
+		status, err := sh.GetStatus(ctx, jobRunId, jobFilters)
 		if err != nil {
 			t.Fatal(err)
 		}
 		expected := JobStatus{
-			ID: "jobRunId",
+			ID: jobRunId,
 			TasksStatus: []TaskStatus{
 				{
 					ID: "task_run_id",
@@ -123,9 +134,10 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("Delete clears all the pertinent tables(for now the stats table only)", func(t *testing.T) {
+		sh, jobRunId := prepareService()
 		tx, err := db.Begin()
 		require.NoError(t, err, "it should be able to begin the transaction")
-		err = sh.Delete(ctx, "jobRunId")
+		err = sh.Delete(ctx, jobRunId)
 		require.NoError(t, err, "it should be able to delete")
 		err = tx.Commit()
 		require.NoError(t, err, "it should be able to commit the transaction")
@@ -133,7 +145,7 @@ func TestSourcesHandler(t *testing.T) {
 			SourceId:  []string{"source_id"},
 			TaskRunId: []string{"task_run_id"},
 		}
-		status, err := sh.GetStatus(ctx, "jobRunId", jobFilters)
+		status, err := sh.GetStatus(ctx, jobRunId, jobFilters)
 		require.NotNil(t, err)
 		require.Equal(t, status, JobStatus{})
 		require.True(t, errors.Is(err, StatusNotFoundError), "it should return a StatusNotFoundError")
@@ -141,10 +153,10 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("GetStatus with filtering", func(t *testing.T) {
-		sh := NewJobService(db)
+		sh, jobRunId := prepareService()
 		wg := &sync.WaitGroup{}
 		wg.Add(5)
-		go increment(t, ctx, db, JobTargetKey{
+		go increment(t, ctx, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id1",
 			DestinationId: "destination_id",
@@ -154,7 +166,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 0,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, JobTargetKey{
+		go increment(t, ctx, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id1",
 			DestinationId: "destination_id",
@@ -164,7 +176,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, JobTargetKey{
+		go increment(t, ctx, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id2",
 			DestinationId: "destination_id",
@@ -174,7 +186,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, JobTargetKey{
+		go increment(t, ctx, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id2",
 			SourceId:      "source_id2",
 			DestinationId: "destination_id",
@@ -184,7 +196,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, JobTargetKey{
+		go increment(t, ctx, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id2",
 			SourceId:      "source_id3",
 			DestinationId: "destination_id",
@@ -196,7 +208,7 @@ func TestSourcesHandler(t *testing.T) {
 		)
 		wg.Wait()
 
-		res, err := sh.GetStatus(ctx, "jobRunId", JobFilter{
+		res, err := sh.GetStatus(ctx, jobRunId, JobFilter{
 			SourceId:  []string{"source_id1", "source_id2"},
 			TaskRunId: []string{"task_run_id1", "task_run_id2"},
 		})
@@ -211,7 +223,7 @@ func TestSourcesHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		expected := JobStatus{
-			ID: "jobRunId",
+			ID: jobRunId,
 			TasksStatus: []TaskStatus{
 				{
 					ID: "task_run_id1",
@@ -273,12 +285,45 @@ func TestSourcesHandler(t *testing.T) {
 
 		require.Equal(t, expected, res)
 	})
+
+	t.Run("Cleanup loop", func(t *testing.T) {
+		sh, jobRunId := prepareService()
+		ts := time.Now().Add(-48 * time.Hour)
+		tableName := tablePrefix + jobRunId
+		stmt, err := db.Prepare(fmt.Sprintf("update %s set ts = $1", tableName))
+		require.NoError(t, err)
+		_, err = stmt.Exec(ts)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		go sh.CleanupLoop(ctx)
+
+		for {
+			select {
+			case <-ctx.Done():
+				t.Error("it should cleanup all tables")
+				return
+			case <-time.After(1 * time.Second):
+				sqlStatement := fmt.Sprintf(`
+				select count(*) from information_schema.tables
+				where table_schema='public' and table_name = '%s'`, tableName)
+				var count int
+				err = db.QueryRow(sqlStatement).Scan(&count)
+				require.NoError(t, err)
+				if count == 0 {
+					return
+				}
+			}
+		}
+
+	})
 }
 
-func increment(t *testing.T, ctx context.Context, db *sql.DB, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
+func increment(t *testing.T, ctx context.Context, db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
 	tx, err := db.Begin()
 	require.NoError(t, err, "it should be able to begin the transaction")
-	err = sh.IncrementStats(ctx, tx, "jobRunId", key, stat)
+	err = sh.IncrementStats(ctx, tx, jobRunId, key, stat)
 	require.NoError(t, err, "it should be able to increment stats")
 	err = tx.Commit()
 	require.NoError(t, err, "it should be able to commit the transaction")
