@@ -17,6 +17,7 @@ type extension interface {
 	createStatsTable(ctx context.Context, jobRunId string) error
 	dropTables(ctx context.Context, jobRunId string) error
 	cleanupLoop(ctx context.Context) error
+	doCleanupTables(ctx context.Context) error
 }
 
 type defaultExtension struct {
@@ -85,6 +86,7 @@ func (r *defaultExtension) doCleanupTables(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			tables = append(tables, table)
 		}
 	}
 	return nil
