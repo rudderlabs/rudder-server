@@ -148,8 +148,8 @@ func genJobStatuses(jobs []*jobsdb.JobT, state string) []*jobsdb.JobStatusT {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     "999",
-			ErrorResponse: []byte(`{}`),
-			Parameters:    []byte(`{}`),
+			ErrorResponse: []byte(`\u0000{"status": "status"}`),
+			Parameters:    []byte(``),
 			WorkspaceId:   job.WorkspaceId,
 		})
 	}
