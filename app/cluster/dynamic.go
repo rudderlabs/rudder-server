@@ -138,6 +138,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 }
 
 func (d *Dynamic) start() {
+	if d.GatewayComponent {
+		return
+	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
 	d.ErrorDB.Start()
@@ -154,6 +157,10 @@ func (d *Dynamic) start() {
 }
 
 func (d *Dynamic) stop() {
+	if d.GatewayComponent {
+		d.logger.Info("Stopping the gateway")
+		return
+	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
 	d.serverStopTimeStat.Start()
