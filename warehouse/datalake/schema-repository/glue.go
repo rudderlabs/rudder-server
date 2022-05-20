@@ -114,7 +114,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	return
 }
 
-func (gl *GlueSchemaRepository) getPartitionKeys() []*glue.Column {
+func (_ *GlueSchemaRepository) getPartitionKeys() []*glue.Column {
 	columnName := strings.Split(warehouseutils.GlueTimeWindowFormat, "=")[0]
 	return []*glue.Column{&glue.Column{Name: aws.String(columnName), Type: aws.String("date")}}
 }
