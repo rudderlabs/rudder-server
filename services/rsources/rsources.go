@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -70,6 +71,8 @@ type DestinationStatus struct {
 
 type FailedRecords struct{}
 
+var StatusNotFoundError = errors.New("Status not found")
+
 // JobService manages information about jobs created by rudder-sources
 type JobService interface {
 
@@ -88,6 +91,9 @@ type JobService interface {
 
 	// TODO: future extension
 	GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error)
+
+	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
+	CleanupLoop(ctx context.Context) error
 }
 
 func NewJobService(db *sql.DB) JobService {
@@ -108,13 +114,7 @@ func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) JobService {
 }
 
 func newDefaultExtension(db *sql.DB) *defaultExtension {
-	defExtension := &defaultExtension{localDB: db}
-
-	go func(*defaultExtension) {
-		_ = defExtension.cleanUpTables(context.TODO())
-	}(defExtension)
-
-	return defExtension
+	return &defaultExtension{localDB: db}
 }
 
 func NewNoOpService() JobService {
@@ -142,4 +142,9 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 
 func (*noopService) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobFilter) (FailedRecords, error) {
 	return FailedRecords{}, nil
+}
+
+func (*noopService) CleanupLoop(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
 }

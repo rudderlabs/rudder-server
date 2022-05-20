@@ -4,12 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
+)
+
+const (
+	tablePrefix = "job_run_stats_"
 )
 
 type sourcesHandler struct {
@@ -20,7 +26,7 @@ type sourcesHandler struct {
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
 
-	statsTableName := fmt.Sprintf("job_run_stats_%s", jobRunId)
+	statsTableName := fmt.Sprintf("%s%s", tablePrefix, jobRunId)
 	filters := ``
 
 	if len(filter.TaskRunId) > 0 {
@@ -50,7 +56,12 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 		statsTableName, filters)
 
 	rows, err := sh.extension.getReadDB().QueryContext(ctx, sqlStatement)
+
 	if err != nil {
+		var e *pq.Error
+		if err != nil && errors.As(err, &e) && e.Code == "42P01" {
+			return JobStatus{}, StatusNotFoundError
+		}
 		return JobStatus{}, err
 	}
 	defer rows.Close()
@@ -79,7 +90,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
 	sh.checkForTable(ctx, jobRunId)
 
-	jobRunIdStatTableName := fmt.Sprintf("job_run_stats_%s", jobRunId)
+	jobRunIdStatTableName := fmt.Sprintf("%s%s", tablePrefix, jobRunId)
 	sqlStatement := fmt.Sprintf(`insert into %[1]s (
 		source_id,
 		destination_id,
@@ -88,7 +99,7 @@ func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRun
 		out_count,
 		failed_count
 	) values ($1, $2, $3, $4, $5, $6)
-	on conflict(source_id, destination_id, task_run_id)
+	on conflict(db_name, source_id, destination_id, task_run_id)
 	do update set 
 	in_count = %[1]s.in_count + excluded.in_count,
 	out_count = %[1]s.out_count + excluded.out_count,
@@ -115,6 +126,10 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
 	return sh.extension.dropTables(ctx, jobRunId)
 }
 
+func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
+	return sh.extension.cleanupLoop(ctx)
+}
+
 // checks if the stats table for the given jobrunid exists and creates it if it doesn't
 func (sh *sourcesHandler) checkForTable(ctx context.Context, jobRunId string) error {
 	sh.jobRunIdTableMapLock.RLock()
@@ -138,6 +153,7 @@ type extension interface {
 	getReadDB() *sql.DB
 	createStatsTable(ctx context.Context, jobRunId string) error
 	dropTables(ctx context.Context, jobRunId string) error
+	cleanupLoop(ctx context.Context) error
 }
 
 type defaultExtension struct {
@@ -150,7 +166,7 @@ func (r *defaultExtension) getReadDB() *sql.DB {
 
 func (r *defaultExtension) createStatsTable(ctx context.Context, jobRunId string) error {
 	dbHost := config.GetEnv("JOBS_DB_HOST", "localhost")
-	jobRunIdStatTableName := fmt.Sprintf("job_run_stats_%s", jobRunId)
+	jobRunIdStatTableName := fmt.Sprintf("%s%s", tablePrefix, jobRunId)
 	sqlStatement := fmt.Sprintf(`create table if not exists %s (
 		db_name text not null default '%s',
 		source_id text not null,
@@ -159,26 +175,26 @@ func (r *defaultExtension) createStatsTable(ctx context.Context, jobRunId string
 		in_count integer not null default 0,
 		out_count integer not null default 0,
 		failed_count integer not null default 0,
-		primary key (source_id, destination_id, task_run_id)
+		primary key (db_name, source_id, destination_id, task_run_id)
 	)`, jobRunIdStatTableName, dbHost)
 	_, err := r.localDB.ExecContext(ctx, sqlStatement)
 	return err
 }
 
 func (r *defaultExtension) dropTables(ctx context.Context, jobRunId string) error {
-	jobRunIdStatTableName := fmt.Sprintf("job_run_stats_%s", jobRunId)
+	jobRunIdStatTableName := fmt.Sprintf("%s%s", tablePrefix, jobRunId)
 	sqlStatement := fmt.Sprintf(`drop table if exists %s`, jobRunIdStatTableName)
 	_, err := r.localDB.ExecContext(ctx, sqlStatement)
 	return err
 }
 
-func (r *defaultExtension) cleanUpTables(ctx context.Context) error {
+func (r *defaultExtension) cleanupLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case <-time.After(sourcesStatCleanUpSleepTime):
-			err := r.doCleanUpTables(ctx)
+			err := r.doCleanupTables(ctx)
 			if err != nil {
 				return err
 			}
@@ -186,8 +202,8 @@ func (r *defaultExtension) cleanUpTables(ctx context.Context) error {
 	}
 }
 
-func (r *defaultExtension) doCleanUpTables(ctx context.Context) error {
-	statTableNameLike := `job_run_stats_%`
+func (r *defaultExtension) doCleanupTables(ctx context.Context) error {
+	statTableNameLike := tablePrefix + `%`
 	sqlStatement := fmt.Sprintf(`
 	select table_name from information_schema.tables
 	where table_schema='public' and table_name ilike '%s'`, statTableNameLike)

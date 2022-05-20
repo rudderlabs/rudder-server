@@ -3,6 +3,7 @@ package rsources
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -68,32 +68,6 @@ func TestMain(m *testing.M) {
 	}()
 }
 
-// Scenario 1: statusFromQueryResult for
-// 1. one task with one source with one destination, all completed
-// 2. one task with one source with one destination, destination not completed
-// 3. one task with one source with one destination, source not completed
-// 4. two tasks with one source each (same id) and one destination each (same id), one task completed, other not
-// task1 -> source1(completed) -> dest1(completed)
-// task2 -> source1(incomplete) -> dest1(incomplete)
-
-// Scenario 2: IncrementStats a) once, b) twice -> verify using GetStatus
-
-// Scenario 3: GetStatus filtering a) TaskRunId (1 & 2) b) SourceId (1 & 2)
-// task1 -> source1 & source2
-// task2 -> source2 & source3
-
-// Scenario 4: Delete
-
-// func blockOnHold() {
-// 	fmt.Println("Test on hold, before cleanup")
-// 	fmt.Println("Press Ctrl+C to exit")
-
-// 	c := make(chan os.Signal, 1)
-// 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-// 	<-c
-// }
-
 func TestSourcesHandler(t *testing.T) {
 	sh := NewJobService(db)
 	ctx := context.Background()
@@ -107,14 +81,14 @@ func TestSourcesHandler(t *testing.T) {
 		Out:    4,
 		Failed: 6,
 	}
-	tx, _ := db.Begin()
+	tx, err := db.Begin()
+	require.NoError(t, err, "it should be able to begin the transaction")
 
-	sh.IncrementStats(ctx, tx, "jobRunId", key, stats)
-	err := tx.Commit()
-	if err != nil {
-		t.Errorf("Error committing transaction: %s", err)
-	}
-	t.Run("gets status", func(t *testing.T) {
+	require.NoError(t, sh.IncrementStats(ctx, tx, "jobRunId", key, stats), "it should be able to increment stats")
+
+	require.NoError(t, tx.Commit(), "it should be able to commit the transaction")
+
+	t.Run("Get Status", func(t *testing.T) {
 		jobFilters := JobFilter{
 			SourceId:  []string{"source_id"},
 			TaskRunId: []string{"task_run_id"},
@@ -123,141 +97,97 @@ func TestSourcesHandler(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		require.Equal(t, status.ID, "jobRunId")
-		require.Equal(t, len(status.TasksStatus), 1)
-		require.Equal(t, len(status.TasksStatus[0].SourcesStatus), 1)
-		require.Equal(t,
-			len(status.TasksStatus[0].SourcesStatus[0].DestinationsStatus),
-			1)
-		require.Equal(t,
-			status.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].ID,
-			"destination_id")
-		require.Equal(t,
-			status.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed,
-			true)
-		require.Equal(t,
-			status.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.In,
-			uint(10))
-		require.Equal(t,
-			status.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Out,
-			uint(4))
-		require.Equal(t,
-			status.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Stats.Failed,
-			uint(6))
+		expected := JobStatus{
+			ID: "jobRunId",
+			TasksStatus: []TaskStatus{
+				{
+					ID: "task_run_id",
+					SourcesStatus: []SourceStatus{
+						{
+							ID:        "source_id",
+							Stats:     Stats{},
+							Completed: true,
+							DestinationsStatus: []DestinationStatus{
+								{
+									ID:        "destination_id",
+									Completed: true,
+									Stats:     stats,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		require.Equal(t, expected, status)
 	})
 
 	t.Run("Delete clears all the pertinent tables(for now the stats table only)", func(t *testing.T) {
 		tx, err := db.Begin()
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = sh.Delete(ctx, "jobRunId")
+		require.NoError(t, err, "it should be able to begin the transaction")
+		err = sh.Delete(ctx, "jobRunId")
+		require.NoError(t, err, "it should be able to delete")
 		err = tx.Commit()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err, "it should be able to commit the transaction")
 		jobFilters := JobFilter{
 			SourceId:  []string{"source_id"},
 			TaskRunId: []string{"task_run_id"},
 		}
 		status, err := sh.GetStatus(ctx, "jobRunId", jobFilters)
+		require.NotNil(t, err)
 		require.Equal(t, status, JobStatus{})
-		pqErr := err.(*pq.Error)
-		require.Equal(t, pqErr.Code, pq.ErrorCode("42P01")) // relation does not exist
+		require.True(t, errors.Is(err, StatusNotFoundError), "it should return a StatusNotFoundError")
+
 	})
 
-	t.Run("A table(per jobrunid) is created only once if two goroutines compete", func(t *testing.T) {
-		// TODO: test two goroutines competing here
+	t.Run("GetStatus with filtering", func(t *testing.T) {
 		sh := NewJobService(db)
 		wg := &sync.WaitGroup{}
-		wg.Add(3)
-		go increment(ctx, db, JobTargetKey{
-			SourceId:      "source_id1",
-			DestinationId: "destination_id1",
-			TaskRunId:     "task_run_id",
-		}, Stats{
-			In:     10,
-			Out:    4,
-			Failed: 6,
-		}, sh, wg)
-		go increment(ctx, db, JobTargetKey{
-			SourceId:      "source_id1",
-			DestinationId: "destination_id2",
-			TaskRunId:     "task_run_id",
-		}, Stats{
-			In:     12,
-			Out:    4,
-			Failed: 6,
-		}, sh, wg)
-		go increment(ctx, db, JobTargetKey{
-			SourceId:      "source_id2",
-			DestinationId: "destination_id1",
-			TaskRunId:     "task_run_id",
-		}, Stats{
-			In:     12,
-			Out:    6,
-			Failed: 6,
-		}, sh, wg)
-
-		wg.Wait()
-		res, err := sh.GetStatus(ctx, "jobRunId", JobFilter{})
-		sort.Slice(res.TasksStatus[0].SourcesStatus, func(i, j int) bool {
-			return res.TasksStatus[0].SourcesStatus[i].ID < res.TasksStatus[0].SourcesStatus[j].ID
-		})
-		require.NoError(t, err)
-		require.Equal(t, len(res.TasksStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 2)
-		sort.Slice(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus, func(i, j int) bool {
-			return res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[i].ID < res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[j].ID
-		})
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 2)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[1].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[1].Completed, false)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, false)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[1].DestinationsStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[1].Completed, true)
-		_ = sh.Delete(ctx, "jobRunId")
-	})
-
-	t.Run("GetStatus", func(t *testing.T) {
-		sh := NewJobService(db)
-		wg := &sync.WaitGroup{}
-		wg.Add(4)
-		increment(ctx, db, JobTargetKey{
+		wg.Add(5)
+		go increment(t, ctx, db, JobTargetKey{
+			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id1",
 			DestinationId: "destination_id",
-			TaskRunId:     "task_run_id1",
 		}, Stats{
 			In:     10,
+			Out:    0,
+			Failed: 0,
+		}, sh, wg,
+		)
+		go increment(t, ctx, db, JobTargetKey{
+			TaskRunId:     "task_run_id1",
+			SourceId:      "source_id1",
+			DestinationId: "destination_id",
+		}, Stats{
+			In:     0,
 			Out:    4,
 			Failed: 6,
 		}, sh, wg,
 		)
-		increment(ctx, db, JobTargetKey{
+		go increment(t, ctx, db, JobTargetKey{
+			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id2",
 			DestinationId: "destination_id",
-			TaskRunId:     "task_run_id1",
 		}, Stats{
 			In:     10,
 			Out:    2,
 			Failed: 6,
 		}, sh, wg,
 		)
-		increment(ctx, db, JobTargetKey{
-			SourceId:      "source_id2",
-			DestinationId: "destination_id",
+		go increment(t, ctx, db, JobTargetKey{
 			TaskRunId:     "task_run_id2",
+			SourceId:      "source_id2",
+			DestinationId: "destination_id",
 		}, Stats{
 			In:     10,
 			Out:    2,
 			Failed: 6,
 		}, sh, wg,
 		)
-		increment(ctx, db, JobTargetKey{
+		go increment(t, ctx, db, JobTargetKey{
+			TaskRunId:     "task_run_id2",
 			SourceId:      "source_id3",
 			DestinationId: "destination_id",
-			TaskRunId:     "task_run_id2",
 		}, Stats{
 			In:     10,
 			Out:    2,
@@ -273,142 +203,84 @@ func TestSourcesHandler(t *testing.T) {
 		sort.Slice(res.TasksStatus, func(i, j int) bool {
 			return res.TasksStatus[i].ID < res.TasksStatus[j].ID
 		})
+		for _, ts := range res.TasksStatus {
+			sort.Slice(ts.SourcesStatus, func(i, j int) bool {
+				return ts.SourcesStatus[i].ID < ts.SourcesStatus[j].ID
+			})
+		}
 		require.NoError(t, err)
-		require.Equal(t, len(res.TasksStatus), 2)
 
-		sort.Slice(res.TasksStatus[0].SourcesStatus, func(i, j int) bool {
-			return res.TasksStatus[0].SourcesStatus[i].ID < res.TasksStatus[0].SourcesStatus[j].ID
-		})
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 2)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[1].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[1].Completed, false)
+		expected := JobStatus{
+			ID: "jobRunId",
+			TasksStatus: []TaskStatus{
+				{
+					ID: "task_run_id1",
+					SourcesStatus: []SourceStatus{
+						{
+							ID:        "source_id1",
+							Completed: true,
+							DestinationsStatus: []DestinationStatus{
+								{
+									ID:        "destination_id",
+									Completed: true,
+									Stats: Stats{
+										In:     10,
+										Out:    4,
+										Failed: 6,
+									},
+								},
+							},
+						},
+						{
+							ID:        "source_id2",
+							Completed: false,
+							DestinationsStatus: []DestinationStatus{
+								{
+									ID:        "destination_id",
+									Completed: false,
+									Stats: Stats{
+										In:     10,
+										Out:    2,
+										Failed: 6,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ID: "task_run_id2",
+					SourcesStatus: []SourceStatus{
+						{
+							ID:        "source_id2",
+							Completed: false,
+							DestinationsStatus: []DestinationStatus{
+								{
+									ID:        "destination_id",
+									Completed: false,
+									Stats: Stats{
+										In:     10,
+										Out:    2,
+										Failed: 6,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
 
-		sort.Slice(res.TasksStatus[1].SourcesStatus, func(i, j int) bool {
-			return res.TasksStatus[1].SourcesStatus[i].ID < res.TasksStatus[1].SourcesStatus[j].ID
-		})
-		require.Equal(t, len(res.TasksStatus[1].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[1].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[1].SourcesStatus[0].DestinationsStatus[0].Completed, false)
+		require.Equal(t, expected, res)
 	})
 }
 
-func increment(ctx context.Context, db *sql.DB, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
-	tx, _ := db.Begin()
-	sh.IncrementStats(ctx, tx, "jobRunId", key, stat)
-	_ = tx.Commit()
+func increment(t *testing.T, ctx context.Context, db *sql.DB, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
+	tx, err := db.Begin()
+	require.NoError(t, err, "it should be able to begin the transaction")
+	err = sh.IncrementStats(ctx, tx, "jobRunId", key, stat)
+	require.NoError(t, err, "it should be able to increment stats")
+	err = tx.Commit()
+	require.NoError(t, err, "it should be able to commit the transaction")
 	wg.Done()
-}
-
-func TestStatusFromQueryResult(t *testing.T) {
-	t.Run("one task with one source with one destination, all completed", func(t *testing.T) {
-		res := statusFromQueryResult("jobRunId", map[JobTargetKey]Stats{
-			{
-				SourceId:      "source_id",
-				DestinationId: "destination_id",
-				TaskRunId:     "task_run_id",
-			}: {
-				In:     10,
-				Out:    4,
-				Failed: 6,
-			},
-		},
-		)
-
-		require.Equal(t, res.ID, "jobRunId")
-		require.Equal(t, len(res.TasksStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, true)
-	})
-
-	t.Run("one task with one source with one destination, destination not completed", func(t *testing.T) {
-		res := statusFromQueryResult("jobRunId", map[JobTargetKey]Stats{
-			{
-				SourceId:      "source_id",
-				DestinationId: "destination_id",
-				TaskRunId:     "task_run_id",
-			}: {
-				In:     10,
-				Out:    3,
-				Failed: 6,
-			},
-		})
-
-		require.Equal(t, res.ID, "jobRunId")
-		require.Equal(t, len(res.TasksStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, false)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, false)
-	})
-
-	t.Run("one task with one source with one destination, source not completed", func(t *testing.T) {
-		res := statusFromQueryResult("jobRunId", map[JobTargetKey]Stats{
-			{
-				SourceId:      "source_id",
-				DestinationId: "destination_id",
-				TaskRunId:     "task_run_id",
-			}: {
-				In:     10,
-				Out:    4,
-				Failed: 6,
-			},
-			{
-				SourceId:  "source_id",
-				TaskRunId: "task_run_id",
-			}: {
-				In:     10,
-				Out:    3,
-				Failed: 6,
-			},
-		})
-
-		require.Equal(t, res.ID, "jobRunId")
-		require.Equal(t, len(res.TasksStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, false)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, true)
-	})
-
-	t.Run("two tasks with one source each (same id) and one destination each (same id), one task completed, other not", func(t *testing.T) {
-		res := statusFromQueryResult("jobRunId", map[JobTargetKey]Stats{
-			{
-				SourceId:      "source_id",
-				DestinationId: "destination_id",
-				TaskRunId:     "task_run_id1",
-			}: {
-				In:     10,
-				Out:    4,
-				Failed: 6,
-			},
-			{
-				SourceId:      "source_id",
-				DestinationId: "destination_id",
-				TaskRunId:     "task_run_id2",
-			}: {
-				In:     10,
-				Out:    3,
-				Failed: 6,
-			},
-		})
-
-		sort.Slice(res.TasksStatus, func(i, j int) bool {
-			return res.TasksStatus[i].ID < res.TasksStatus[j].ID
-		})
-		require.Equal(t, res.ID, "jobRunId")
-		require.Equal(t, len(res.TasksStatus), 2)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[0].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].Completed, true)
-		require.Equal(t, res.TasksStatus[0].SourcesStatus[0].DestinationsStatus[0].Completed, true)
-		require.Equal(t, len(res.TasksStatus[1].SourcesStatus), 1)
-		require.Equal(t, len(res.TasksStatus[1].SourcesStatus[0].DestinationsStatus), 1)
-		require.Equal(t, res.TasksStatus[1].SourcesStatus[0].Completed, false)
-		require.Equal(t, res.TasksStatus[1].SourcesStatus[0].DestinationsStatus[0].Completed, false)
-	})
 }
