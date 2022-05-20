@@ -326,7 +326,7 @@ var _ = Describe("Processor", func() {
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService())
 
 			payloadLimit := processor.payloadLimit
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
@@ -454,7 +454,7 @@ var _ = Describe("Processor", func() {
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(unprocessedJobsList).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
@@ -629,7 +629,7 @@ var _ = Describe("Processor", func() {
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(unprocessedJobsList).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledB: {
@@ -770,7 +770,7 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(unprocessedJobsList).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
 			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
@@ -890,7 +890,7 @@ var _ = Describe("Processor", func() {
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(unprocessedJobsList).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
@@ -1024,7 +1024,7 @@ var _ = Describe("Processor", func() {
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(unprocessedJobsList).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1113,8 +1113,8 @@ var _ = Describe("Processor", func() {
 			processor.readLoopSleep = time.Millisecond
 
 			c.mockProcErrorsDB.EXPECT().DeleteExecuting()
-			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).Return(nil).AnyTimes()
-			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(nil).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).Return(jobsdb.JobsResult{}).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(jobsdb.JobsResult{}).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Times(0)

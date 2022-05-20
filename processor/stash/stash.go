@@ -239,14 +239,24 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
-			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
-			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
+			queryParams := jobsdb.GetQueryParamsT{
+				CustomValFilters:              []string{""},
+				IgnoreCustomValFiltersInQuery: true,
+				JobsLimit:                     errDBReadBatchSize,
+				PayloadSizeLimit:              payloadLimit,
+			}
+			toRetry := st.errorDB.GetToRetry(queryParams)
+			combinedList := toRetry.Jobs
+			if !toRetry.LimitsReached {
+				queryParams.JobsLimit -= len(toRetry.Jobs)
+				if queryParams.PayloadSizeLimit > 0 {
+					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+				}
+				unprocessed := st.errorDB.GetUnprocessed(queryParams)
+				combinedList = append(combinedList, unprocessed.Jobs...)
+			}
 
 			st.statErrDBR.End()
-
-			combinedList := append(retryList, unprocessedList...)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")

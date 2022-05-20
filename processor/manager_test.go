@@ -184,7 +184,7 @@ func TestProcessorManager(t *testing.T) {
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-	require.Equal(t, 0, len(unprocessedListEmpty))
+	require.Equal(t, 0, len(unprocessedListEmpty.Jobs))
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
@@ -233,7 +233,7 @@ func TestProcessorManager(t *testing.T) {
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}))
+			}).Jobs)
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 	})
 
@@ -265,7 +265,7 @@ func TestProcessorManager(t *testing.T) {
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}))
+			}).Jobs)
 		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})
