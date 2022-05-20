@@ -1566,30 +1566,25 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
-					retryJob := brt.jobsDB.GetToRetry(
-						jobsdb.GetQueryParamsT{
-							CustomValFilters:              []string{brt.destType},
-							JobsLimit:                     toQuery,
-							ParameterFilters:              parameterFilters,
-							IgnoreCustomValFiltersInQuery: true,
-							PayloadSizeLimit:              brt.payloadLimit,
-						},
-					)
-					// TODO: shouldn't we be decremening JobsLimit & PayloadSizeLimit for the second query?
-					unprocessedJob := brt.jobsDB.GetUnprocessed(
-						jobsdb.GetQueryParamsT{
-							CustomValFilters:              []string{brt.destType},
-							JobsLimit:                     toQuery,
-							ParameterFilters:              parameterFilters,
-							IgnoreCustomValFiltersInQuery: true,
-							PayloadSizeLimit:              brt.payloadLimit,
-						},
-					)
+					queryParams := jobsdb.GetQueryParamsT{
+						CustomValFilters:              []string{brt.destType},
+						JobsLimit:                     toQuery,
+						ParameterFilters:              parameterFilters,
+						IgnoreCustomValFiltersInQuery: true,
+						PayloadSizeLimit:              brt.payloadLimit,
+					}
+					toRetry := brt.jobsDB.GetToRetry(queryParams)
+					combinedList = toRetry.Jobs
+					if !toRetry.LimitsReached {
+						queryParams.JobsLimit -= len(toRetry.Jobs)
+						if queryParams.PayloadSizeLimit > 0 {
+							queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+						}
+						unprocessed := brt.jobsDB.GetUnprocessed(queryParams)
+						combinedList = append(toRetry.Jobs, unprocessed.Jobs...)
+					}
 					brtQueryStat.End()
-
-					combinedList = append(retryJob.Jobs, unprocessedJob.Jobs...)
-
-					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryJob.Jobs), len(unprocessedJob.Jobs), len(combinedList))
+					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 				}
 			} else {
 				for _, job := range batchDestData.jobs {
