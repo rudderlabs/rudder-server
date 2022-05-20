@@ -1581,7 +1581,7 @@ func (worker *workerT) workerProcess() {
 							queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 						}
 						unprocessed := brt.jobsDB.GetUnprocessed(queryParams)
-						combinedList = append(toRetry.Jobs, unprocessed.Jobs...)
+						combinedList = append(combinedList, unprocessed.Jobs...)
 					}
 					brtQueryStat.End()
 					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
