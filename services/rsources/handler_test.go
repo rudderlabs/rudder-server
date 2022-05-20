@@ -156,7 +156,7 @@ func TestSourcesHandler(t *testing.T) {
 		sh, jobRunId := prepareService()
 		wg := &sync.WaitGroup{}
 		wg.Add(5)
-		go increment(t, ctx, db, jobRunId, JobTargetKey{
+		go increment(ctx, t, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id1",
 			DestinationId: "destination_id",
@@ -166,7 +166,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 0,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, jobRunId, JobTargetKey{
+		go increment(ctx, t, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id1",
 			DestinationId: "destination_id",
@@ -176,7 +176,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, jobRunId, JobTargetKey{
+		go increment(ctx, t, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id1",
 			SourceId:      "source_id2",
 			DestinationId: "destination_id",
@@ -186,7 +186,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, jobRunId, JobTargetKey{
+		go increment(ctx, t, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id2",
 			SourceId:      "source_id2",
 			DestinationId: "destination_id",
@@ -196,7 +196,7 @@ func TestSourcesHandler(t *testing.T) {
 			Failed: 6,
 		}, sh, wg,
 		)
-		go increment(t, ctx, db, jobRunId, JobTargetKey{
+		go increment(ctx, t, db, jobRunId, JobTargetKey{
 			TaskRunId:     "task_run_id2",
 			SourceId:      "source_id3",
 			DestinationId: "destination_id",
@@ -320,7 +320,7 @@ func TestSourcesHandler(t *testing.T) {
 	})
 }
 
-func increment(t *testing.T, ctx context.Context, db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
+func increment(ctx context.Context, t *testing.T, db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
 	tx, err := db.Begin()
 	require.NoError(t, err, "it should be able to begin the transaction")
 	err = sh.IncrementStats(ctx, tx, jobRunId, key, stat)

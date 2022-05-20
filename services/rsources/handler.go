@@ -117,11 +117,11 @@ func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRun
 	return err
 }
 
-func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error {
+func (*sourcesHandler) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ []json.RawMessage) error {
 	return nil
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (*sourcesHandler) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobFilter) (FailedRecords, error) {
 	return FailedRecords{}, nil
 }
 

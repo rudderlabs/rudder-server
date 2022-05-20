@@ -124,7 +124,7 @@ func getAllTableNames(ctx context.Context, db *sql.DB) ([]string, error) {
 func latestTableEntryBefore(ctx context.Context, db *sql.DB, table string, before time.Time) (bool, error) {
 	sqlStatement := fmt.Sprintf(`select max(ts) from "%s"`, table)
 	var t time.Time
-	if err := db.QueryRow(sqlStatement).Scan(&t); err != nil {
+	if err := db.QueryRowContext(ctx, sqlStatement).Scan(&t); err != nil {
 		return false, err
 	}
 	return t.Before(before), nil

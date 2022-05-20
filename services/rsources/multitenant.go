@@ -44,12 +44,12 @@ func (r *multitenantExtension) dropTables(ctx context.Context, jobRunId string) 
 	return nil
 }
 
-func (r *multitenantExtension) cleanupLoop(ctx context.Context) error {
+func (*multitenantExtension) cleanupLoop(_ context.Context) error {
 	// TODO
 	return nil
 }
 
-func (r *multitenantExtension) doCleanupTables(ctx context.Context) error {
+func (*multitenantExtension) doCleanupTables(_ context.Context) error {
 	// TODO
 	return nil
 
