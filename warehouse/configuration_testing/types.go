@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	"time"
 )
 
 type validationFunc struct {
@@ -81,8 +83,48 @@ type DestinationValidationResponse struct {
 }
 
 type CTHandleT struct {
-	infoRequest      *DestinationValidationRequest
-	client           client.Client
-	warehouse        warehouseutils.WarehouseT
-	stagingTableName string
+	infoRequest *DestinationValidationRequest
+	warehouse   warehouseutils.WarehouseT
+	manager     manager.WarehouseOperations
+}
+
+type CTUploadJob struct {
+	infoRequest *DestinationValidationRequest
+}
+
+func (job *CTUploadJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
+	return warehouseutils.SchemaT{}
+}
+func (job *CTUploadJob) GetLocalSchema() warehouseutils.SchemaT {
+	return warehouseutils.SchemaT{}
+}
+func (job *CTUploadJob) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+	return nil
+}
+func (job *CTUploadJob) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+	return warehouseutils.TableSchemaT{}
+}
+func (job *CTUploadJob) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+	return warehouseutils.TableSchemaT{}
+}
+func (job *CTUploadJob) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+	return []warehouseutils.LoadFileT{}
+}
+func (job *CTUploadJob) GetSampleLoadFileLocation(tableName string) (string, error) {
+	return "", nil
+}
+func (job *CTUploadJob) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
+	return warehouseutils.LoadFileT{}, nil
+}
+func (job *CTUploadJob) ShouldOnDedupUseNewRecord() bool {
+	return false
+}
+func (job *CTUploadJob) UseRudderStorage() bool {
+	return misc.IsConfiguredToUseRudderObjectStorage(job.infoRequest.Destination.Config)
+}
+func (job *CTUploadJob) GetLoadFileGenStartTIme() time.Time {
+	return time.Time{}
+}
+func (job *CTUploadJob) GetLoadFileType() string {
+	return warehouseutils.GetLoadFileType(job.infoRequest.Destination.DestinationDefinition.Name)
 }

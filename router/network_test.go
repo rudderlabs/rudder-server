@@ -7,8 +7,7 @@ import (
 	"net/http"
 
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"

@@ -1,7 +1,6 @@
 package jobsdb
 
 import (
-	"context"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -32,13 +31,8 @@ func Test_executeDbRequest_read_channel(t *testing.T) {
 
 	h := HandleT{
 		enableReaderQueue: true,
-		readChannel:       make(chan *queuedDbRequest),
+		readCapacity:      make(chan struct{}, 1),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		h.dbReader(ctx)
-	}()
 	res := h.executeDbRequest(&dbRequest{
 		reqType: readReqType,
 		name:    "test",
@@ -52,10 +46,7 @@ func Test_executeDbRequest_read_channel(t *testing.T) {
 func Test_executeDbRequest_write_direct(t *testing.T) {
 	initMocks(t)
 
-	h := HandleT{
-		writeChannel: make(chan *queuedDbRequest),
-		readChannel:  make(chan *queuedDbRequest),
-	}
+	h := HandleT{}
 
 	res := h.executeDbRequest(&dbRequest{
 		reqType: writeReqType,
@@ -72,14 +63,8 @@ func Test_executeDbRequest_write_channel(t *testing.T) {
 
 	h := HandleT{
 		enableWriterQueue: true,
-		writeChannel:      make(chan *queuedDbRequest),
+		writeCapacity:     make(chan struct{}, 1),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		h.dbWriter(ctx)
-	}()
-
 	res := h.executeDbRequest(&dbRequest{
 		reqType: writeReqType,
 		name:    "test",

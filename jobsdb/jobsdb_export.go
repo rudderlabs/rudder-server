@@ -84,7 +84,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		}
 
 		var updatedStates map[string][]string
-		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList, StatTagsT{StateFilters: []string{Migrating.State}})
+		updatedStates, txErr = jd.updateJobStatusDSInTx(txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
 		}
@@ -223,7 +223,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 
 	var updatedStatesMap map[dataSetT]map[string][]string
-	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList, StatTagsT{})
+	updatedStatesMap, err = jd.doUpdateJobStatusInTx(txn, statusList, statTags{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
@@ -354,6 +354,6 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 }
 
 //GetUserID from job
-func (jd *HandleT) GetUserID(job *JobT) string {
+func (*HandleT) GetUserID(job *JobT) string {
 	return job.UserID
 }
