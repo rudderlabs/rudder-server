@@ -78,9 +78,10 @@ const (
 )
 
 const (
-	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
-	DatalakeTimeWindowFormat = "2006/01/02/15"
+	BQLoadedAtFormat            = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat              = "2006-01-02 15:04:05 Z"
+	GCSDatalakeTimeWindowFormat = "year=2006/month=01/day=02/hour=15"
+	DatalakeTimeWindowFormat    = "2006/01/02/15"
 )
 
 const (
