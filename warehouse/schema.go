@@ -21,7 +21,7 @@ type SchemaHandleT struct {
 	uploadSchema      warehouseutils.SchemaT
 }
 
-func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
+func HandleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text/json
 		if columnType != "string" && columnType != "text" && columnType != "json" {
@@ -30,7 +30,7 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = columnVal
 		}
 	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
-		intVal, ok := columnVal.(int64)
+		intVal, ok := columnVal.(int)
 		if !ok {
 			newColumnVal = nil
 		} else {
@@ -43,9 +43,11 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 		} else {
 			newColumnVal = int(floatVal)
 		}
-	} else if existingDataType == "json" && columnType != "json" {
+	} else if existingDataType == "json" {
 		var interfaceSliceSample []interface{}
-		if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+		if columnType == "int" || columnType == "float" || columnType == "boolean" {
+			newColumnVal = fmt.Sprintf("%v", columnVal)
+		} else if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
 			newColumnVal = columnVal
 		} else {
 			newColumnVal = fmt.Sprintf(`"%v"`, columnVal)
