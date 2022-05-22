@@ -62,7 +62,7 @@ func (*LTMerge) SqlStatement(namespace string, tableName string, stagingTableNam
 
 func (*LTAppend) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
-	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s ) AS r;`,
+	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s );`,
 		namespace,
 		tableName,
 		stagingTableName,
