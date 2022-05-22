@@ -2119,7 +2119,7 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 	}
 }
 
-func (proc *HandleT) getJobs() []*jobsdb.JobT {
+func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
@@ -2135,16 +2135,9 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 		EventsLimit:      eventCount,
 		PayloadSizeLimit: proc.payloadLimit,
 	})
-	totalEvents := 0
 	totalPayloadBytes := 0
-	for i, job := range unprocessedList {
-		totalEvents += job.EventCount
+	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)
-
-		if !enableEventCount && totalEvents > maxEventsToProcess {
-			unprocessedList = unprocessedList[:i]
-			break
-		}
 
 		if job.JobID <= proc.lastJobID {
 			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
@@ -2159,7 +2152,7 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	defer proc.stats.statDBR.SendTiming(dbReadTime)
 
 	// check if there is work to be done
-	if len(unprocessedList) == 0 {
+	if len(unprocessedList.Jobs) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.stats.pStatsDBR.Rate(0, time.Since(s))
 		return unprocessedList
@@ -2167,7 +2160,7 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 
 	eventSchemasStart := time.Now()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
-		for _, unprocessedJob := range unprocessedList {
+		for _, unprocessedJob := range unprocessedList.Jobs {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
@@ -2175,12 +2168,12 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	eventSchemasTime := time.Since(eventSchemasStart)
 	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
-	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
-	proc.stats.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
-	proc.stats.statGatewayDBR.Count(len(unprocessedList))
+	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
+	proc.stats.pStatsDBR.Rate(len(unprocessedList.Jobs), time.Since(s))
+	proc.stats.statGatewayDBR.Count(len(unprocessedList.Jobs))
 
-	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList)))
-	proc.stats.statDBReadEvents.Observe(float64(totalEvents))
+	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList.Jobs)))
+	proc.stats.statDBReadEvents.Observe(float64(unprocessedList.EventsCount))
 	proc.stats.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
 
 	return unprocessedList
@@ -2220,14 +2213,14 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	unprocessedList := proc.getJobs()
 
-	if len(unprocessedList) == 0 {
+	if len(unprocessedList.Jobs) == 0 {
 		return false
 	}
 
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(subJob{
-				subJobs: unprocessedList,
+				subJobs: unprocessedList.Jobs,
 				hasMore: false,
 			}, nil),
 		),
@@ -2339,7 +2332,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				dbReadStart := time.Now()
 				jobs := proc.getJobs()
-				if len(jobs) == 0 {
+				if len(jobs.Jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
 					if nextSleepTime > proc.maxLoopSleep {
@@ -2350,16 +2343,13 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
-				err := proc.markExecuting(jobs)
+				err := proc.markExecuting(jobs.Jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
 				}
 				dbReadTime := time.Since(dbReadStart)
-				events := 0
-				for i := range jobs {
-					events += jobs[i].EventCount
-				}
+				events := jobs.EventsCount
 				dbReadThroughput := throughputPerSecond(events, dbReadTime)
 				//DB read throughput per second.
 				proc.stats.DBReadThroughput.Count(dbReadThroughput)
@@ -2368,7 +2358,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobs := jobSplitter(jobs)
+				subJobs := jobSplitter(jobs.Jobs)
 				for _, subJob := range subJobs {
 					chProc <- subJob
 				}

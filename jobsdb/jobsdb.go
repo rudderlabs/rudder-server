@@ -226,22 +226,22 @@ type JobsDB interface {
 
 	// GetUnprocessed finds unprocessed jobs. Unprocessed are new
 	// jobs whose state hasn't been marked in the database yet
-	GetUnprocessed(params GetQueryParamsT) []*JobT
+	GetUnprocessed(params GetQueryParamsT) JobsResult
 
 	// GetProcessed finds jobs in some state, i.e. not unprocessed
-	GetProcessed(params GetQueryParamsT) []*JobT
+	GetProcessed(params GetQueryParamsT) JobsResult
 
 	// GetToRetry finds jobs in failed state
-	GetToRetry(params GetQueryParamsT) []*JobT
+	GetToRetry(params GetQueryParamsT) JobsResult
 
 	// GetToRetry finds jobs in waiting state
-	GetWaiting(params GetQueryParamsT) []*JobT
+	GetWaiting(params GetQueryParamsT) JobsResult
 
 	// GetExecuting finds jobs in executing state
-	GetExecuting(params GetQueryParamsT) []*JobT
+	GetExecuting(params GetQueryParamsT) JobsResult
 
 	// GetImporting finds jobs in importing state
-	GetImporting(params GetQueryParamsT) []*JobT
+	GetImporting(params GetQueryParamsT) JobsResult
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
@@ -322,6 +322,11 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
+func (r *JobStatusT) sanitizeJson() {
+	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
+	r.Parameters = sanitizeJson(r.Parameters)
+}
+
 /*
 JobT is the basic type for creating jobs. The JobID is generated
 by the system and LastJobStatus is populated when reading a processed
@@ -344,6 +349,11 @@ type JobT struct {
 
 func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
+}
+
+func (job *JobT) sanitizeJson() {
+	job.EventPayload = sanitizeJson(job.EventPayload)
+	job.Parameters = sanitizeJson(job.Parameters)
 }
 
 //The struct fields need to be exposed to JSON package
@@ -445,11 +455,11 @@ type ParameterFilterT struct {
 	Optional bool
 }
 
-var dbErrorMap = map[string]string{
-	"Invalid JSON":             "22P02",
-	"Invalid Unicode":          "22P05",
-	"Invalid Escape Sequence":  "22025",
-	"Invalid Escape Character": "22019",
+var dbInvalidJsonErrors = map[string]struct{}{
+	"22P02": {},
+	"22P05": {},
+	"22025": {},
+	"22019": {},
 }
 
 // registers the backup settings depending on jobdb type the gateway, the router and the processor
@@ -1835,7 +1845,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	//Jobs which haven't finished processing
 	retryList := jd.getProcessedJobsDS(srcDS, true,
 		GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
-	jobsToMigrate := append(unprocessedList.jobs, retryList.jobs...)
+	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
 	noJobsMigrated = len(jobsToMigrate)
 
 	err = jd.WithTx(func(tx *sql.Tx) error {
@@ -1844,7 +1854,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 		}
 		//Now copy over the latest status of the unfinished jobs
 		var statusList []*JobStatusT
-		for _, job := range retryList.jobs {
+		for _, job := range retryList.Jobs {
 			newStatus := JobStatusT{
 				JobID:         job.JobID,
 				JobState:      job.LastJobStatus.JobState,
@@ -2205,36 +2215,59 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 }
 
 func (*HandleT) doStoreJobsInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
-	var stmt *sql.Stmt
-	var err error
+	store := func() error {
+		var stmt *sql.Stmt
+		var err error
 
-	stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
-	if err != nil {
-		return err
-	}
-
-	defer stmt.Close()
-
-	for _, job := range jobList {
-		eventCount := 1
-		if job.EventCount > 1 {
-			eventCount = job.EventCount
-		}
-
-		if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+		if err != nil {
 			return err
 		}
+
+		defer stmt.Close()
+		for _, job := range jobList {
+			eventCount := 1
+			if job.EventCount > 1 {
+				eventCount = job.EventCount
+			}
+
+			if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+				return err
+			}
+		}
+		_, err = stmt.Exec()
+		return err
 	}
-	_, err = stmt.Exec()
+	const (
+		savepointSql = "SAVEPOINT doStoreJobsInTx"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+	if _, err := txHandler.Exec(savepointSql); err != nil {
+		return err
+	}
+	err := store()
+	var e *pq.Error
+	if err != nil && errors.As(err, &e) {
+		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
+			if _, err := txHandler.Exec(rollbackSql); err != nil {
+				return err
+			}
+			for i := range jobList {
+				jobList[i].sanitizeJson()
+			}
+			return store()
+		}
+	}
 	return err
 }
 
 func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
-	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json , $6) RETURNING job_id`, ds.JobTable)
+	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
+	job.sanitizeJson()
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
@@ -2246,8 +2279,7 @@ func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	pqErr, ok := err.(*pq.Error)
 	if ok {
 		errCode := string(pqErr.Code)
-		if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] ||
-			errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
+		if _, ok := dbInvalidJsonErrors[errCode]; ok {
 			return errors.New("Invalid JSON")
 		}
 	}
@@ -2410,11 +2442,11 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters []s
 	return true
 }
 
-type getJobsDsResult struct {
-	jobs          []*JobT
-	limitsReached bool
-	eventCount    int
-	payloadSize   int64
+type JobsResult struct {
+	Jobs          []*JobT
+	LimitsReached bool
+	EventsCount   int
+	PayloadSize   int64
 }
 
 /*
@@ -2422,7 +2454,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryParamsT) getJobsDsResult {
+func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryParamsT) JobsResult {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -2431,7 +2463,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 
 	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		return getJobsDsResult{}
+		return JobsResult{}
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
@@ -2596,11 +2628,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 	_willTryToSet := willTryToSet
 	jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
-	return getJobsDsResult{
-		jobs:          jobList,
-		limitsReached: limitsReached,
-		payloadSize:   payloadSize,
-		eventCount:    eventCount,
+	return JobsResult{
+		Jobs:          jobList,
+		LimitsReached: limitsReached,
+		PayloadSize:   payloadSize,
+		EventsCount:   eventCount,
 	}
 }
 
@@ -2610,13 +2642,13 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQueryParamsT) getJobsDsResult {
+func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQueryParamsT) JobsResult {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
 	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		return getJobsDsResult{}
+		return JobsResult{}
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
@@ -2743,11 +2775,11 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 	_willTryToSet := willTryToSet
 	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 
-	return getJobsDsResult{
-		jobs:          jobList,
-		limitsReached: limitsReached,
-		payloadSize:   payloadSize,
-		eventCount:    eventCount,
+	return JobsResult{
+		Jobs:          jobList,
+		LimitsReached: limitsReached,
+		PayloadSize:   payloadSize,
+		EventsCount:   eventCount,
 	}
 }
 
@@ -2790,44 +2822,61 @@ func (jd *HandleT) updateJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	queryStat := jd.getTimerStat("update_job_status_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
-
-	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-		"retry_time", "error_code", "error_response", "parameters"))
-	if err != nil {
-		return
-	}
-
 	updatedStatesMap := map[string]map[string]bool{}
-	for _, status := range statusList {
-		//  Handle the case when google analytics returns gif in response
-		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
-			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
-		}
-		updatedStatesMap[status.WorkspaceId][status.JobState] = true
-		if !utf8.ValidString(string(status.ErrorResponse)) {
-			status.ErrorResponse = []byte(`{}`)
-		}
-		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
+	store := func() error {
+		stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+			"retry_time", "error_code", "error_response", "parameters"))
 		if err != nil {
-			return
+			return err
 		}
-	}
-	updatedStates = make(map[string][]string)
-	for k := range updatedStatesMap {
-		if _, ok := updatedStates[k]; !ok {
-			updatedStates[k] = make([]string, 0, len(updatedStatesMap[k]))
+		for _, status := range statusList {
+			//  Handle the case when google analytics returns gif in response
+			if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
+				updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
+			}
+			updatedStatesMap[status.WorkspaceId][status.JobState] = true
+			if !utf8.ValidString(string(status.ErrorResponse)) {
+				status.ErrorResponse = []byte(`{}`)
+			}
+			_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
+				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
+			if err != nil {
+				return err
+			}
 		}
-		for state := range updatedStatesMap[k] {
-			updatedStates[k] = append(updatedStates[k], state)
+		updatedStates = make(map[string][]string)
+		for k := range updatedStatesMap {
+			if _, ok := updatedStates[k]; !ok {
+				updatedStates[k] = make([]string, 0, len(updatedStatesMap[k]))
+			}
+			for state := range updatedStatesMap[k] {
+				updatedStates[k] = append(updatedStates[k], state)
+			}
 		}
-	}
 
-	_, err = stmt.Exec()
-	if err != nil {
+		_, err = stmt.Exec()
+		return err
+	}
+	const (
+		savepointSql = "SAVEPOINT updateJobStatusDSInTx"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+	if _, err = txHandler.Exec(savepointSql); err != nil {
 		return
 	}
-
+	err = store()
+	var e *pq.Error
+	if err != nil && errors.As(err, &e) {
+		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
+			if _, err = txHandler.Exec(rollbackSql); err != nil {
+				return
+			}
+			for i := range statusList {
+				statusList[i].sanitizeJson()
+			}
+			err = store()
+		}
+	}
 	return
 }
 
@@ -3806,16 +3855,16 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit <= 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
 		return jd.getUnprocessed(params)
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).([]*JobT)
+	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).(JobsResult)
 	return res
 
 }
@@ -3824,10 +3873,10 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
-	outJobs := make([]*JobT, 0)
+func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
+
 	if params.JobsLimit <= 0 {
-		return outJobs
+		return JobsResult{}
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
@@ -3855,39 +3904,42 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		limitByPayloadSize = true
 	}
 
+	var completeUnprocessedJobs JobsResult
 	for _, ds := range dsList {
-		unprocessed := jd.getUnprocessedJobsDS(ds, true, params)
-		jobs := unprocessed.jobs
-		outJobs = append(outJobs, jobs...)
+		unprocessedJobs := jd.getUnprocessedJobsDS(ds, true, params)
+		completeUnprocessedJobs.Jobs = append(completeUnprocessedJobs.Jobs, unprocessedJobs.Jobs...)
+		completeUnprocessedJobs.EventsCount += unprocessedJobs.EventsCount
+		completeUnprocessedJobs.PayloadSize += unprocessedJobs.PayloadSize
 
-		if unprocessed.limitsReached {
+		if unprocessedJobs.LimitsReached {
+			completeUnprocessedJobs.LimitsReached = true
 			break
 		}
 		// decrement our limits for the next query
 		if params.JobsLimit > 0 {
-			params.JobsLimit -= len(jobs)
+			params.JobsLimit -= len(unprocessedJobs.Jobs)
 		}
 		if limitByEventCount {
-			params.EventsLimit -= unprocessed.eventCount
+			params.EventsLimit -= unprocessedJobs.EventsCount
 		}
 		if limitByPayloadSize {
-			params.PayloadSizeLimit -= unprocessed.payloadSize
+			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
 		}
 	}
 	//Release lock
-	return outJobs
+	return completeUnprocessedJobs
 }
 
-func (jd *HandleT) GetImporting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetImporting(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit == 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 	params.StateFilters = []string{Importing.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
 		return jd.getImportingList(params)
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("importing", &tags, command)).([]*JobT)
+	res, _ := jd.executeDbRequest(newReadDbRequest("importing", &tags, command)).(JobsResult)
 	return res
 }
 
@@ -3895,7 +3947,7 @@ func (jd *HandleT) GetImporting(params GetQueryParamsT) []*JobT {
 getImportingList returns events which need are Importing.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getImportingList(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getImportingList(params GetQueryParamsT) JobsResult {
 	return jd.GetProcessed(params)
 }
 
@@ -4027,9 +4079,9 @@ realises on the caller to update it. That means that successive calls to GetProc
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetProcessed(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit <= 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
@@ -4046,7 +4098,6 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	outJobs := make([]*JobT, 0)
 
 	limitByEventCount := false
 	if params.EventsLimit > 0 {
@@ -4057,46 +4108,49 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	if params.PayloadSizeLimit > 0 {
 		limitByPayloadSize = true
 	} else if params.PayloadSizeLimit < 0 {
-		return outJobs
+		return JobsResult{}
 	}
 
+	var completeProcessedJobs JobsResult
 	for _, ds := range dsList {
-		processed := jd.getProcessedJobsDS(ds, false, params)
-		jobs := processed.jobs
-		outJobs = append(outJobs, jobs...)
+		processedJobs := jd.getProcessedJobsDS(ds, false, params)
+		completeProcessedJobs.Jobs = append(completeProcessedJobs.Jobs, processedJobs.Jobs...)
+		completeProcessedJobs.EventsCount += processedJobs.EventsCount
+		completeProcessedJobs.PayloadSize += processedJobs.PayloadSize
 
-		if processed.limitsReached {
+		if processedJobs.LimitsReached {
+			completeProcessedJobs.LimitsReached = true
 			break
 		}
 		// decrement our limits for the next query
 		if params.JobsLimit > 0 {
-			params.JobsLimit -= len(jobs)
+			params.JobsLimit -= len(processedJobs.Jobs)
 		}
 		if limitByEventCount {
-			params.EventsLimit -= processed.eventCount
+			params.EventsLimit -= processedJobs.EventsCount
 		}
 		if limitByPayloadSize {
-			params.PayloadSizeLimit -= processed.payloadSize
+			params.PayloadSizeLimit -= processedJobs.PayloadSize
 		}
 	}
 
-	return outJobs
+	return completeProcessedJobs
 }
 
 /*
 GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetToRetry(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit == 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 	params.StateFilters = []string{Failed.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
 		return jd.getToRetry(params)
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
 	return res
 
 }
@@ -4105,7 +4159,7 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 getToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getToRetry(params GetQueryParamsT) JobsResult {
 	return jd.GetProcessed(params)
 }
 
@@ -4113,16 +4167,16 @@ func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
 GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetWaiting(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit == 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 	params.StateFilters = []string{Waiting.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
 		return jd.getWaiting(params)
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
 	return res
 }
 
@@ -4130,27 +4184,27 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getWaiting(params GetQueryParamsT) JobsResult {
 	return jd.GetProcessed(params)
 }
 
-func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetExecuting(params GetQueryParamsT) JobsResult {
 	if params.JobsLimit == 0 {
-		return []*JobT{}
+		return JobsResult{}
 	}
 	params.StateFilters = []string{Executing.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
 		return jd.getExecuting(params)
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).([]*JobT)
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
 	return res
 }
 
 /*
 getExecuting returns events which  in executing state
 */
-func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getExecuting(params GetQueryParamsT) JobsResult {
 	return jd.GetProcessed(params)
 }
 
@@ -4205,4 +4259,12 @@ func (jd *HandleT) GetLastJob() *JobT {
 		jd.assertError(err)
 	}
 	return &job
+}
+
+func sanitizeJson(input json.RawMessage) json.RawMessage {
+	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+	if len(v) == 0 {
+		v = []byte(`{}`)
+	}
+	return v
 }
