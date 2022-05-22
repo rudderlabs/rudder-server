@@ -51,6 +51,7 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
+	excludeColumnsMap  map[string]bool
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -109,6 +110,7 @@ type HandleT struct {
 // Init initializes the delta lake warehouse
 func Init() {
 	loadConfig()
+	loadExcludeColumns()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
 	databricks.Init()
 }
@@ -127,6 +129,14 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 }
 
+func loadExcludeColumns() {
+	// Since event_date is an auto generated column in order to support partitioning.
+	// We need to ignore it during query generation.
+	excludeColumnsMap = map[string]bool{
+		"event_date": true,
+	}
+}
+
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
 func getDeltaLakeDataType(columnType string) string {
 	return dataTypesMap[columnType]
@@ -136,13 +146,9 @@ func getDeltaLakeDataType(columnType string) string {
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
-		// Since event_date is an auto generated column in order to support partitioning.
-		// We need to ignore it during query generation.
-		if name == "event_date" {
+		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
-
-		// Since we need to support partitioning for based on event_date
 		if name == "received_at" {
 			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
 			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
@@ -856,8 +862,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 		// Populating the schema for the table
 		for _, item := range fetchTableAttributesResponse.GetAttributes() {
-			// Since it is an auto generated column, we can ignore it.
-			if item.GetColName() == "event_date" {
+			if _, ok := excludeColumnsMap[item.GetColName()]; ok {
 				continue
 			}
 
