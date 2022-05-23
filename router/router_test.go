@@ -402,11 +402,17 @@ var _ = Describe("Router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(drainList []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "", `{"reason": "job expired"}`, 0)
+					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Drained.State, "", `{"reason": "job expired"}`, 0)
 				})
+
+			done := make(chan struct{})
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				close(done)
+			}).Return(nil)
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
+			<-done
 			Expect(count).To(Equal(0))
 		})
 	})

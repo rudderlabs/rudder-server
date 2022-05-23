@@ -552,6 +552,7 @@ var (
 	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
+	Drained     = jobStateT{isValid: true, isTerminal: true, State: "drained"}
 	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
 	WontMigrate = jobStateT{isValid: true, isTerminal: true, State: "wont_migrate"}
 )

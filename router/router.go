@@ -583,6 +583,8 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
+	// TODO - this is the only place handleWorkerDestinationJobs is being called
+	// better to move the code here than having another function call
 	worker.handleWorkerDestinationJobs(context.TODO())
 	//routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
@@ -1565,6 +1567,18 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+
+		case jobsdb.Drained.State:
+			/*
+				We treat the drained state differently from Aborted state. This is because
+				when the events are drained inside router.readAndProcess, we need to commit
+				the information immediately to the jobsdb to prevent it from trying to send
+				those events again.  At that point, we also update the in-memory stats about
+				the pending jobs for that workspace. To prevent double subtraction
+				we do not update the routerWorkSpaceJobStatusCount[] for these drained jobs
+				here.
+			*/
+			sd.Count++
 		}
 
 		//REPORTING - ROUTER - END
@@ -1627,7 +1641,15 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update the status
 		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
+			// The status of drained jobs (inside the rt_job_status* table) is
+			// updated inside the readAndProcess function
+			var nonDrainedStatusList []*jobsdb.JobStatusT
+			for _, status := range statusList {
+				if status.JobState != jobsdb.Drained.State {
+					nonDrainedStatusList = append(nonDrainedStatusList, status)
+				}
+			}
+			err := rt.jobsDB.UpdateJobStatusInTx(tx, nonDrainedStatusList, []string{rt.destName}, nil)
 			if err != nil {
 				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 				return err
@@ -1650,6 +1672,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			status := resp.status.JobState
 			userID := resp.userID
 			worker := resp.worker
+			// This can happen if the job is put on the responseQ after being
+			// drained by the router's readAndProcess function
+			if worker == nil {
+				continue
+			}
 			if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
 				worker.failedJobIDMutex.RLock()
 				lastJobID, ok := worker.failedJobIDMap[userID]
@@ -1966,7 +1993,7 @@ func (rt *HandleT) readAndProcess() int {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
-				JobState:      jobsdb.Aborted.State,
+				JobState:      jobsdb.Drained.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -1993,6 +2020,7 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
+			rt.responseQ <- jobResponseT{status: &status, worker: nil, userID: job.UserID, JobT: job}
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
