@@ -11,56 +11,32 @@ func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params Ge
 		toQuery += workspaceCount[workspace]
 	}
 	params.JobsLimit = toQuery
-	eventsLimitEnabled := params.EventsLimit > 0
-	payloadLimitEnabled := params.PayloadSizeLimit > 0
 
-	retryList := mj.GetToRetry(params)
-	list = append(list, retryList...)
-	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, retryList)
-	if limitsReached(eventsLimitEnabled, payloadLimitEnabled, params) {
+	toRetry := mj.GetToRetry(params)
+	list = append(list, toRetry.Jobs...)
+	if toRetry.LimitsReached {
 		return list
 	}
+	updateParams(&params, toRetry)
 
-	waitList := mj.GetWaiting(params)
-	list = append(list, waitList...)
-	updateParams(eventsLimitEnabled, payloadLimitEnabled, &params, waitList)
-	if limitsReached(eventsLimitEnabled, payloadLimitEnabled, params) {
+	waiting := mj.GetWaiting(params)
+	list = append(list, waiting.Jobs...)
+	if waiting.LimitsReached {
 		return list
 	}
+	updateParams(&params, waiting)
 
-	unprocessedList := mj.GetUnprocessed(params)
-	list = append(list, unprocessedList...)
+	unprocessed := mj.GetUnprocessed(params)
+	list = append(list, unprocessed.Jobs...)
 	return list
 }
 
-func updateParams(eventsLimitEnabled, payloadLimitEnabled bool, params *GetQueryParamsT, jobs []*JobT) {
-	params.JobsLimit -= len(jobs)
-	if eventsLimitEnabled {
-		params.EventsLimit -= getTotalEvents(jobs)
+func updateParams(params *GetQueryParamsT, jobs JobsResult) {
+	params.JobsLimit -= len(jobs.Jobs)
+	if params.EventsLimit > 0 {
+		params.EventsLimit -= jobs.EventsCount
 	}
-	if payloadLimitEnabled {
-		params.PayloadSizeLimit -= getTotalPayload(jobs)
+	if params.PayloadSizeLimit > 0 {
+		params.PayloadSizeLimit -= jobs.PayloadSize
 	}
-}
-
-func limitsReached(eventsLimitEnabled, payloadLimitEnabled bool, params GetQueryParamsT) bool {
-	return params.JobsLimit <= 0 ||
-		(eventsLimitEnabled && params.EventsLimit <= 0) ||
-		(payloadLimitEnabled && params.PayloadSizeLimit <= 0)
-}
-
-func getTotalEvents(jobs []*JobT) int {
-	var total int
-	for i := range jobs {
-		total += jobs[i].EventCount
-	}
-	return total
-}
-
-func getTotalPayload(jobs []*JobT) int64 {
-	var total int64
-	for i := range jobs {
-		total += jobs[i].PayloadSize
-	}
-	return total
 }

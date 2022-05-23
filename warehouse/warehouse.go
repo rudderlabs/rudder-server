@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/app"
@@ -30,12 +28,14 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -613,19 +613,35 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 	wh.areBeingEnqueuedLock.Unlock()
 
+	stagingFilesFetchStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
+		"destinationID": warehouse.Destination.ID,
+		"destType":      warehouse.Destination.DestinationDefinition.Name,
+	})
+	stagingFilesFetchStat.Start()
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to get pending staging files: %s with error %v", warehouse.Identifier, err)
 		return err
 	}
+	stagingFilesFetchStat.End()
+
 	if len(stagingFilesList) == 0 {
 		pkgLogger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
 		return nil
 	}
 
+	uploadJobCreationStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
+		"destinationID": warehouse.Destination.ID,
+		"destType":      warehouse.Destination.DestinationDefinition.Name,
+	})
+	uploadJobCreationStat.Start()
+
 	uploadStartAfter := getUploadStartAfterTime()
 	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
+
+	uploadJobCreationStat.End()
+
 	return nil
 }
 
@@ -698,6 +714,10 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wh.configSubscriberLock.RLock()
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
+
+		whTotalSchedulingStats := stats.DefaultStats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		whTotalSchedulingStats.Start()
+
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
 			rruntime.GoForWarehouse(func() {
@@ -717,6 +737,8 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wh.configSubscriberLock.RUnlock()
 		wg.Wait()
 
+		whTotalSchedulingStats.End()
+		stats.DefaultStats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return

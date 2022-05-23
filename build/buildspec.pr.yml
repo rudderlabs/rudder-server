@@ -16,14 +16,15 @@ phases:
   pre_build:
     commands:
       - env
+      - export GO111MODULE=on
       - docker login --username rudderlabs --password $dockerhub_passwd
       - mkdir -p ~/.ssh
       - echo "$ssh_key" > ~/.ssh/ssh_key
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - (cd && go get github.com/onsi/ginkgo/ginkgo/v2)
-      - (cd && go get github.com/golang/mock/mockgen)
+      - (cd && go install github.com/onsi/ginkgo/ginkgo/v2)
+      - (cd && go install github.com/golang/mock/mockgen)
       - docker pull confluentinc/cp-zookeeper:latest
       - docker pull confluentinc/cp-kafka:latest
       - docker pull minio/minio:latest
@@ -32,7 +33,7 @@ phases:
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull atzoum/simulator-google-sheets:latest
       - docker pull messagebird/gcloud-pubsub-emulator:latest
-      - go mod download
+      - GO111MODULE=on go mod download
   build:
     commands:
       - export GO111MODULE=on

@@ -90,6 +90,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 
 	serverModeChan := d.Provider.ServerMode(ctx)
 	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
+	if d.GatewayComponent {
+		d.currentMode = servermode.NormalMode
+	}
 
 	for {
 		select {
@@ -135,6 +138,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 }
 
 func (d *Dynamic) start() {
+	if d.GatewayComponent {
+		return
+	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
 	d.ErrorDB.Start()
@@ -151,6 +157,10 @@ func (d *Dynamic) start() {
 }
 
 func (d *Dynamic) stop() {
+	if d.GatewayComponent {
+		d.logger.Info("Stopping the gateway")
+		return
+	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
 	d.serverStopTimeStat.Start()
@@ -186,7 +196,7 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	}
 
 	if d.currentMode == newMode {
-		// TODO add logging
+		d.logger.Info("New mode is same as old mode: %s, not switching the mode.", string(newMode))
 		return nil
 	}
 	switch d.currentMode {

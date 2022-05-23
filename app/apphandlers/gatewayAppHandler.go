@@ -3,11 +3,12 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -16,6 +17,7 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/sync/errgroup"
 
@@ -106,7 +108,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsources.NewNoOpService())
 		defer gw.Shutdown()
 
 		g.Go(func() error {

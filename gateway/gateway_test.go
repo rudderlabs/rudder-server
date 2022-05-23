@@ -30,6 +30,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -214,7 +215,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		It("should not accept events from suppress users", func() {
@@ -263,7 +264,7 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		It("should wait for backend config", func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 	})
 
@@ -281,7 +282,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
@@ -379,7 +380,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
@@ -421,7 +422,7 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		// common tests for all web handlers

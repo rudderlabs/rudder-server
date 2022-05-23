@@ -25,6 +25,8 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 
@@ -44,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -182,6 +185,8 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
+
+	rsourcesService rsources.JobService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -1336,6 +1341,12 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
+	//rudder-sources new APIs
+	rsourcesHandler := rsources_http.NewHandler(
+		gateway.rsourcesService,
+		gateway.logger.Child("rsources"))
+	srvMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -1495,10 +1506,12 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
+
+	gateway.rsourcesService = rsourcesService
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	config.RegisterDurationConfigVariable(30, &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
