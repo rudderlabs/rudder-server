@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,10 +74,28 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (Conf
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
-	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?ids=[%s]", configBackendURL, workspaceArr)
-	workspacesString := ""
-	url = url + workspacesString
-	url = url + "&fetchAll=true"
+	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
+	if workspaceArr == workspaceConfig.Token {
+		pkgLogger.Infof("no workspace IDs provided, skipping backend config fetch")
+		return ConfigT{}, false
+	}
+	var url string
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	} else {
+		wIds := strings.Split(workspaceArr, ",")
+		for i := range wIds {
+			wIds[i] = strings.Trim(wIds[i], " ")
+		}
+		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
+		if err != nil {
+			pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
+			return ConfigT{}, false
+		}
+		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
+		url = url + "&fetchAll=true"
+	}
 	var respBody []byte
 	var statusCode int
 
@@ -133,7 +152,12 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 	if err != nil {
 		return []byte{}, 400, err
 	}
-	req.SetBasicAuth(workspaceConfig.Token, "")
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
+		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
+	} else {
+		req.SetBasicAuth(workspaceConfig.Token, "")
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 

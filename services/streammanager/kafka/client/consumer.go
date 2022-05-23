@@ -35,7 +35,7 @@ type Consumer struct {
 func (c *Client) NewConsumer(topic string, conf ConsumerConfig) *Consumer { // skipcq: CRT-P0003
 	var readerConf kafka.ReaderConfig
 
-	readerConf.Brokers = []string{c.address}
+	readerConf.Brokers = c.addresses
 	readerConf.Topic = topic
 	readerConf.Dialer = c.dialer
 

@@ -27,6 +27,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -150,7 +151,8 @@ type HandleT struct {
 	lastQueryRunTime time.Time
 	timeGained       float64
 
-	payloadLimit int64
+	payloadLimit     int64
+	transientSources transientsource.Service
 }
 
 type jobResponseT struct {
@@ -294,9 +296,6 @@ func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
 			delete(rt.resultSetMeta, key)
 		}
 	}
-
-	//rt.logger.Infof("MEM LEAK DEBUG router %v Length of result set %v minResultSetId %v newResultSetID %v", rt.destName, len(rt.resultSetMeta), minResultSetID, newResultSet.id)
-
 }
 
 func (rt *HandleT) getResultSet(id int64) *resultSetT {
@@ -313,7 +312,6 @@ func isJobTerminated(status int) bool {
 	if status == 429 {
 		return false
 	}
-
 	return status >= 200 && status < 500
 }
 
@@ -1541,7 +1539,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if err != nil {
 				errorCode = 200 //TODO handle properly
 			}
-			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
+			sampleEvent := resp.JobT.EventPayload
+			if rt.transientSources.Apply(parameters.SourceID) {
+				sampleEvent = []byte(`{}`)
+			}
+			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
 
@@ -1624,20 +1626,22 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.errorDB.Store(routerAbortedJobs)
 		}
 		//Update the status
-		txn := rt.jobsDB.BeginGlobalTransaction()
-		rt.jobsDB.AcquireUpdateJobStatusLocks()
-		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				return err
+			}
+			//Save msgids of aborted jobs
+			if len(jobRunIDAbortedEventsMap) > 0 {
+				GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+			}
+			rt.Reporting.Report(reportMetrics, tx.Tx())
+			return nil
+		})
 		if err != nil {
-			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		//Save msgids of aborted jobs
-		if len(jobRunIDAbortedEventsMap) > 0 {
-			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
-		}
-		rt.Reporting.Report(reportMetrics, txn)
-		rt.jobsDB.CommitTransaction(txn)
-		rt.jobsDB.ReleaseUpdateJobStatusLocks()
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -2064,8 +2068,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (*HandleT) crashRecover() {
-	//Perform any crash recover items here.
-	//None as of now
+	// NO-OP
 }
 
 func Init() {
@@ -2076,7 +2079,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service) {
 
 	rt.resultSetMeta = make(map[int64]*resultSetT)
 	rt.lastResultSet = &resultSetT{}
@@ -2091,6 +2094,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
+
+	rt.transientSources = transientSources
 
 	//waiting for reporting client setup
 	rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)

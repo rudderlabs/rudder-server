@@ -39,6 +39,8 @@ type configLifecycle interface {
 type Dynamic struct {
 	Provider ChangeEventProvider
 
+	GatewayComponent bool
+
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
 	BatchRouterDB lifecycle
@@ -88,6 +90,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 
 	serverModeChan := d.Provider.ServerMode(ctx)
 	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
+	if d.GatewayComponent {
+		d.currentMode = servermode.NormalMode
+	}
 
 	for {
 		select {
@@ -133,6 +138,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 }
 
 func (d *Dynamic) start() {
+	if d.GatewayComponent {
+		return
+	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
 	d.ErrorDB.Start()
@@ -149,6 +157,10 @@ func (d *Dynamic) start() {
 }
 
 func (d *Dynamic) stop() {
+	if d.GatewayComponent {
+		d.logger.Info("Stopping the gateway")
+		return
+	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
 	d.serverStopTimeStat.Start()
@@ -170,7 +182,7 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 	}
 	d.BackendConfig.Stop()
 	d.BackendConfig.StartWithIDs(workspaces)
-
+	d.currentWorkspaceIDs = workspaces
 	return d.BackendConfig.WaitForConfig(ctx)
 }
 
@@ -178,8 +190,13 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	if !newMode.Valid() {
 		return fmt.Errorf("unsupported mode: %s", newMode)
 	}
+	if d.GatewayComponent {
+		d.logger.Info("Not transiting the server because this is only Gateway App")
+		return nil
+	}
+
 	if d.currentMode == newMode {
-		// TODO add logging
+		d.logger.Info("New mode is same as old mode: %s, not switching the mode.", string(newMode))
 		return nil
 	}
 	switch d.currentMode {

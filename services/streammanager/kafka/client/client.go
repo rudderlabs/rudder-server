@@ -30,13 +30,14 @@ type Message struct {
 }
 
 type Client struct {
-	network, address string
-	dialer           *kafka.Dialer
-	config           *Config
+	network   string
+	addresses []string
+	dialer    *kafka.Dialer
+	config    *Config
 }
 
 // New returns a new Kafka client
-func New(network, address string, conf Config) (*Client, error) {
+func New(network string, addresses []string, conf Config) (*Client, error) {
 	conf.defaults()
 
 	dialer := kafka.Dialer{
@@ -64,10 +65,10 @@ func New(network, address string, conf Config) (*Client, error) {
 	}
 
 	return &Client{
-		network: network,
-		address: address,
-		dialer:  &dialer,
-		config:  &conf,
+		network:   network,
+		addresses: addresses,
+		dialer:    &dialer,
+		config:    &conf,
 	}, nil
 }
 
@@ -81,7 +82,7 @@ func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", address, conf)
+	return New("tcp", []string{address}, conf)
 }
 
 // NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
@@ -94,22 +95,15 @@ func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, 
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", address, conf)
+	return New("tcp", []string{address}, conf)
 }
-
-// Network returns name of the network (for example, "tcp", "udp")
-// see net.Addr interface
-func (c *Client) Network() string { return c.network }
-
-// String returns string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
-// see net.Addr interface
-func (c *Client) String() string { return c.address }
 
 // Ping is used to check the connectivity only, then it discards the connection
 func (c *Client) Ping(ctx context.Context) error {
-	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
+	address := kafka.TCP(c.addresses...).String()
+	conn, err := c.dialer.DialContext(ctx, c.network, address)
 	if err != nil {
-		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
+		return fmt.Errorf("could not dial %s/%s: %w", c.network, address, err)
 	}
 
 	defer func() {

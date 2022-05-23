@@ -8,18 +8,21 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"time"
 )
 
 var (
 	connectionTestingFolder string
 	pkgLogger               logger.LoggerI
 	fileManagerFactory      filemanager.FileManagerFactory
+	fileManagerTimeout      time.Duration
 )
 
 func Init() {
 	connectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
+	fileManagerTimeout = 15 * time.Second
 }
 
 /*

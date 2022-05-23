@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -58,18 +59,20 @@ type HandleT struct {
 	statErrDBR      stats.RudderStats
 	statErrDBW      stats.RudderStats
 	logger          logger.LoggerI
+	transientSource transientsource.Service
 }
 
 func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+	st.transientSource = transientSource
 	st.crashRecover()
 }
 
@@ -101,7 +104,7 @@ func (st *HandleT) setupFileUploader() {
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
 			var err error
-			st.errFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
 				Config:   filemanager.GetProviderConfigFromEnv(),
 			})
@@ -236,14 +239,24 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
-			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
-			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
+			queryParams := jobsdb.GetQueryParamsT{
+				CustomValFilters:              []string{""},
+				IgnoreCustomValFiltersInQuery: true,
+				JobsLimit:                     errDBReadBatchSize,
+				PayloadSizeLimit:              payloadLimit,
+			}
+			toRetry := st.errorDB.GetToRetry(queryParams)
+			combinedList := toRetry.Jobs
+			if !toRetry.LimitsReached {
+				queryParams.JobsLimit -= len(toRetry.Jobs)
+				if queryParams.PayloadSizeLimit > 0 {
+					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+				}
+				unprocessed := st.errorDB.GetUnprocessed(queryParams)
+				combinedList = append(combinedList, unprocessed.Jobs...)
+			}
 
 			st.statErrDBR.End()
-
-			combinedList := append(retryList, unprocessedList...)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
@@ -253,13 +266,18 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			hasFileUploader := st.errFileUploader != nil
 
 			jobState := jobsdb.Executing.State
+
+			var filteredJobList []*jobsdb.JobT
+
 			// abort jobs if file uploader not configured to store them to object storage
 			if !hasFileUploader {
 				jobState = jobsdb.Aborted.State
+				filteredJobList = combinedList
 			}
-
 			var statusList []*jobsdb.JobStatusT
+
 			for _, job := range combinedList {
+
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -271,6 +289,15 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					Parameters:    []byte(`{}`),
 					WorkspaceId:   job.WorkspaceId,
 				}
+
+				if hasFileUploader {
+					if st.transientSource.ApplyJob(job) {
+						// if it is a transient source, we don't process the job and mark it as aborted
+						status.JobState = jobsdb.Aborted.State
+					} else {
+						filteredJobList = append(filteredJobList, job)
+					}
+				}
 				statusList = append(statusList, &status)
 			}
 
@@ -280,8 +307,8 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				panic(err)
 			}
 
-			if hasFileUploader {
-				st.errProcessQ <- combinedList
+			if hasFileUploader && len(filteredJobList) > 0 {
+				st.errProcessQ <- filteredJobList
 			}
 		}
 	}

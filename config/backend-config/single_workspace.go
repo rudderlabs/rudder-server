@@ -65,6 +65,10 @@ func (workspaceConfig *SingleWorkspaceConfig) Get(workspace string) (ConfigT, bo
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (ConfigT, bool) {
+	if workspace == "" {
+		pkgLogger.Infof("no workspace token provided, skipping backend config fetch")
+		return ConfigT{}, false
+	}
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 	var respBody []byte
 	var statusCode int

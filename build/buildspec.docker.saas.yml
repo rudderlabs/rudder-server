@@ -20,7 +20,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - go mod download
+      - GO111MODULE=on go mod download
   build:
     commands:
       - export GO111MODULE=on

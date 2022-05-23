@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
+.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build enterprise-is-at-master
 
 GO=go
 GINKGO=ginkgo
@@ -15,7 +15,7 @@ test: enterprise-prepare-build mocks ## Run all unit tests
 ifdef package
 	$(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
 else
-	$(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./... 
+	$(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./...
 endif
 	echo "mode: atomic" > coverage.txt
 	find . -name "profile.out" | while read file;do grep -v 'mode: atomic' $${file} >> coverage.txt; rm $${file};done
@@ -69,6 +69,9 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 		rm -f ./imports/enterprise.go; \
 	fi
 
+enterprise-is-at-master: ## Checks if enterprise repo commit matches the origin master
+	@.enterprise/scripts/is-at-master.sh
+
 install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
-	GO111MODULE=on go get github.com/golang/mock/mockgen@v1.6.0
+	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0

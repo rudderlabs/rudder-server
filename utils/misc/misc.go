@@ -47,10 +47,13 @@ import (
 	"github.com/thoas/go-funk"
 )
 
-var AppStartTime int64
-var errorStorePath string
-var reservedFolderPaths []*RFP
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	AppStartTime        int64
+	errorStorePath      string
+	reservedFolderPaths []*RFP
+	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
+	notifyOnce          sync.Once
+)
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -1247,16 +1250,18 @@ func WithBugsnagForWarehouse(fn func() error) func() error {
 func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				},
-				"Team": {
-					"Name": team,
-				},
+			notifyOnce.Do(func() {
+				RecordAppError(fmt.Errorf("%v", r))
+				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+					"GoRoutines": {
+						"Number": runtime.NumGoroutine(),
+					},
+					"Team": {
+						"Name": team,
+					},
+				})
 			})
 
-			RecordAppError(fmt.Errorf("%v", r))
 			pkgLogger.Fatal(r)
 			panic(r)
 		}

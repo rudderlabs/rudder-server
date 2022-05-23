@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
-
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -24,13 +22,11 @@ import (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	connectTimeout     time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
-	config.RegisterDurationConfigVariable(0, &connectTimeout, true, time.Second, "Warehouse.snowflake.connectTimeout")
 }
 
 func loadConfig() {
@@ -38,12 +34,13 @@ func loadConfig() {
 }
 
 type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	CloudProvider string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	Db             *sql.DB
+	Namespace      string
+	CloudProvider  string
+	ObjectStorage  string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 // String constants for snowflake destination config
@@ -161,15 +158,13 @@ func (sf *HandleT) columnExists(columnName string, tableName string) (exists boo
 	return
 }
 
-func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
-	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s'`, sf.Namespace)
-	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+func (sf *HandleT) schemaExists() (exists bool, err error) {
+	sqlStatement := "SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = $1 )"
+	err = sf.Db.QueryRow(sqlStatement, sf.Namespace).Scan(&exists)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
 	}
-	exists = count > 0
 	return
 }
 
@@ -562,22 +557,22 @@ type SnowflakeCredentialsT struct {
 	username   string
 	password   string
 	schemaName string
+	timeout    time.Duration
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
-	return connectWithTimeout(cred, connectTimeout)
-}
-
-func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:      cred.account,
-		User:         cred.username,
-		Password:     cred.password,
-		Database:     cred.dbName,
-		Schema:       cred.schemaName,
-		Warehouse:    cred.whName,
-		LoginTimeout: timeout / time.Second,
-		Application:  "Rudderstack",
+		Account:     cred.account,
+		User:        cred.username,
+		Password:    cred.password,
+		Database:    cred.dbName,
+		Schema:      cred.schemaName,
+		Warehouse:   cred.whName,
+		Application: "Rudderstack",
+	}
+
+	if cred.timeout > 0 {
+		urlConfig.LoginTimeout = cred.timeout
 	}
 
 	var err error
@@ -602,7 +597,7 @@ func connectWithTimeout(cred SnowflakeCredentialsT, timeout time.Duration) (*sql
 
 func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	schemaExists, err = sf.schemaExists(sf.Namespace)
+	schemaExists, err = sf.schemaExists()
 	if err != nil {
 		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", sf.Namespace, err)
 		return err
@@ -622,6 +617,13 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	}
 
 	return sf.createTable(tableName, columnMap)
+}
+
+func (sf *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("SF: Dropping table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = sf.Db.Exec(fmt.Sprintf(sqlStatement, sf.Namespace, tableName))
+	return
 }
 
 func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
@@ -791,6 +793,7 @@ func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCreden
 		username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
 		password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
 		schemaName: opts.schemaName,
+		timeout:    sf.ConnectTimeout,
 	}
 }
 
@@ -807,19 +810,18 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	sf.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	sf.Db, err = connectWithTimeout(sf.getConnectionCredentials(OptionalCredsT{}), timeOut)
+	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
 	defer sf.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), sf.ConnectTimeout)
 	defer cancel()
 
 	err = sf.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", sf.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -913,17 +915,21 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (sf *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (sf *HandleT) LoadTestTable(location string, tablename string, payloadMap map[string]interface{}, format string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
 
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
-		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName),
+		fmt.Sprintf(`"%s"."%s"`, sf.Namespace, tablename),
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		loadFolder,
 		sf.authString(),
 	)
 
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
 	return
+}
+
+func (sf *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	sf.ConnectTimeout = timeout
 }
