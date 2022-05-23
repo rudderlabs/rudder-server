@@ -79,17 +79,23 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 		pkgLogger.Infof("no workspace IDs provided, skipping backend config fetch")
 		return ConfigT{}, false
 	}
-	wIds := strings.Split(workspaceArr, ",")
-	for i := range wIds {
-		wIds[i] = strings.Trim(wIds[i], " ")
+	var url string
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	} else {
+		wIds := strings.Split(workspaceArr, ",")
+		for i := range wIds {
+			wIds[i] = strings.Trim(wIds[i], " ")
+		}
+		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
+		if err != nil {
+			pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
+			return ConfigT{}, false
+		}
+		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
+		url = url + "&fetchAll=true"
 	}
-	encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
-	if err != nil {
-		pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
-		return ConfigT{}, false
-	}
-	url := fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
-	url = url + "&fetchAll=true"
 	var respBody []byte
 	var statusCode int
 
@@ -100,7 +106,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 
@@ -146,7 +152,12 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 	if err != nil {
 		return []byte{}, 400, err
 	}
-	req.SetBasicAuth(workspaceConfig.Token, "")
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
+		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
+	} else {
+		req.SetBasicAuth(workspaceConfig.Token, "")
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 

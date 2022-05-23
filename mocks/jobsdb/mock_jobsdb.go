@@ -50,10 +50,10 @@ func (mr *MockJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 }
 
 // GetExecuting mocks base method.
-func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetExecuting", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 
@@ -64,10 +64,10 @@ func (mr *MockJobsDBMockRecorder) GetExecuting(arg0 interface{}) *gomock.Call {
 }
 
 // GetImporting mocks base method.
-func (m *MockJobsDB) GetImporting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetImporting(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetImporting", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 
@@ -104,10 +104,10 @@ func (mr *MockJobsDBMockRecorder) GetPileUpCounts(arg0 interface{}) *gomock.Call
 }
 
 // GetProcessed mocks base method.
-func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetProcessed", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 
@@ -118,10 +118,10 @@ func (mr *MockJobsDBMockRecorder) GetProcessed(arg0 interface{}) *gomock.Call {
 }
 
 // GetToRetry mocks base method.
-func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetToRetry", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 
@@ -132,10 +132,10 @@ func (mr *MockJobsDBMockRecorder) GetToRetry(arg0 interface{}) *gomock.Call {
 }
 
 // GetUnprocessed mocks base method.
-func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUnprocessed", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 
@@ -146,10 +146,10 @@ func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call 
 }
 
 // GetWaiting mocks base method.
-func (m *MockJobsDB) GetWaiting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+func (m *MockJobsDB) GetWaiting(arg0 jobsdb.GetQueryParamsT) jobsdb.JobsResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetWaiting", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
+	ret0, _ := ret[0].(jobsdb.JobsResult)
 	return ret0
 }
 

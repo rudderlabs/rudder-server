@@ -167,8 +167,10 @@ func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
+			manager.logger.Infof("Mode Change Acknowledgement Key: %s", req.AckKey)
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			if err != nil {
+				manager.logger.Errorf("Failed to acknowledge mode change for key: %s", req.AckKey)
 				return fmt.Errorf("put value to ack key %q: %w", req.AckKey, err)
 			}
 			return err
@@ -254,7 +256,11 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
+			manager.logger.Infof("Workspace ID Change Acknowledgement Key: %s", req.AckKey)
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
+			if err != nil {
+				manager.logger.Errorf("Failed to acknowledge workspace ID change for key: %s", req.AckKey)
+			}
 			return err
 		})
 }

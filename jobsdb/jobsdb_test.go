@@ -1,6 +1,14 @@
 package jobsdb
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
@@ -11,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/stretchr/testify/require"
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
@@ -302,4 +311,95 @@ var d2 = dataSetT{
 var dsListInMemory = []dataSetT{
 	d1,
 	d2,
+}
+
+func BenchmarkSanitizeJson(b *testing.B) {
+	size := 4_000
+	nulls := 100
+
+	// string with nulls
+	inputWithoutNulls := randomString(size - nulls*len(`\u0000`))
+	inputWithNulls := insertStringInString(inputWithoutNulls, `\u0000`, nulls)
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls)))
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls)))
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingRegexp(json.RawMessage(inputWithNulls)))
+	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingBytes string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingRegexp string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingRegexp(json.RawMessage(inputWithNulls))
+		}
+	})
+
+	// string without null characters
+	input := randomString(size)
+	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingStrings(json.RawMessage(input))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingBytes string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingBytes(json.RawMessage(input))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingRegexp string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingRegexp(json.RawMessage(input))
+		}
+	})
+
+}
+
+func randomString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
+
+func insertStringInString(input string, c string, times int) string {
+	if times == 0 {
+		return input
+	}
+	pos := map[int]struct{}{}
+	for len(pos) < times {
+		newPos := rand.Intn(len(input))
+		pos[newPos] = struct{}{}
+	}
+	keys := make([]int, 0, len(pos))
+	for k := range pos {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	offset := len(c)
+	for i, idx := range keys {
+		oidx := idx + i*offset
+		input = input[:oidx] + c + input[oidx:]
+	}
+	return input
+}
+
+func sanitizedJsonUsingStrings(input json.RawMessage) json.RawMessage {
+	return json.RawMessage(strings.Replace(string(input), `\u0000`, "", -1))
+}
+
+func sanitizedJsonUsingBytes(input json.RawMessage) json.RawMessage {
+	return bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+}
+
+var sanitizeRegexp = regexp.MustCompile(`\\u0000`)
+
+func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
+	return json.RawMessage(sanitizeRegexp.ReplaceAllString(string(input), ""))
 }
