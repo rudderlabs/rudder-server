@@ -442,7 +442,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
-				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
+				newColumnVal, ok := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
 				if !ok || violatedConstraints.isViolated {
 					if violatedConstraints.isViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
