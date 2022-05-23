@@ -158,9 +158,13 @@ func (bh *BlackHole) Connect(warehouse warehouseutils.WarehouseT) (client.Client
 	return client.Client{}, fmt.Errorf("BlackHole: not implemented yet")
 }
 
-func (bh *BlackHole) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) error {
+func (bh *BlackHole) LoadTestTable(location string, stagingTableName string, payloadMap map[string]interface{}, format string) error {
 	return fmt.Errorf("BlackHole: not implemented yet")
 	return nil
+}
+
+func (bh *BlackHole) SetConnectionTimeout(timeout time.Duration) {
+
 }
 
 func (bh *BlackHole) delay() {
