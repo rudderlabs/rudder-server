@@ -160,7 +160,6 @@ var (
 )
 
 func init() {
-	setMaxParallelLoads()
 	initializeStateMachine()
 }
 
@@ -850,6 +849,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {
 		parallelLoads = 1
 	}
+	pkgLogger.Infof(`[WH]: Running %d parallel loads in namespace %s of destination %s:%s`, parallelLoads, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	var loadErrors []error
 	var loadErrorLock sync.Mutex
