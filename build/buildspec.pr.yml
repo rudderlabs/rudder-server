@@ -23,7 +23,7 @@ phases:
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
       - (cd && go install github.com/onsi/ginkgo/ginkgo/v2)
-      - (cd && go instal github.com/golang/mock/mockgen)
+      - (cd && go install github.com/golang/mock/mockgen)
       - docker pull confluentinc/cp-zookeeper:latest
       - docker pull confluentinc/cp-kafka:latest
       - docker pull minio/minio:latest
