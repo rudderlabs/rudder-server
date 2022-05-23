@@ -32,7 +32,7 @@ phases:
       - docker pull rudderlabs/rudder-transformer:latest
       - docker pull atzoum/simulator-google-sheets:latest
       - docker pull messagebird/gcloud-pubsub-emulator:latest
-      - go mod download
+      - GO111MODULE=on go mod download
   build:
     commands:
       - export GO111MODULE=on
