@@ -16,6 +16,7 @@ phases:
   pre_build:
     commands:
       - env
+      - export GO111MODULE=on
       - docker login --username rudderlabs --password $dockerhub_passwd
       - mkdir -p ~/.ssh
       - echo "$ssh_key" > ~/.ssh/ssh_key
