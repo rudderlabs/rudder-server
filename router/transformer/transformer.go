@@ -185,6 +185,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
+	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	rawJSON, err := jsonfast.Marshal(responseData)
 	if err != nil {
 		panic(err)
@@ -200,14 +201,11 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		var requestError error
 		//start
 		rdl_time := time.Now()
-		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload)
-		if requestError != nil {
-			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "false"}).SendTiming(time.Since(rdl_time))
-			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "false"}).Increment()
-		} else {
-			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "true"}).SendTiming(time.Since(rdl_time))
-			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "true"}).Increment()
-		}
+		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName)
+		stats.NewTaggedStat("transformer_proxy.delivery_response", stats.CountType, stats.Tags{"destination": destName}).Increment()
+		reqSuccessStr := strconv.FormatBool(requestError != nil)
+		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
+		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
 		//end
 		return requestError
 	}
@@ -215,7 +213,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[Transformer Proxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
-		stats.NewStat("transformer_proxy.retry_metric", stats.CountType).Increment()
+		stats.NewTaggedStat("transformer_proxy.retry_metric", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	})
 
 	if err != nil {
@@ -265,7 +263,7 @@ func (trans *HandleT) Setup() {
 
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, destName string) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
@@ -274,7 +272,14 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	httpReqStTime := time.Now()
 	resp, err := trans.client.Do(req)
+	reqRoundTripTime := time.Since(httpReqStTime)
+	// This stat will be useful in understanding the round trip time taken for the http req
+	// between server and transformer
+	stats.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
+		"destination": destName,
+	}).SendTiming(reqRoundTripTime)
 
 	if err != nil {
 		return []byte{}, http.StatusBadRequest, err
