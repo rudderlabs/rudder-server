@@ -72,6 +72,7 @@ var dataTypesMap = map[string]string{
 	"string":   "varchar(512)",
 	"text":     "varchar(max)",
 	"datetime": "timestamp",
+	"json":     "super",
 }
 
 var dataTypesMapToRudder = map[string]string{
@@ -97,6 +98,7 @@ var dataTypesMapToRudder = map[string]string{
 	"date":                        "datetime",
 	"timestamp without time zone": "datetime",
 	"timestamp with time zone":    "datetime",
+	"super":                       "json",
 }
 
 var primaryKeyMap = map[string]string{
