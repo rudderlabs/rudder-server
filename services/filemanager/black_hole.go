@@ -45,16 +45,19 @@ func (bh *BlackHoleFileManager) Upload(ctx context.Context, f *os.File, prefixes
 	pkgLogger.Infof("LoadTest(ObjectStorage)(BH): Received a call to upload to storage: %#v", prefixes)
 
 	location, objectName := "", ""
-	for _, prefix := range prefixes {
 
-		if prefix == "rudder-warehouse-staging-logs" {
-			location, objectName = "staging-logs", "stagingfile.json.gz"
-			break
+	if sliceContains(prefixes, "rudder-warehouse-staging-logs") {
+		location, objectName = "staging-logs", "stagingfile.json.gz"
+	}
+
+	if sliceContains(prefixes, "rudder-warehouse-load-objects") {
+
+		if sliceContains(prefixes, "demo_track") {
+			location, objectName = "load-objects", "demo-track-load-objects.csv.gz"
 		}
 
-		if prefix == "rudder-warehouse-load-objects" {
-			location, objectName = "load-objects", "load-objects.csv.gz"
-			break
+		if sliceContains(prefixes, "tracks") {
+			location, objectName = "load-objects", "tracks-load-objects.csv.gz"
 		}
 	}
 
@@ -71,6 +74,17 @@ func (bh *BlackHoleFileManager) Upload(ctx context.Context, f *os.File, prefixes
 	}, nil
 }
 
+func sliceContains(entries []string, elem string) bool {
+
+	for _, entry := range entries {
+		if entry == elem {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (bh *BlackHoleFileManager) Download(ctx context.Context, output *os.File, key string) error {
 	pkgLogger.Infof("LoadTest(ObjectStorage)(BH): Received a call to download file, prefixes: %v", key)
 
@@ -78,10 +92,13 @@ func (bh *BlackHoleFileManager) Download(ctx context.Context, output *os.File, k
 	switch {
 
 	case strings.Contains(key, "staging"):
-		fname = "staging.json.gz"
+		fname = "./services/filemanager/load-test/staging.json.gz"
 
-	case strings.Contains(key, "load-objects"):
-		fname = "load-objects.csv.gz"
+	case strings.Contains(key, "demo-track-load-objects"):
+		fname = "./services/filemanager/load-test/demo-track-load-objects.csv.gz"
+
+	case strings.Contains(key, "tracks-load-objects"):
+		fname = "./services/filemanager/load-test/tracks-load-objects.csv.gz"
 
 	default:
 		panic("Unrecognized key: " + key)
