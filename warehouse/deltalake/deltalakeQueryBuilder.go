@@ -5,16 +5,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// LTMerge loads table by merge strategy
-type LTMerge struct{}
-
-// LTAppend loads table by append strategy
-type LTAppend struct{}
-
-type LoadTable interface {
-	SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string)
-}
-
 func primaryKey(tableName string) string {
 	key := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
@@ -41,7 +31,7 @@ func stagingSqlStatement(namespace string, tableName string, stagingTableName st
 	return
 }
 
-func (*LTMerge) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func appendableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
@@ -60,7 +50,7 @@ func (*LTMerge) SqlStatement(namespace string, tableName string, stagingTableNam
 	return
 }
 
-func (*LTAppend) SqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func mergeableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s );`,
 		namespace,
