@@ -31,6 +31,7 @@ var (
 )
 
 func Init() {
+	setMaxParallelLoads()
 	loadConfigArchiver()
 }
 
