@@ -31,7 +31,8 @@ func stagingSqlStatement(namespace string, tableName string, stagingTableName st
 	return
 }
 
-func appendableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+// mergeableLTSQLStatement merge load table sql statement
+func mergeableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
@@ -50,7 +51,8 @@ func appendableLTSQLStatement(namespace string, tableName string, stagingTableNa
 	return
 }
 
-func mergeableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+// appendableLTSQLStatement append load table sql statement
+func appendableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s );`,
 		namespace,
