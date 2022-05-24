@@ -203,7 +203,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		rdl_time := time.Now()
 		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName)
 		stats.NewTaggedStat("transformer_proxy.delivery_response", stats.CountType, stats.Tags{"destination": destName}).Increment()
-		reqSuccessStr := strconv.FormatBool(requestError != nil)
+		reqSuccessStr := strconv.FormatBool(requestError == nil)
 		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
 		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
 		//end
