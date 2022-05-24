@@ -518,14 +518,20 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	columnKeys := sortedColumnKeys
 	if loadTableStrategy == "APPEND" {
-		columnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)
-	}
-	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(dl.Namespace, tableName, stagingTableName, columnKeys)
+		sqlStatement = appendableLTSQLStatement(
+			dl.Namespace,
+			tableName,
+			stagingTableName,
+			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
+		)
 	} else {
-		sqlStatement = mergeableLTSQLStatement(dl.Namespace, tableName, stagingTableName, columnKeys)
+		sqlStatement = mergeableLTSQLStatement(
+			dl.Namespace,
+			tableName,
+			stagingTableName,
+			sortedColumnKeys,
+		)
 	}
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
@@ -613,9 +619,19 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	columnKeys := append([]string{`id`}, userColNames...)
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(dl.Namespace, warehouseutils.UsersTable, stagingTableName, columnKeys)
+		sqlStatement = appendableLTSQLStatement(
+			dl.Namespace,
+			warehouseutils.UsersTable,
+			stagingTableName,
+			columnKeys,
+		)
 	} else {
-		sqlStatement = mergeableLTSQLStatement(dl.Namespace, warehouseutils.UsersTable, stagingTableName, columnKeys)
+		sqlStatement = mergeableLTSQLStatement(
+			dl.Namespace,
+			warehouseutils.UsersTable,
+			stagingTableName,
+			columnKeys,
+		)
 	}
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
