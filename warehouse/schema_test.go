@@ -59,6 +59,53 @@ var _ = Describe("Schema", func() {
 				newColumnVal, ok = HandleSchemaChange("string", "datetime", columnVal)
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
+
+				columnVal = `{"json":true}`
+				convertedVal = `{"json":true}`
+				newColumnVal, ok = HandleSchemaChange("string", "json", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+			})
+
+			It("should send json string values if existing datatype is json", func() {
+				var newColumnVal, columnVal, convertedVal interface{}
+				var ok bool
+
+				columnVal = false
+				convertedVal = "false"
+				newColumnVal, ok = HandleSchemaChange("json", "boolean", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+
+				columnVal = 1
+				convertedVal = "1"
+				newColumnVal, ok = HandleSchemaChange("json", "int", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+
+				columnVal = 1.501
+				convertedVal = "1.501"
+				newColumnVal, ok = HandleSchemaChange("json", "float", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+
+				columnVal = "2022-05-05T00:00:00.000Z"
+				convertedVal = `"2022-05-05T00:00:00.000Z"`
+				newColumnVal, ok = HandleSchemaChange("json", "datetime", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+
+				columnVal = "string value"
+				convertedVal = `"string value"`
+				newColumnVal, ok = HandleSchemaChange("json", "string", columnVal)
+				Expect(newColumnVal).To(Equal(convertedVal))
+				Expect(ok).To(BeTrue())
+
+				var columnArrVal []interface{}
+				columnArrVal = append(columnArrVal, false, 1, "string value")
+				newColumnVal, ok = HandleSchemaChange("json", "string", columnArrVal)
+				Expect(newColumnVal).To(Equal(columnArrVal))
+				Expect(ok).To(BeTrue())
 			})
 		})
 
@@ -86,6 +133,11 @@ var _ = Describe("Schema", func() {
 				newColumnVal, ok = HandleSchemaChange("boolean", "datetime", columnVal)
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
+
+				columnVal = `{"json":true}`
+				newColumnVal, ok = HandleSchemaChange("boolean", "json", columnVal)
+				Expect(newColumnVal).To(BeNil())
+				Expect(ok).To(BeFalse())
 			})
 
 			It("existing datatype is int", func() {
@@ -106,6 +158,11 @@ var _ = Describe("Schema", func() {
 				newColumnVal, ok = HandleSchemaChange("int", "datetime", columnVal)
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
+
+				columnVal = `{"json":true}`
+				newColumnVal, ok = HandleSchemaChange("int", "json", columnVal)
+				Expect(newColumnVal).To(BeNil())
+				Expect(ok).To(BeFalse())
 			})
 
 			It("existing datatype is float", func() {
@@ -124,6 +181,11 @@ var _ = Describe("Schema", func() {
 
 				columnVal = "2022-05-05T00:00:00.000Z"
 				newColumnVal, ok = HandleSchemaChange("float", "datetime", columnVal)
+				Expect(newColumnVal).To(BeNil())
+				Expect(ok).To(BeFalse())
+
+				columnVal = `{"json":true}`
+				newColumnVal, ok = HandleSchemaChange("float", "json", columnVal)
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
@@ -148,6 +210,11 @@ var _ = Describe("Schema", func() {
 
 				columnVal = 1.501
 				newColumnVal, ok = HandleSchemaChange("datetime", "float", columnVal)
+				Expect(newColumnVal).To(BeNil())
+				Expect(ok).To(BeFalse())
+
+				columnVal = `{"json":true}`
+				newColumnVal, ok = HandleSchemaChange("datetime", "json", columnVal)
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})

@@ -629,6 +629,7 @@ var (
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
 	useNewCacheBurst                             bool
+	skipZeroAssertionForMultitenant              bool
 )
 
 // Loads db config and migration related config from config file
@@ -669,6 +670,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(60, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
+	config.RegisterBoolConfigVariable(false, &skipZeroAssertionForMultitenant, true, "JobsDB.skipZeroAssertionForMultitenant")
 }
 
 func Init2() {
@@ -1437,7 +1439,7 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 
 	// No dataset should have 0 as the index.
 	// 0_1, 0_2 are allowed.
-	if beforeIndex == "0" {
+	if beforeIndex == "0" && !skipZeroAssertionForMultitenant {
 		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
 	}
 
