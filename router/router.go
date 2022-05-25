@@ -583,63 +583,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	// TODO - this is the only place handleWorkerDestinationJobs is being called
-	// better to move the code here than having another function call
-	worker.handleWorkerDestinationJobs(context.TODO())
-	//routerJobs/destinationJobs are processed. Clearing the queues.
-	worker.routerJobs = make([]types.RouterJobT, 0)
-	worker.destinationJobs = make([]types.DestinationJobT, 0)
-	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
-}
-
-func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
-	if prevRespStatusCode == 0 {
-		return true
-	}
-
-	if !worker.rt.guaranteeUserEventOrder {
-		//if guaranteeUserEventOrder is false, letting the next jobs pass
-		return true
-	}
-
-	//If batching is enabled, we send the request only if the previous one succeeds
-	if worker.rt.enableBatching {
-		return isSuccessStatus(prevRespStatusCode)
-	}
-
-	//If the destinationJob has come through router transform,
-	//drop the request if it is of a failed user, else send
-	for _, metadata := range destinationJob.JobMetadataArray {
-		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
-			return false
-		}
-	}
-
-	return true
-}
-
-func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
-	var err error
-	var response integrations.PostParametersT
-	responseArray := make([]integrations.PostParametersT, 0)
-	if transformAt == "router" {
-		err = json.Unmarshal(payload, &response)
-		if err != nil {
-			err = json.Unmarshal(payload, &responseArray)
-		} else {
-			responseArray = append(responseArray, response)
-		}
-	} else {
-		err = json.Unmarshal(payload, &response)
-		if err == nil {
-			responseArray = append(responseArray, response)
-		}
-	}
-
-	return responseArray, err
-}
-
-func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
+	ctx := context.TODO()
 	worker.batchTimeStat.Start()
 
 	var respContentType string
@@ -978,6 +922,58 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 	worker.decrementInThrottleMap(apiCallsCount)
 	worker.batchTimeStat.End()
+
+	//routerJobs/destinationJobs are processed. Clearing the queues.
+	worker.routerJobs = make([]types.RouterJobT, 0)
+	worker.destinationJobs = make([]types.DestinationJobT, 0)
+	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
+}
+
+func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
+	if prevRespStatusCode == 0 {
+		return true
+	}
+
+	if !worker.rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is false, letting the next jobs pass
+		return true
+	}
+
+	//If batching is enabled, we send the request only if the previous one succeeds
+	if worker.rt.enableBatching {
+		return isSuccessStatus(prevRespStatusCode)
+	}
+
+	//If the destinationJob has come through router transform,
+	//drop the request if it is of a failed user, else send
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
+	var err error
+	var response integrations.PostParametersT
+	responseArray := make([]integrations.PostParametersT, 0)
+	if transformAt == "router" {
+		err = json.Unmarshal(payload, &response)
+		if err != nil {
+			err = json.Unmarshal(payload, &responseArray)
+		} else {
+			responseArray = append(responseArray, response)
+		}
+	} else {
+		err = json.Unmarshal(payload, &response)
+		if err == nil {
+			responseArray = append(responseArray, response)
+		}
+	}
+
+	return responseArray, err
 }
 
 type RouterJobResponse struct {
