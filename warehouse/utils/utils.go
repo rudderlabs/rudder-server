@@ -905,3 +905,18 @@ func GetLoadFileFormat(whType string) string {
 		return "csv.gz"
 	}
 }
+
+func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFormat string) {
+	whType := warehouse.Type
+	switch whType {
+	case GCS_DATALAKE:
+		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
+		tableSuffixPath := GetConfigValue("tableSuffix", warehouse)
+		if tableSuffixPath != "" {
+			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
+		}
+	default:
+		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
+	}
+	return timeWindowFormat
+}
