@@ -53,7 +53,6 @@ var (
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
 	loadTableStrategy  string
-	excludeColumnsMap  map[string]bool
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -93,6 +92,13 @@ var dataTypesMapToRudder = map[string]string{
 	"timestamp": "datetime",
 }
 
+// excludeColumnsMap Columns you need to exclude
+// Since event_date is an auto generated column in order to support partitioning.
+// We need to ignore it during query generation.
+var excludeColumnsMap = map[string]bool{
+	"event_date": true,
+}
+
 // Primary Key mappings for tables
 var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
@@ -112,7 +118,6 @@ type HandleT struct {
 // Init initializes the delta lake warehouse
 func Init() {
 	loadConfig()
-	loadExcludeColumns()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
 	databricks.Init()
 }
@@ -130,14 +135,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
-}
-
-func loadExcludeColumns() {
-	// Since event_date is an auto generated column in order to support partitioning.
-	// We need to ignore it during query generation.
-	excludeColumnsMap = map[string]bool{
-		"event_date": true,
-	}
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
