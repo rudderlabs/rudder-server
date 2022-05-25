@@ -1563,18 +1563,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
-
-		case jobsdb.Drained.State:
-			/*
-				We treat the drained state differently from Aborted state. This is because
-				when the events are drained inside router.readAndProcess, we need to commit
-				the information immediately to the jobsdb to prevent it from trying to send
-				those events again.  At that point, we also update the in-memory stats about
-				the pending jobs for that workspace. To prevent double subtraction
-				we do not update the routerWorkSpaceJobStatusCount[] for these drained jobs
-				here.
-			*/
-			sd.Count++
 		}
 
 		//REPORTING - ROUTER - END
@@ -1637,15 +1625,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update the status
 		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			// The status of drained jobs (inside the rt_job_status* table) is
-			// updated inside the readAndProcess function
-			var nonDrainedStatusList []*jobsdb.JobStatusT
-			for _, status := range statusList {
-				if status.JobState != jobsdb.Drained.State {
-					nonDrainedStatusList = append(nonDrainedStatusList, status)
-				}
-			}
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, nonDrainedStatusList, []string{rt.destName}, nil)
+			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
 			if err != nil {
 				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 				return err
@@ -1668,11 +1648,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			status := resp.status.JobState
 			userID := resp.userID
 			worker := resp.worker
-			// This can happen if the job is put on the responseQ after being
-			// drained by the router's readAndProcess function
-			if worker == nil {
-				continue
-			}
 			if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
 				worker.failedJobIDMutex.RLock()
 				lastJobID, ok := worker.failedJobIDMap[userID]
@@ -1979,6 +1954,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	rt.throttledUserMap = make(map[string]struct{})
 	throttledAtTime := time.Now()
+	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
@@ -1989,7 +1965,7 @@ func (rt *HandleT) readAndProcess() int {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
-				JobState:      jobsdb.Drained.State,
+				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -2016,8 +1992,32 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
-			rt.responseQ <- jobResponseT{status: &status, worker: nil, userID: job.UserID, JobT: job}
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+			/*
+				The next few lines of code is mostly duplicated from commitStatusList function to add
+				stats about the jobs to the reports table
+			*/
+			var parameters JobParametersT
+			err := json.Unmarshal(job.Parameters, &parameters)
+			if err != nil {
+				rt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+			}
+			var inPu string
+			if parameters.TransformAt == "processor" {
+				inPu = utilTypes.DEST_TRANSFORMER
+			} else {
+				inPu = utilTypes.EVENT_FILTER
+			}
+
+			eventName := gjson.GetBytes(job.Parameters, "event_name").String()
+			eventType := gjson.GetBytes(job.Parameters, "event_type").String()
+
+			reportMetric := &utilTypes.PUReportedMetric{
+				ConnectionDetails: *utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory),
+				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+				StatusDetail:      utilTypes.CreateStatusDetail(status.JobState, 1, 200, string(status.ErrorResponse), job.EventPayload, eventName, eventType),
+			}
+			reportMetrics = append(reportMetrics, reportMetric)
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -2052,7 +2052,16 @@ func (rt *HandleT) readAndProcess() int {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				return err
+			}
+			rt.Reporting.Report(reportMetrics, tx.Tx())
+			return nil
+		})
+
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
