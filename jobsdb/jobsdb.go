@@ -418,6 +418,7 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
+	backupPayloadSizeLimit        int64
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
@@ -727,6 +728,7 @@ func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 }
 
 func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
+	backupPayloadSizeLimit := config.GetEnvAsInt("BACKUP_PAYLOAD_SIZE_LIMIT", 64*1024*1024)
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,
@@ -735,7 +737,8 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 			migrationMode: "",
 			importLock:    &sync.RWMutex{},
 		},
-		dsRetentionPeriod: 0,
+		dsRetentionPeriod:      0,
+		backupPayloadSizeLimit: int64(backupPayloadSizeLimit),
 	}
 
 	for _, fn := range opts {
@@ -3115,18 +3118,126 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 // getBackUpQuery individual queries for getting rows in json
-func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable bool, offset int64) string {
+func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable bool, runningPayloadSizeOffset int64) string {
 	var stmt string
 	if jd.BackupSettings.FailedOnly {
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
-		stmt = fmt.Sprintf(`SELECT coalesce(json_agg(failed_jobs), '[]'::json) FROM (select * from "%[1]s" %[2]s INNER JOIN "%[3]s" %[4]s ON  %[2]s.job_id = %[4]s.job_id
-			where %[2]s.job_state in ('%[5]s', '%[6]s') order by  %[4]s.custom_val, %[2]s.job_id, %[2]s.exec_time asc limit %[7]d offset %[8]d) AS failed_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
-			Failed.State, Aborted.State, backupRowsBatchSize, offset)
+		stmt = fmt.Sprintf(
+			`SELECT 
+				COALESCE(
+					json_agg(
+						(
+						failed_jobs.job_id, failed_jobs.workspace_id, 
+						failed_jobs.uuid, failed_jobs.user_id, 
+						failed_jobs.parameters, failed_jobs.custom_val, 
+						failed_jobs.event_payload, failed_jobs.event_count, 
+						failed_jobs.created_at, failed_jobs.expire_at, 
+						failed_jobs.id, failed_jobs.status_job_id, 
+						failed_jobs.job_state, failed_jobs.attempt, 
+						failed_jobs.exec_time, failed_jobs.retry_time, 
+						failed_jobs.error_code, failed_jobs.error_response, 
+						failed_jobs.status_parameters
+						)
+					), 
+					'[]' :: json
+				), 
+				max(
+				failed_jobs.running_payload_size
+				),
+				count(*) 
+			FROM 
+				(
+				SELECT 
+					* 
+				FROM 
+					(
+					SELECT 
+						job.job_id, 
+						job.workspace_id, 
+						job.uuid, 
+						job.user_id, 
+						job.parameters, 
+						job.custom_val, 
+						job.event_payload, 
+						job.event_count, 
+						job.created_at, 
+						job.expire_at, 
+						job_status.id, 
+						job_status.job_id AS status_job_id, 
+						job_status.job_state, 
+						job_status.attempt, 
+						job_status.exec_time, 
+						job_status.retry_time, 
+						job_status.error_code, 
+						job_status.error_response, 
+						job_status.parameters AS status_parameters, 
+						sum(
+						pg_column_size(job.event_payload)
+						) OVER (
+						ORDER BY 
+							job.custom_val, 
+							job_status.job_id, 
+							job_status.exec_time
+						) AS running_payload_size 
+					FROM 
+						"%[1]s" % [2]s 
+						INNER JOIN "%[3]s" % [4]s ON % [2]s.job_id = % [4]s.job_id 
+					WHERE 
+						% [2]s.job_state IN ('%[5]s', '%[6]s') 
+					ORDER BY 
+						% [4]s.custom_val, 
+						% [2]s.job_id, 
+						% [2]s.exec_time ASC
+					) subquery 
+				WHERE 
+					subquery.running_payload_size > %[7]d 
+					AND subquery.running_payload_size <= %[8]d
+				) AS failed_jobs
+		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, runningPayloadSizeOffset, jd.backupPayloadSizeLimit)
+
 	} else {
 		if isJobStatusTable {
-			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from "%[1]s" order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
+			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from "%[1]s" order by job_id asc) AS dump_table`, backupDSRange.ds.JobStatusTable)
 		} else {
-			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from "%[1]s" order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset)
+			stmt = fmt.Sprintf(`
+			SELECT 
+				json_agg(
+				(
+					dump_table.job_id, dump_table.workspace_id, 
+					dump_table.uuid, dump_table.user_id, 
+					dump_table.parameters, dump_table.custom_val, 
+					dump_table.event_payload, dump_table.event_count, 
+					dump_table.created_at, dump_table.expire_at
+				)
+				), 
+				max(
+				dump_table.running_payload_size
+				), 
+				count(*) 
+		  	FROM 
+				(
+				SELECT 
+					* 
+				FROM 
+					(
+					SELECT 
+						*, 
+						sum(
+						pg_column_size(job.event_payload)
+						) OVER (
+						ORDER BY 
+							job.job_id
+						) AS running_payload_size 
+					FROM 
+						"%[1]s" job 
+					ORDER BY 
+						job_id ASC
+					) subquery 
+				WHERE 
+					subquery.running_payload_size > %[2]d 
+					AND subquery.running_payload_size <= %[3]d
+			) AS dump_table
+			`, backupDSRange.ds.JobTable, runningPayloadSizeOffset, jd.backupPayloadSizeLimit)
 		}
 	}
 
@@ -3234,15 +3345,22 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
-
-	var offset, batchCount int64
+	var runningPayloadSizeOffset, backedupJobCount, totalBackedupJobCount, batchCount int64
 	for {
-		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
+		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, runningPayloadSizeOffset)
 		var rawJSONRows json.RawMessage
 		row := jd.dbHandle.QueryRow(stmt)
-		err = row.Scan(&rawJSONRows)
-		if err != nil {
-			panic(fmt.Errorf("Scanning row failed with error : %w", err))
+		if isJobStatusTable {
+			err = row.Scan(&rawJSONRows)
+			if err != nil {
+				panic(fmt.Errorf("Scanning row failed with error : %w", err))
+			}
+
+		} else {
+			err = row.Scan(&rawJSONRows, runningPayloadSizeOffset, backedupJobCount)
+			if err != nil {
+				panic(fmt.Errorf("Scanning row failed with error : %w", err))
+			}
 		}
 
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
@@ -3255,8 +3373,8 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
 
 		gzWriter.Write(rawJSONRows)
-		offset += backupRowsBatchSize
-		if offset >= totalCount {
+		totalBackedupJobCount += backedupJobCount
+		if totalBackedupJobCount >= totalCount || isJobStatusTable {
 			break
 		}
 	}
