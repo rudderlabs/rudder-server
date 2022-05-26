@@ -418,7 +418,6 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
-	backupPayloadSizeLimit        int64
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
@@ -617,7 +616,7 @@ var (
 	backupCheckSleepDuration                     time.Duration
 	cacheExpiration                              time.Duration
 	useJoinForUnprocessed                        bool
-	backupRowsBatchSize                          int64
+	maxBackupTotalPayloadSize                    int64
 	pkgLogger                                    logger.LoggerI
 	useNewCacheBurst                             bool
 )
@@ -652,7 +651,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
-	config.RegisterInt64ConfigVariable(1000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	config.RegisterInt64ConfigVariable(64*1024*1024, &maxBackupTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
@@ -728,7 +727,6 @@ func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 }
 
 func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
-	backupPayloadSizeLimit := config.GetEnvAsInt("BACKUP_PAYLOAD_SIZE_LIMIT", 64*1024*1024)
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,
@@ -737,8 +735,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 			migrationMode: "",
 			importLock:    &sync.RWMutex{},
 		},
-		dsRetentionPeriod:      0,
-		backupPayloadSizeLimit: int64(backupPayloadSizeLimit),
+		dsRetentionPeriod: 0,
 	}
 
 	for _, fn := range opts {
@@ -3193,7 +3190,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					subquery.running_payload_size > %[7]d 
 					AND subquery.running_payload_size <= %[8]d
 				) AS failed_jobs
-		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, runningPayloadSizeOffset, jd.backupPayloadSizeLimit)
+		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, runningPayloadSizeOffset, maxBackupTotalPayloadSize)
 
 	} else {
 		if isJobStatusTable {
@@ -3237,7 +3234,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					subquery.running_payload_size > %[2]d 
 					AND subquery.running_payload_size <= %[3]d
 			) AS dump_table
-			`, backupDSRange.ds.JobTable, runningPayloadSizeOffset, jd.backupPayloadSizeLimit)
+			`, backupDSRange.ds.JobTable, runningPayloadSizeOffset, maxBackupTotalPayloadSize)
 		}
 	}
 
