@@ -80,7 +80,7 @@ func loadStatusMap() {
 	statusMap[SourceDisabled] = ResponseStatus{message: SourceDisabled, code: http.StatusNotFound}
 	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
 	// webhook specific status
-	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusNotAcceptable}
+	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusNotFound}
 	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
 	statusMap[SourceTransformerResponseErrorReadFailed] = ResponseStatus{message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest}
 	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}
@@ -88,7 +88,7 @@ func loadStatusMap() {
 	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
 	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
 	statusMap[NonIdentifiableRequest] = ResponseStatus{message: NonIdentifiableRequest, code: http.StatusBadRequest}
-	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusBadRequest}
+	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusInternalServerError}
 	statusMap[ErrorInParseForm] = ResponseStatus{message: ErrorInParseForm, code: http.StatusBadRequest}
 	statusMap[ErrorInParseMultiform] = ResponseStatus{message: ErrorInParseMultiform, code: http.StatusBadRequest}
 }
