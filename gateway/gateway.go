@@ -81,7 +81,7 @@ var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort         int
 	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes, maxConcurrentRequests int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
-	enabledWriteKeysSourceMap                                                         map[string]backendconfig.SourceT
+	writeKeysSourceMap                                                                map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                         map[string]string
 	enabledWriteKeyWorkspaceMap                                                       map[string]string
 	sourceIDToNameMap                                                                 map[string]string
@@ -454,8 +454,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
-			if !gateway.isWriteKeyEnabled(writeKey) {
+
+			if !gateway.isValidWriteKey(writeKey) {
 				req.done <- response.GetStatus(response.InvalidWriteKey)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				continue
+			}
+
+			if !gateway.isWriteKeyEnabled(writeKey) {
+				req.done <- response.GetStatus(response.SourceDisabled)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
@@ -619,20 +628,27 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 }
 
+func (gateway *HandleT) isValidWriteKey(writeKey string) bool {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	_, ok := writeKeysSourceMap[writeKey]
+	return ok
+}
+
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	_, ok := enabledWriteKeysSourceMap[writeKey]
-	return ok
+	return writeKeysSourceMap[writeKey].Enabled
 }
 
 func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
-		return enabledWriteKeysSourceMap[writeKey].ID
+	if _, ok := writeKeysSourceMap[writeKey]; ok {
+		return writeKeysSourceMap[writeKey].ID
 	}
 
 	return ""
@@ -642,8 +658,8 @@ func (gateway *HandleT) getSourceNameForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
-		return enabledWriteKeysSourceMap[writeKey].Name
+	if _, ok := writeKeysSourceMap[writeKey]; ok {
+		return writeKeysSourceMap[writeKey].Name
 	}
 
 	return "-notFound-"
@@ -1420,15 +1436,16 @@ func (gateway *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
+		writeKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
 		for _, source := range sources.Sources {
 			sourceIDToNameMap[source.ID] = source.Name
+			writeKeysSourceMap[source.WriteKey] = source
+
 			if source.Enabled {
-				enabledWriteKeysSourceMap[source.WriteKey] = source
 				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
