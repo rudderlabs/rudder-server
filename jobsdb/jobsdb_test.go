@@ -157,6 +157,18 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	})
 
 	Context("computeInsertVals - bad input tests", func() {
+		It("Should throw error for nil inputs", func() {
+			_, err := computeInsertVals(nil, nil)
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil before input", func() {
+			_, err := computeInsertVals(nil, []string{"1"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil after input", func() {
+			_, err := computeInsertVals([]string{"1"}, nil)
+			Expect(err).To(HaveOccurred())
+		})
 		It("Should throw error for input 1, 1_1", func() {
 			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
 			Expect(err).To(HaveOccurred())

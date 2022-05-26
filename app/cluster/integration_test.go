@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"

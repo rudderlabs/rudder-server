@@ -576,23 +576,8 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 	return false
 }
 
-//SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
-func SetDisableDedupFeature(b bool) bool {
-	prev := enableDedup
-	enableDedup = b
-	return prev
-}
-
-func SetMainLoopTimeout(timeout time.Duration) {
-	mainLoopTimeout = timeout
-}
-
 func SetFeaturesRetryAttempts(overrideAttempts int) {
 	featuresRetryMaxAttempts = overrideAttempts
-}
-
-func SetIsUnlocked(unlockVar bool) {
-	isUnLocked = unlockVar
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
