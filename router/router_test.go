@@ -402,7 +402,7 @@ var _ = Describe("Router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(_ interface{}, drainList []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "", `{"reason": "job expired"}`, 0)
+					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "401", `{"reason": "job expired"}`, 0)
 				})
 
 			done := make(chan struct{})

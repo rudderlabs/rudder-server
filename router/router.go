@@ -1954,13 +1954,16 @@ func (rt *HandleT) readAndProcess() int {
 
 	rt.throttledUserMap = make(map[string]struct{})
 	throttledAtTime := time.Now()
-	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
+	transformedAtMap := make(map[string]string)
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
 		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
 		rt.configSubscriberLock.RUnlock()
+		const drainErrorCode int = 401
 		if drain {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1968,7 +1971,7 @@ func (rt *HandleT) readAndProcess() int {
 				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				ErrorCode:     "",
+				ErrorCode:     strconv.Itoa(drainErrorCode),
 				Parameters:    []byte(`{}`),
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 				WorkspaceId:   job.WorkspaceId,
@@ -1993,31 +1996,36 @@ func (rt *HandleT) readAndProcess() int {
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
-			/*
-				The next few lines of code is mostly duplicated from commitStatusList function to add
-				stats about the jobs to the reports table
-			*/
+
+			// REPORTING - ROUTER - START
 			var parameters JobParametersT
 			err := json.Unmarshal(job.Parameters, &parameters)
 			if err != nil {
 				rt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 			}
-			var inPu string
-			if parameters.TransformAt == "processor" {
-				inPu = utilTypes.DEST_TRANSFORMER
-			} else {
-				inPu = utilTypes.EVENT_FILTER
-			}
 
 			eventName := gjson.GetBytes(job.Parameters, "event_name").String()
 			eventType := gjson.GetBytes(job.Parameters, "event_type").String()
 
-			reportMetric := &utilTypes.PUReportedMetric{
-				ConnectionDetails: *utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory),
-				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
-				StatusDetail:      utilTypes.CreateStatusDetail(status.JobState, 1, 200, string(status.ErrorResponse), job.EventPayload, eventName, eventType),
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, status.JobState, status.ErrorCode, eventName, eventType)
+			_, ok := connectionDetailsMap[key]
+			if !ok {
+				cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				connectionDetailsMap[key] = cd
+				transformedAtMap[key] = parameters.TransformAt
 			}
-			reportMetrics = append(reportMetrics, reportMetric)
+
+			sd, ok := statusDetailsMap[key]
+			if !ok {
+				sampleEvent := job.EventPayload
+				if rt.transientSources.Apply(parameters.SourceID) {
+					sampleEvent = []byte(`{}`)
+				}
+				sd = utilTypes.CreateStatusDetail(status.JobState, 0, drainErrorCode, string(status.ErrorResponse), sampleEvent, eventName, eventType)
+				statusDetailsMap[key] = sd
+			}
+			sd.Count++
+			// REPORTING - ROUTER - END
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -2052,6 +2060,28 @@ func (rt *HandleT) readAndProcess() int {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
+
+		//REPORTING - ROUTER - START
+		utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
+		for k, cd := range connectionDetailsMap {
+			var inPu string
+			if transformedAtMap[k] == "processor" {
+				inPu = utilTypes.DEST_TRANSFORMER
+			} else {
+				inPu = utilTypes.EVENT_FILTER
+			}
+			m := &utilTypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			if m.StatusDetail.Count != 0 {
+				reportMetrics = append(reportMetrics, m)
+			}
+		}
+		//REPORTING - ROUTER - END
+
 		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
 			if err != nil {
