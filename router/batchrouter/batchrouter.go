@@ -1881,6 +1881,11 @@ func (brt *HandleT) uploadFrequencyExceeded(destID string) bool {
 	brt.lastExecMapLock.Lock()
 	defer brt.lastExecMapLock.Unlock()
 	if lastExecTime, ok := brt.lastExecMap[destID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
+		brt.logger.Debugf("[BRT]: For destination: %s, we have lastExecTime: %d, now as: %d, uploadFreqInS: %d",
+			destID,
+			lastExecTime,
+			time.Now().Unix(),
+			uploadFreqInS)
 		return true
 	}
 	brt.lastExecMap[destID] = time.Now().Unix()
@@ -1903,6 +1908,7 @@ func (brt *HandleT) readAndProcess() {
 				brt.logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDest.Destination.DestinationDefinition.Name, destID)
 				continue
 			}
+			brt.logger.Debugf("[BRT]: Going ahead with destID: %s", destID)
 			brt.setDestInProgress(destID, true)
 
 			brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: nil}
