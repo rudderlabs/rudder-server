@@ -92,8 +92,8 @@ func loadPGNotifierConfig() {
 	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(3, &maxAttempt, false, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
-	config.RegisterDurationConfigVariable(time.Duration(120), &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
+	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
+	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
 //New Given default connection info return pg notifiew object from it
@@ -398,7 +398,7 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	m := &migrator.Migrator{
 		Handle:                     notifier.dbHandle,
 		MigrationsTable:            "pg_notifier_queue_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 	err = m.Migrate("pg_notifier_queue")
 	if err != nil {

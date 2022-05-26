@@ -56,7 +56,7 @@ type EventDeliveryStatusUploader struct {
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 //which will be processed by handleJobs.
 func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
-	//if disableEventUploads is true, return;
+	//if disableEventDeliveryStatusUploads is true, return;
 	if disableEventDeliveryStatusUploads {
 		return false
 	}

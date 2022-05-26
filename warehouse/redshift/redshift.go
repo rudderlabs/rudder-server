@@ -31,7 +31,6 @@ var (
 	setVarCharMax      bool
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	connectTimeout     time.Duration
 )
 
 func Init() {
@@ -42,14 +41,14 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
-	config.RegisterDurationConfigVariable(time.Duration(0), &connectTimeout, true, 1, "Warehouse.redshift.connectTimeout")
 }
 
 type HandleT struct {
-	Db        *sql.DB
-	Namespace string
-	Warehouse warehouseutils.WarehouseT
-	Uploader  warehouseutils.UploaderI
+	Db             *sql.DB
+	Namespace      string
+	Warehouse      warehouseutils.WarehouseT
+	Uploader       warehouseutils.UploaderI
+	ConnectTimeout time.Duration
 }
 
 // String constants for redshift destination config
@@ -73,6 +72,7 @@ var dataTypesMap = map[string]string{
 	"string":   "varchar(512)",
 	"text":     "varchar(max)",
 	"datetime": "timestamp",
+	"json":     "super",
 }
 
 var dataTypesMapToRudder = map[string]string{
@@ -98,6 +98,7 @@ var dataTypesMapToRudder = map[string]string{
 	"date":                        "datetime",
 	"timestamp without time zone": "datetime",
 	"timestamp with time zone":    "datetime",
+	"super":                       "json",
 }
 
 var primaryKeyMap = map[string]string{
@@ -145,8 +146,15 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
-	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Debugf("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
+	return
+}
+
+func (rs *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("RS: Dropping table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rs.Db.Exec(fmt.Sprintf(sqlStatement, rs.Namespace, tableName))
 	return
 }
 
@@ -159,7 +167,7 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 func (rs *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
 	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
-	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Debugf("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -167,14 +175,14 @@ func (rs *HandleT) AddColumn(name string, columnName string, columnType string) 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName string, columnName string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
-	pkgLogger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Debugf("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
-	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Debugf("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -321,7 +329,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
 	})
 	if regexErr == nil {
-		pkgLogger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		pkgLogger.Debugf("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
 	}
 
 	_, err = tx.Exec(sqlStatement)
@@ -347,7 +355,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
-	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	pkgLogger.Debugf("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
@@ -358,7 +366,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
-	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	pkgLogger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
 	if err != nil {
@@ -458,7 +466,8 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
-	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	pkgLogger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable,
+		sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
 	if err != nil {
@@ -507,21 +516,20 @@ type RedshiftCredentialsT struct {
 	dbName   string
 	username string
 	password string
+	timeout  time.Duration
 }
 
 func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	return connectWithTimeout(cred, connectTimeout)
-}
-
-func connectWithTimeout(cred RedshiftCredentialsT, timeout time.Duration) (*sql.DB, error) {
-	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v connect_timeout=%d",
+	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
 		cred.username,
 		cred.password,
 		cred.host,
 		cred.port,
 		cred.dbName,
-		timeout/time.Second,
 	)
+	if cred.timeout > 0 {
+		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
+	}
 
 	var err error
 	var db *sql.DB
@@ -570,13 +578,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 }
 
 func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
-	return connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	return connect(rs.getConnectionCredentials())
 }
 
 func (rs *HandleT) CreateSchema() (err error) {
@@ -600,17 +602,22 @@ func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType s
 	return
 }
 
-// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(RedshiftCredentialsT{
+func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
+	return RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+		timeout:  rs.ConnectTimeout,
+	}
+}
+
+// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+	rs.Warehouse = warehouse
+	rs.Namespace = warehouse.Namespace
+	dbHandle, err := connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -627,7 +634,8 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
-		pkgLogger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier, sqlStatement)
+		pkgLogger.Debugf("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier,
+			sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()
@@ -663,25 +671,18 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
-	timeOut := warehouseutils.TestConnectionTimeout
-	rs.Db, err = connectWithTimeout(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	}, timeOut)
+	rs.Db, err = connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
 	defer rs.Db.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
 
 	err = rs.Db.PingContext(ctx)
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
+		return fmt.Errorf("connection testing timed out after %d sec", rs.ConnectTimeout/time.Second)
 	}
 	if err != nil {
 		return err
@@ -700,13 +701,7 @@ func (rs *HandleT) Cleanup() {
 func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	rs.Db, err = connect(rs.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
@@ -752,13 +747,7 @@ func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-	})
+	dbHandle, err := connect(rs.getConnectionCredentials())
 
 	if err != nil {
 		return client.Client{}, err
@@ -767,10 +756,10 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehouse warehouseutils.WarehouseT, stagingTableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (rs *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
-		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", stagingTableName, err)
+		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return
 	}
 
@@ -783,7 +772,7 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -792,7 +781,7 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
 			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 			manifestS3Location,
 			tempAccessKeyId,
@@ -802,6 +791,10 @@ func (rs *HandleT) LoadTestTable(client *client.Client, location string, warehou
 		)
 	}
 
-	_, err = client.SQL.Exec(sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
 	return
+}
+
+func (rs *HandleT) SetConnectionTimeout(timeout time.Duration) {
+	rs.ConnectTimeout = timeout
 }

@@ -3,14 +3,16 @@ package warehouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/ory/dockertest"
-	dc "github.com/ory/dockertest/docker"
-	"github.com/phayes/freeport"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
+	"github.com/phayes/freeport"
+
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
 type ClickHouseClusterResource struct {
@@ -33,12 +35,12 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 }
 
 type ClickHouseClusterTest struct {
-	Network                *dc.Network
-	Zookeeper              *dockertest.Resource
-	Resources              ClickHouseClusterResources
-	EventsMap              EventsCountMap
-	WriteKey               string
-	TableTestQueryFreqInMS time.Duration
+	Network            *dc.Network
+	Zookeeper          *dockertest.Resource
+	Resources          ClickHouseClusterResources
+	EventsMap          EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
 }
 
 // SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
@@ -111,7 +113,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 				},
 			},
 		},
-		TableTestQueryFreqInMS: 100,
+		TableTestQueryFreq: 100 * time.Millisecond,
 	}
 	chClusterTest := Test.CHClusterTest
 	cleanup = func() {}

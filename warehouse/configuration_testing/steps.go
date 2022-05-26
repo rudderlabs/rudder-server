@@ -7,8 +7,8 @@ import (
 )
 
 func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.RawMessage, error) {
-	ct.infoRequest = &infoRequest{}
-	if err := ct.parseOptions(req, ct.infoRequest); err != nil {
+	ct.infoRequest = &DestinationValidationRequest{}
+	if err := parseOptions(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
 
@@ -17,17 +17,18 @@ func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.Ra
 	})
 }
 
-// validationSteps returns validation step for a Destination
-func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
-	steps = append(steps, &validationStep{
+// validationSteps returns series of validation steps for
+// a particular destination.
+func (ct *CTHandleT) validationSteps() []*validationStep {
+	steps := []*validationStep{{
 		ID:        1,
 		Name:      "Verifying Object Storage",
 		Validator: ct.verifyingObjectStorage,
-	})
+	}}
 
 	// Time window destination contains only object storage verification
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
-		return
+		return steps
 	}
 
 	steps = append(steps,
@@ -43,14 +44,19 @@ func (ct *CTHandleT) validationSteps() (steps []*validationStep) {
 		},
 		&validationStep{
 			ID:        4,
-			Name:      "Verifying Create Table",
-			Validator: ct.verifyingCreateTable,
+			Name:      "Verifying Create and Alter Table",
+			Validator: ct.verifyingCreateAlterTable,
 		},
 		&validationStep{
 			ID:        5,
+			Name:      "Verifying Fetch Schema",
+			Validator: ct.verifyingFetchSchema,
+		},
+		&validationStep{
+			ID:        6,
 			Name:      "Verifying Load Table",
 			Validator: ct.verifyingLoadTable,
 		},
 	)
-	return
+	return steps
 }

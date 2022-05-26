@@ -2,43 +2,41 @@ package cluster_test
 
 import (
 	"context"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"sync/atomic"
-	"testing"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 	"github.com/stretchr/testify/require"
 )
 
 type mockModeProvider struct {
-	ch chan servermode.Ack
+	modeCh      chan servermode.ChangeEvent
+	workspaceCh chan workspace.ChangeEvent
 }
 
-func (m *mockModeProvider) ServerMode() (<-chan servermode.Ack, error) {
-	return m.ch, nil
+func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ChangeEvent {
+	return m.modeCh
 }
 
-func (m *mockModeProvider) SendMode(newMode servermode.Ack) {
-	m.ch <- newMode
+func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.ChangeEvent {
+	return m.workspaceCh
 }
 
-func (m *mockModeProvider) Close() {
-	close(m.ch)
+func (m *mockModeProvider) SendMode(newMode servermode.ChangeEvent) {
+	m.modeCh <- newMode
 }
 
-type staticModeProvider servermode.Mode
-
-func (s *staticModeProvider) ServerMode() <-chan servermode.Ack {
-	ch := make(chan servermode.Ack, 1)
-	ch <- servermode.WithACK(servermode.Mode(*s), func() {})
-	close(ch)
-	return ch
+func (m *mockModeProvider) SendWorkspaceIDs(ws workspace.ChangeEvent) {
+	m.workspaceCh <- ws
 }
 
 type mockLifecycle struct {
@@ -57,6 +55,24 @@ func (m *mockLifecycle) Stop() {
 	m.status = "stop"
 }
 
+type configMock struct {
+	workspaces          string
+	stopPollingCalled   bool
+	waitForConfigCalled bool
+}
+
+func (s *configMock) StartWithIDs(workspaces string) {
+	s.workspaces = workspaces
+}
+
+func (s *configMock) Stop() {
+	s.stopPollingCalled = true
+}
+func (s *configMock) WaitForConfig(_ context.Context) error {
+	s.waitForConfigCalled = true
+	return nil
+}
+
 func Init() {
 	config.Load()
 	stats.Setup()
@@ -66,7 +82,10 @@ func Init() {
 func TestDynamicCluster(t *testing.T) {
 	Init()
 
-	provider := &mockModeProvider{ch: make(chan servermode.Ack)}
+	provider := &mockModeProvider{
+		modeCh:      make(chan servermode.ChangeEvent),
+		workspaceCh: make(chan workspace.ChangeEvent),
+	}
 
 	callCount := uint64(0)
 
@@ -81,6 +100,8 @@ func TestDynamicCluster(t *testing.T) {
 	mtStat := &multitenant.MultitenantStatsT{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
+
+	backendConfig := configMock{}
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -93,20 +114,22 @@ func TestDynamicCluster(t *testing.T) {
 		Router:    router,
 
 		MultiTenantStat: mtStat,
+		BackendConfig:   &backendConfig,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	wait := make(chan bool)
+	wait := make(chan struct{})
 	go func() {
 		dc.Run(ctx)
 		close(wait)
 	}()
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
-		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.NormalMode, func() {
+		chACK := make(chan struct{})
+		provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 			close(chACK)
+			return nil
 		}))
 
 		require.Eventually(t, func() bool {
@@ -136,9 +159,10 @@ func TestDynamicCluster(t *testing.T) {
 	})
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
-		chACK := make(chan bool)
-		provider.SendMode(servermode.WithACK(servermode.DegradedMode, func() {
+		chACK := make(chan struct{})
+		provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 			close(chACK)
+			return nil
 		}))
 
 		require.Eventually(t, func() bool {
@@ -165,6 +189,23 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
+	})
+
+	t.Run("Update workspaceIDs", func(t *testing.T) {
+		chACK := make(chan struct{})
+		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func(_ context.Context) error {
+			close(chACK)
+			return nil
+		}))
+
+		require.Eventually(t, func() bool {
+			<-chACK
+			return true
+		}, time.Second, time.Millisecond)
+
+		require.True(t, backendConfig.stopPollingCalled)
+		require.True(t, backendConfig.waitForConfigCalled)
+		require.Equal(t, "a,b,c", backendConfig.workspaces)
 	})
 
 	t.Run("Shutdown from Normal ", func(t *testing.T) {

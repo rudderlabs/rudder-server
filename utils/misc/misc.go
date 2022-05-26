@@ -47,10 +47,13 @@ import (
 	"github.com/thoas/go-funk"
 )
 
-var AppStartTime int64
-var errorStorePath string
-var reservedFolderPaths []*RFP
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	AppStartTime        int64
+	errorStorePath      string
+	reservedFolderPaths []*RFP
+	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
+	notifyOnce          sync.Once
+)
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -1247,16 +1250,18 @@ func WithBugsnagForWarehouse(fn func() error) func() error {
 func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				},
-				"Team": {
-					"Name": team,
-				},
+			notifyOnce.Do(func() {
+				RecordAppError(fmt.Errorf("%v", r))
+				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+					"GoRoutines": {
+						"Number": runtime.NumGoroutine(),
+					},
+					"Team": {
+						"Name": team,
+					},
+				})
 			})
 
-			RecordAppError(fmt.Errorf("%v", r))
 			pkgLogger.Fatal(r)
 			panic(r)
 		}
@@ -1390,8 +1395,8 @@ func ReverseInt(s []int) []int {
 	return s
 }
 
-func IsMultiTenant() bool {
-	return config.GetBool("EnableMultitenancy", false)
+func UseFairPickup() bool {
+	return config.GetBool("JobsDB.fairPickup", false) || config.GetBool("EnableMultitenancy", false)
 }
 
 // lookup map recursively and return value
@@ -1410,4 +1415,12 @@ func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 		return MapLookup(nextMap, keys[1:]...)
 	}
 	return nil
+}
+
+func CopyStringMap(originalMap map[string]string) map[string]string {
+	newMap := make(map[string]string)
+	for key, value := range originalMap {
+		newMap[key] = value
+	}
+	return newMap
 }

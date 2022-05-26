@@ -83,6 +83,11 @@ const (
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
+const (
+	CTInvalidStep        = "Invalid step"
+	CTStagingTablePrefix = "setup_test_staging"
+)
+
 var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
@@ -131,6 +136,7 @@ const (
 	LOAD_FILE_TYPE_CSV     = "csv"
 	LOAD_FILE_TYPE_JSON    = "json"
 	LOAD_FILE_TYPE_PARQUET = "parquet"
+	TestConnectionTimeout  = 15 * time.Second
 )
 
 var (
@@ -138,13 +144,11 @@ var (
 	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
-	TestConnectionTimeout  time.Duration
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
-	TestConnectionTimeout = time.Duration(15) * time.Second
 }
 
 func loadConfig() {

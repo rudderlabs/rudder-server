@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -89,15 +90,14 @@ func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 	return wh.destType + "_IDENTITY_PRE_LOAD"
 }
 
-func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) bool {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s`, warehouseutils.IdentityMergeRulesTableName(warehouse))
-	var count int
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) (exists bool) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %s )`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
 		// TODO: Handle this
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
-	return count > 0
+	return
 }
 
 func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
@@ -296,11 +296,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 
 		job := UploadJobT{
-			upload:     &upload,
-			warehouse:  warehouse,
-			whManager:  whManager,
-			dbHandle:   wh.dbHandle,
-			pgNotifier: &wh.notifier,
+			upload:               &upload,
+			warehouse:            warehouse,
+			whManager:            whManager,
+			dbHandle:             wh.dbHandle,
+			pgNotifier:           &wh.notifier,
+			destinationValidator: configuration_testing.NewDestinationValidator(),
 		}
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
