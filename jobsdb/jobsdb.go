@@ -1377,6 +1377,9 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
 func computeInsertVals(before, after []string) ([]string, error) {
 	for {
+		if before == nil || after == nil {
+			return nil, fmt.Errorf("before or after is nil")
+		}
 		//Safe check: In the current jobsdb implementation, indices don't go more
 		//than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
 		if len(before) > 4 {
@@ -1391,7 +1394,6 @@ func computeInsertVals(before, after []string) ([]string, error) {
 		}
 		//Just increment the last value of the index as a possible candidate
 		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
-
 		var equals bool
 		if len(calculatedVals) == len(after) {
 			equals = true
@@ -1402,7 +1404,6 @@ func computeInsertVals(before, after []string) ([]string, error) {
 				equals = false
 			}
 		}
-
 		if !equals {
 			comparison, err := dsComparitor(calculatedVals, after)
 			if err != nil {
@@ -1412,11 +1413,17 @@ func computeInsertVals(before, after []string) ([]string, error) {
 				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
 			}
 		}
-
-		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+		//Only when the index starts with 0, we allow three levels and when we are using the legacy migration
 		//In all other cases, we allow only two levels
-		if (before[0] == "0" && len(calculatedVals) == 3) ||
-			(before[0] != "0" && len(calculatedVals) == 2) {
+		var comparatorBool bool
+		if skipZeroAssertionForMultitenant {
+			comparatorBool = len(calculatedVals) == 2
+		} else {
+			comparatorBool = (before[0] == "0" && len(calculatedVals) == 3) ||
+				(before[0] != "0" && len(calculatedVals) == 2)
+		}
+
+		if comparatorBool {
 			if equals {
 				return calculatedVals, fmt.Errorf("calculatedVals and after are same. computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
 			} else {
