@@ -18,21 +18,14 @@ phases:
 
   build:
     commands:
-      - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
-      - docker build -t rudderlabs/develop-rudder-server:$VERSION-codebuild .
+      - docker build -t rudderlabs/develop-rudder-server:$VERSION .
         --build-arg VERSION=$VERSION
-        --build-arg BUILD_DATE=$DATE
         --build-arg COMMIT_HASH=$CODEBUILD_RESOLVED_SOURCE_VERSION
         --build-arg REVISION=codebuild-$CODEBUILD_BUILD_ID
   post_build:
     commands:
-      - docker push rudderlabs/develop-rudder-server:$VERSION-codebuild
+      - docker push rudderlabs/develop-rudder-server:$VERSION
 artifacts:
   files:
     - "**/*"
-
-cache:
-  paths: |
-    ~/.cache/go-build
-    ~/go/pkg/mod
