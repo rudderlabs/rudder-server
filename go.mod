@@ -17,7 +17,7 @@ require (
 	github.com/bugsnag/bugsnag-go/v2 v2.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.2
-	github.com/denisenkom/go-mssqldb v0.10.0
+	github.com/denisenkom/go-mssqldb v0.12.2
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/go-redis/redis v6.15.7+incompatible
@@ -174,3 +174,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
+
+require github.com/golang-sql/sqlexp v0.1.0 // indirect
