@@ -99,12 +99,12 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 		Data: backendconfig.ConfigT{
 			Sources: []backendconfig.SourceT{
 				{
-					ID:     "one",
-					Config: map[string]interface{}{"transient": true},
+					ID:        "one",
+					Transient: true,
 				},
 				{
-					ID:     "two",
-					Config: map[string]interface{}{"transient": true},
+					ID:        "two",
+					Transient: true,
 				},
 			},
 		},
