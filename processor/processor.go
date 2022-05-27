@@ -1557,14 +1557,14 @@ func (proc *HandleT) Store(in storeMessage) {
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.batchRouterDB.StoreInTx(tx, batchDestJobs)
+		err := proc.batchRouterDB.WithStoreSafeTx(func(storeSafeTx jobsdb.StoreSafeTx) error {
+			err := proc.batchRouterDB.StoreInTx(storeSafeTx, batchDestJobs)
 			if err != nil {
 				return fmt.Errorf("storing batch router jobs: %w", err)
 			}
 
 			// rsources stats
-			err = proc.updateRudderSourcesStats(context.TODO(), tx, batchDestJobs)
+			err = proc.updateRudderSourcesStats(context.TODO(), storeSafeTx.MustTx(), batchDestJobs)
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats for batch router: %w", err)
 			}
@@ -1593,14 +1593,14 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.routerDB.StoreInTx(tx, destJobs)
+		err := proc.routerDB.WithStoreSafeTx(func(storeSafeTx jobsdb.StoreSafeTx) error {
+			err := proc.routerDB.StoreInTx(storeSafeTx, destJobs)
 			if err != nil {
 				return fmt.Errorf("storing router jobs: %w", err)
 			}
 
 			// rsources stats
-			err = proc.updateRudderSourcesStats(context.TODO(), tx, destJobs)
+			err = proc.updateRudderSourcesStats(context.TODO(), storeSafeTx.MustTx(), destJobs)
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats for router: %w", err)
 			}
@@ -1642,21 +1642,22 @@ func (proc *HandleT) Store(in storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
-	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+	err := proc.gatewayDB.WithUpdateSafeTx(func(updateSafeTx jobsdb.UpdateSafeTx) error {
+		err := proc.gatewayDB.UpdateJobStatusInTx(updateSafeTx, statusList, []string{GWCustomVal}, nil)
 		if err != nil {
 			return fmt.Errorf("updating gateway jobs statuses: %w", err)
 		}
 
+		tx := updateSafeTx.MustTx()
 		// rsources stats
 		in.rsourcesStats.JobStatusesUpdated(statusList)
-		err = in.rsourcesStats.Publish(context.TODO(), tx.Tx())
+		err = in.rsourcesStats.Publish(context.TODO(), tx)
 		if err != nil {
 			return fmt.Errorf("publishing rsources stats: %w", err)
 		}
 
 		if proc.isReportingEnabled() {
-			proc.reporting.Report(in.reportMetrics, tx.Tx())
+			proc.reporting.Report(in.reportMetrics, tx)
 		}
 
 		if enableDedup {
@@ -2079,11 +2080,18 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
-		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
+		err := proc.errorDB.WithTx(func(txGetter jobsdb.TxGetter) error {
+			tx, err := txGetter.Tx()
+			if err != nil {
+				return err
+			}
 			// TODO: error propagation
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
 			return rsourcesStats.Publish(context.TODO(), tx)
 		})
+		if err != nil {
+			panic(err)
+		}
 
 	}
 }
@@ -2501,9 +2509,9 @@ func (proc *HandleT) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
 }
 
-func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
+func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx *sql.Tx, jobs []*jobsdb.JobT) error {
 	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
 	rsourcesStats.JobsStored(jobs)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx)
 	return err
 }

@@ -5,7 +5,6 @@
 package mocks_jobsdb
 
 import (
-	sql "database/sql"
 	json "encoding/json"
 	reflect "reflect"
 
@@ -326,7 +325,7 @@ func (mr *MockJobsDBMockRecorder) WithStoreSafeTx(arg0 interface{}) *gomock.Call
 }
 
 // WithTx mocks base method.
-func (m *MockJobsDB) WithTx(arg0 func(*sql.Tx) error) error {
+func (m *MockJobsDB) WithTx(arg0 func(jobsdb.TxGetter) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WithTx", arg0)
 	ret0, _ := ret[0].(error)

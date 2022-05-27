@@ -308,22 +308,22 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
-		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+		err := gateway.jobsDB.WithStoreSafeTx(func(storeSafeTx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(tx, jobList)
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(storeSafeTx, jobList)
 			} else {
-				err := gateway.jobsDB.StoreInTx(tx, jobList)
+				err := gateway.jobsDB.StoreInTx(storeSafeTx, jobList)
 				if err != nil {
 					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 					gateway.logger.Errorf("JobList: %+v", jobList)
 					return err
 				}
 			}
-
+			tx := storeSafeTx.MustTx()
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
 			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
-			return rsourcesStats.Publish(context.TODO(), tx.Tx())
+			return rsourcesStats.Publish(context.TODO(), tx)
 		})
 		if err != nil {
 			panic(err)

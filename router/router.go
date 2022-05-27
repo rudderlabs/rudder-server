@@ -1643,23 +1643,23 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 		}
 		// Update the status
-		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
+		err := rt.jobsDB.WithUpdateSafeTx(func(updateSafeTx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(updateSafeTx, statusList, []string{rt.destName}, nil)
 			if err != nil {
 				return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
 			}
+			tx := updateSafeTx.MustTx()
 
 			// rsources stats
 			err = rt.updateRudderSourcesStats(context.TODO(), tx, completedJobsList, statusList)
 			if err != nil {
 				return err
 			}
-
 			// Save msg ids of aborted jobs
 			if len(jobRunIDAbortedEventsMap) > 0 {
-				GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+				GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
 			}
-			rt.Reporting.Report(reportMetrics, tx.Tx())
+			rt.Reporting.Report(reportMetrics, tx)
 			return nil
 		})
 		if err != nil {
@@ -2095,18 +2095,19 @@ func (rt *HandleT) readAndProcess() int {
 		}
 		// REPORTING - ROUTER - END
 
-		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
+		err = rt.jobsDB.WithUpdateSafeTx(func(updateSafeTx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(updateSafeTx, drainList, []string{rt.destName}, nil)
 			if err != nil {
 				return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
 			}
+			tx := updateSafeTx.MustTx()
 			// rsources stats
 			err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
 			if err != nil {
 				return err
 			}
 
-			rt.Reporting.Report(reportMetrics, tx.Tx())
+			rt.Reporting.Report(reportMetrics, tx)
 			return nil
 		})
 		if err != nil {
@@ -2480,11 +2481,11 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
 
-func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx *sql.Tx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx)
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
