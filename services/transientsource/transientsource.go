@@ -92,7 +92,6 @@ func (r *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 
 	ch := make(chan pubsub.DataEvent)
 	config.Subscribe(ch, backendconfig.TopicBackendConfig)
-
 	for {
 		select {
 		case ev := <-ch:
@@ -121,7 +120,7 @@ func transientSourceIds(c *backendconfig.ConfigT) []string {
 	r := make([]string, 0)
 	for i := range c.Sources {
 		source := &c.Sources[i]
-		if source.Config["transient"] == true {
+		if source.Transient {
 			r = append(r, source.ID)
 		}
 	}
