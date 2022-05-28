@@ -122,6 +122,10 @@ func (c *testContext) initializeEnterprizeAppFeatures() {
 	c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
 }
 
+func setAllowReqsWithoutUserIDAndAnonymousID(allow bool) {
+	allowReqsWithoutUserIDAndAnonymousID = allow
+}
+
 // Initiaze mocks and common expectations
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
@@ -289,9 +293,9 @@ var _ = Describe("Gateway", func() {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
-			json.Unmarshal(job.Parameters, &paramsMap)
+			_ = json.Unmarshal(job.Parameters, &paramsMap)
 			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": ""}`, SourceIDEnabled, batchId))
-			json.Unmarshal(expectedStr, &expectedParamsMap)
+			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(Equal(true))
 
@@ -435,6 +439,16 @@ var _ = Describe("Gateway", func() {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
+			It("should reject requests without valid rudder event in request body", func() {
+				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
+				if handlerType == "batch" || handlerType == "import" {
+					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
+				}
+				setAllowReqsWithoutUserIDAndAnonymousID(true)
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(notRudderEvent)), 400, response.NotRudderEvent+"\n")
+				setAllowReqsWithoutUserIDAndAnonymousID(false)
+			})
+
 			It("should reject requests with both userId and anonymousId not present", func() {
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
@@ -523,33 +537,6 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
 		Expect(body).To(Equal(responseBody))
-	}, testTimeout)
-}
-
-type RequestExpectation struct {
-	request        *http.Request
-	handler        http.HandlerFunc
-	responseStatus int
-	responseBody   string
-}
-
-func expectBatch(expectations []*RequestExpectation) {
-	c := make(chan struct{})
-
-	for _, x := range expectations {
-		go func(e *RequestExpectation) {
-			defer GinkgoRecover()
-			expectHandlerResponse(e.handler, e.request, e.responseStatus, e.responseBody)
-			c <- struct{}{}
-		}(x)
-	}
-
-	misc.RunWithTimeout(func() {
-		for range expectations {
-			<-c
-		}
-	}, func() {
-		Fail("Not all batch requests responded on time")
 	}, testTimeout)
 }
 
