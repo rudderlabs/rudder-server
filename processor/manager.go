@@ -56,7 +56,8 @@ func (proc *LifecycleManager) Start() {
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
 	proc.HandleT.Shutdown()
-	proc.waitGroup.Wait()
+	//TODO : Handle the errors cleanly
+	_ = proc.waitGroup.Wait()
 }
 
 // New creates a new Processor instance

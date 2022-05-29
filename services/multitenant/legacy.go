@@ -5,10 +5,10 @@ import (
 )
 
 type Legacy struct {
-	*MultitenantStatsT
+	*StatsT
 }
 
-func WithLegacyPickupJobs(stats *MultitenantStatsT) *Legacy {
+func WithLegacyPickupJobs(stats *StatsT) *Legacy {
 	return &Legacy{stats}
 }
 
