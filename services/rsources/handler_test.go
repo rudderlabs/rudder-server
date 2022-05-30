@@ -81,7 +81,8 @@ func TestSourcesHandler(t *testing.T) {
 
 	prepareService := func() (JobService, string) {
 		jobRunId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-		sh := NewJobService(db)
+		sh, err := NewJobService(db)
+		require.NoError(t, err, "it should be able to create the service")
 
 		key := JobTargetKey{
 			SourceID:      "source_id",

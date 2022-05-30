@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/lib/pq"
 )
@@ -17,16 +16,16 @@ const (
 
 type sourcesHandler struct {
 	extension
-	createStatTableOnce sync.Once
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
 
 	filterParams := []interface{}{}
-	filters := fmt.Sprintf(`WHERE job_run_id = '%s'`, jobRunId)
+	filters := `WHERE job_run_id = $1`
+	filterParams = append(filterParams, jobRunId)
 
 	if len(filter.TaskRunID) > 0 {
-		filters += ` AND task_run_id  = ANY ($1)`
+		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
 		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
 	}
 
@@ -83,11 +82,6 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 
 // IncrementStats checks for stats table and upserts the stats
 func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
-	err := sh.checkForTable(ctx)
-	if err != nil {
-		return err
-	}
-
 	sqlStatement := fmt.Sprintf(`insert into "%[1]s" (
 		source_id,
 		destination_id,
@@ -104,7 +98,7 @@ func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRun
 	failed_count = "%[1]s".failed_count + excluded.failed_count,
 	ts = NOW()`, tableName)
 
-	_, err = tx.ExecContext(
+	_, err := tx.ExecContext(
 		ctx,
 		sqlStatement,
 		key.SourceID, key.DestinationID, jobRunId, key.TaskRunID,
@@ -127,13 +121,4 @@ func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
 
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 	return sh.extension.cleanupLoop(ctx)
-}
-
-// checks if the stats table for the given jobrunid exists and creates it if it doesn't
-func (sh *sourcesHandler) checkForTable(ctx context.Context) error {
-	var err error
-	sh.createStatTableOnce.Do(func() {
-		err = sh.extension.createStatsTable(ctx)
-	})
-	return err
 }

@@ -96,23 +96,24 @@ type JobService interface {
 	CleanupLoop(ctx context.Context) error
 }
 
-func NewJobService(db *sql.DB) JobService {
-	return &sourcesHandler{
-		extension: newDefaultExtension(db),
+func NewJobService(db *sql.DB) (JobService, error) {
+	defExt, err := newDefaultExtension(db)
+	if err != nil {
+		return nil, err
 	}
+	return &sourcesHandler{
+		extension: defExt,
+	}, nil
 }
 
-func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) JobService {
-	return &sourcesHandler{
-		extension: &multitenantExtension{
-			defaultExtension: newDefaultExtension(db),
-			sharedDB:         readDB,
-		},
+func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) (JobService, error) {
+	multiExt, err := newMultitenantExtension(db, readDB)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func newDefaultExtension(db *sql.DB) *defaultExtension {
-	return &defaultExtension{localDB: db}
+	return &sourcesHandler{
+		extension: multiExt,
+	}, nil
 }
 
 func NewNoOpService() JobService {

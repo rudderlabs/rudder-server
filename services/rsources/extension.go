@@ -11,7 +11,7 @@ import (
 
 type extension interface {
 	getReadDB() *sql.DB
-	createStatsTable(ctx context.Context) error
+	setupStatsTable(ctx context.Context) error
 	dropStats(ctx context.Context, jobRunId string) error
 	cleanupLoop(ctx context.Context) error
 }
@@ -20,11 +20,17 @@ type defaultExtension struct {
 	localDB *sql.DB
 }
 
+func newDefaultExtension(db *sql.DB) (*defaultExtension, error) {
+	defExtension := &defaultExtension{localDB: db}
+	err := defExtension.setupStatsTable(context.Background())
+	return defExtension, err
+}
+
 func (r *defaultExtension) getReadDB() *sql.DB {
 	return r.localDB
 }
 
-func (r *defaultExtension) createStatsTable(ctx context.Context) error {
+func (r *defaultExtension) setupStatsTable(ctx context.Context) error {
 	dbHost := config.GetEnv("JOBS_DB_HOST", "localhost")
 	tx, err := r.localDB.Begin()
 	if err != nil {
@@ -64,7 +70,7 @@ func (r *defaultExtension) cleanupLoop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(sourcesStatCleanUpSleepTime):
+		case <-time.After(config.GetDuration("JOBS_CLEANUP_INTERVAL", 24, time.Hour)):
 			err := r.doCleanupTables(ctx)
 			if err != nil {
 				return err
@@ -74,7 +80,7 @@ func (r *defaultExtension) cleanupLoop(ctx context.Context) error {
 }
 
 func (r *defaultExtension) doCleanupTables(ctx context.Context) error {
-	before := time.Now().Add(-24 * time.Hour)
+	before := time.Now().Add(-config.GetDuration("JOBS_CLEANUP_INTERVAL", 24, time.Hour))
 	return r.removeBefore(ctx, before)
 }
 

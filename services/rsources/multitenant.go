@@ -10,16 +10,26 @@ type multitenantExtension struct {
 	sharedDB *sql.DB
 }
 
+func newMultitenantExtension(db, readDB *sql.DB) (*multitenantExtension, error) {
+	defExt, err := newDefaultExtension(db)
+	if err != nil {
+		return nil, err
+	}
+	multiExt := &multitenantExtension{
+		defaultExtension: defExt,
+		sharedDB:         readDB,
+	}
+	err = multiExt.setupStatsTable(context.Background())
+	return multiExt, err
+}
+
 func (r *multitenantExtension) getReadDB() *sql.DB {
 	return r.sharedDB
 }
 
-func (r *multitenantExtension) createStatsTable(ctx context.Context) error {
-	err := r.defaultExtension.createStatsTable(ctx)
-	if err != nil {
-		return err
-	}
+func (r *multitenantExtension) setupStatsTable(ctx context.Context) error {
 	// ## On local DB
+	// 0. stats table already created above during `newMultitenantExtension -> newDefaultExtension`
 	// 1. Create publication, 1 publication for all tables (ignore already exists error)
 	// 2. Add table to publication if not already (ignore is already member of publication error)
 
