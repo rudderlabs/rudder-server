@@ -768,9 +768,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								defer cancel()
 								//transformer proxy start
 								if worker.rt.transformerProxy {
+									pkgLogger.Infof(`[%v]TransformerProxy Request started`, worker.rt.destName)
+									namespace := config.GetKubeNamespace()
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, namespace)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+									pkgLogger.Infof(`[%v]TransformerProxy Request ended`, worker.rt.destName)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -801,6 +804,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							}
 						}
 						respBody = strings.Join(respBodyArr, " ")
+						if worker.rt.transformerProxy {
+							pkgLogger.Infof(`[%v][TransformerProxy]Input Router Events: %v, Out router events: %v`, worker.rt.destName, len(result), len(respBodyArr))
+						}
 					}
 				}
 				ch <- struct{}{}
