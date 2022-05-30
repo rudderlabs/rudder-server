@@ -90,7 +90,7 @@ func loadStatusMap() {
 	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
 	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
 	statusMap[NonIdentifiableRequest] = ResponseStatus{message: NonIdentifiableRequest, code: http.StatusBadRequest}
-	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusInternalServerError}
+	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusBadRequest}
 	statusMap[ErrorInParseForm] = ResponseStatus{message: ErrorInParseForm, code: http.StatusBadRequest}
 	statusMap[ErrorInParseMultiform] = ResponseStatus{message: ErrorInParseMultiform, code: http.StatusBadRequest}
 	statusMap[NotRudderEvent] = ResponseStatus{message: NotRudderEvent, code: http.StatusBadRequest}
