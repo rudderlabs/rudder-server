@@ -214,12 +214,12 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[Transformer Proxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
+		pkgLogger.Errorf("[TransformerProxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
 		stats.NewTaggedStat("transformer_proxy.retries", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	})
 
 	if err != nil {
-		panic(fmt.Errorf("[Transformer Proxy] Proxy request failed after max retries Error:: %+v", err))
+		panic(fmt.Errorf("[TransformerProxy] Proxy request failed after max retries Error:: %+v", err))
 	}
 
 	//Detecting content type of the respBody
@@ -243,14 +243,14 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		}
 	**/
 	transformerResponse := integrations.TransResponseT{
-		Message: "[Transformer Proxy]:: Default Message TransResponseT",
+		Message: "[TransformerProxy]:: Default Message TransResponseT",
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 	err = jsonfast.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
-		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
+		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
 		respData = []byte(errStr)
 		respCode = http.StatusBadRequest
@@ -259,7 +259,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	// unmarshal success
 	respData, err = jsonfast.Marshal(transformerResponse)
 	if err != nil {
-		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
+		panic(fmt.Errorf("[TransformerProxy]:: failed to Marshal proxy response : %+v", err))
 	}
 
 	return respCode, string(respData)
@@ -303,7 +303,7 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 
 	// error handling if body is missing
 	if resp.Body == nil {
-		respData = []byte("[Transformer Proxy] :: transformer returned empty response body")
+		respData = []byte("[TransformerProxy] :: transformer returned empty response body")
 		respCode = http.StatusBadRequest
 		trans.logger.Errorf(`Failed with statusCode: %v, message: %v`, respCode, string(respData))
 		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
@@ -313,7 +313,7 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	defer resp.Body.Close()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`[Transformer Proxy] :: failed to read response body, Error:: %+v`, err))
+		respData = []byte(fmt.Sprintf(`[TransformerProxy] :: failed to read response body, Error:: %+v`, err))
 		respCode = http.StatusBadRequest
 		trans.logger.Errorf(`Failed with statusCode: %v, message: %v`, respCode, string(respData))
 		return respData, respCode, err
