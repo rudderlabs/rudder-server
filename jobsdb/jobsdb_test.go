@@ -106,6 +106,48 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		})
 	})
 
+	var _ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
+		func(before, after, expected string) {
+			setSkipZeroAssertionForMultitenant(true)
+			computedIdx, err := computeInsertIdx(before, after)
+			Expect(computedIdx).To(Equal(expected))
+			Expect(err).To(BeNil())
+			setSkipZeroAssertionForMultitenant(false)
+		},
+		//dList => 1 2 3 4 5
+		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+		Entry("Internal Migration for regular tables 1 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
+
+		//dList => 1_1 2 3 4 5
+		Entry("Internal Migration for regular tables 2 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2", "1_2"),
+		Entry("Internal Migration for regular tables 2 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
+
+		//dList => 1 2_1 3 4 5
+		Entry("Internal Migration for regular tables 3 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2_1", "1_1"),
+		Entry("Internal Migration for regular tables 3 Test 2 with skipZeroAssertionForMultitenant: ", "2_1", "3", "2_2"),
+		Entry("Internal Migration for regular tables 3 Test 3 with skipZeroAssertionForMultitenant: ", "3", "4", "3_1"),
+
+		//dList => 1_1 2_1 3 4 5
+		Entry("Internal Migration for regular tables 4 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2_1", "1_2"),
+
+		//dList => 0_1 1 2 3 4 5
+		Entry("Internal Migration for import tables Case 1 Test 2 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+
+		Entry("Internal Migration for import tables Case 2 Test 3 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+
+		Entry("OrderTest Case 1 Test 1 with skipZeroAssertionForMultitenant: ", "9", "10", "9_1"),
+
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "10_1", "11_3", "10_2"),
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "1", "0_2"),
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "20", "0_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-1", "0", "-1_1"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "0", "1", "0_1"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1_1", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
+	)
+
 	Context("computeInsertVals - good input tests", func() {
 		It("Should not throw error for input 0_1, 0_2", func() {
 			calculatedIdx, err := computeInsertVals([]string{"0", "1"}, []string{"0", "2"})
@@ -115,6 +157,18 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	})
 
 	Context("computeInsertVals - bad input tests", func() {
+		It("Should throw error for nil inputs", func() {
+			_, err := computeInsertVals(nil, nil)
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil before input", func() {
+			_, err := computeInsertVals(nil, []string{"1"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil after input", func() {
+			_, err := computeInsertVals([]string{"1"}, nil)
+			Expect(err).To(HaveOccurred())
+		})
 		It("Should throw error for input 1, 1_1", func() {
 			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
 			Expect(err).To(HaveOccurred())
@@ -402,4 +456,8 @@ var sanitizeRegexp = regexp.MustCompile(`\\u0000`)
 
 func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 	return json.RawMessage(sanitizeRegexp.ReplaceAllString(string(input), ""))
+}
+
+func setSkipZeroAssertionForMultitenant(b bool) {
+	skipZeroAssertionForMultitenant = b
 }
