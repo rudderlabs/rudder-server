@@ -5,11 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"time"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
-var sourcesStatCleanUpSleepTime = 24 * time.Hour
 
 type JobFilter struct {
 	TaskRunID []string

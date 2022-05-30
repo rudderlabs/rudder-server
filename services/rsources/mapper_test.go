@@ -1,6 +1,7 @@
 package rsources
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,10 @@ import (
 func TestMapToStatus(t *testing.T) {
 	for _, e := range testCases {
 		res := statusFromQueryResult("jobRunId", e.in)
+		sort.Slice(res.TasksStatus, func(i, j int) bool {
+			return res.TasksStatus[i].ID < res.TasksStatus[j].ID
+		})
+		// further sorting would be needed in case there's multiple stats inside a task or a source
 		require.Equal(t, e.out, res, "test case: "+e.name)
 	}
 }

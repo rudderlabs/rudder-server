@@ -27,7 +27,7 @@ func (r *multitenantExtension) getReadDB() *sql.DB {
 	return r.sharedDB
 }
 
-func (r *multitenantExtension) setupStatsTable(ctx context.Context) error {
+func (_ *multitenantExtension) setupStatsTable(_ context.Context) error {
 	// ## On local DB
 	// 0. stats table already created above during `newMultitenantExtension -> newDefaultExtension`
 	// 1. Create publication, 1 publication for all tables (ignore already exists error)

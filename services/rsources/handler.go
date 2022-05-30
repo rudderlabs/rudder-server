@@ -81,7 +81,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 }
 
 // IncrementStats checks for stats table and upserts the stats
-func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
+func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
 	sqlStatement := fmt.Sprintf(`insert into "%[1]s" (
 		source_id,
 		destination_id,
