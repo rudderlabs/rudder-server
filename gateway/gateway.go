@@ -715,9 +715,7 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 }
 
 func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
-	// fmt.Println("---request body: ", r.Body)
 	if r.Body == nil {
-		fmt.Println("---r.Body is nil---")
 		return []byte{}, errors.New(response.RequestBodyNil)
 	}
 
@@ -1091,13 +1089,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			// if strings.Contains(errorMessage, response.GetStatus(response.TooManyRequests)) {
-			// 	gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage)
-			// 	http.Error(w, errorMessage, response.GetStatusCode(errorMessage))
-			// 	return
-			// }
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatusCode(errorMessage), errorMessage)
-			fmt.Println("---status code: ", response.GetStatusCode(errorMessage))
 			http.Error(w, errorMessage, response.GetStatusCode(errorMessage))
 		}
 	}()
