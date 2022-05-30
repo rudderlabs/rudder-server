@@ -34,6 +34,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -616,7 +617,8 @@ var (
 	backupCheckSleepDuration                     time.Duration
 	cacheExpiration                              time.Duration
 	useJoinForUnprocessed                        bool
-	maxBackupTotalPayloadSize                    int64
+	backupRowsBatchSize                          int64
+	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.LoggerI
 	useNewCacheBurst                             bool
 )
@@ -651,7 +653,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
-	config.RegisterInt64ConfigVariable(64*1024*1024, &maxBackupTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
+	config.RegisterInt64ConfigVariable(1000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	config.RegisterInt64ConfigVariable(64*bytesize.MB, &backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
@@ -3115,7 +3118,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 // getBackUpQuery individual queries for getting rows in json
-func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable bool, runningPayloadSizeOffset int64) string {
+func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable bool, offset int64) string {
 	var stmt string
 	if jd.BackupSettings.FailedOnly {
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
@@ -3123,24 +3126,49 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 			`SELECT 
 				COALESCE(
 					json_agg(
-						(
-						failed_jobs.job_id, failed_jobs.workspace_id, 
-						failed_jobs.uuid, failed_jobs.user_id, 
-						failed_jobs.parameters, failed_jobs.custom_val, 
-						failed_jobs.event_payload, failed_jobs.event_count, 
-						failed_jobs.created_at, failed_jobs.expire_at, 
-						failed_jobs.id, failed_jobs.status_job_id, 
-						failed_jobs.job_state, failed_jobs.attempt, 
-						failed_jobs.exec_time, failed_jobs.retry_time, 
-						failed_jobs.error_code, failed_jobs.error_response, 
-						failed_jobs.status_parameters
+						json_build_object(
+							'job_id',
+							failed_jobs.job_id,
+							'workspace_id',
+							failed_jobs.workspace_id,
+							'uuid',
+							failed_jobs.uuid,
+							'user_id',
+							failed_jobs.user_id,
+							'parameters',
+							failed_jobs.parameters,
+							'custom_val',
+							failed_jobs.custom_val,
+							'event_payload',
+							failed_jobs.event_payload,
+							'event_count',
+							failed_jobs.event_count,
+							'created_at',
+							failed_jobs.created_at,
+							'expire_at',
+							failed_jobs.expire_at,
+							'id',
+							failed_jobs.id,
+							'job_id',
+							failed_jobs.status_job_id,
+							'job_state',
+							failed_jobs.job_state,
+							'attempt',
+							failed_jobs.attempt,
+							'exec_time',
+							failed_jobs.exec_time,
+							'retry_time',
+							failed_jobs.retry_time,
+							'error_code',
+							failed_jobs.error_code,
+							'error_response',
+							failed_jobs.error_response,
+							'parameters',
+							failed_jobs.status_parameters
 						)
 					), 
 					'[]' :: json
 				), 
-				max(
-				failed_jobs.running_payload_size
-				),
 				count(*) 
 			FROM 
 				(
@@ -3148,53 +3176,60 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					* 
 				FROM 
 					(
-					SELECT 
-						job.job_id, 
-						job.workspace_id, 
-						job.uuid, 
-						job.user_id, 
-						job.parameters, 
-						job.custom_val, 
-						job.event_payload, 
-						job.event_count, 
-						job.created_at, 
-						job.expire_at, 
-						job_status.id, 
-						job_status.job_id AS status_job_id, 
-						job_status.job_state, 
-						job_status.attempt, 
-						job_status.exec_time, 
-						job_status.retry_time, 
-						job_status.error_code, 
-						job_status.error_response, 
-						job_status.parameters AS status_parameters, 
-						sum(
-						pg_column_size(job.event_payload)
-						) OVER (
-						ORDER BY 
-							job.custom_val, 
-							job_status.job_id, 
-							job_status.exec_time
-						) AS running_payload_size 
-					FROM 
-						"%[1]s" % [2]s 
-						INNER JOIN "%[3]s" % [4]s ON % [2]s.job_id = % [4]s.job_id 
-					WHERE 
-						% [2]s.job_state IN ('%[5]s', '%[6]s') 
+					SELECT *, 
+					sum(
+					pg_column_size(jobs.event_payload)
+					) OVER (
 					ORDER BY 
-						% [4]s.custom_val, 
-						% [2]s.job_id, 
-						% [2]s.exec_time ASC
+						jobs.custom_val, 
+						jobs.status_job_id, 
+						jobs.exec_time
+					) AS running_payload_size 
+					FROM
+						(
+						SELECT 
+							job.job_id, 
+							job.workspace_id, 
+							job.uuid, 
+							job.user_id, 
+							job.parameters, 
+							job.custom_val, 
+							job.event_payload, 
+							job.event_count, 
+							job.created_at, 
+							job.expire_at, 
+							job_status.id, 
+							job_status.job_id AS status_job_id, 
+							job_status.job_state, 
+							job_status.attempt, 
+							job_status.exec_time, 
+							job_status.retry_time, 
+							job_status.error_code, 
+							job_status.error_response, 
+							job_status.parameters AS status_parameters
+						FROM 
+							"%[1]s" % [2]s 
+							INNER JOIN "%[3]s" % [4]s ON % [2]s.job_id = % [4]s.job_id 
+						WHERE 
+							% [2]s.job_state IN ('%[5]s', '%[6]s') 
+						ORDER BY 
+							% [4]s.custom_val, 
+							% [2]s.job_id, 
+							% [2]s.exec_time ASC
+						LIMIT 
+							%[7]d
+						OFFSET
+							%[8]d
+						) jobs
 					) subquery 
 				WHERE 
-					subquery.running_payload_size > %[7]d 
-					AND subquery.running_payload_size <= %[8]d
+					subquery.running_payload_size <= %[9]d
 				) AS failed_jobs
-		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, runningPayloadSizeOffset, maxBackupTotalPayloadSize)
+		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 
 	} else {
 		if isJobStatusTable {
-			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from "%[1]s" order by job_id asc) AS dump_table`, backupDSRange.ds.JobStatusTable)
+			stmt = fmt.Sprintf(`SELECT json_agg(dump_table), count(*) FROM (select * from "%[1]s" order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
 		} else {
 			stmt = fmt.Sprintf(`
 			SELECT 
@@ -3207,9 +3242,6 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					dump_table.created_at, dump_table.expire_at
 				)
 				), 
-				max(
-				dump_table.running_payload_size
-				), 
 				count(*) 
 		  	FROM 
 				(
@@ -3217,24 +3249,32 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					* 
 				FROM 
 					(
-					SELECT 
-						*, 
-						sum(
-						pg_column_size(job.event_payload)
-						) OVER (
-						ORDER BY 
-							job.job_id
-						) AS running_payload_size 
-					FROM 
-						"%[1]s" job 
-					ORDER BY 
-						job_id ASC
+						SELECT
+							*, 
+							sum(
+							pg_column_size(jobs.event_payload)
+							) OVER (
+							ORDER BY 
+								jobs.job_id
+							) AS running_payload_size 
+						FROM
+							(
+							SELECT 
+								*
+							FROM 
+								"%[1]s" job 
+							ORDER BY 
+								job_id ASC
+							LIMIT 
+								%[2]d
+							OFFSET
+								%[3]d
+							) jobs
 					) subquery 
 				WHERE 
-					subquery.running_payload_size > %[2]d 
-					AND subquery.running_payload_size <= %[3]d
+					AND subquery.running_payload_size <= %[4]d
 			) AS dump_table
-			`, backupDSRange.ds.JobTable, runningPayloadSizeOffset, maxBackupTotalPayloadSize)
+			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 		}
 	}
 
@@ -3342,22 +3382,16 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
-	var runningPayloadSizeOffset, backedupJobCount, totalBackedupJobCount, batchCount int64
+	var offset, batchCount int64
+	var jobCount int64
 	for {
-		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, runningPayloadSizeOffset)
+		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
 		row := jd.dbHandle.QueryRow(stmt)
-		if isJobStatusTable {
-			err = row.Scan(&rawJSONRows)
-			if err != nil {
-				panic(fmt.Errorf("Scanning row failed with error : %w", err))
-			}
 
-		} else {
-			err = row.Scan(&rawJSONRows, runningPayloadSizeOffset, backedupJobCount)
-			if err != nil {
-				panic(fmt.Errorf("Scanning row failed with error : %w", err))
-			}
+		err = row.Scan(&rawJSONRows, jobCount)
+		if err != nil {
+			panic(fmt.Errorf("Scanning row failed with error : %w", err))
 		}
 
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
@@ -3370,8 +3404,8 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
 
 		gzWriter.Write(rawJSONRows)
-		totalBackedupJobCount += backedupJobCount
-		if totalBackedupJobCount >= totalCount || isJobStatusTable {
+		offset += jobCount
+		if offset >= totalCount {
 			break
 		}
 	}
