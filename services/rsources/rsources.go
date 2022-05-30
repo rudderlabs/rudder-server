@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+
+	"github.com/rudderlabs/rudder-server/services/rsources/internal/extension"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -95,22 +97,22 @@ type JobService interface {
 }
 
 func NewJobService(db *sql.DB) (JobService, error) {
-	defExt, err := newDefaultExtension(db)
+	defExt, err := extension.NewStandardExtension(db)
 	if err != nil {
 		return nil, err
 	}
 	return &sourcesHandler{
-		extension: defExt,
+		Extension: defExt,
 	}, nil
 }
 
 func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) (JobService, error) {
-	multiExt, err := newMultitenantExtension(db, readDB)
+	multiExt, err := extension.NewMultitenantExtension(db, readDB)
 	if err != nil {
 		return nil, err
 	}
 	return &sourcesHandler{
-		extension: multiExt,
+		Extension: multiExt,
 	}, nil
 }
 

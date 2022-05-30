@@ -1,4 +1,4 @@
-package rsources
+package extension
 
 import (
 	"context"
@@ -6,24 +6,26 @@ import (
 )
 
 type multitenantExtension struct {
-	*defaultExtension
+	Extension
 	sharedDB *sql.DB
 }
 
-func newMultitenantExtension(db, readDB *sql.DB) (*multitenantExtension, error) {
-	defExt, err := newDefaultExtension(db)
+var _ Extension = (*multitenantExtension)(nil)
+
+func NewMultitenantExtension(db, readDB *sql.DB) (Extension, error) {
+	defExt, err := NewStandardExtension(db)
 	if err != nil {
 		return nil, err
 	}
 	multiExt := &multitenantExtension{
-		defaultExtension: defExt,
-		sharedDB:         readDB,
+		Extension: defExt,
+		sharedDB:  readDB,
 	}
 	err = multiExt.setupStatsTable(context.Background())
 	return multiExt, err
 }
 
-func (r *multitenantExtension) getReadDB() *sql.DB {
+func (r *multitenantExtension) GetReadDB() *sql.DB {
 	return r.sharedDB
 }
 
@@ -40,8 +42,8 @@ func (_ *multitenantExtension) setupStatsTable(_ context.Context) error {
 	return nil
 }
 
-func (r *multitenantExtension) dropStats(ctx context.Context, jobRunId string) error {
-	err := r.defaultExtension.dropStats(ctx, jobRunId)
+func (r *multitenantExtension) DropStats(ctx context.Context, jobRunId string) error {
+	err := r.Extension.DropStats(ctx, jobRunId)
 	if err != nil {
 		return err
 	}
@@ -54,7 +56,7 @@ func (r *multitenantExtension) dropStats(ctx context.Context, jobRunId string) e
 	return nil
 }
 
-func (*multitenantExtension) cleanupLoop(_ context.Context) error {
+func (*multitenantExtension) CleanupLoop(_ context.Context) error {
 	// TODO
 	return nil
 }

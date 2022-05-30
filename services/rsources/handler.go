@@ -4,18 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
-)
-
-const (
-	tableName = "job_run_stats"
+	"github.com/rudderlabs/rudder-server/services/rsources/internal/extension"
 )
 
 type sourcesHandler struct {
-	extension
+	extension.Extension
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
@@ -41,18 +37,14 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			task_run_id,
 			sum(in_count),
 			sum(out_count),
-			sum(failed_count) FROM "%[1]s" %[2]s
+			sum(failed_count) FROM "rsources_stats" %s
 			GROUP BY task_run_id, source_id, destination_id
 			ORDER BY task_run_id, source_id, destination_id DESC`,
-		tableName, filters)
+		filters)
 
-	rows, err := sh.extension.getReadDB().QueryContext(ctx, sqlStatement, filterParams...)
+	rows, err := sh.Extension.GetReadDB().QueryContext(ctx, sqlStatement, filterParams...)
 
 	if err != nil {
-		var e *pq.Error
-		if err != nil && errors.As(err, &e) && e.Code == "42P01" {
-			return JobStatus{}, StatusNotFoundError
-		}
 		return JobStatus{}, err
 	}
 	defer rows.Close()
@@ -82,26 +74,26 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 
 // IncrementStats checks for stats table and upserts the stats
 func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
-	sqlStatement := fmt.Sprintf(`insert into "%[1]s" (
-		source_id,
-		destination_id,
+	sqlStatement := `insert into "rsources_stats" (
 		job_run_id,
 		task_run_id,
+		source_id,
+		destination_id,
 		in_count,
 		out_count,
 		failed_count
 	) values ($1, $2, $3, $4, $5, $6, $7)
-	on conflict(db_name, job_run_id, source_id, destination_id, task_run_id)
+	on conflict(db_name, job_run_id, task_run_id, source_id, destination_id)
 	do update set 
-	in_count = "%[1]s".in_count + excluded.in_count,
-	out_count = "%[1]s".out_count + excluded.out_count,
-	failed_count = "%[1]s".failed_count + excluded.failed_count,
-	ts = NOW()`, tableName)
+	in_count = "rsources_stats".in_count + excluded.in_count,
+	out_count = "rsources_stats".out_count + excluded.out_count,
+	failed_count = "rsources_stats".failed_count + excluded.failed_count,
+	ts = NOW()`
 
 	_, err := tx.ExecContext(
 		ctx,
 		sqlStatement,
-		key.SourceID, key.DestinationID, jobRunId, key.TaskRunID,
+		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
 		stats.In, stats.Out, stats.Failed)
 
 	return err
@@ -116,9 +108,9 @@ func (*sourcesHandler) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, 
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
-	return sh.extension.dropStats(ctx, jobRunId)
+	return sh.Extension.DropStats(ctx, jobRunId)
 }
 
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
-	return sh.extension.cleanupLoop(ctx)
+	return sh.Extension.CleanupLoop(ctx)
 }
