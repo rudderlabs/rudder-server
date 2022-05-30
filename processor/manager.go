@@ -56,7 +56,6 @@ func (proc *LifecycleManager) Start() {
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
 	proc.HandleT.Shutdown()
-	//TODO : Handle the errors cleanly
 	_ = proc.waitGroup.Wait()
 }
 

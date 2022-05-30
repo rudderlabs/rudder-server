@@ -202,7 +202,7 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	mtStat := &multitenant.StatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},

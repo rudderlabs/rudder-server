@@ -6,12 +6,6 @@ env:
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
 
 phases:
-  install:
-    commands:
-      # Make sure goenv is up to date
-      - cd $HOME/.goenv && git pull --ff-only && cd -
-      # Install Go 1.17
-      - goenv install 1.17.8 && goenv global 1.17.8
   pre_build:
     commands:
       - env
@@ -21,26 +15,20 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - GO111MODULE=on go mod download
 
   build:
     commands:
-      - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       # Build Enterprise version
       - make enterprise-init
-      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
-      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
-      - docker build -t rudderstack/develop-rudder-server-enterprise:$VERSION -f build/Dockerfile-aws-dev .
+      - docker build -t rudderstack/develop-rudder-server-enterprise:$VERSION .
+        --build-arg VERSION=$VERSION
+        --build-arg COMMIT_HASH=$CODEBUILD_RESOLVED_SOURCE_VERSION
+        --build-arg REVISION=codebuild-$CODEBUILD_BUILD_ID
   post_build:
     commands:
       - docker push rudderstack/develop-rudder-server-enterprise:$VERSION
 artifacts:
   files:
     - "**/*"
-
-cache:
-  paths: |
-    ~/.cache/go-build
-    ~/go/pkg/mod
