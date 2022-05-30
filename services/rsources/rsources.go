@@ -98,8 +98,7 @@ type JobService interface {
 
 func NewJobService(db *sql.DB) JobService {
 	return &sourcesHandler{
-		extension:        newDefaultExtension(db),
-		jobRunIdTableMap: make(map[string]struct{}),
+		extension: newDefaultExtension(db),
 	}
 }
 
@@ -109,7 +108,6 @@ func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) JobService {
 			defaultExtension: newDefaultExtension(db),
 			sharedDB:         readDB,
 		},
-		jobRunIdTableMap: make(map[string]struct{}),
 	}
 }
 

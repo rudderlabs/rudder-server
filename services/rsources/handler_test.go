@@ -287,9 +287,8 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("Cleanup loop", func(t *testing.T) {
-		sh, jobRunId := prepareService()
+		sh, _ := prepareService()
 		ts := time.Now().Add(-48 * time.Hour)
-		tableName := tablePrefix + jobRunId
 		stmt, err := db.Prepare(fmt.Sprintf("update %s set ts = $1", tableName))
 		require.NoError(t, err)
 		_, err = stmt.Exec(ts)
@@ -306,8 +305,7 @@ func TestSourcesHandler(t *testing.T) {
 				return
 			case <-time.After(1 * time.Second):
 				sqlStatement := fmt.Sprintf(`
-				select count(*) from information_schema.tables
-				where table_schema='public' and table_name = '%s'`, tableName)
+				select count(*) from %s`, tableName)
 				var count int
 				err = db.QueryRow(sqlStatement).Scan(&count)
 				require.NoError(t, err)

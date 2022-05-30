@@ -30,8 +30,8 @@ func (r *multitenantExtension) createStatsTable(ctx context.Context, jobRunId st
 	return nil
 }
 
-func (r *multitenantExtension) dropTables(ctx context.Context, jobRunId string) error {
-	err := r.defaultExtension.dropTables(ctx, jobRunId)
+func (r *multitenantExtension) dropStats(ctx context.Context, jobRunId string) error {
+	err := r.defaultExtension.dropStats(ctx, jobRunId)
 	if err != nil {
 		return err
 	}

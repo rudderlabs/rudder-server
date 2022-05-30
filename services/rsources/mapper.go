@@ -21,33 +21,33 @@ func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobS
 			idx = taskRunIdIndex[key.TaskRunId]
 		}
 
-		var source_idx int
+		var sourceIdx int
 		if _, ok := sourceIdIndex[key.SourceId]; !ok {
-			source_idx = len(status.TasksStatus[idx].SourcesStatus)
+			sourceIdx = len(status.TasksStatus[idx].SourcesStatus)
 			status.TasksStatus[idx].SourcesStatus = append(
 				status.TasksStatus[idx].SourcesStatus, SourceStatus{
 					ID: key.SourceId,
 				})
 			sourceIdIndex[key.SourceId] = make(map[string]int)
-			sourceIdIndex[key.SourceId][key.TaskRunId] = source_idx
+			sourceIdIndex[key.SourceId][key.TaskRunId] = sourceIdx
 		} else {
 			if _, ok := sourceIdIndex[key.SourceId][key.TaskRunId]; !ok {
-				source_idx = len(status.TasksStatus[idx].SourcesStatus)
+				sourceIdx = len(status.TasksStatus[idx].SourcesStatus)
 				status.TasksStatus[idx].SourcesStatus = append(
 					status.TasksStatus[idx].SourcesStatus, SourceStatus{
 						ID: key.SourceId,
 					})
-				sourceIdIndex[key.SourceId][key.TaskRunId] = source_idx
+				sourceIdIndex[key.SourceId][key.TaskRunId] = sourceIdx
 			} else {
-				source_idx = sourceIdIndex[key.SourceId][key.TaskRunId]
+				sourceIdx = sourceIdIndex[key.SourceId][key.TaskRunId]
 			}
 		}
 
 		if key.DestinationId == "" {
-			status.TasksStatus[idx].SourcesStatus[source_idx].Stats = stat
+			status.TasksStatus[idx].SourcesStatus[sourceIdx].Stats = stat
 		} else {
-			status.TasksStatus[idx].SourcesStatus[source_idx].DestinationsStatus = append(
-				status.TasksStatus[idx].SourcesStatus[source_idx].DestinationsStatus, DestinationStatus{
+			status.TasksStatus[idx].SourcesStatus[sourceIdx].DestinationsStatus = append(
+				status.TasksStatus[idx].SourcesStatus[sourceIdx].DestinationsStatus, DestinationStatus{
 					ID:        key.DestinationId,
 					Stats:     stat,
 					Completed: stat.completed(),
