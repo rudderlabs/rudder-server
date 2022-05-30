@@ -3215,24 +3215,24 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							job_status.error_response, 
 							job_status.parameters AS status_parameters
 						FROM 
-							"%[1]s" % [2]s 
-							INNER JOIN "%[3]s" % [4]s ON % [2]s.job_id = % [4]s.job_id 
+							"%[1]s" "job_status" 
+							INNER JOIN "%[2]s" "job" ON job_status.job_id = job.job_id 
 						WHERE 
-							% [2]s.job_state IN ('%[5]s', '%[6]s') 
+							job_status.job_state IN ('%[3]s', '%[4]s') 
 						ORDER BY 
-							% [4]s.custom_val, 
-							% [2]s.job_id, 
-							% [2]s.exec_time ASC
+						job.custom_val, 
+							job_status.job_id, 
+							job_status.exec_time ASC
 						LIMIT 
-							%[7]d
+							%[5]d
 						OFFSET
-							%[8]d
+							%[6]d
 						) jobs
 					) subquery 
 				WHERE 
-					subquery.running_payload_size <= %[9]d OR subquery.row_num = 1
+					subquery.running_payload_size <= %[7]d OR subquery.row_num = 1
 				) AS failed_jobs
-		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
+		  `, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 
 	} else {
 		if isJobStatusTable {
@@ -3402,7 +3402,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		var rawJSONRows json.RawMessage
 		row := jd.dbHandle.QueryRow(stmt)
 
-		err = row.Scan(&rawJSONRows, jobCount)
+		err = row.Scan(&rawJSONRows, &jobCount)
 		if err != nil {
 			panic(fmt.Errorf("Scanning row failed with error : %w", err))
 		}
