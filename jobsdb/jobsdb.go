@@ -3184,7 +3184,14 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 						jobs.custom_val, 
 						jobs.status_job_id, 
 						jobs.exec_time
-					) AS running_payload_size 
+					) AS running_payload_size,
+					ROW_NUMBER() 
+					OVER (
+					ORDER BY 
+						jobs.custom_val, 
+						jobs.status_job_id, 
+						jobs.exec_time
+					) AS row_num 
 					FROM
 						(
 						SELECT 
@@ -3223,7 +3230,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 						) jobs
 					) subquery 
 				WHERE 
-					subquery.running_payload_size <= %[9]d
+					subquery.running_payload_size <= %[9]d OR subquery.row_num = 1
 				) AS failed_jobs
 		  `, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job", Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 
@@ -3256,7 +3263,14 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							) OVER (
 							ORDER BY 
 								jobs.job_id
-							) AS running_payload_size 
+							) AS running_payload_size,
+							ROW_NUMBER() 
+							OVER (
+							ORDER BY 
+								jobs.custom_val, 
+								jobs.status_job_id, 
+								jobs.exec_time
+							) AS row_num  
 						FROM
 							(
 							SELECT 
@@ -3272,7 +3286,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							) jobs
 					) subquery 
 				WHERE 
-					AND subquery.running_payload_size <= %[4]d
+					AND subquery.running_payload_size <= %[4]d OR subquery.row_num = 1
 			) AS dump_table
 			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 		}
@@ -3382,8 +3396,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
-	var offset, batchCount int64
-	var jobCount int64
+	var offset, batchCount, jobCount int64
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
