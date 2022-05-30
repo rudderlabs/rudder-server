@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
 
 	"cloud.google.com/go/storage"
@@ -104,12 +105,15 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
 		} else if manager.Config.Credentials == "" {
 			manager.client, err = storage.NewClient(ctx)
-		} else {
+		} else if googleutils.CompatibleGoogleCredentialsJson([]byte(manager.Config.Credentials)) == nil {
 			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 		}
 	}
 
 	if manager.client == nil {
+		if err = googleutils.CompatibleGoogleCredentialsJson([]byte(manager.Config.Credentials)); err != nil {
+			return manager.client, err
+		}
 		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 	}
 	return manager.client, err
