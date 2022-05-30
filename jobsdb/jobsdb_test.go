@@ -349,7 +349,7 @@ var _ = Describe("jobsdb", func() {
 		It("doesn't make db calls if !refreshFromDB", func() {
 			jd.datasetList = dsListInMemory
 
-			Expect(jd.getDSList(false)).To(Equal(dsListInMemory))
+			Expect(jd.getDSList()).To(Equal(dsListInMemory))
 		})
 	})
 })
