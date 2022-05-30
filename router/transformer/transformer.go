@@ -44,7 +44,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, namespace string) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -184,7 +184,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, namespace string) (int, string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
 	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	trans.logger.Infof(`[TransformerProxy] Proxy Request starts - %v`, destName)
 	rawJSON, err := jsonfast.Marshal(responseData)
@@ -203,7 +203,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		trans.logger.Infof(`[TransformerProxy] Proxy Request operation method - %v`, destName)
 		//start
 		rdl_time := time.Now()
-		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName, namespace)
+		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName)
 		reqSuccessStr := strconv.FormatBool(requestError == nil)
 		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
 		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
@@ -276,7 +276,7 @@ func (trans *HandleT) Setup() {
 
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, destName string, namespace string) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, destName string) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
@@ -284,7 +284,6 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-K8S-Namespace", namespace)
 
 	trans.logger.Infof(`[TransformerProxy] Client Do starts - %v`, destName)
 	httpReqStTime := time.Now()

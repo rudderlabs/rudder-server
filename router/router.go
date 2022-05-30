@@ -769,9 +769,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								//transformer proxy start
 								if worker.rt.transformerProxy {
 									pkgLogger.Infof(`[%v]TransformerProxy Request started`, worker.rt.destName)
-									namespace := config.GetKubeNamespace()
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, namespace)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
 									pkgLogger.Infof(`[%v]TransformerProxy Request ended`, worker.rt.destName)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
