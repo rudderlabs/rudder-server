@@ -11,44 +11,44 @@ func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobS
 	for key, stat := range statMap {
 
 		var idx int
-		if _, ok := taskRunIdIndex[key.TaskRunId]; !ok {
+		if _, ok := taskRunIdIndex[key.TaskRunID]; !ok {
 			idx = len(taskRunIdIndex)
 			status.TasksStatus = append(status.TasksStatus, TaskStatus{
-				ID: key.TaskRunId,
+				ID: key.TaskRunID,
 			})
-			taskRunIdIndex[key.TaskRunId] = idx
+			taskRunIdIndex[key.TaskRunID] = idx
 		} else {
-			idx = taskRunIdIndex[key.TaskRunId]
+			idx = taskRunIdIndex[key.TaskRunID]
 		}
 
 		var sourceIdx int
-		if _, ok := sourceIdIndex[key.SourceId]; !ok {
+		if _, ok := sourceIdIndex[key.SourceID]; !ok {
 			sourceIdx = len(status.TasksStatus[idx].SourcesStatus)
 			status.TasksStatus[idx].SourcesStatus = append(
 				status.TasksStatus[idx].SourcesStatus, SourceStatus{
-					ID: key.SourceId,
+					ID: key.SourceID,
 				})
-			sourceIdIndex[key.SourceId] = make(map[string]int)
-			sourceIdIndex[key.SourceId][key.TaskRunId] = sourceIdx
+			sourceIdIndex[key.SourceID] = make(map[string]int)
+			sourceIdIndex[key.SourceID][key.TaskRunID] = sourceIdx
 		} else {
-			if _, ok := sourceIdIndex[key.SourceId][key.TaskRunId]; !ok {
+			if _, ok := sourceIdIndex[key.SourceID][key.TaskRunID]; !ok {
 				sourceIdx = len(status.TasksStatus[idx].SourcesStatus)
 				status.TasksStatus[idx].SourcesStatus = append(
 					status.TasksStatus[idx].SourcesStatus, SourceStatus{
-						ID: key.SourceId,
+						ID: key.SourceID,
 					})
-				sourceIdIndex[key.SourceId][key.TaskRunId] = sourceIdx
+				sourceIdIndex[key.SourceID][key.TaskRunID] = sourceIdx
 			} else {
-				sourceIdx = sourceIdIndex[key.SourceId][key.TaskRunId]
+				sourceIdx = sourceIdIndex[key.SourceID][key.TaskRunID]
 			}
 		}
 
-		if key.DestinationId == "" {
+		if key.DestinationID == "" {
 			status.TasksStatus[idx].SourcesStatus[sourceIdx].Stats = stat
 		} else {
 			status.TasksStatus[idx].SourcesStatus[sourceIdx].DestinationsStatus = append(
 				status.TasksStatus[idx].SourcesStatus[sourceIdx].DestinationsStatus, DestinationStatus{
-					ID:        key.DestinationId,
+					ID:        key.DestinationID,
 					Stats:     stat,
 					Completed: stat.completed(),
 				})

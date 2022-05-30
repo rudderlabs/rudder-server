@@ -72,8 +72,8 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 		ctx,
 		jobRunId,
 		rsources.JobFilter{
-			TaskRunId: taskRunId,
-			SourceId:  sourceId,
+			TaskRunID: taskRunId,
+			SourceID:  sourceId,
 		})
 	if err != nil {
 		if errors.Is(err, rsources.StatusNotFoundError) {

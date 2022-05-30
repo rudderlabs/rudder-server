@@ -25,14 +25,14 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 	filterParams := []interface{}{}
 	filters := fmt.Sprintf(`WHERE job_run_id = '%s'`, jobRunId)
 
-	if len(filter.TaskRunId) > 0 {
+	if len(filter.TaskRunID) > 0 {
 		filters += ` AND task_run_id  = ANY ($1)`
-		filterParams = append(filterParams, pq.Array(filter.TaskRunId))
+		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
 	}
 
-	if len(filter.SourceId) > 0 {
+	if len(filter.SourceID) > 0 {
 		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
-		filterParams = append(filterParams, pq.Array(filter.SourceId))
+		filterParams = append(filterParams, pq.Array(filter.SourceID))
 	}
 
 	sqlStatement := fmt.Sprintf(
@@ -63,7 +63,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 		var statKey JobTargetKey
 		var stat Stats
 		err := rows.Scan(
-			&statKey.SourceId, &statKey.DestinationId, &statKey.TaskRunId,
+			&statKey.SourceID, &statKey.DestinationID, &statKey.TaskRunID,
 			&stat.In, &stat.Out, &stat.Failed,
 		)
 		if err != nil {
@@ -83,7 +83,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 
 // IncrementStats checks for stats table and upserts the stats
 func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
-	err := sh.checkForTable(ctx, jobRunId)
+	err := sh.checkForTable(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (sh *sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRun
 	_, err = tx.ExecContext(
 		ctx,
 		sqlStatement,
-		key.SourceId, key.DestinationId, jobRunId, key.TaskRunId,
+		key.SourceID, key.DestinationID, jobRunId, key.TaskRunID,
 		stats.In, stats.Out, stats.Failed)
 
 	return err
@@ -130,10 +130,10 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 }
 
 // checks if the stats table for the given jobrunid exists and creates it if it doesn't
-func (sh *sourcesHandler) checkForTable(ctx context.Context, jobRunId string) error {
+func (sh *sourcesHandler) checkForTable(ctx context.Context) error {
 	var err error
 	sh.createStatTableOnce.Do(func() {
-		err = sh.extension.createStatsTable(ctx, jobRunId)
+		err = sh.extension.createStatsTable(ctx)
 	})
 	return err
 }

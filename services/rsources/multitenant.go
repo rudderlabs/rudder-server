@@ -14,8 +14,8 @@ func (r *multitenantExtension) getReadDB() *sql.DB {
 	return r.sharedDB
 }
 
-func (r *multitenantExtension) createStatsTable(ctx context.Context, jobRunId string) error {
-	err := r.defaultExtension.createStatsTable(ctx, jobRunId)
+func (r *multitenantExtension) createStatsTable(ctx context.Context) error {
+	err := r.defaultExtension.createStatsTable(ctx)
 	if err != nil {
 		return err
 	}

@@ -84,9 +84,9 @@ func TestSourcesHandler(t *testing.T) {
 		sh := NewJobService(db)
 
 		key := JobTargetKey{
-			SourceId:      "source_id",
-			DestinationId: "destination_id",
-			TaskRunId:     "task_run_id",
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+			TaskRunID:     "task_run_id",
 		}
 
 		tx, err := db.Begin()
@@ -101,8 +101,8 @@ func TestSourcesHandler(t *testing.T) {
 	t.Run("Get Status", func(t *testing.T) {
 		sh, jobRunId := prepareService()
 		jobFilters := JobFilter{
-			SourceId:  []string{"source_id"},
-			TaskRunId: []string{"task_run_id"},
+			SourceID:  []string{"source_id"},
+			TaskRunID: []string{"task_run_id"},
 		}
 		status, err := sh.GetStatus(ctx, jobRunId, jobFilters)
 		if err != nil {
@@ -142,8 +142,8 @@ func TestSourcesHandler(t *testing.T) {
 		err = tx.Commit()
 		require.NoError(t, err, "it should be able to commit the transaction")
 		jobFilters := JobFilter{
-			SourceId:  []string{"source_id"},
-			TaskRunId: []string{"task_run_id"},
+			SourceID:  []string{"source_id"},
+			TaskRunID: []string{"task_run_id"},
 		}
 		status, err := sh.GetStatus(ctx, jobRunId, jobFilters)
 		require.NotNil(t, err)
@@ -157,9 +157,9 @@ func TestSourcesHandler(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(5)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
-			TaskRunId:     "task_run_id1",
-			SourceId:      "source_id1",
-			DestinationId: "destination_id",
+			TaskRunID:     "task_run_id1",
+			SourceID:      "source_id1",
+			DestinationID: "destination_id",
 		}, Stats{
 			In:     10,
 			Out:    0,
@@ -167,9 +167,9 @@ func TestSourcesHandler(t *testing.T) {
 		}, sh, wg,
 		)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
-			TaskRunId:     "task_run_id1",
-			SourceId:      "source_id1",
-			DestinationId: "destination_id",
+			TaskRunID:     "task_run_id1",
+			SourceID:      "source_id1",
+			DestinationID: "destination_id",
 		}, Stats{
 			In:     0,
 			Out:    4,
@@ -177,9 +177,9 @@ func TestSourcesHandler(t *testing.T) {
 		}, sh, wg,
 		)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
-			TaskRunId:     "task_run_id1",
-			SourceId:      "source_id2",
-			DestinationId: "destination_id",
+			TaskRunID:     "task_run_id1",
+			SourceID:      "source_id2",
+			DestinationID: "destination_id",
 		}, Stats{
 			In:     10,
 			Out:    2,
@@ -187,9 +187,9 @@ func TestSourcesHandler(t *testing.T) {
 		}, sh, wg,
 		)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
-			TaskRunId:     "task_run_id2",
-			SourceId:      "source_id2",
-			DestinationId: "destination_id",
+			TaskRunID:     "task_run_id2",
+			SourceID:      "source_id2",
+			DestinationID: "destination_id",
 		}, Stats{
 			In:     10,
 			Out:    2,
@@ -197,9 +197,9 @@ func TestSourcesHandler(t *testing.T) {
 		}, sh, wg,
 		)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
-			TaskRunId:     "task_run_id2",
-			SourceId:      "source_id3",
-			DestinationId: "destination_id",
+			TaskRunID:     "task_run_id2",
+			SourceID:      "source_id3",
+			DestinationID: "destination_id",
 		}, Stats{
 			In:     10,
 			Out:    2,
@@ -209,8 +209,8 @@ func TestSourcesHandler(t *testing.T) {
 		wg.Wait()
 
 		res, err := sh.GetStatus(ctx, jobRunId, JobFilter{
-			SourceId:  []string{"source_id1", "source_id2"},
-			TaskRunId: []string{"task_run_id1", "task_run_id2"},
+			SourceID:  []string{"source_id1", "source_id2"},
+			TaskRunID: []string{"task_run_id1", "task_run_id2"},
 		})
 		sort.Slice(res.TasksStatus, func(i, j int) bool {
 			return res.TasksStatus[i].ID < res.TasksStatus[j].ID

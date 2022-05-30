@@ -11,7 +11,7 @@ import (
 
 type extension interface {
 	getReadDB() *sql.DB
-	createStatsTable(ctx context.Context, jobRunId string) error
+	createStatsTable(ctx context.Context) error
 	dropStats(ctx context.Context, jobRunId string) error
 	cleanupLoop(ctx context.Context) error
 }
@@ -24,7 +24,7 @@ func (r *defaultExtension) getReadDB() *sql.DB {
 	return r.localDB
 }
 
-func (r *defaultExtension) createStatsTable(ctx context.Context, jobRunId string) error {
+func (r *defaultExtension) createStatsTable(ctx context.Context) error {
 	dbHost := config.GetEnv("JOBS_DB_HOST", "localhost")
 	tx, err := r.localDB.Begin()
 	if err != nil {

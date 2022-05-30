@@ -12,14 +12,14 @@ import (
 var sourcesStatCleanUpSleepTime = 24 * time.Hour
 
 type JobFilter struct {
-	TaskRunId []string
-	SourceId  []string
+	TaskRunID []string
+	SourceID  []string
 }
 
 type JobTargetKey struct {
-	TaskRunId     string
-	SourceId      string
-	DestinationId string
+	TaskRunID     string
+	SourceID      string
+	DestinationID string
 }
 
 type Stats struct {
