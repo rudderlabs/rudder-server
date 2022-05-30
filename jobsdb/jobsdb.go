@@ -1045,7 +1045,6 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	if !refreshFromDB {
 		return jd.datasetList
 	}
-
 	//At this point we MUST have write-locked dsListLock
 	//since we are modiying the list
 
@@ -1624,27 +1623,32 @@ func (jd *HandleT) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement s
 
 }
 
-//Drop a dataset
-func (jd *HandleT) dropDS(ds dataSetT) {
-
-	var sqlStatement string
-	var err error
-	tx, err := jd.dbHandle.Begin()
+// mustDropDS drops a dataset and panics if it fails to do so
+func (jd *HandleT) mustDropDS(ds dataSetT) {
+	err := jd.dropDS(ds)
 	jd.assertError(err)
-	sqlStatement = fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
+}
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
+// dropDS drops a dataset
+func (jd *HandleT) dropDS(ds dataSetT) error {
+	return jd.WithTx(func(tx *sql.Tx) error {
+		var err error
+		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, ds.JobStatusTable)); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, ds.JobTable)); err != nil {
+			return err
+		}
+		jd.postDropDs(ds)
+		return nil
+	})
 
-	sqlStatement = fmt.Sprintf(`DROP TABLE "%s"`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
-	sqlStatement = fmt.Sprintf(`DROP TABLE "%s"`, ds.JobTable)
-	jd.prepareAndExecStmtInTx(tx, sqlStatement)
-	err = tx.Commit()
-	jd.assertError(err)
-
-	jd.postDropDs(ds)
 }
 
 //Drop a dataset and ignore if a table is missing
@@ -1757,15 +1761,17 @@ func (jd *HandleT) renameDS(ds dataSetT) error {
 	})
 }
 
-func (jd *HandleT) getBackupDSList() []dataSetT {
+func (jd *HandleT) getBackupDSList() ([]dataSetT, error) {
+	var dsList []dataSetT
 	//Read the table names from PG
-	tableNames := getAllTableNames(jd, jd.dbHandle)
+	tableNames, err := getAllTableNames(jd.dbHandle)
+	if err != nil {
+		return dsList, err
+	}
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
 	dnumList := []string{}
-
-	var dsList []dataSetT
 
 	tablePrefix := preDropTablePrefix + jd.tablePrefix
 	for _, t := range tableNames {
@@ -1789,19 +1795,24 @@ func (jd *HandleT) getBackupDSList() []dataSetT {
 			Index:          dnum,
 		})
 	}
-	return dsList
+	return dsList, nil
 }
 
 func (jd *HandleT) dropAllBackupDS() error {
-	dsList := jd.getBackupDSList()
+	dsList, err := jd.getBackupDSList()
+	if err != nil {
+		return err
+	}
 	for _, ds := range dsList {
-		jd.dropDS(ds)
+		if err := jd.dropDS(ds); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (jd *HandleT) dropMigrationCheckpointTables() {
-	tableNames := getAllTableNames(jd, jd.dbHandle)
+	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
 
 	var migrationCheckPointTables []string
 	for _, t := range tableNames {
@@ -1824,7 +1835,9 @@ func (jd *HandleT) dropAllDS() error {
 
 	dList := jd.getDSList(true)
 	for _, ds := range dList {
-		jd.dropDS(ds)
+		if err := jd.dropDS(ds); err != nil {
+			return err
+		}
 	}
 
 	//Update the list
@@ -1888,9 +1901,13 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
 		if jd.BackupSettings.isBackupEnabled() && isBackupConfigured() {
-			jd.assertError(jd.mustRenameDS(ds))
+			if err := jd.mustRenameDS(ds); err != nil {
+				return err
+			}
 		} else {
-			jd.dropDS(ds)
+			if err := jd.dropDS(ds); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -3021,6 +3038,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 		migrationLoopStat.Start()
+		var opID int64
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
@@ -3036,7 +3054,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				//sources are still around
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
-				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
+				opID = jd.JournalMarkStart(migrateCopyOperation, opPayload)
 
 				jd.addDS(migrateTo)
 				jd.inProgressMigrationTargetDS = &migrateTo
@@ -3052,24 +3070,38 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 				if totalJobsMigrated <= 0 {
 					jd.dsListLock.Lock()
-					jd.dropDS(migrateTo)
+					jd.mustDropDS(migrateTo)
 					jd.inProgressMigrationTargetDS = nil
 					jd.dsListLock.Unlock()
 				}
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate DONE", jd.tablePrefix)
 
-				jd.JournalMarkDone(opID)
 			}
 
-			//Mark the start of del operation. If we fail in between
-			//we need to finish deleting the source datasets. Cannot
-			//del the destination as some sources may have been deleted
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+			err := jd.WithTx(func(tx *sql.Tx) error {
+				if opID > 0 {
+					// marking the previous operation as done and
+					// starting the next operation must be performed
+					// as a single atomic action (all or nothing)
+					err := jd.journalMarkDoneInTx(tx, opID)
+					if err != nil {
+						return err
+					}
+				}
+				//Mark the start of del operation. If we fail in between
+				//we need to finish deleting the source datasets. Cannot
+				//del the destination as some sources may have been deleted
+				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+				if err != nil {
+					return err
+				}
+				opID, err = jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
+				return err
+			})
 			jd.assertError(err)
-			opID := jd.JournalMarkStart(postMigrateDSOperation, opPayload)
 
 			jd.dsListLock.Lock()
-			jd.postMigrateHandleDS(migrateFrom)
+			jd.assertError(jd.postMigrateHandleDS(migrateFrom))
 			jd.dsListLock.Unlock()
 
 			jd.JournalMarkDone(opID)
@@ -3127,7 +3159,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
 		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
 		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
-		jd.dropDS(backupDS)
+		jd.mustDropDS(backupDS)
 		jd.JournalMarkDone(opID)
 	}
 }
@@ -3381,7 +3413,7 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	var backupDSRange dataSetRangeT
 
 	//Read the table names from PG
-	tableNames := getAllTableNames(jd, jd.dbHandle)
+	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
 
 	//We check for job_status because that is renamed after job
 	dnumList := []string{}
@@ -3454,7 +3486,18 @@ func (jd *HandleT) dropJournal() {
 }
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
+	var opID int64
+	err := jd.WithTx(func(tx *sql.Tx) error {
+		var err error
+		opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
+		return err
+	})
+	jd.assertError(err)
+	return opID
+}
 
+func (jd *HandleT) JournalMarkStartInTx(tx *sql.Tx, opType string, opPayload json.RawMessage) (int64, error) {
+	var opID int64
 	jd.assert(opType == addDSOperation ||
 		opType == migrateCopyOperation ||
 		opType == migrateImportOperation ||
@@ -3466,32 +3509,24 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time, owner)
                                        VALUES ($1, $2, $3, $4, $5) RETURNING id`, jd.tablePrefix)
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer stmt.Close()
-
-	var opID int64
-	err = stmt.QueryRow(opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
-	jd.assertError(err)
-
-	return opID
+	err := tx.QueryRow(sqlStatement, opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
+	return opID, err
 
 }
 
 //JournalMarkDone marks the end of a journal action
 func (jd *HandleT) JournalMarkDone(opID int64) {
-	err := jd.journalMarkDoneInTx(jd.dbHandle, opID)
+	err := jd.WithTx(func(tx *sql.Tx) error {
+		return jd.journalMarkDoneInTx(tx, opID)
+	})
 	jd.assertError(err)
 }
 
 //JournalMarkDoneInTx marks the end of a journal action in a transaction
-func (jd *HandleT) journalMarkDoneInTx(txHandler transactionHandler, opID int64) error {
+func (jd *HandleT) journalMarkDoneInTx(tx *sql.Tx, opID int64) error {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1 AND owner=$4`, jd.tablePrefix)
-	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now(), jd.ownerType)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := tx.Exec(sqlStatement, opID, true, time.Now(), jd.ownerType)
+	return err
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {

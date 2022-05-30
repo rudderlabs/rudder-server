@@ -63,9 +63,9 @@ func (jd *HandleT) dropDatabaseTables() {
 
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
-	jd.dropAllDS()
+	jd.assertError(jd.dropAllDS())
 	jd.dropJournal()
-	jd.dropAllBackupDS()
+	jd.assertError(jd.dropAllBackupDS())
 	jd.dropMigrationCheckpointTables()
 }
 
