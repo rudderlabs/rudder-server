@@ -805,7 +805,19 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 						}
 						respBody = strings.Join(respBodyArr, " ")
 						if worker.rt.transformerProxy {
+							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
+								"destType":    worker.rt.destName,
+								"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
+								"workspace":   workspaceID,
+							}).Count(len(result))
+
 							pkgLogger.Infof(`[%v][TransformerProxy]Input Router Events: %v, Out router events: %v`, worker.rt.destName, len(result), len(respBodyArr))
+
+							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
+								"destType":    worker.rt.destName,
+								"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
+								"workspace":   workspaceID,
+							}).Count(len(respBodyArr))
 						}
 					}
 				}
