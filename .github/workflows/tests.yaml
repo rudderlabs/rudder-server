@@ -90,6 +90,7 @@ jobs:
         run: go test -v ./warehouse/integration__tests/warehouse_integration_test.go -integration -bigqueryintegration -count 1
         env:
           RSERVER_ENABLE_MULTITENANCY: false
+          BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
       - run:  docker-compose -f warehouse/integration__tests/docker-compose.test.yml down --volumes
 
   unit:
