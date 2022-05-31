@@ -151,8 +151,8 @@ var (
 	kafkaStats managerStats
 	pkgLogger  logger
 
-	now   = func() time.Time { return time.Now() }
-	since = func(t time.Time) time.Duration { return time.Since(t) }
+	now   = func() time.Time { return time.Now() }                   // skipcq: CRT-A0018
+	since = func(t time.Time) time.Duration { return time.Since(t) } // skipcq: CRT-A0018
 )
 
 func Init() {
