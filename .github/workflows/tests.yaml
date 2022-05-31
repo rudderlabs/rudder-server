@@ -29,7 +29,6 @@ jobs:
       run: go test -v ./docker_test.go -integration -count 1
       env:
         RSERVER_ENABLE_MULTITENANCY: false
-        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
 
   integration-enterprise:
     name: Service Integration [Enterprise]
@@ -65,7 +64,33 @@ jobs:
       run: go test -v ./docker_test.go -integration -count 1
       env:
         RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
-        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
+
+  warehouse-integration:
+    name: Warehouse Service Integration
+    runs-on: 'ubuntu-18.04'
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '~1.17.8'
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+      - run:  warehouse/integration__tests/warehouse_integration_test.go
+      - run:  docker-compose -f warehouse/integration__tests/docker-compose.test.yml up --build --abort-on-container-exit
+      - name: Warehouse Integration test
+        run: go test -v ./warehouse/integration__tests/warehouse_integration_test.go -integration -bigqueryintegration -count 1
+        env:
+          RSERVER_ENABLE_MULTITENANCY: false
+      - run:  docker-compose -f warehouse/integration__tests/docker-compose.test.yml down --volumes
 
   unit:
     name: Unit & Component Integration
