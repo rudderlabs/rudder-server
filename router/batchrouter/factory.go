@@ -1,6 +1,8 @@
 package batchrouter
 
 import (
+	"context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
@@ -17,9 +19,9 @@ type Factory struct {
 	TransientSources transientsource.Service
 }
 
-func (f *Factory) New(destType string) *HandleT {
+func (f *Factory) New(ctx context.Context, destType string) *HandleT {
 	r := &HandleT{}
 
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources)
+	r.Setup(ctx, f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources)
 	return r
 }

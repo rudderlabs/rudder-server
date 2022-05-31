@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -19,9 +20,9 @@ func (jd *HandleT) SchemaMigrationTable() string {
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
 // If clearAll is set to true, all existing jobsdb tables will be removed first.
-func (jd *HandleT) setupDatabaseTables(clearAll bool) {
+func (jd *HandleT) setupDatabaseTables(ctx context.Context, clearAll bool) {
 	if clearAll {
-		jd.dropDatabaseTables()
+		jd.dropDatabaseTables(ctx)
 	}
 
 	// collect all existing dataset indices, and create template data
@@ -59,14 +60,14 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 	}
 }
 
-func (jd *HandleT) dropDatabaseTables() {
+func (jd *HandleT) dropDatabaseTables(ctx context.Context) {
 
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
-	jd.dropAllDS()
-	jd.dropJournal()
-	jd.dropAllBackupDS()
-	jd.dropMigrationCheckpointTables()
+	jd.dropAllDS(ctx)
+	jd.dropJournal(ctx)
+	jd.dropAllBackupDS(ctx)
+	jd.dropMigrationCheckpointTables(ctx)
 }
 
 func (jd *HandleT) dropSchemaMigrationTables() {

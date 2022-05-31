@@ -66,18 +66,18 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
+func (st *HandleT) Setup(ctx context.Context, errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	st.transientSource = transientSource
-	st.crashRecover()
+	st.crashRecover(ctx)
 }
 
-func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting()
+func (st *HandleT) crashRecover(ctx context.Context) {
+	st.errorDB.DeleteExecuting(ctx)
 }
 
 func (st *HandleT) Start(ctx context.Context) {
@@ -124,7 +124,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
-				st.setErrJobStatus(jobs, output)
+				st.setErrJobStatus(ctx, jobs, output)
 				uploadStat.End()
 			}
 
@@ -187,7 +187,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	}
 }
 
-func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
+func (st *HandleT) setErrJobStatus(ctx context.Context, jobs []*jobsdb.JobT, output StoreErrorOutputT) {
 	var statusList []*jobsdb.JobStatusT
 	for _, job := range jobs {
 		state := jobsdb.Succeeded.State
@@ -217,7 +217,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
@@ -301,7 +301,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				statusList = append(statusList, &status)
 			}
 
-			err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+			err := st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)

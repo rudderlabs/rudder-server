@@ -195,17 +195,17 @@ type JobsDB interface {
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreInTx(tx, jobList)
 	//    })
-	StoreInTx(tx StoreSafeTx, jobList []*JobT) error
+	StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error
 
 	// StoreWithRetryEach tries to store all the provided jobs to the database and returns the job uuids which failed
-	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
+	StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string
 
 	// StoreWithRetryEachInTx tries to store all the provided jobs to the database and returns the job uuids which failed, using an existing transaction.
 	// Please ensure that you are using an StoreSafeTx, e.g.
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreWithRetryEachInTx(tx, jobList)
 	//    })
-	StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
+	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
@@ -213,14 +213,14 @@ type JobsDB interface {
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
 
 	// UpdateJobStatus updates the provided job statuses
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
 	// Please ensure that you are using an UpdateSafeTx, e.g.
 	//    jobsdb.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
 	//	      jobsdb.UpdateJobStatusInTx(tx, statusList, customValFilters, parameterFilters)
 	//    })
-	UpdateJobStatusInTx(txHandler UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTx(ctx context.Context, txHandler UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	/* Queries */
 
@@ -251,12 +251,12 @@ type JobsDB interface {
 
 	Status() interface{}
 	Ping() error
-	DeleteExecuting()
+	DeleteExecuting(ctx context.Context)
 
 	/* Journal */
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
-	JournalDeleteEntry(opID int64)
+	JournalDeleteEntry(ctx context.Context, opID int64)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
 }
 
@@ -897,10 +897,10 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 	case Read:
 		jd.readerSetup(ctx)
 	case Write:
-		jd.setupDatabaseTables(clearAll)
+		jd.setupDatabaseTables(ctx, clearAll)
 		jd.writerSetup(ctx)
 	case ReadWrite:
-		jd.setupDatabaseTables(clearAll)
+		jd.setupDatabaseTables(ctx, clearAll)
 		jd.readerWriterSetup(ctx)
 	}
 }
@@ -2045,7 +2045,7 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 		}
 
 		// try to store
-		err := jd.storeJob(tx, ds, job)
+		err := jd.storeJob(ctx, tx, ds, job)
 
 		if err != nil {
 			errorMessagesMap[job.UUID] = err.Error()
@@ -2240,11 +2240,11 @@ func (*HandleT) doStoreJobsInTx(ctx context.Context, txHandler transactionHandle
 				eventCount = job.EventCount
 			}
 
-			if _, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
 				return err
 			}
 		}
-		_, err = stmt.Exec()
+		_, err = stmt.ExecContext(ctx)
 		return err
 	}
 	const (
@@ -2270,14 +2270,14 @@ func (*HandleT) doStoreJobsInTx(ctx context.Context, txHandler transactionHandle
 	return err
 }
 
-func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
+func (jd *HandleT) storeJob(ctx context.Context, tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
 	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 	job.sanitizeJson()
-	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
+	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
 		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
@@ -2808,7 +2808,7 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT,
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -2847,7 +2847,7 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, txHandler transact
 			if !utf8.ValidString(string(status.ErrorResponse)) {
 				status.ErrorResponse = []byte(`{}`)
 			}
-			_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
+			_, err = stmt.ExecContext(ctx, status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
 			if err != nil {
 				return err
@@ -2863,7 +2863,7 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, txHandler transact
 			}
 		}
 
-		_, err = stmt.Exec()
+		_, err = stmt.ExecContext(ctx)
 		return err
 	}
 	const (
@@ -3447,9 +3447,9 @@ type JournalEntryT struct {
 	OpPayload json.RawMessage
 }
 
-func (jd *HandleT) dropJournal() {
+func (jd *HandleT) dropJournal(ctx context.Context) {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	_, err := jd.dbHandle.ExecContext(ctx, sqlStatement)
 	jd.assertError(err)
 }
 
@@ -3494,9 +3494,9 @@ func (jd *HandleT) journalMarkDoneInTx(ctx context.Context, txHandler transactio
 	return nil
 }
 
-func (jd *HandleT) JournalDeleteEntry(opID int64) {
+func (jd *HandleT) JournalDeleteEntry(ctx context.Context, opID int64) {
 	sqlStatement := fmt.Sprintf(`DELETE from "%s_journal" WHERE id=$1 AND owner=$2`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
+	_, err := jd.dbHandle.ExecContext(ctx, sqlStatement, opID, jd.ownerType)
 	jd.assertError(err)
 }
 
@@ -3639,7 +3639,7 @@ func (jd *HandleT) recoverFromCrash(ctx context.Context, owner OwnerType, goRout
 		sqlStatement = fmt.Sprintf(`UPDATE "%s_journal" SET done=True WHERE id=$1`, jd.tablePrefix)
 	}
 
-	_, err = jd.dbHandle.Exec(sqlStatement, opID)
+	_, err = jd.dbHandle.ExecContext(ctx, sqlStatement, opID)
 	jd.assertError(err)
 }
 
@@ -3965,11 +3965,11 @@ deleteJobStatus deletes the latest status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
-func (jd *HandleT) deleteJobStatus(conditions QueryConditions) {
+func (jd *HandleT) deleteJobStatus(ctx context.Context, conditions QueryConditions) {
 	tx, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	err = jd.deleteJobStatusInTx(tx, conditions)
+	err = jd.deleteJobStatusInTx(ctx, tx, conditions)
 	jd.assertErrorAndRollbackTx(err, tx)
 
 	err = tx.Commit()
@@ -3980,7 +3980,7 @@ func (jd *HandleT) deleteJobStatus(conditions QueryConditions) {
 if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTx deletes the latest status of a batch of jobs
 */
-func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions QueryConditions) error {
+func (jd *HandleT) deleteJobStatusInTx(ctx context.Context, txHandler transactionHandler, conditions QueryConditions) error {
 
 	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
 	queryStat := jd.getTimerStat("delete_job_status_time", &tags)
@@ -3999,7 +3999,7 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 
 	totalDeletedCount := 0
 	for _, ds := range dsList {
-		deletedCount, err := jd.deleteJobStatusDSInTx(txHandler, ds, conditions)
+		deletedCount, err := jd.deleteJobStatusDSInTx(ctx, txHandler, ds, conditions)
 		if err != nil {
 			return err
 		}
@@ -4013,7 +4013,7 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT, conditions QueryConditions) (int, error) {
+func (jd *HandleT) deleteJobStatusDSInTx(ctx context.Context, txHandler transactionHandler, ds dataSetT, conditions QueryConditions) (int, error) {
 	stateFilters := conditions.StateFilters
 	customValFilters := conditions.CustomValFilters
 	parameterFilters := conditions.ParameterFilters
@@ -4070,7 +4070,7 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 		return 0, err
 	}
 	defer stmt.Close()
-	res, err := stmt.Exec(getTimeNowFunc())
+	res, err := stmt.ExecContext(ctx, getTimeNowFunc())
 	if err != nil {
 		return 0, err
 	}
@@ -4221,13 +4221,13 @@ func (jd *HandleT) getExecuting(params GetQueryParamsT) JobsResult {
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting() {
+func (jd *HandleT) DeleteExecuting(ctx context.Context) {
 	conditions := QueryConditions{
 		StateFilters: []string{Executing.State},
 	}
 	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
 	command := func() interface{} {
-		jd.deleteJobStatus(conditions)
+		jd.deleteJobStatus(ctx, conditions)
 		return nil
 	}
 	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))

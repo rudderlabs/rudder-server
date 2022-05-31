@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -38,7 +39,7 @@ func Test_mustRenameDS(t *testing.T) {
 		requireRowsCount(t, dbHandle, jobStatusTable, 3)
 
 		// when I execute the renameDs method
-		err := jobsdb.mustRenameDS(dataSetT{
+		err := jobsdb.mustRenameDS(context.Background(), dataSetT{
 			JobTable:       jobsTable,
 			JobStatusTable: jobStatusTable,
 		})
@@ -76,7 +77,7 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 		requireRowsCount(t, dbHandle, jobStatusTable, 2)
 
 		// when I execute the renameDs method
-		err := jobsdb.mustRenameDS(dataSetT{
+		err := jobsdb.mustRenameDS(context.Background(), dataSetT{
 			JobTable:       jobsTable,
 			JobStatusTable: jobStatusTable,
 		})

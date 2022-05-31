@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	}, 10)
 
 	require.Equal(t, 0, len(unprocessedListEmpty))
-	err := jobDB.Store([]*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
+	err := jobDB.Store(context.Background(), []*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
 	require.NoError(t, err)
 
 	payloadLimit = 100 * bytesize.MB
@@ -101,7 +102,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		WorkspaceId:   "testWorkspace",
 	}
 
-	err = jobDB.UpdateJobStatus([]*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
+	err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status1, &status2}, []string{customVal}, []ParameterFilterT{})
 	require.NoError(t, err)
 
 	payloadLimit = 100 * bytesize.MB

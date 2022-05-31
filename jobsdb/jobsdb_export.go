@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -10,8 +11,8 @@ import (
 )
 
 //SetupForExport is used to setup jobsdb for export or for import or for both
-func (jd *HandleT) SetupForExport() {
-	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
+func (jd *HandleT) SetupForExport(ctx context.Context) {
+	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ctx, ExportOp)
 	jd.migrationState.nonExportedJobsCountByDS = make(map[string]int64)
 	jd.migrationState.doesDSHaveJobsToMigrateMap = make(map[string]bool)
 	jd.logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
@@ -30,7 +31,7 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 }
 
 //GetNonMigratedAndMarkMigrating all jobs with no filters
-func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
+func (jd *HandleT) GetNonMigratedAndMarkMigrating(ctx context.Context, count int) []*JobT {
 	queryStat := stats.NewTaggedStat("get_for_export_and_update_status", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -84,7 +85,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		}
 
 		var updatedStates map[string][]string
-		updatedStates, txErr = jd.updateJobStatusDSInTx(txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
+		updatedStates, txErr = jd.updateJobStatusDSInTx(ctx, txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
 		}
@@ -215,7 +216,7 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 }
 
 //UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
-func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, jobsCount int64, uploadLocation string) {
+func (jd *HandleT) UpdateJobStatusAndCheckpoint(ctx context.Context, statusList []*JobStatusT, fromNodeID string, toNodeID string, jobsCount int64, uploadLocation string) {
 	queryStat := stats.NewTaggedStat("update_status_and_checkpoint", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -223,7 +224,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 
 	var updatedStatesMap map[dataSetT]map[string][]string
-	updatedStatesMap, err = jd.doUpdateJobStatusInTx(txn, statusList, statTags{})
+	updatedStatesMap, err = jd.doUpdateJobStatusInTx(ctx, txn, statusList, statTags{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)

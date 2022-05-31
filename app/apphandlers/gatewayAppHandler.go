@@ -65,7 +65,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			enableGateway = (migrationMode != db.EXPORT)
 
-			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
+			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(ctx, gatewayDB, nil, nil)
 		}
 	}
 

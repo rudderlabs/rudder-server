@@ -163,7 +163,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			enableProcessor = false
 			enableGateway = migrationMode != db.EXPORT
 
-			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor, routerDB, batchRouterDB)
+			embedded.App.Features().Migrator.PrepareJobsdbsForImport(ctx, gwDBForProcessor, routerDB, batchRouterDB)
 
 			g.Go(func() error {
 				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
@@ -215,7 +215,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
+		embedded.App.Features().Replay.Setup(ctx, &replayDB, gwDBForProcessor, routerDB, batchRouterDB)
 	}
 
 	if enableGateway {

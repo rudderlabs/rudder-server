@@ -416,7 +416,7 @@ func (proc *HandleT) Setup(
 
 	proc.transformer.Setup()
 
-	proc.crashRecover()
+	proc.crashRecover(ctx)
 }
 
 // Start starts this processor's main loops.
@@ -437,7 +437,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources)
+		st.Setup(ctx, proc.errorDB, proc.transientSources)
 		st.Start(ctx)
 		return nil
 	}))
@@ -1547,7 +1547,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	//XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		err := proc.batchRouterDB.Store(batchDestJobs)
+		err := proc.batchRouterDB.Store(ctx, batchDestJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
 			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
@@ -1573,7 +1573,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
-		err := proc.routerDB.Store(destJobs)
+		err := proc.routerDB.Store(ctx, destJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into router table failed with error: %v", err)
 			proc.logger.Errorf("destJobs: %v", destJobs)
@@ -1601,7 +1601,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := proc.errorDB.Store(in.procErrorJobs)
+		err := proc.errorDB.Store(ctx, in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
@@ -1614,7 +1614,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	txnStart := time.Now()
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 
-		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 			return err
@@ -2164,7 +2164,7 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	return unprocessedList
 }
 
-func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
+func (proc *HandleT) markExecuting(ctx context.Context, jobs []*jobsdb.JobT) error {
 	start := time.Now()
 	defer proc.stats.statMarkExecuting.Since(start)
 
@@ -2183,7 +2183,7 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	//Mark the jobs as executing
-	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{GWCustomVal}, nil)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}
@@ -2328,7 +2328,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
-				err := proc.markExecuting(jobs.Jobs)
+				err := proc.markExecuting(ctx, jobs.Jobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
@@ -2433,8 +2433,8 @@ func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 	return int(float64(processedJob) / normalizedTime)
 }
 
-func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting()
+func (proc *HandleT) crashRecover(ctx context.Context) {
+	proc.gatewayDB.DeleteExecuting(ctx)
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

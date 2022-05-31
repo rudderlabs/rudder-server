@@ -3,6 +3,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -19,14 +20,14 @@ type MultiTenantJobsDB interface {
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
-	UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
-	DeleteExecuting()
+	DeleteExecuting(ctx context.Context)
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
-	JournalDeleteEntry(opID int64)
+	JournalDeleteEntry(ctx context.Context, opID int64)
 	GetPileUpCounts(map[string]map[string]int)
 }
 

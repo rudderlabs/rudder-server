@@ -254,7 +254,7 @@ func (gateway *HandleT) initDBWriterWorkers(ctx context.Context) {
 		gateway.logger.Debug("DB Writer Worker Started", i)
 		j := i
 		g.Go(misc.WithBugsnag(func() error {
-			gateway.dbWriterWorkerProcess(j)
+			gateway.dbWriterWorkerProcess(ctx, j)
 			return nil
 		}))
 	}
@@ -302,7 +302,7 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 //sends a map of errors if any(errors mapped to the job.uuid) over the responseQ channel of the webRequestWorker.
 //userWebRequestWorkerProcess method of the webRequestWorker is waiting for this errorMessageMap.
 //This in turn sends the error over the done channel of each respcetive webRequest.
-func (gateway *HandleT) dbWriterWorkerProcess(process int) {
+func (gateway *HandleT) dbWriterWorkerProcess(ctx context.Context, process int) {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
 		var errorMessagesMap map[uuid.UUID]string
@@ -312,9 +312,9 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		}
 
 		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(ctx, jobList)
 		} else {
-			err := gateway.jobsDB.Store(jobList)
+			err := gateway.jobsDB.Store(ctx, jobList)
 			if err != nil {
 				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 				gateway.logger.Errorf("JobList: %+v", jobList)

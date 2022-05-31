@@ -183,7 +183,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			enableRouter = false
 			enableProcessor = false
 
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
+			processor.App.Features().Migrator.PrepareJobsdbsForImport(ctx, nil, routerDB, batchRouterDB)
 			g.Go(func() error {
 				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
@@ -250,7 +250,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
+		processor.App.Features().Replay.Setup(ctx, &replayDB, gwDBForProcessor, routerDB, batchRouterDB)
 	}
 
 	g.Go(func() error {

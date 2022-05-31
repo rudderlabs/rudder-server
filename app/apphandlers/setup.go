@@ -173,8 +173,8 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	//rt / batch_rt tables and there would be a delay reading from channel `ch`
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting()
-	batchRouterFactory.RouterDB.DeleteExecuting()
+	routerFactory.RouterDB.DeleteExecuting(ctx)
+	batchRouterFactory.RouterDB.DeleteExecuting(ctx)
 
 loop:
 	for {
@@ -196,7 +196,7 @@ loop:
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
+							brt := batchRouterFactory.New(ctx, destination.DestinationDefinition.Name)
 							brt.Start()
 							cleanup = append(cleanup, brt.Shutdown)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt

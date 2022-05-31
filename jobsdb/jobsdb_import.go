@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,14 +10,14 @@ import (
 )
 
 //SetupForImport is used to setup jobsdb for export or for import or for both
-func (jd *HandleT) SetupForImport() {
-	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
+func (jd *HandleT) SetupForImport(ctx context.Context) {
+	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(ctx, AcceptNewEventsOp)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
-func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
+func (jd *HandleT) getDsForImport(ctx context.Context, dsList []dataSetT) dataSetT {
 	ds := newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
-	jd.addDS(ds)
+	jd.addDS(ctx, ds)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
@@ -47,7 +48,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 }
 
 //StoreJobsAndCheckpoint is used to write the jobs to _tables
-func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
+func (jd *HandleT) StoreJobsAndCheckpoint(ctx context.Context, jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
 	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -65,14 +66,14 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	}
 
 	if !found {
-		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
+		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ctx, ImportOp)
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
 		jd.dsListLock.Lock()
 		jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
-		jd.addDS(jd.migrationState.dsForImport)
+		jd.addDS(ctx, jd.migrationState.dsForImport)
 		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
 		jd.assert(found, "There should be a setup checkpoint at this point. If not something went wrong. Go debug")
 		setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
@@ -100,11 +101,11 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertError(err)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
-	err = jd.copyJobsDSInTx(txn, jd.migrationState.dsForImport, jobList)
+	err = jd.copyJobsDSInTx(ctx, txn, jd.migrationState.dsForImport, jobList)
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
-	_, err = jd.updateJobStatusDSInTx(txn, jd.migrationState.dsForImport, statusList, statTags{}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
+	_, err = jd.updateJobStatusDSInTx(ctx, txn, jd.migrationState.dsForImport, statusList, statTags{}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported
@@ -112,7 +113,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	if opID != 0 {
-		err = jd.journalMarkDoneInTx(txn, opID)
+		err = jd.journalMarkDoneInTx(ctx, txn, opID)
 		jd.assertErrorAndRollbackTx(err, txn)
 	}
 
@@ -146,7 +147,7 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 }
 
 //UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
-func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
+func (jd *HandleT) UpdateSequenceNumberOfLatestDS(ctx context.Context, seqNoForNewDS int64) {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
@@ -157,7 +158,7 @@ func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
 		ds = dsList[dsListLen-1]
 	} else {
 		ds = newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend())
-		jd.addNewDS(ds)
+		jd.addNewDS(ctx, ds)
 	}
 
 	var serialInt sql.NullInt64

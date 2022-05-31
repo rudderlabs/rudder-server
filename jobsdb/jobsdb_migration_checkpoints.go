@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -201,7 +202,7 @@ func (jd *HandleT) findDsFromSetupCheckpoint(migrationType MigrationOp) (dataSet
 	return ds, true
 }
 
-func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) dataSetT {
+func (jd *HandleT) createSetupCheckpointAndGetDs(ctx context.Context, migrationType MigrationOp) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
@@ -215,7 +216,7 @@ func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) data
 	case AcceptNewEventsOp:
 		ds = jd.getDsForNewEvents(dsList)
 	case ImportOp:
-		ds = jd.getDsForImport(dsList)
+		ds = jd.getDsForImport(ctx, dsList)
 	}
 
 	var err error
@@ -227,10 +228,10 @@ func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) data
 	return ds
 }
 
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType MigrationOp) dataSetT {
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(ctx context.Context, migrationType MigrationOp) dataSetT {
 	ds, found := jd.findDsFromSetupCheckpoint(migrationType)
 	if !found {
-		ds = jd.createSetupCheckpointAndGetDs(migrationType)
+		ds = jd.createSetupCheckpointAndGetDs(ctx, migrationType)
 	}
 	return ds
 }

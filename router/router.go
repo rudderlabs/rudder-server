@@ -1506,7 +1506,7 @@ func (rt *HandleT) Disable() {
 	rt.isEnabled = false
 }
 
-func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
+func (rt *HandleT) commitStatusList(ctx context.Context, responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
@@ -1623,11 +1623,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		//Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			rt.errorDB.Store(routerAbortedJobs)
+			rt.errorDB.Store(ctx, routerAbortedJobs)
 		}
 		//Update the status
 		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
+			err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
 			if err != nil {
 				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 				return err
@@ -1672,7 +1672,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 // statusInsertLoop will run in a separate goroutine
 // Blocking method, returns when rt.responseQ channel is closed.
-func (rt *HandleT) statusInsertLoop() {
+func (rt *HandleT) statusInsertLoop(ctx context.Context) {
 
 	var responseList []jobResponseT
 
@@ -1690,7 +1690,7 @@ func (rt *HandleT) statusInsertLoop() {
 			//Commit the buffer to disc
 			pkgLogger.Infof("[Router] flushing statuses to disc. Dest type: %s", rt.destName)
 			statusStat.Start()
-			rt.commitStatusList(&responseList)
+			rt.commitStatusList(ctx, &responseList)
 			responseList = nil
 			lastUpdate = time.Now()
 			countStat.Count(len(responseList))
@@ -1706,7 +1706,7 @@ func (rt *HandleT) statusInsertLoop() {
 				}
 
 				statusStat.Start()
-				rt.commitStatusList(&responseList)
+				rt.commitStatusList(ctx, &responseList)
 				responseList = nil // FIXME: is this a bug ? count len after responseList
 				countStat.Count(len(responseList))
 				statusStat.End()
@@ -1731,7 +1731,7 @@ func (rt *HandleT) statusInsertLoop() {
 		}
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			statusStat.Start()
-			rt.commitStatusList(&responseList)
+			rt.commitStatusList(ctx, &responseList)
 			responseList = nil
 			lastUpdate = time.Now()
 			countStat.Count(len(responseList)) // FIXME: is this a bug ? count len after responseList
@@ -1862,7 +1862,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			}
 			generatorStat.Start()
 
-			processCount := rt.readAndProcess()
+			processCount := rt.readAndProcess(ctx)
 
 			countStat.Count(processCount)
 			generatorStat.End()
@@ -1880,7 +1880,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
-func (rt *HandleT) readAndProcess() int {
+func (rt *HandleT) readAndProcess(ctx context.Context) int {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
@@ -2016,19 +2016,19 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	//Mark the jobs as executing
-	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+	err := rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
 	}
 	//Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err = rt.errorDB.Store(drainJobList)
+		err = rt.errorDB.Store(ctx, drainJobList)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		err = rt.jobsDB.UpdateJobStatus(ctx, drainList, []string{rt.destName}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -2207,7 +2207,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		return nil
 	}))
 	g.Go(misc.WithBugsnag(func() error {
-		rt.statusInsertLoop()
+		rt.statusInsertLoop(ctx)
 		return nil
 	}))
 
