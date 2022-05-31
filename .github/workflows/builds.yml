@@ -1,4 +1,4 @@
-name: build-artefacts
+name: builds
 
 on:
   release:
@@ -25,7 +25,7 @@ jobs:
             rudderlabs/develop-rudder-server
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
+            type=ref,event=push
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
@@ -42,7 +42,7 @@ jobs:
         name: Login to DockerHub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
         name: Build and push
