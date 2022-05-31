@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
 
 	"cloud.google.com/go/storage"
@@ -98,20 +99,22 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
+	if manager.client != nil {
+		return manager.client, err
+	}
+	options := []option.ClientOption{}
 
-	if manager.client == nil {
-		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
-			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
-		} else if manager.Config.Credentials == "" {
-			manager.client, err = storage.NewClient(ctx)
-		} else {
-			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
+		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
+	}
+	if manager.Config.Credentials != "" {
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
+			return manager.client, err
 		}
+		options = append(options, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 	}
 
-	if manager.client == nil {
-		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
-	}
+	manager.client, err = storage.NewClient(ctx, options...)
 	return manager.client, err
 }
 

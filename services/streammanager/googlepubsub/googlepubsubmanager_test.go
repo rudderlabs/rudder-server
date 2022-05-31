@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,6 +61,23 @@ func Test_Timeout(t *testing.T) {
 	if responseMessage != expectedResponseMessage {
 		t.Errorf("Expected response message %s, got %s.", expectedResponseMessage, responseMessage)
 	}
+}
+
+func TestUnsupportedCredentials(t *testing.T) {
+
+	config := Config{
+		ProjectId: projectId,
+		EventToTopicMap: []map[string]string{
+			{"to": topic},
+		},
+		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
+	}
+
+	_, err := NewProducer(config, Opts{})
+
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+
 }
 
 func TestMain(m *testing.M) {
