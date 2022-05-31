@@ -383,6 +383,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("producer error", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: fmt.Errorf("super bad")}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
@@ -392,6 +393,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("producer retryable error", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: kafka.LeaderNotAvailable}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
@@ -401,6 +403,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
@@ -438,6 +441,7 @@ func TestSendBatchedMessage(t *testing.T) {
 	})
 
 	t.Run("publisher error", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
@@ -457,6 +461,7 @@ func TestSendBatchedMessage(t *testing.T) {
 	})
 
 	t.Run("publisher retryable error", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: kafka.LeaderNotAvailable}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
@@ -476,6 +481,7 @@ func TestSendBatchedMessage(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: nil}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
@@ -511,6 +517,7 @@ func TestSendMessage(t *testing.T) {
 	})
 
 	t.Run("no userId", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: nil}
 		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
 		require.Equal(t, 200, sc)
@@ -525,6 +532,7 @@ func TestSendMessage(t *testing.T) {
 	})
 
 	t.Run("publisher error", func(t *testing.T) {
+		requirePublishTimeStats(t, 1)
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		sc, res, err := sendMessage(
 			context.Background(),
@@ -542,6 +550,22 @@ func TestSendMessage(t *testing.T) {
 		require.Equal(t, "some-topic", p.calls[0][0].Topic)
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
+}
+
+func requirePublishTimeStats(t *testing.T, times int) {
+	ctrl := gomock.NewController(t)
+	mockPublishTime := mockStats.NewMockRudderStats(ctrl)
+	kafkaStats = managerStats{
+		publishTime: mockPublishTime,
+	}
+
+	start := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	now = func() time.Time { return start }
+	since = func(tt time.Time) time.Duration {
+		require.Equal(t, start, tt)
+		return time.Second
+	}
+	mockPublishTime.EXPECT().SendTiming(time.Second).Times(times)
 }
 
 // Mocks
