@@ -82,7 +82,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	var url string
 	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
 	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
-		if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", true) {
+		if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
 			url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
 		} else {
 			url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
