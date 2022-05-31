@@ -2124,13 +2124,13 @@ func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[st
 
 func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	// TODO: why do we need a full lock here?
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
-		dsList := jd.refreshDSList(l)
+	defer jd.dsListLock.RUnlock()
+	dsList := jd.getDSList()
 
-		for _, ds := range dsList {
-			queryString := fmt.Sprintf(`with joined as (
+	for _, ds := range dsList {
+		queryString := fmt.Sprintf(`with joined as (
 			select
 			  j.job_id as jobID,
 			  j.custom_val as customVal,
@@ -2171,25 +2171,24 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 		  group by
 			customVal,
 			workspace;`, ds.JobTable, ds.JobStatusTable)
-			rows, err := jd.dbHandle.Query(queryString)
-			jd.assertError(err)
+		rows, err := jd.dbHandle.Query(queryString)
+		jd.assertError(err)
 
-			for rows.Next() {
-				var count sql.NullInt64
-				var customVal string
-				var workspace string
-				err := rows.Scan(&count, &customVal, &workspace)
-				jd.assertError(err)
-				if _, ok := statMap[workspace]; !ok {
-					statMap[workspace] = make(map[string]int)
-				}
-				statMap[workspace][customVal] += int(count.Int64)
+		for rows.Next() {
+			var count sql.NullInt64
+			var customVal string
+			var workspace string
+			err := rows.Scan(&count, &customVal, &workspace)
+			jd.assertError(err)
+			if _, ok := statMap[workspace]; !ok {
+				statMap[workspace] = make(map[string]int)
 			}
-			if err = rows.Err(); err != nil {
-				jd.assertError(err)
-			}
+			statMap[workspace][customVal] += int(count.Int64)
 		}
-	})
+		if err = rows.Err(); err != nil {
+			jd.assertError(err)
+		}
+	}
 }
 
 func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
