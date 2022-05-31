@@ -9,7 +9,7 @@
       },
       "id": "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
       "name": "postgres-wh-integration",
-      "writeKey": "{{.postgresEventWriteKey}}",
+      "writeKey": "{{.postgresWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
@@ -24,7 +24,7 @@
             "database": "rudderdb",
             "user": "rudder",
             "password": "rudder-password",
-            "port": "{{.rwhPostgresDestinationPort}}",
+            "port": "{{.postgresPort}}",
             "sslMode": "disable",
             "namespace": "",
             "bucketProvider": "MINIO",
@@ -376,7 +376,7 @@
       },
       "id": "1wRvLmEnMOOxNM79pwaZhyCqXRE",
       "name": "clickhouse-wh-integration",
-      "writeKey": "{{.clickHouseEventWriteKey}}",
+      "writeKey": "{{.clickHouseWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
@@ -392,7 +392,7 @@
             "cluster": "",
             "user": "rudder",
             "password": "rudder-password",
-            "port": "{{.rwhClickHouseDestinationPort}}",
+            "port": "{{.clickHousePort}}",
             "secure": false,
             "namespace": "",
             "bucketProvider": "MINIO",
@@ -771,7 +771,7 @@
       },
       "id": "1wRvLmEnMOOxNM79ghdZhyCqXRE",
       "name": "clickhouse-cluster-wh-integration",
-      "writeKey": "{{.clickHouseClusterEventWriteKey}}",
+      "writeKey": "{{.clickHouseClusterWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
@@ -787,7 +787,7 @@
             "cluster": "rudder_cluster",
             "user": "rudder",
             "password": "rudder-password",
-            "port": "{{.rwhClickHouseClusterDestinationPort}}",
+            "port": "{{.clickHouseClusterPort}}",
             "secure": false,
             "namespace": "",
             "bucketProvider": "MINIO",
@@ -1166,7 +1166,7 @@
       },
       "id": "1wRvLmEnMOONMbdspwaZhyCqXRE",
       "name": "mssql-wh-integration",
-      "writeKey": "{{.mssqlEventWriteKey}}",
+      "writeKey": "{{.mssqlWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
@@ -1181,7 +1181,7 @@
             "database": "master",
             "user": "SA",
             "password": "reallyStrongPwd123",
-            "port": "{{.rwhMSSqlDestinationPort}}",
+            "port": "{{.mssqlPort}}",
             "sslMode": "disable",
             "namespace": "",
             "bucketProvider": "MINIO",
@@ -1537,7 +1537,7 @@
         "eventUploadTS": 1646073666353
       },
       "id": "24p1HhPk09FW25Kuzvx7GshCLKR",
-      "name": "Rudderstack Sample HTTP Source",
+      "name": "bigquery-wh-integration",
       "writeKey": "{{.bqEventWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
@@ -1549,10 +1549,10 @@
       "destinations": [
         {
           "config": {
-            "project": "{{.rwhBQProject}}",
-            "location": "{{.rwhBQLocation}}",
-            "bucketName": "{{.rwhBQBucketName}}",
-            "credentials": "{{.rwhBQCredentials}}",
+            "project": "{{.bqProject}}",
+            "location": "{{.bqLocation}}",
+            "bucketName": "{{.bqBucketName}}",
+            "credentials": "{{.bqCredentials}}",
             "prefix": "",
             "namespace": "",
             "syncFrequency": "30"
@@ -1674,6 +1674,544 @@
           },
           "isConnectionEnabled": true,
           "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "id": "24p1HhPk09FW25Kuzvx7GshCLKR",
+      "name": "snowflake-wh-integration",
+      "writeKey": "{{.snowflakeEventWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "24p1HTlALMzW9ZGDlIP8cOfqfI0",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+            "account": "{{.snowflakeAccount}}",
+            "database": "{{.snowflakeDatabase}}",
+            "warehouse": "{{.snowflakeWarehouse}}",
+            "user": "{{.snowflakeUser}}",
+            "password": "{{.snowflakePassword}}",
+            "cloudProvider": "AWS",
+            "bucketName": "{{.snowflakeBucketName}}",
+            "storageIntegration": "",
+            "accessKeyID": "{{.snowflakeAccesskeyID}}",
+            "accessKey": "{{.snowflakeAccesskey}}",
+            "namespace": "",
+            "prefix": "snowflake-prefix",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "24qeADObp6eIhjjDnEppO6P1SNc",
+          "name": "snowflake-demo",
+          "enabled": false,
+          "workspaceId": "24p1HTlALMzW9ZGDlIP8cOfqfI0",
+          "deleted": true,
+          "createdAt": "2022-02-08T23:19:58.278Z",
+          "updatedAt": "2022-05-17T08:18:33.587Z",
+          "revisionId": "29HgdgvNPwqFDMONSgmIZ3YSehV",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "account",
+                  "database",
+                  "warehouse",
+                  "user",
+                  "password",
+                  "cloudProvider",
+                  "bucketName",
+                  "containerName",
+                  "storageIntegration",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "namespace",
+                  "prefix",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "configSchema": {
+              "type": "object",
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "useRudderStorage"
+                    ],
+                    "properties": {
+                      "useRudderStorage": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "cloudProvider"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "cloudProvider",
+                      "useRudderStorage"
+                    ],
+                    "properties": {
+                      "cloudProvider": {
+                        "const": "AWS"
+                      },
+                      "useRudderStorage": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "accessKey": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "enableSSE": {
+                        "type": "boolean"
+                      },
+                      "bucketName": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "accessKeyID": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "cloudProvider",
+                      "useRudderStorage"
+                    ],
+                    "properties": {
+                      "cloudProvider": {
+                        "const": "GCP"
+                      },
+                      "useRudderStorage": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "bucketName": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "credentials": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|.*"
+                      },
+                      "storageIntegration": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "cloudProvider",
+                      "useRudderStorage"
+                    ],
+                    "properties": {
+                      "cloudProvider": {
+                        "const": "AZURE"
+                      },
+                      "useRudderStorage": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "accountKey": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "accountName": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "containerName": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      },
+                      "storageIntegration": {
+                        "type": "string",
+                        "pattern": "(^env[.].*)|^(.{0,100})$"
+                      }
+                    }
+                  }
+                }
+              ],
+              "$schema": "http://json-schema.org/draft-07/schema",
+              "required": [
+                "account",
+                "database",
+                "warehouse",
+                "user",
+                "password",
+                "syncFrequency",
+                "useRudderStorage"
+              ],
+              "properties": {
+                "user": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "account": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "database": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "password": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|.*"
+                },
+                "namespace": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "warehouse": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "syncStartAt": {
+                  "type": "string"
+                },
+                "cloudProvider": {
+                  "type": "string",
+                  "pattern": "^(AWS|GCP|AZURE)$"
+                },
+                "excludeWindow": {
+                  "type": "object",
+                  "required": [
+                    "excludeWindowStartTime",
+                    "excludeWindowEndTime"
+                  ],
+                  "properties": {
+                    "excludeWindowEndTime": {
+                      "type": "string"
+                    },
+                    "excludeWindowStartTime": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "syncFrequency": {
+                  "type": "string",
+                  "default": "30",
+                  "pattern": "^(30|60|180|360|720|1440)$"
+                },
+                "useRudderStorage": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "additionalProperties": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+            "name": "SNOWFLAKE",
+            "displayName": "Snowflake",
+            "category": "warehouse",
+            "createdAt": "2020-02-13T05:39:20.184Z",
+            "updatedAt": "2022-02-08T06:46:45.432Z"
+          },
+          "isConnectionEnabled": false,
+          "isProcessorEnabled": false
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "id": "279L3gEKqwruBoKGsXZtSVX7vIy",
+      "name": "redshift-wh-integration",
+      "writeKey": "{{.redshiftEventWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
+      "workspaceId": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+      "deleted": false,
+      "createdAt": "2022-03-31T11:45:57.339Z",
+      "updatedAt": "2022-05-23T22:56:32.000Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.redshiftHost}}",
+            "port": "{{.redshiftPort}}",
+            "database": "{{.redshiftDatabase}}",
+            "user": "{{.redshiftUser}}",
+            "password": "{{.redshiftPassword}}",
+            "bucketName": "{{.redshiftBucketName}}",
+            "accessKeyID": "{{.redshiftAccessKeyID}}",
+            "accessKey": "{{.redshiftAccessKey}}",
+            "prefix": "",
+            "namespace": "",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "27SthahyhhqZE74HT4NTtNPl06V",
+          "name": "asd",
+          "enabled": false,
+          "workspaceId": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+          "deleted": true,
+          "createdAt": "2022-04-07T09:57:14.783Z",
+          "updatedAt": "2022-05-17T08:16:32.613Z",
+          "revisionId": "29HgOWobrn0RYZLpaSwPIbN2987",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "port",
+                  "database",
+                  "user",
+                  "password",
+                  "bucketName",
+                  "accessKeyID",
+                  "accessKey",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "configSchema": {
+              "type": "object",
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "useRudderStorage"
+                    ],
+                    "properties": {
+                      "useRudderStorage": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "bucketName"
+                    ]
+                  }
+                }
+              ],
+              "$schema": "http://json-schema.org/draft-07/schema",
+              "required": [
+                "host",
+                "port",
+                "database",
+                "user",
+                "password",
+                "syncFrequency",
+                "useRudderStorage"
+              ],
+              "properties": {
+                "host": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,128})$"
+                },
+                "port": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "user": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "prefix": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "database": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "password": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|.*"
+                },
+                "accessKey": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "enableSSE": {
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(?!pg_|PG_|pG_|Pg_).*"
+                },
+                "bucketName": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "accessKeyID": {
+                  "type": "string",
+                  "pattern": "(^env[.].*)|^(.{0,100})$"
+                },
+                "syncStartAt": {
+                  "type": "string"
+                },
+                "excludeWindow": {
+                  "type": "object",
+                  "required": [
+                    "excludeWindowStartTime",
+                    "excludeWindowEndTime"
+                  ],
+                  "properties": {
+                    "excludeWindowEndTime": {
+                      "type": "string"
+                    },
+                    "excludeWindowStartTime": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "syncFrequency": {
+                  "type": "string",
+                  "default": "30",
+                  "pattern": "^(30|60|180|360|720|1440)$"
+                },
+                "useRudderStorage": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "additionalProperties": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+            "name": "RS",
+            "displayName": "Redshift",
+            "category": "warehouse",
+            "createdAt": "2019-12-04T07:17:28.337Z",
+            "updatedAt": "2022-02-08T06:46:22.804Z"
+          },
+          "isConnectionEnabled": false,
+          "isProcessorEnabled": false
         }
       ],
       "sourceDefinition": {

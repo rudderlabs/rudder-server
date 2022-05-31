@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integration__tests/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"io"
 	"log"
 	"net/http"
@@ -37,8 +38,10 @@ var (
 )
 
 var (
-	runIntegration  bool
-	runBigQueryTest bool
+	runIntegration   bool
+	runBigQueryTest  bool
+	runSnowflakeTest bool
+	runRedhshiftTest bool
 )
 
 var (
@@ -52,6 +55,8 @@ var (
 	CHTest                     *testhelper.ClickHouseTest
 	CHClusterTest              *testhelper.ClickHouseClusterTest
 	MSSQLTest                  *testhelper.MSSQLTest
+	SFTest                     *testhelper.SnowflakeTest
+	RSTest                     *testhelper.RedshiftTest
 	JobsDBResource             *testhelper.JobsDBResource
 	GatewayJobsSqlFunction     string
 	BatchRouterJobsSqlFunction string
@@ -61,6 +66,8 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
+	flag.BoolVar(&runSnowflakeTest, "snowflakeintegration", false, "run snowflake test")
+	flag.BoolVar(&runRedhshiftTest, "redshiftintegration", false, "run redshift test")
 	flag.Parse()
 
 	if !runIntegration {
@@ -82,9 +89,9 @@ func run(m *testing.M) (int, error) {
 	var tearDownStart time.Time
 	defer func() {
 		if tearDownStart == (time.Time{}) {
-			fmt.Printf("--- Teardown done (unexpected)\n")
+			log.Printf("--- Teardown done (unexpected)\n")
 		} else {
-			fmt.Printf("--- Teardown done (%s)\n", time.Since(tearDownStart))
+			log.Printf("--- Teardown done (%s)\n", time.Since(tearDownStart))
 		}
 	}()
 
@@ -102,7 +109,7 @@ func run(m *testing.M) (int, error) {
 
 	// Loading env variables
 	if err := godotenv.Load("testhelper/.env"); err != nil {
-		fmt.Println("INFO: No .env file found.")
+		log.Println("INFO: No .env file found.")
 	}
 
 	// Setting up env variables
@@ -119,6 +126,8 @@ func run(m *testing.M) (int, error) {
 	CHClusterTest = SetupClickHouseCluster()
 	MSSQLTest = SetupMSSQL()
 	BQTest = SetupBigQuery()
+	SFTest = SetupSnowflake()
+	RSTest = SetupRedshift()
 
 	// Adding sql functions to jobs DB
 	addSqlFunctionToJobsDB()
@@ -140,27 +149,49 @@ func run(m *testing.M) (int, error) {
 	// Setting up workspace config
 	workspaceID := testhelper.RandString(27)
 	mapWorkspaceConfig := map[string]string{
-		"workspaceId":                         workspaceID,
-		"postgresPort":                        JobsDBResource.Credentials.Port,
-		"minioEndpoint":                       minioResource.MinioEndpoint,
-		"minioBucketName":                     minioResource.MinioBucketName,
-		"postgresEventWriteKey":               PGTest.WriteKey,
-		"clickHouseEventWriteKey":             CHTest.WriteKey,
-		"clickHouseClusterEventWriteKey":      CHClusterTest.WriteKey,
-		"mssqlEventWriteKey":                  MSSQLTest.WriteKey,
-		"rwhPostgresDestinationPort":          PGTest.Credentials.Port,
-		"rwhClickHouseDestinationPort":        CHTest.Credentials.Port,
-		"rwhClickHouseClusterDestinationPort": CHClusterTest.GetResource().Credentials.Port,
-		"rwhMSSqlDestinationPort":             MSSQLTest.Credentials.Port,
+		"workspaceId":               workspaceID,
+		"minioEndpoint":             minioResource.MinioEndpoint,
+		"minioBucketName":           minioResource.MinioBucketName,
+		"postgresWriteKey":          PGTest.WriteKey,
+		"clickHouseWriteKey":        CHTest.WriteKey,
+		"clickHouseClusterWriteKey": CHClusterTest.WriteKey,
+		"mssqlWriteKey":             MSSQLTest.WriteKey,
+		"postgresPort":              PGTest.Credentials.Port,
+		"clickHousePort":            CHTest.Credentials.Port,
+		"clickHouseClusterPort":     CHClusterTest.GetResource().Credentials.Port,
+		"mssqlPort":                 MSSQLTest.Credentials.Port,
 	}
 
 	if runBigQueryTest {
 		mapWorkspaceConfig["bqEventWriteKey"] = BQTest.WriteKey
-		mapWorkspaceConfig["rwhBQProject"] = BQTest.Credentials.ProjectID
-		mapWorkspaceConfig["rwhBQLocation"] = BQTest.Credentials.Location
-		mapWorkspaceConfig["rwhBQBucketName"] = BQTest.Credentials.Bucket
-		mapWorkspaceConfig["rwhBQCredentials"] = BQTest.Credentials.CredentialsEscaped
+		mapWorkspaceConfig["bqProject"] = BQTest.Credentials.ProjectID
+		mapWorkspaceConfig["bqLocation"] = BQTest.Credentials.Location
+		mapWorkspaceConfig["bqBucketName"] = BQTest.Credentials.Bucket
+		mapWorkspaceConfig["bqCredentials"] = BQTest.Credentials.CredentialsEscaped
 	}
+	if runSnowflakeTest {
+		mapWorkspaceConfig["snowflakeEventWriteKey"] = SFTest.WriteKey
+		mapWorkspaceConfig["snowflakeAccount"] = SFTest.Credentials.Account
+		mapWorkspaceConfig["snowflakeDatabase"] = SFTest.Credentials.Database
+		mapWorkspaceConfig["snowflakeWarehouse"] = SFTest.Credentials.Warehouse
+		mapWorkspaceConfig["snowflakeUser"] = SFTest.Credentials.User
+		mapWorkspaceConfig["snowflakePassword"] = SFTest.Credentials.Password
+		mapWorkspaceConfig["snowflakeBucketName"] = SFTest.Credentials.BucketName
+		mapWorkspaceConfig["snowflakeAccesskeyID"] = SFTest.Credentials.AccessKeyID
+		mapWorkspaceConfig["snowflakeAccesskey"] = SFTest.Credentials.AccessKey
+	}
+	if runRedhshiftTest {
+		mapWorkspaceConfig["redshiftEventWriteKey"] = RSTest.WriteKey
+		mapWorkspaceConfig["redshiftHost"] = RSTest.Credentials.Host
+		mapWorkspaceConfig["redshiftPort"] = RSTest.Credentials.Port
+		mapWorkspaceConfig["redshiftDatabase"] = RSTest.Credentials.Database
+		mapWorkspaceConfig["redshiftUser"] = RSTest.Credentials.User
+		mapWorkspaceConfig["redshiftPassword"] = RSTest.Credentials.Password
+		mapWorkspaceConfig["redshiftBucketName"] = RSTest.Credentials.BucketName
+		mapWorkspaceConfig["redshiftAccessKeyID"] = RSTest.Credentials.AccessKeyID
+		mapWorkspaceConfig["redshiftAccessKey"] = RSTest.Credentials.AccessKey
+	}
+
 	workspaceConfigPath := testhelper.CreateWorkspaceConfig("testdata/workspaceConfig/template.json", mapWorkspaceConfig)
 	log.Println("workspace config path:", workspaceConfigPath)
 	defer func() {
@@ -199,7 +230,7 @@ func run(m *testing.M) (int, error) {
 	blockOnHold()
 
 	svcCancel()
-	fmt.Println("waiting for service to stop")
+	log.Println("waiting for service to stop")
 	<-svcDone
 
 	tearDownStart = time.Now()
@@ -231,6 +262,7 @@ func InitConfig() {
 	clickhouse.Init()
 	mssql.Init()
 	bigquery.Init()
+	snowflake.Init()
 }
 
 // sendEvent send event with corresponding payload and writeKey

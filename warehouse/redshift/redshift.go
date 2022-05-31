@@ -511,21 +511,21 @@ func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 
 // RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
-	host     string
-	port     string
-	dbName   string
-	username string
-	password string
+	Host     string
+	Port     string
+	DbName   string
+	Username string
+	Password string
 	timeout  time.Duration
 }
 
-func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
+func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
-		cred.username,
-		cred.password,
-		cred.host,
-		cred.port,
-		cred.dbName,
+		cred.Username,
+		cred.Password,
+		cred.Host,
+		cred.Port,
+		cred.DbName,
 	)
 	if cred.timeout > 0 {
 		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
@@ -578,7 +578,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 }
 
 func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
-	return connect(rs.getConnectionCredentials())
+	return Connect(rs.getConnectionCredentials())
 }
 
 func (rs *HandleT) CreateSchema() (err error) {
@@ -604,11 +604,11 @@ func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 	return RedshiftCredentialsT{
-		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+		Host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		Port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		DbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		Username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		Password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 		timeout:  rs.ConnectTimeout,
 	}
 }
@@ -617,7 +617,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(rs.getConnectionCredentials())
+	dbHandle, err := Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -671,7 +671,7 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 
 func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
-	rs.Db, err = connect(rs.getConnectionCredentials())
+	rs.Db, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -701,7 +701,7 @@ func (rs *HandleT) Cleanup() {
 func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.Db, err = connect(rs.getConnectionCredentials())
+	rs.Db, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
@@ -747,7 +747,7 @@ func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := connect(rs.getConnectionCredentials())
+	dbHandle, err := Connect(rs.getConnectionCredentials())
 
 	if err != nil {
 		return client.Client{}, err

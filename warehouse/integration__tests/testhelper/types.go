@@ -96,12 +96,51 @@ type BiqQueryTest struct {
 	PrimaryKeys        []string
 	TableTestQueryFreq time.Duration
 }
+
 type BigQueryCredentials struct {
 	ProjectID          string            `json:"projectID"`
 	Credentials        map[string]string `json:"credentials"`
 	Location           string            `json:"location"`
 	Bucket             string            `json:"bucketName"`
 	CredentialsEscaped string
+}
+
+type SnowflakeCredentials struct {
+	Account     string `json:"account"`
+	Warehouse   string `json:"warehouse"`
+	Database    string `json:"database"`
+	User        string `json:"user"`
+	Password    string `json:"password"`
+	BucketName  string `json:"bucketName"`
+	AccessKeyID string `json:"accessKeyID"`
+	AccessKey   string `json:"accessKey"`
+}
+
+type SnowflakeTest struct {
+	WriteKey           string
+	Credentials        *SnowflakeCredentials
+	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	TableTestQueryFreq time.Duration
+}
+
+type RedshiftCredentials struct {
+	Host        string `json:"host"`
+	Port        string `json:"port"`
+	Database    string `json:"database"`
+	User        string `json:"user"`
+	Password    string `json:"password"`
+	BucketName  string `json:"bucketName"`
+	AccessKeyID string `json:"accessKeyID"`
+	AccessKey   string `json:"accessKey"`
+}
+
+type RedshiftTest struct {
+	WriteKey           string
+	Credentials        *RedshiftCredentials
+	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	TableTestQueryFreq time.Duration
 }
 
 func (w *WareHouseDestinationTest) MsgId() string {

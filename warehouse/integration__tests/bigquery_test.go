@@ -94,6 +94,7 @@ func TestBigQuery(t *testing.T) {
 	}
 
 	t.Parallel()
+
 	//Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bigquery.Init()
