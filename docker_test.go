@@ -42,6 +42,7 @@ import (
 
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
+	brt "github.com/rudderlabs/rudder-server/router/batchrouter"
 	kafkaclient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper"
@@ -1075,6 +1076,9 @@ func TestWHBigQuery(t *testing.T) {
 	//Enabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
 	bq.Init()
+	// Set upload frequency
+	config.SetInt("BatchRouter.uploadFreqInS", 0)
+	brt.Init()
 
 	whDestTest.EventsCountMap = wht.EventsCountMap{
 		"identifies": 2,
@@ -1086,6 +1090,8 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	sendWHEvents(whDestTest)
+	time.Sleep(time.Second * 3)
+	sendWHEvents(whDestTest)
 
 	whDestTest.EventsCountMap = wht.EventsCountMap{
 		"identifies":    2,
@@ -1096,8 +1102,8 @@ func TestWHBigQuery(t *testing.T) {
 		"screens":       2,
 		"aliases":       2,
 		"_groups":       2,
-		"gateway":       24,
-		"batchRT":       32,
+		"gateway":       36,
+		"batchRT":       48,
 	}
 
 	whDestinationTest(t, whDestTest)

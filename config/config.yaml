@@ -136,6 +136,8 @@ BatchRouter:
   noOfWorkers: 8
   maxFailedCountForJob: 128
   retryTimeWindow: 180m
+  BQ:
+    jobQueryBatchSize: 10
 Warehouse:
   mode: embedded
   webPort: 8082

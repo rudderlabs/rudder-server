@@ -769,6 +769,10 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
+func SetInt(key string, value int) {
+	viper.Set(key, value)
+}
+
 func SetString(key string, value string) {
 	viper.Set(key, value)
 }
