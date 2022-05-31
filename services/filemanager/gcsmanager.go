@@ -99,21 +99,22 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
-	if manager.client == nil {
-		options := []option.ClientOption{}
-
-		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
-			options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
-		}
-
-		if manager.Config.Credentials != "" {
-			if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
-				return manager.client, err
-			}
-			options = append(options, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
-		}
-		manager.client, err = storage.NewClient(ctx, options...)
+	if manager.client != nil {
+		return manager.client, err
 	}
+	options := []option.ClientOption{}
+
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
+		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
+	}
+	if manager.Config.Credentials != "" {
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
+			return manager.client, err
+		}
+		options = append(options, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	}
+
+	manager.client, err = storage.NewClient(ctx, options...)
 	return manager.client, err
 }
 
