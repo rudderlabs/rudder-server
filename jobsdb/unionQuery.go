@@ -70,7 +70,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params G
 	defer mj.dsMigrationLock.RUnlock()
 	defer mj.dsListLock.RUnlock()
 
-	dsList := mj.getDSList(false)
+	dsList := mj.getDSList()
 	outJobs := make([]*JobT, 0)
 
 	workspacePayloadLimitMap := make(map[string]int64)

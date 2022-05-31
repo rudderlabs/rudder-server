@@ -98,8 +98,19 @@ func (st *HandleT) Start(ctx context.Context) {
 	_ = g.Wait()
 }
 
+func (st *HandleT) getFileUploader() filemanager.FileManager {
+	if st.errFileUploader == nil && backupEnabled() {
+		st.setupFileUploader()
+	}
+	return st.errFileUploader
+}
+
+func backupEnabled() bool {
+	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
+}
+
 func (st *HandleT) setupFileUploader() {
-	if errorStashEnabled && jobsdb.IsMasterBackupEnabled() {
+	if backupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
@@ -235,9 +246,6 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
-			if !(errorStashEnabled && jobsdb.IsMasterBackupEnabled()) {
-				continue
-			}
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
@@ -263,14 +271,15 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			hasFileUploader := st.errFileUploader != nil
+			canUpload := backupEnabled() && st.getFileUploader() != nil
 
 			jobState := jobsdb.Executing.State
 
 			var filteredJobList []*jobsdb.JobT
 
 			// abort jobs if file uploader not configured to store them to object storage
-			if !hasFileUploader {
+			// or backup is not enabled
+			if !canUpload {
 				jobState = jobsdb.Aborted.State
 				filteredJobList = combinedList
 			}
@@ -290,7 +299,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					WorkspaceId:   job.WorkspaceId,
 				}
 
-				if hasFileUploader {
+				if canUpload {
 					if st.transientSource.ApplyJob(job) {
 						// if it is a transient source, we don't process the job and mark it as aborted
 						status.JobState = jobsdb.Aborted.State
@@ -307,7 +316,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				panic(err)
 			}
 
-			if hasFileUploader && len(filteredJobList) > 0 {
+			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList
 			}
 		}
