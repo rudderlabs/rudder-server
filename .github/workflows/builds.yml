@@ -25,6 +25,7 @@ jobs:
             rudderlabs/develop-rudder-server
           tags: |
             type=ref,event=branch
+            type=raw,value={{branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
