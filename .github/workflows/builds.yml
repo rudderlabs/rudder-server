@@ -7,7 +7,7 @@ on:
     branches:
       - master
       - main
-  pull_request_target:
+  pull_request:
 
 jobs:
   docker-oss:
@@ -26,6 +26,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=raw,value={{branch}}
+            type=match,value=${{ github.head_ref }},pattern=/.*?$
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
