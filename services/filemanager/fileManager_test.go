@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/minio/minio-go/v6"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
@@ -418,6 +420,31 @@ func TestFileManager(t *testing.T) {
 
 	}
 
+}
+
+func TestGCSManager_unsupported_credentials(t *testing.T) {
+	var config map[string]interface{}
+	err := jsoniter.Unmarshal(
+		[]byte(`{
+			"project": "my-project",
+			"location": "US",
+			"bucketName": "my-bucket",
+			"prefix": "rudder",
+			"namespace": "namespace", 
+			"credentials":"{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
+			"syncFrequency": "1440",
+			"syncStartAt": "09:00"
+		}`),
+		&config,
+	)
+	assert.NoError(t, err)
+	manager := &filemanager.GCSManager{
+		Config:  filemanager.GetGCSConfig(config),
+		Timeout: nil,
+	}
+	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
 }
 
 func blockOnHold() {
