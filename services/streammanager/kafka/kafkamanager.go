@@ -131,6 +131,7 @@ type logger interface {
 type managerStats struct {
 	missingUserID  stats.RudderStats
 	missingMessage stats.RudderStats
+	publishTime    stats.RudderStats
 }
 
 const (
@@ -149,6 +150,9 @@ var (
 
 	kafkaStats managerStats
 	pkgLogger  logger
+
+	now   = func() time.Time { return time.Now() }                   // skipcq: CRT-A0018
+	since = func(t time.Time) time.Duration { return time.Since(t) } // skipcq: CRT-A0018
 )
 
 func Init() {
@@ -187,6 +191,7 @@ func Init() {
 	kafkaStats = managerStats{
 		missingUserID:  stats.DefaultStats.NewStat("router.kafka.missing_user_id", stats.CountType),
 		missingMessage: stats.DefaultStats.NewStat("router.kafka.missing_message", stats.CountType),
+		publishTime:    stats.DefaultStats.NewStat("router.kafka.publish_time", stats.TimerType),
 	}
 }
 
@@ -454,7 +459,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
 
-	err = p.Publish(ctx, batchOfMessages...)
+	err = publish(ctx, p, batchOfMessages...)
 	if err != nil {
 		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 	}
@@ -479,12 +484,18 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value, timestamp)
-	if err = p.Publish(ctx, message); err != nil {
+	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(err)
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
 	return 200, returnMessage, returnMessage
+}
+
+func publish(ctx context.Context, p producer, msgs ...client.Message) error {
+	start := now()
+	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
+	return p.Publish(ctx, msgs...)
 }
 
 func makeErrorResponse(err error) (int, string, string) {
