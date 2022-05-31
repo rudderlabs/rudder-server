@@ -107,7 +107,7 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 		}
 
 		if manager.Config.Credentials != "" {
-			if err = googleutils.CompatibleGoogleCredentialsJson([]byte(manager.Config.Credentials)); err != nil {
+			if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
 				return manager.client, err
 			}
 			options = append(options, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))

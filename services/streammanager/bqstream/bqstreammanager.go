@@ -70,7 +70,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if config.Credentials == "" {
 		return nil, createErr(err, "credentials not being sent")
 	}
-	if err = googleutils.CompatibleGoogleCredentialsJson([]byte(config.Credentials)); err != nil {
+	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
 		return nil, createErr(err, "incompatible credentials")
 	}
 	confCreds = []byte(config.Credentials)

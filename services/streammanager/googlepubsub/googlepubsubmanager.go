@@ -61,7 +61,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	}
 	var client *pubsub.Client
 	if config.Credentials != "" { // Normal configuration requires credentials
-		if err = googleutils.CompatibleGoogleCredentialsJson([]byte(config.Credentials)); err != nil {
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
 			return nil, err
 		}
 		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithCredentialsJSON([]byte(config.Credentials))); err != nil {
