@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"runtime/pprof"
 
+	"github.com/objectbox/objectbox-go/objectbox"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
@@ -281,11 +283,17 @@ func Run(ctx context.Context) {
 		return p.StartServer(ctx)
 	})
 
+	objectBox, err := objectbox.NewBuilder().Model(objectdb.ObjectBoxModel()).Build()
+	if err != nil {
+		panic(err)
+	}
+	defer objectBox.Close()
+
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() error {
-			return appHandler.StartRudderCore(ctx, options)
+			return appHandler.StartRudderCore(ctx, options, objectBox)
 		}))
 	}
 
@@ -332,7 +340,7 @@ func Run(ctx context.Context) {
 		}
 	}()
 
-	err := g.Wait()
+	err = g.Wait()
 	if err != nil && err != context.Canceled {
 		pkgLogger.Error(err)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
@@ -44,7 +45,7 @@ func (*EmbeddedApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
-func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectbox.ObjectBox) error {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreDBValidator()
@@ -181,7 +182,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, objectBox)
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
@@ -238,7 +239,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler, rsources.NewNoOpService())
+		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler, rsources.NewNoOpService(), objectBox)
 		defer gw.Shutdown()
 
 		g.Go(func() error {

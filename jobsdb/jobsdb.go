@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -2462,6 +2463,7 @@ type JobsResult struct {
 	LimitsReached bool
 	EventsCount   int
 	PayloadSize   int64
+	GWJobs        []*objectdb.GatewayJob
 }
 
 /*

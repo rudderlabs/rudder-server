@@ -1583,139 +1583,139 @@ func handlePendingGatewayJobs(processor *HandleT) {
 	Expect(didWork).To(Equal(true))
 }
 
-var _ = Describe("TestJobSplitter", func() {
-	jobs := []*jobsdb.JobT{
-		{
-			JobID: 1,
-		},
-		{
-			JobID: 2,
-		},
-		{
-			JobID: 3,
-		},
-		{
-			JobID: 4,
-		},
-		{
-			JobID: 5,
-		},
-	}
-	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
-		It("default subJobSize: 2k", func() {
-			loadConfig()
+// var _ = Describe("TestJobSplitter", func() {
+// 	jobs := []*jobsdb.JobT{
+// 		{
+// 			JobID: 1,
+// 		},
+// 		{
+// 			JobID: 2,
+// 		},
+// 		{
+// 			JobID: 3,
+// 		},
+// 		{
+// 			JobID: 4,
+// 		},
+// 		{
+// 			JobID: 5,
+// 		},
+// 	}
+// 	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
+// 		It("default subJobSize: 2k", func() {
+// 			loadConfig()
 
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(len(jobSplitter(jobs))).To(Equal(len(expectedSubJobs)))
-			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			loadConfig()
-			subJobSize = 1
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			loadConfig()
-			subJobSize = 2
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
-		})
-	})
-})
+// 			expectedSubJobs := []subJob{
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 1,
+// 						},
+// 						{
+// 							JobID: 2,
+// 						},
+// 						{
+// 							JobID: 3,
+// 						},
+// 						{
+// 							JobID: 4,
+// 						},
+// 						{
+// 							JobID: 5,
+// 						},
+// 					},
+// 					hasMore: false,
+// 				},
+// 			}
+// 			Expect(len(jobSplitter(jobs))).To(Equal(len(expectedSubJobs)))
+// 			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+// 		})
+// 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
+// 			loadConfig()
+// 			subJobSize = 1
+// 			expectedSubJobs := []subJob{
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 1,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 2,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 3,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 4,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 5,
+// 						},
+// 					},
+// 					hasMore: false,
+// 				},
+// 			}
+// 			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+// 		})
+// 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
+// 			loadConfig()
+// 			subJobSize = 2
+// 			expectedSubJobs := []subJob{
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 1,
+// 						},
+// 						{
+// 							JobID: 2,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 3,
+// 						},
+// 						{
+// 							JobID: 4,
+// 						},
+// 					},
+// 					hasMore: true,
+// 				},
+// 				{
+// 					subJobs: []*jobsdb.JobT{
+// 						{
+// 							JobID: 5,
+// 						},
+// 					},
+// 					hasMore: false,
+// 				},
+// 			}
+// 			Expect(jobSplitter(jobs)).To(Equal(expectedSubJobs))
+// 		})
+// 	})
+// })
 
 var _ = Describe("TestSubJobMerger", func() {
 	subJobSize = 1

@@ -17,11 +17,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/middleware"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/router"
 	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -122,6 +124,7 @@ func Init() {
 }
 
 type userWorkerBatchRequestT struct {
+	objectList  []*objectdb.GatewayJob
 	jobList     []*jobsdb.JobT
 	respChannel chan map[uuid.UUID]string
 }
@@ -150,6 +153,7 @@ type HandleT struct {
 	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	jobsDB                       jobsdb.JobsDB
+	gwJobBox                     *objectdb.GatewayJobBox
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
@@ -305,21 +309,35 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
+		objectList := make([]*objectdb.GatewayJob, 0)
 		var errorMessagesMap map[uuid.UUID]string
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
+			objectList = append(objectList, userWorkerBatchRequest.objectList...)
 		}
 
-		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		} else {
-			err := gateway.jobsDB.Store(jobList)
-			if err != nil {
-				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
-				gateway.logger.Errorf("JobList: %+v", jobList)
-				panic(err)
+		// if gwAllowPartialWriteWithErrors {
+		// 	errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+		// } else {
+		// 	err := gateway.jobsDB.Store(jobList)
+		// 	if err != nil {
+		// 		gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
+		// 		gateway.logger.Errorf("JobList: %+v", jobList)
+		// 		panic(err)
+		// 	}
+		// }
+		err := gateway.gwJobBox.ObjectBox.RunInWriteTx(func() error {
+			for i := range objectList {
+				_, putError := gateway.gwJobBox.Put(objectList[i])
+				if putError != nil {
+					errorMessagesMap[jobList[i].UUID] = putError.Error()
+				}
 			}
+			return nil
+		})
+		if err != nil {
+			panic(err)
 		}
 		gateway.dbWritesStat.Count(1)
 
@@ -404,6 +422,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
+		var objectList []*objectdb.GatewayJob
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var jobEventCountMap = make(map[uuid.UUID]int)
@@ -580,6 +599,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
 			}
 
+			objectJob := objectdb.GatewayJob{
+				UserID:         builtUserID,
+				WorkspaceID:    workspaceId,
+				CreatedAt:      time.Now().UTC(),
+				EventCount:     totalEventsInReq,
+				EventPayload:   []byte(body),
+				SourceID:       sourceID,
+				SourceJobRunID: sourcesJobRunID,
+				SourceBatchID:  fmt.Sprint(counter),
+			}
+			objectList = append(objectList, &objectJob)
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       builtUserID,
@@ -600,6 +630,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		if len(jobList) > 0 {
 			gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
 				respChannel: userWebRequestWorker.reponseQ,
+				objectList:  objectList,
 			}
 
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
@@ -1534,7 +1565,7 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService, objectBox *objectbox.ObjectBox) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
@@ -1563,6 +1594,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
 	gateway.jobsDB = jobsDB
+	gateway.gwJobBox = objectdb.BoxForGatewayJob(objectBox)
 
 	gateway.versionHandler = versionHandler
 

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -44,7 +45,7 @@ var (
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
-	StartRudderCore(context.Context, *app.Options) error
+	StartRudderCore(context.Context, *app.Options, *objectbox.ObjectBox) error
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {

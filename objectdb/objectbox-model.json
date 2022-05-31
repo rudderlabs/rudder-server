@@ -1,0 +1,653 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:2869925747500390059",
+      "lastPropertyId": "2:8294440399638864848",
+      "name": "SourceID",
+      "properties": [
+        {
+          "id": "1:8822926318559914003",
+          "name": "Name",
+          "indexId": "1:5857677081866681575",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:8294440399638864848",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "2:4423711829853508685",
+      "lastPropertyId": "2:6534063759529313207",
+      "name": "DestinationID",
+      "properties": [
+        {
+          "id": "1:3179530378592174960",
+          "name": "Name",
+          "indexId": "2:5778610862127550351",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:6534063759529313207",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "3:3597879070429767399",
+      "lastPropertyId": "2:5675185202085856417",
+      "name": "SourceBatchID",
+      "properties": [
+        {
+          "id": "1:4555383759773553284",
+          "name": "Name",
+          "indexId": "3:5006739390375501261",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:5675185202085856417",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "4:7486972548195051011",
+      "lastPropertyId": "2:3770816779050135125",
+      "name": "SourceTaskID",
+      "properties": [
+        {
+          "id": "1:6670263794285635977",
+          "name": "Name",
+          "indexId": "4:1966803433132950248",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:3770816779050135125",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "5:8932770196463363407",
+      "lastPropertyId": "2:4523052647833371717",
+      "name": "SourceTaskRunID",
+      "properties": [
+        {
+          "id": "1:1065717821419705975",
+          "name": "Name",
+          "indexId": "5:4189380110654222829",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:4523052647833371717",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "6:4725412107568255400",
+      "lastPropertyId": "2:543088158877250910",
+      "name": "SourceJobID",
+      "properties": [
+        {
+          "id": "1:5106424341227725479",
+          "name": "Name",
+          "indexId": "6:5201644448580751275",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:543088158877250910",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "7:5613692470226056548",
+      "lastPropertyId": "2:4930178864712545365",
+      "name": "SourceJobRunID",
+      "properties": [
+        {
+          "id": "1:429910614972959229",
+          "name": "Name",
+          "indexId": "7:468892721311029718",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:4930178864712545365",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "8:8782568146941451108",
+      "lastPropertyId": "2:8454016484796503646",
+      "name": "SourceDefinitionID",
+      "properties": [
+        {
+          "id": "1:2852466399216641482",
+          "name": "Name",
+          "indexId": "8:5976377776647603734",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:8454016484796503646",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "9:2963845346359225551",
+      "lastPropertyId": "2:3974870246748708097",
+      "name": "DestinationDefinitionID",
+      "properties": [
+        {
+          "id": "1:5618300392389900923",
+          "name": "Name",
+          "indexId": "9:8620053196703030715",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:3974870246748708097",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "10:6929600812344984593",
+      "lastPropertyId": "2:4359740142348513684",
+      "name": "SourceCategory",
+      "properties": [
+        {
+          "id": "1:2828613213349623378",
+          "name": "Name",
+          "indexId": "10:2467731233385356568",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:4359740142348513684",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "11:7535172036551034281",
+      "lastPropertyId": "19:1472550507374473002",
+      "name": "GatewayJob",
+      "properties": [
+        {
+          "id": "1:5143458760441539061",
+          "name": "JobID",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8998124193677116215",
+          "name": "UserID",
+          "type": 9
+        },
+        {
+          "id": "3:5426418910289756453",
+          "name": "JobState",
+          "type": 9
+        },
+        {
+          "id": "4:4207858374913391455",
+          "name": "WorkspaceID",
+          "type": 9
+        },
+        {
+          "id": "5:655876097213894740",
+          "name": "CreatedAt",
+          "type": 10
+        },
+        {
+          "id": "6:257177343896885499",
+          "name": "ExpireAt",
+          "type": 10
+        },
+        {
+          "id": "7:7524534071422409018",
+          "name": "EventCount",
+          "type": 6
+        },
+        {
+          "id": "8:2323166441397103419",
+          "name": "EventPayload",
+          "type": 23
+        },
+        {
+          "id": "9:5387083218644166782",
+          "name": "PayloadSize",
+          "type": 6
+        },
+        {
+          "id": "10:4035491400602821353",
+          "name": "ExecTime",
+          "type": 10
+        },
+        {
+          "id": "11:8234322648838789589",
+          "name": "RetryTime",
+          "type": 10
+        },
+        {
+          "id": "12:2201414932138568655",
+          "name": "ErrorResponse",
+          "type": 23
+        },
+        {
+          "id": "13:615597211562445870",
+          "name": "SourceID",
+          "type": 9
+        },
+        {
+          "id": "14:1826099015080728190",
+          "name": "SourceBatchID",
+          "type": 9
+        },
+        {
+          "id": "15:6993815264733201885",
+          "name": "SourceTaskID",
+          "type": 9
+        },
+        {
+          "id": "16:7075223750815829428",
+          "name": "SourceTaskRunID",
+          "type": 9
+        },
+        {
+          "id": "17:99980625877429802",
+          "name": "SourceJobID",
+          "type": 9
+        },
+        {
+          "id": "18:2497701676685710269",
+          "name": "SourceJobRunID",
+          "type": 9
+        },
+        {
+          "id": "19:1472550507374473002",
+          "name": "SourceDefinitionID",
+          "type": 9
+        }
+      ]
+    },
+    {
+      "id": "12:1783554444946226019",
+      "lastPropertyId": "2:550566190863348300",
+      "name": "UserID",
+      "properties": [
+        {
+          "id": "1:3409656925649057452",
+          "name": "Name",
+          "indexId": "11:418488054825019415",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:550566190863348300",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "13:4018696856788560703",
+      "lastPropertyId": "2:6458457908965021320",
+      "name": "CustomVal",
+      "properties": [
+        {
+          "id": "1:8932878013825149220",
+          "name": "Name",
+          "indexId": "12:521636762455774019",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:6458457908965021320",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "14:8904682392015878518",
+      "lastPropertyId": "2:2402257333602715753",
+      "name": "JobState",
+      "properties": [
+        {
+          "id": "1:8958377750289689558",
+          "name": "Name",
+          "indexId": "13:4403481685334919276",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:2402257333602715753",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "15:4722293844883079192",
+      "lastPropertyId": "2:2797576816621904261",
+      "name": "WorkspaceID",
+      "properties": [
+        {
+          "id": "1:4988867052746536817",
+          "name": "Name",
+          "indexId": "14:4671051305818973688",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "2:2797576816621904261",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    },
+    {
+      "id": "16:5832772456384049602",
+      "lastPropertyId": "37:5594534062280191769",
+      "name": "Job",
+      "properties": [
+        {
+          "id": "1:1155090551674869841",
+          "name": "JobID",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7099285379978433904",
+          "name": "UserID_Name",
+          "indexId": "15:1088552936429905895",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:710197340335372228",
+          "name": "UserID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "4:4790478674350552580",
+          "name": "CustomVal_Name",
+          "indexId": "16:4778146743233483799",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "5:5142322196797001815",
+          "name": "CustomVal_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "6:2014740645906731359",
+          "name": "JobState_Name",
+          "indexId": "17:5803846118189756607",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "7:8690923483671989547",
+          "name": "JobState_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "8:7005368517087895505",
+          "name": "WorkspaceID_Name",
+          "indexId": "18:7856539576289346480",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "9:560330897020134006",
+          "name": "WorkspaceID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "10:7106951967886408155",
+          "name": "CreatedAt",
+          "type": 10
+        },
+        {
+          "id": "11:2662406594162733085",
+          "name": "ExpireAt",
+          "type": 10
+        },
+        {
+          "id": "12:7907022427670290827",
+          "name": "EventCount",
+          "type": 6
+        },
+        {
+          "id": "13:3375618731910813363",
+          "name": "EventPayload",
+          "type": 23
+        },
+        {
+          "id": "14:8595049042699444881",
+          "name": "PayloadSize",
+          "type": 6
+        },
+        {
+          "id": "15:2901924393599502444",
+          "name": "ExecTime",
+          "type": 10
+        },
+        {
+          "id": "16:3986349892723070769",
+          "name": "RetryTime",
+          "type": 10
+        },
+        {
+          "id": "17:7698557647163241468",
+          "name": "ErrorResponse",
+          "type": 23
+        },
+        {
+          "id": "18:1036413255105589974",
+          "name": "SourceID_Name",
+          "indexId": "19:8693586707121841945",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "19:4442547919345481303",
+          "name": "SourceID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "20:7870494279688839896",
+          "name": "DestinationID_Name",
+          "indexId": "20:2719255913803474029",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "21:7900396756164807634",
+          "name": "DestinationID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "22:6359132790664622615",
+          "name": "SourceBatchID_Name",
+          "indexId": "21:762658924468973223",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "23:4068302751621631703",
+          "name": "SourceBatchID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "24:3457207826898017398",
+          "name": "SourceTaskID_Name",
+          "indexId": "22:817520939057098261",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "25:2434623127428887024",
+          "name": "SourceTaskID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "26:4868938027604613756",
+          "name": "SourceTaskRunID_Name",
+          "indexId": "23:1782014146488391713",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "27:2664011058148494637",
+          "name": "SourceTaskRunID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "28:2933472893315614163",
+          "name": "SourceJobID_Name",
+          "indexId": "24:4198834430812501915",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "29:630615508811927491",
+          "name": "SourceJobID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "30:978832687571356313",
+          "name": "SourceJobRunID_Name",
+          "indexId": "25:4135416111576494273",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "31:1171386810879964138",
+          "name": "SourceJobRunID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "32:7141420158795663912",
+          "name": "SourceDefinitionID_Name",
+          "indexId": "26:7653539556594406310",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "33:5468349371132374023",
+          "name": "SourceDefinitionID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "34:7423375865888233353",
+          "name": "DestinationDefinitionID_Name",
+          "indexId": "27:1017625041415179128",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "35:387071259876002936",
+          "name": "DestinationDefinitionID_Id",
+          "type": 6,
+          "flags": 8192
+        },
+        {
+          "id": "36:1078124556180274539",
+          "name": "SourceCategory_Name",
+          "indexId": "28:4193512282878406178",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "37:5594534062280191769",
+          "name": "SourceCategory_Id",
+          "type": 6,
+          "flags": 8192
+        }
+      ]
+    },
+    {
+      "id": "17:6231449756449352834",
+      "lastPropertyId": "2:787784671483058604",
+      "name": "EventType",
+      "properties": [
+        {
+          "id": "1:2244601902503634680",
+          "name": "Name",
+          "type": 9
+        },
+        {
+          "id": "2:787784671483058604",
+          "name": "Id",
+          "type": 6,
+          "flags": 1
+        }
+      ]
+    }
+  ],
+  "lastEntityId": "17:6231449756449352834",
+  "lastIndexId": "28:4193512282878406178",
+  "lastRelationId": "",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [],
+  "retiredRelationUids": [],
+  "version": 1
+}

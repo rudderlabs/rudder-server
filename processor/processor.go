@@ -26,6 +26,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -57,6 +58,7 @@ type HandleT struct {
 	transformer         transformer.Transformer
 	lastJobID           int64
 	gatewayDB           jobsdb.JobsDB
+	GWJobBox            *objectdb.GatewayJobBox
 	routerDB            jobsdb.JobsDB
 	batchRouterDB       jobsdb.JobsDB
 	errorDB             jobsdb.JobsDB
@@ -1285,6 +1287,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
+		subJobs.GWJobs[idx].JobState = "succeeded"
 	}
 
 	//REPORTING - GATEWAY metrics - START
@@ -1414,7 +1417,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 		procErrorJobs,
 		sourceDupStats,
 		uniqueMessageIds,
-
+		subJobs.GWJobs,
 		totalEvents,
 		start,
 
@@ -1433,6 +1436,7 @@ type transformationMessage struct {
 	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[string]int
 	uniqueMessageIds             map[string]struct{}
+	GWJobs                       []*objectdb.GatewayJob
 
 	totalEvents int
 	start       time.Time
@@ -1495,6 +1499,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	proc.stats.transformationsThroughput.Count(transformationsThroughput)
 	return storeMessage{
 		in.statusList,
+		in.GWJobs,
 		destJobs,
 		batchDestJobs,
 
@@ -1512,6 +1517,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 
 type storeMessage struct {
 	statusList    []*jobsdb.JobStatusT
+	GWJobs        []*objectdb.GatewayJob
 	destJobs      []*jobsdb.JobT
 	batchDestJobs []*jobsdb.JobT
 
@@ -1600,13 +1606,24 @@ func (proc *HandleT) Store(in storeMessage) {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := proc.errorDB.Store(in.procErrorJobs)
-		if err != nil {
-			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
-			panic(err)
-		}
+		// proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+		// err := proc.errorDB.Store(in.procErrorJobs)
+		// if err != nil {
+		// 	proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+		// 	proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
+		// 	panic(err)
+		// }
+		// TODO
+		// proc.GWJobBox.ObjectBox.RunInWriteTx(func () error {
+		// 	for i := range in.procErrorJobs {
+		// 		jobs[i].JobState = "Executing"
+		// 		_, putError := proc.GWJobBox.Put(jobs[i])
+		// 		if putError != nil {
+		// 			return putError
+		// 		}
+		// 	}
+		// 	return nil
+		// })
 		recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 	writeJobsTime := time.Since(beforeStoreStatus)
@@ -1614,11 +1631,25 @@ func (proc *HandleT) Store(in storeMessage) {
 	txnStart := time.Now()
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 
-		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+		// err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+		// if err != nil {
+		// 	pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+		// 	return err
+		// }
+		err := proc.GWJobBox.ObjectBox.RunInWriteTx(func() error {
+			for i := range in.GWJobs {
+				_, putError := proc.GWJobBox.Put(in.GWJobs[i])
+				if putError != nil {
+					return putError
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 			return err
 		}
+
 		if proc.isReportingEnabled() {
 			proc.reporting.Report(in.reportMetrics, tx.Tx())
 		}
@@ -2109,17 +2140,36 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 
 	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
 
-	eventCount := maxEventsToProcess
-	if !enableEventCount {
-		eventCount = 0
+	// eventCount := maxEventsToProcess
+	// if !enableEventCount {
+	// 	eventCount = 0
+	// }
+	unprocessedList := jobsdb.JobsResult{}
+	// unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	// 	CustomValFilters: []string{GWCustomVal},
+	// 	JobsLimit:        maxEventsToProcess,
+	// 	EventsLimit:      eventCount,
+	// 	PayloadSizeLimit: proc.payloadLimit,
+	// })
+	newList, err := proc.GWJobBox.Query(objectdb.GatewayJob_.JobState.Equals("", true)).Limit(uint64(maxEventsToProcess)).Find()
+	if err != nil {
+		panic(err)
 	}
-
-	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{GWCustomVal},
-		JobsLimit:        maxEventsToProcess,
-		EventsLimit:      eventCount,
-		PayloadSizeLimit: proc.payloadLimit,
-	})
+	unprocessedList.GWJobs = newList
+	for i := range newList {
+		params := []byte(``)
+		// enhance params -> add source_id etc.
+		unprocessedList.Jobs = append(unprocessedList.Jobs, &jobsdb.JobT{
+			JobID:        int64(newList[i].JobID),
+			UserID:       newList[i].UserID,
+			Parameters:   params,
+			CreatedAt:    newList[i].CreatedAt,
+			ExpireAt:     newList[i].ExpireAt,
+			CustomVal:    "GW",
+			EventPayload: newList[i].EventPayload,
+			WorkspaceId:  newList[i].WorkspaceID,
+		})
+	}
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)
@@ -2164,31 +2214,41 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	return unprocessedList
 }
 
-func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
+func (proc *HandleT) markExecuting(jobs []*objectdb.GatewayJob) error {
 	start := time.Now()
 	defer proc.stats.statMarkExecuting.Since(start)
 
-	statusList := make([]*jobsdb.JobStatusT, len(jobs))
-	for i, job := range jobs {
-		statusList[i] = &jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			JobState:      jobsdb.Executing.State,
-			ExecTime:      start,
-			RetryTime:     start,
-			ErrorCode:     "",
-			ErrorResponse: []byte(`{}`),
-			Parameters:    []byte(`{}`),
-			WorkspaceId:   job.WorkspaceId,
-		}
-	}
+	// statusList := make([]*jobsdb.JobStatusT, len(jobs))
+	// for i, job := range jobs {
+	// 	statusList[i] = &jobsdb.JobStatusT{
+	// 		JobID:         job.JobID,
+	// 		AttemptNum:    job.LastJobStatus.AttemptNum,
+	// 		JobState:      jobsdb.Executing.State,
+	// 		ExecTime:      start,
+	// 		RetryTime:     start,
+	// 		ErrorCode:     "",
+	// 		ErrorResponse: []byte(`{}`),
+	// 		Parameters:    []byte(`{}`),
+	// 		WorkspaceId:   job.WorkspaceId,
+	// 	}
+	// }
 	//Mark the jobs as executing
-	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-	if err != nil {
-		return fmt.Errorf("marking jobs as executing: %w", err)
-	}
+	// err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
+	// if err != nil {
+	// 	return fmt.Errorf("marking jobs as executing: %w", err)
+	// }
 
-	return nil
+	err := proc.GWJobBox.ObjectBox.RunInWriteTx(func() error {
+		for i := range jobs {
+			jobs[i].JobState = "Executing"
+			_, putError := proc.GWJobBox.Put(jobs[i])
+			if putError != nil {
+				return putError
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
@@ -2205,6 +2265,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(subJob{
+				GWJobs:  unprocessedList.GWJobs,
 				subJobs: unprocessedList.Jobs,
 				hasMore: false,
 			}, nil),
@@ -2255,10 +2316,12 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 type subJob struct {
 	subJobs []*jobsdb.JobT
 	hasMore bool
+	GWJobs  []*objectdb.GatewayJob
 }
 
-func jobSplitter(jobs []*jobsdb.JobT) []subJob {
+func jobSplitter(jobsResult jobsdb.JobsResult) []subJob {
 	subJobCount := 1
+	jobs := jobsResult.GWJobs
 	if len(jobs)/subJobSize > 1 {
 		subJobCount = len(jobs) / subJobSize
 		if len(jobs)%subJobSize != 0 {
@@ -2270,16 +2333,19 @@ func jobSplitter(jobs []*jobsdb.JobT) []subJob {
 		if i == subJobCount-1 {
 			//all the remaining jobs are sent in last sub-job batch.
 			subJobs = append(subJobs, subJob{
-				subJobs: jobs,
+				GWJobs:  jobs,
+				subJobs: jobsResult.Jobs,
 				hasMore: false,
 			})
 			continue
 		}
 		subJobs = append(subJobs, subJob{
-			subJobs: jobs[:subJobSize],
+			subJobs: jobsResult.Jobs[:subJobSize],
 			hasMore: true,
+			GWJobs:  jobs[:subJobSize],
 		})
 		jobs = jobs[subJobSize:]
+		jobsResult.Jobs = jobsResult.Jobs[subJobSize:]
 	}
 
 	return subJobs
@@ -2328,7 +2394,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
-				err := proc.markExecuting(jobs.Jobs)
+				err := proc.markExecuting(jobs.GWJobs)
 				if err != nil {
 					pkgLogger.Error(err)
 					panic(err)
@@ -2343,7 +2409,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobs := jobSplitter(jobs.Jobs)
+				subJobs := jobSplitter(jobs)
 				for _, subJob := range subJobs {
 					chProc <- subJob
 				}

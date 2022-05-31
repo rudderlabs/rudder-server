@@ -7,20 +7,20 @@ services:
       - build/docker.env
     ports:
       - "6432:5432"
-  backend:
-    depends_on:
-      - db
-      - d-transformer
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
-    ports:
-      - "8080:8080"
-    env_file:
-      - build/docker.env
-    environment:
-      - JOBS_DB_HOST=db
+  # backend:
+  #   depends_on:
+  #     - db
+  #     - d-transformer
+  #   build:
+  #     context: ./
+  #     dockerfile: build/Dockerfile
+  #   entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
+  #   ports:
+  #     - "8080:8080"
+  #   env_file:
+  #     - build/docker.env
+  #   environment:
+  #     - JOBS_DB_HOST=db
   # Uncomment the following lines to mount workspaceConfig file
   # volumes:
   #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
@@ -30,25 +30,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-  minio:
-    image: minio/minio
-    profiles:
-      - storage
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=root
-      - MINIO_ROOT_PASSWORD=password
-    command: server --console-address :9001 /data
-  mode-provider:
-    image: docker.io/bitnami/etcd:3
-    profiles:
-      - multi-tenant
-    environment:
-      - ALLOW_NONE_AUTHENTICATION=yes
-      - ETCD_NAME=mode-provider
-      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
-      - ETCD_ADVERTISE_CLIENT_URLS=http://mode-provider:2379
-    ports:
-      - "2379:2379"
+  # minio:
+  #   image: minio/minio
+  #   profiles:
+  #     - storage
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     - MINIO_ROOT_USER=root
+  #     - MINIO_ROOT_PASSWORD=password
+  #   command: server --console-address :9001 /data
+  # mode-provider:
+  #   image: docker.io/bitnami/etcd:3
+  #   profiles:
+  #     - multi-tenant
+  #   environment:
+  #     - ALLOW_NONE_AUTHENTICATION=yes
+  #     - ETCD_NAME=mode-provider
+  #     - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+  #     - ETCD_ADVERTISE_CLIENT_URLS=http://mode-provider:2379
+  #   ports:
+  #     - "2379:2379"

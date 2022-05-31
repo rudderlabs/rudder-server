@@ -208,7 +208,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService())
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService(), nil)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()
