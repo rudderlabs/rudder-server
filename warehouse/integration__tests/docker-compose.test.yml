@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   postgres:
-    container_name: postgres_testing
+    container_name: postgres
     image: postgres:11-alpine
     environment:
       - POSTGRES_DB=rudderdb
@@ -11,7 +11,7 @@ services:
     ports:
       - "54320:5432"
   clickhouse:
-    container_name: clickhouse_testing
+    container_name: clickhouse
     image: yandex/clickhouse-server:21-alpine
     environment:
       - CLICKHOUSE_DB=rudderdb
@@ -20,7 +20,7 @@ services:
     ports:
       - "54321:9000"
   mssql:
-    container_name: mssql_testing
+    container_name: mssql
     image: mcr.microsoft.com/azure-sql-edge:1.0.5
     environment:
       - ACCEPT_EULA=Y
@@ -30,7 +30,7 @@ services:
     ports:
       - "54322:1433"
   transformer:
-    container_name: transformer_testing
+    container_name: transformer
     image: rudderlabs/rudder-transformer:latest
     environment:
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
@@ -108,6 +108,7 @@ services:
       - POSTGRES_USER=rudder
     ports:
       - "54328:5432"
+
 networks:
   clickhouse-network:
     name: clickhouse-network
