@@ -763,16 +763,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
 								// stat start
-								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+								pkgLogger.Infof(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 								defer cancel()
 								//transformer proxy start
 								if worker.rt.transformerProxy {
-									pkgLogger.Infof(`[%v]TransformerProxy Request started`, worker.rt.destName)
+									jobId := destinationJob.JobMetadataArray[0].JobID
+									pkgLogger.Infof(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobId)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
-									pkgLogger.Infof(`[%v]TransformerProxy Request ended`, worker.rt.destName)
+									pkgLogger.Infof(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -810,7 +811,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								"workspace":   workspaceID,
 							}).Count(len(result))
 
-							pkgLogger.Infof(`[%v][TransformerProxy]Input Router Events: %v, Out router events: %v`, worker.rt.destName, len(result), len(respBodyArr))
+							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
+								destinationJob.JobMetadataArray[0].JobID,
+								len(result),
+								len(respBodyArr),
+							)
 
 							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
 								"destType":    worker.rt.destName,
