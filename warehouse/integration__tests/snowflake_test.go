@@ -47,7 +47,7 @@ func SetupSnowflake() (sfTest *testhelper.SnowflakeTest) {
 			"gateway":       6,
 			"batchRT":       8,
 		},
-		TableTestQueryFreq: 100 * time.Millisecond,
+		TableTestQueryFreq: 5000 * time.Millisecond,
 	}
 
 	var err error
