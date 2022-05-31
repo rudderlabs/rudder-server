@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -606,6 +607,9 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
+	if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
+		return nil, err
+	}
 	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
 	return client, err
 }

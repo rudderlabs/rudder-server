@@ -3,6 +3,7 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"github.com/iancoleman/strcase"
 	"strings"
 	"time"
 
@@ -22,13 +23,15 @@ import (
 
 // Database configuration
 const (
-	DLHost          = "host"
-	DLPort          = "port"
-	DLPath          = "path"
-	DLToken         = "token"
-	AWSTokens       = "useSTSTokens"
-	AWSAccessKey    = "accessKey"
-	AWSAccessSecret = "accessKeyID"
+	DLHost                 = "host"
+	DLPort                 = "port"
+	DLPath                 = "path"
+	DLToken                = "token"
+	AWSTokens              = "useSTSTokens"
+	AWSAccessKey           = "accessKey"
+	AWSAccessSecret        = "accessKeyID"
+	EnableExternalLocation = "enableExternalLocation"
+	ExternalLocation       = "externalLocation"
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -49,6 +52,7 @@ var (
 	userAgent          string
 	grpcTimeout        time.Duration
 	healthTimeout      time.Duration
+	loadTableStrategy  string
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -58,6 +62,7 @@ var dataTypesMap = map[string]string{
 	"float":    "DOUBLE",
 	"string":   "STRING",
 	"datetime": "TIMESTAMP",
+	"date":     "DATE",
 }
 
 // Delta Lake mapping with rudder data types mappings.
@@ -72,7 +77,7 @@ var dataTypesMapToRudder = map[string]string{
 	"DOUBLE":    "float",
 	"BOOLEAN":   "boolean",
 	"STRING":    "string",
-	"DATE":      "datetime",
+	"DATE":      "date",
 	"TIMESTAMP": "datetime",
 	"tinyint":   "int",
 	"smallint":  "int",
@@ -83,8 +88,15 @@ var dataTypesMapToRudder = map[string]string{
 	"double":    "float",
 	"boolean":   "boolean",
 	"string":    "string",
-	"date":      "datetime",
+	"date":      "date",
 	"timestamp": "datetime",
+}
+
+// excludeColumnsMap Columns you need to exclude
+// Since event_date is an auto generated column in order to support partitioning.
+// We need to ignore it during query generation.
+var excludeColumnsMap = map[string]bool{
+	"event_date": true,
 }
 
 // Primary Key mappings for tables
@@ -122,6 +134,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
+	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -133,6 +146,14 @@ func getDeltaLakeDataType(columnType string) string {
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
+		if _, ok := excludeColumnsMap[name]; ok {
+			return ""
+		}
+		if name == "received_at" {
+			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
+			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
+		}
+
 		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
@@ -515,30 +536,25 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	// Getting the primary key for the merge sql statement
-	primaryKey := "id"
-	if column, ok := primaryKeyMap[tableName]; ok {
-		primaryKey = column
+	if loadTableStrategy == "APPEND" {
+		sqlStatement = appendableLTSQLStatement(
+			dl.Namespace,
+			tableName,
+			stagingTableName,
+			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
+		)
+	} else {
+		sqlStatement = mergeableLTSQLStatement(
+			dl.Namespace,
+			tableName,
+			stagingTableName,
+			sortedColumnKeys,
+		)
 	}
-
-	// Creating merge sql statement to copy from staging table to the main table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-                                       USING ( SELECT * FROM ( SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[1]s.%[3]s ) AS q WHERE _rudder_staging_row_number = 1) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[5]s
-									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
-		dl.Namespace,
-		tableName,
-		stagingTableName,
-		primaryKey,
-		columnsWithValues(sortedColumnKeys),
-		columnNames(sortedColumnKeys),
-		stagingColumnNames(sortedColumnKeys),
-	)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
-	// Executing merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LT::Merge")
+	// Executing load table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -582,8 +598,11 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+
+	tableLocationSql := dl.getTableLocationSql(stagingTableName)
+
 	// Creating create table sql statement for staging users table
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
@@ -603,6 +622,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		columnNames(userColNames),
+		tableLocationSql,
 	)
 
 	// Executing create sql statement
@@ -617,36 +637,53 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	// Dropping staging users table
 	defer dl.dropStagingTables([]string{stagingTableName})
 
-	// Creating the Primary Key
-	primaryKey := "id"
-
 	// Creating the column Keys
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	// Creating the merge sql statement to copy from staging users table to the main users table
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
-									   USING ( SELECT %[5]s FROM %[1]s.%[3]s ) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
-									   WHEN MATCHED THEN UPDATE SET %[6]s
-									   WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s);`,
-		dl.Namespace,
-		warehouseutils.UsersTable,
-		stagingTableName,
-		primaryKey,
-		columnNames(columnKeys),
-		columnsWithValues(columnKeys),
-		stagingColumnNames(columnKeys),
-	)
+	if loadTableStrategy == "APPEND" {
+		sqlStatement = appendableLTSQLStatement(
+			dl.Namespace,
+			warehouseutils.UsersTable,
+			stagingTableName,
+			columnKeys,
+		)
+	} else {
+		sqlStatement = mergeableLTSQLStatement(
+			dl.Namespace,
+			warehouseutils.UsersTable,
+			stagingTableName,
+			columnKeys,
+		)
+	}
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
-	// Executing the merge sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LUT::Merge")
+	// Executing the load users table sql statement
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	return
+}
+
+// getExternalLocation returns external location where we need to create the tables
+func (dl *HandleT) getExternalLocation() (externalLocation string) {
+	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.Warehouse)
+	if enableExternalLocation == "true" {
+		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.Warehouse)
+		return externalLocation
+	}
+	return
+}
+
+// getTableLocationSql returns external external table location
+func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) {
+	externalLocation := dl.getExternalLocation()
+	if externalLocation == "" {
+		return
+	}
+	return fmt.Sprintf("LOCATION '%s/%s/%s'", externalLocation, dl.Namespace, tableName)
 }
 
 // dropDanglingStagingTables drop dandling staging tables.
@@ -692,7 +729,19 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, ColumnsWithDataTypes(columns, ""))
+
+	tableLocationSql := dl.getTableLocationSql(tableName)
+	var partitionedSql string
+	if _, ok := columns["received_at"]; ok {
+		partitionedSql = `PARTITIONED BY(event_date)`
+	}
+
+	createTableClauseSql := "CREATE TABLE IF NOT EXISTS"
+	if tableLocationSql != "" {
+		createTableClauseSql = "CREATE OR REPLACE TABLE"
+	}
+
+	sqlStatement := fmt.Sprintf(`%s %s ( %v ) USING DELTA %s %s;`, createTableClauseSql, name, ColumnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql)
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
 	return
@@ -805,6 +854,10 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 		// Populating the schema for the table
 		for _, item := range fetchTableAttributesResponse.GetAttributes() {
+			if _, ok := excludeColumnsMap[item.GetColName()]; ok {
+				continue
+			}
+
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(map[string]string)
 			}

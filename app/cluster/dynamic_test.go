@@ -97,7 +97,7 @@ func TestDynamicCluster(t *testing.T) {
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
 
-	mtStat := &multitenant.MultitenantStatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
 
@@ -121,7 +121,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	wait := make(chan struct{})
 	go func() {
-		dc.Run(ctx)
+		_ = dc.Run(ctx)
 		close(wait)
 	}()
 

@@ -118,6 +118,17 @@ func setEnableEventSchemasFeature(b bool) bool {
 	return prev
 }
 
+//SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
+func setDisableDedupFeature(b bool) bool {
+	prev := enableDedup
+	enableDedup = b
+	return prev
+}
+
+func setMainLoopTimeout(timeout time.Duration) {
+	mainLoopTimeout = timeout
+}
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
@@ -1082,7 +1093,7 @@ var _ = Describe("Processor", func() {
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService())
 
-			SetMainLoopTimeout(1 * time.Second)
+			setMainLoopTimeout(1 * time.Second)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
@@ -1555,7 +1566,7 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enab
 
 func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	var clearDB = false
-	SetDisableDedupFeature(enableDedup)
+	setDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService())
 	processor.reportingEnabled = enableReporting
 	// make sure the mock backend config has sent the configuration
