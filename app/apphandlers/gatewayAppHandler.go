@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
@@ -113,6 +114,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		if err != nil {
 			return err
 		}
+		localDb.SetMaxOpenConns(config.GetInt("Rsources.PoolSize", 5))
 		rsourcesService, err := rsources.NewJobService(localDb)
 		if err != nil {
 			return err
