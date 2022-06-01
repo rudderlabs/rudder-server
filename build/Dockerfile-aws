@@ -1,5 +1,5 @@
 FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
-RUN apk add --no-cache ca-certificates postgresql-client curl bash
+RUN apk add --no-cache ca-certificates postgresql-client curl bash build-base
 RUN apk upgrade
 ADD rudder-server /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
@@ -7,6 +7,7 @@ ADD build/wait-for /
 ADD build/regulation-worker /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
+RUN bash <(curl -s https://raw.githubusercontent.com/objectbox/objectbox-go/main/install.sh)
 COPY scripts/generate-event /scripts
 COPY scripts/batch.json /scripts
 ENTRYPOINT ["/docker-entrypoint.sh"]
