@@ -72,7 +72,7 @@ func SetupRedshift() (rsTest *testhelper.RedshiftTest) {
 }
 
 func TestRedshift(t *testing.T) {
-	if runRedhshiftTest == false {
+	if runRedshiftTest == false {
 		t.Skip("redshift integration skipped. use -redshiftintegration to add this test ")
 	}
 

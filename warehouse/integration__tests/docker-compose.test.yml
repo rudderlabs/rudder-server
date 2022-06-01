@@ -1,5 +1,7 @@
 version: "3.7"
 
+# Currently, we have added static ports around the services ranging from
+# 54320 to 54330
 services:
   jobsDb:
     container_name: jobsDb
@@ -19,6 +21,13 @@ services:
       - "54323:9090"
     depends_on:
       - jobsDb
+  databricks-connector:
+    image: rudderstack/rudder-databricks-connector:v1.2.0
+    container_name: databricks-connector
+    ports:
+      - "54330:50051"
+    depends_on:
+      - transformer
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -29,7 +38,7 @@ services:
       - MINIO_SECRET_KEY=MYSECRETKEY
     command: server /data
     depends_on:
-      - transformer
+      - databricks-connector
   postgres:
     container_name: postgres
     image: postgres:11-alpine

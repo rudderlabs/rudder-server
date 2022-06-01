@@ -7,6 +7,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"log"
@@ -139,6 +140,24 @@ type RedshiftTest struct {
 	WriteKey           string
 	Credentials        *RedshiftCredentials
 	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	TableTestQueryFreq time.Duration
+}
+
+type DatabricksCredentials struct {
+	Host          string `json:"host"`
+	Port          string `json:"port"`
+	Path          string `json:"path"`
+	Token         string `json:"token"`
+	AccountName   string `json:"accountName"`
+	AccountKey    string `json:"accountKey"`
+	ContainerName string `json:"containerName"`
+}
+
+type DatabricksTest struct {
+	WriteKey           string
+	Credentials        *DatabricksCredentials
+	DB                 *databricks.DBHandleT
 	EventsMap          EventsCountMap
 	TableTestQueryFreq time.Duration
 }

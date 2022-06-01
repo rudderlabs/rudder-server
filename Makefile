@@ -79,12 +79,9 @@ install-tools:
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/integration__tests/docker-compose.test.yml rm --stop -v --force
 
-wait-warehouse-integration:
-
 setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/integration__tests/docker-compose.test.yml up --build --detach
-	make wait-warehouse-integration
 
-warehouse-integration: setup-warehouse-integration
+run-warehouse-integration: setup-warehouse-integration
 	go test -v github.com/rudderlabs/rudder-server/warehouse/integration__tests -integration -snowflakeintegration -redshiftintegration -count 1
 	make cleanup-warehouse-integration

@@ -5,8 +5,10 @@ import (
 	b64 "encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integration__tests/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
@@ -38,10 +40,11 @@ var (
 )
 
 var (
-	runIntegration   bool
-	runBigQueryTest  bool
-	runSnowflakeTest bool
-	runRedhshiftTest bool
+	runIntegration    bool
+	runBigQueryTest   bool
+	runSnowflakeTest  bool
+	runRedshiftTest   bool
+	runDatabricksTest bool
 )
 
 var (
@@ -57,6 +60,7 @@ var (
 	MSSQLTest                  *testhelper.MSSQLTest
 	SFTest                     *testhelper.SnowflakeTest
 	RSTest                     *testhelper.RedshiftTest
+	DatabricksTest             *testhelper.DatabricksTest
 	JobsDBResource             *testhelper.JobsDBResource
 	GatewayJobsSqlFunction     string
 	BatchRouterJobsSqlFunction string
@@ -67,7 +71,8 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
 	flag.BoolVar(&runSnowflakeTest, "snowflakeintegration", false, "run snowflake test")
-	flag.BoolVar(&runRedhshiftTest, "redshiftintegration", false, "run redshift test")
+	flag.BoolVar(&runRedshiftTest, "redshiftintegration", false, "run redshift test")
+	flag.BoolVar(&runDatabricksTest, "databricksintegration", false, "run databricks test")
 	flag.Parse()
 
 	if !runIntegration {
@@ -116,6 +121,7 @@ func run(m *testing.M) (int, error) {
 	_ = os.Setenv("JOBS_DB_PORT", JobsDBResource.Credentials.Port)
 	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", JobsDBResource.Credentials.Port)
 	_ = os.Setenv("DEST_TRANSFORM_URL", transformerResource.Url)
+	_ = os.Setenv("DATABRICKS_CONNECTOR_URL", "localhost:54330")
 
 	// Initializing warehouse config
 	InitConfig()
@@ -128,6 +134,7 @@ func run(m *testing.M) (int, error) {
 	BQTest = SetupBigQuery()
 	SFTest = SetupSnowflake()
 	RSTest = SetupRedshift()
+	DatabricksTest = SetupDatabricks()
 
 	// Adding sql functions to jobs DB
 	addSqlFunctionToJobsDB()
@@ -180,7 +187,7 @@ func run(m *testing.M) (int, error) {
 		mapWorkspaceConfig["snowflakeAccesskeyID"] = SFTest.Credentials.AccessKeyID
 		mapWorkspaceConfig["snowflakeAccesskey"] = SFTest.Credentials.AccessKey
 	}
-	if runRedhshiftTest {
+	if runRedshiftTest {
 		mapWorkspaceConfig["redshiftEventWriteKey"] = RSTest.WriteKey
 		mapWorkspaceConfig["redshiftHost"] = RSTest.Credentials.Host
 		mapWorkspaceConfig["redshiftPort"] = RSTest.Credentials.Port
@@ -190,6 +197,16 @@ func run(m *testing.M) (int, error) {
 		mapWorkspaceConfig["redshiftBucketName"] = RSTest.Credentials.BucketName
 		mapWorkspaceConfig["redshiftAccessKeyID"] = RSTest.Credentials.AccessKeyID
 		mapWorkspaceConfig["redshiftAccessKey"] = RSTest.Credentials.AccessKey
+	}
+	if runDatabricksTest {
+		mapWorkspaceConfig["databricksEventWriteKey"] = DatabricksTest.WriteKey
+		mapWorkspaceConfig["databricksHost"] = DatabricksTest.Credentials.Host
+		mapWorkspaceConfig["databricksPort"] = DatabricksTest.Credentials.Port
+		mapWorkspaceConfig["databricksPath"] = DatabricksTest.Credentials.Path
+		mapWorkspaceConfig["databricksToken"] = DatabricksTest.Credentials.Token
+		mapWorkspaceConfig["databricksAccountName"] = DatabricksTest.Credentials.AccountName
+		mapWorkspaceConfig["databricksAccountKey"] = DatabricksTest.Credentials.AccountKey
+		mapWorkspaceConfig["databricksContainerName"] = DatabricksTest.Credentials.ContainerName
 	}
 
 	workspaceConfigPath := testhelper.CreateWorkspaceConfig("testdata/workspaceConfig/template.json", mapWorkspaceConfig)
@@ -221,11 +238,10 @@ func run(m *testing.M) (int, error) {
 		close(svcDone)
 	}()
 
-	// TODO: Remove 5 to 1
 	// Waiting until health endpoint is ready
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	log.Println("healthEndpoint", healthEndpoint)
-	testhelper.WaitUntilReady(context.Background(), healthEndpoint, 5*time.Minute, time.Second, "healthEndpoint")
+	testhelper.WaitUntilReady(context.Background(), healthEndpoint, 1*time.Minute, time.Second, "healthEndpoint")
 
 	code := m.Run()
 	blockOnHold()
@@ -258,12 +274,15 @@ func InitConfig() {
 	BatchRouterJobsSqlFunction = testhelper.BatchRouterJobsSqlFunction()
 
 	config.Load()
+	stats.Init()
+	stats.Setup()
 	logger.Init()
 	postgres.Init()
 	clickhouse.Init()
 	mssql.Init()
 	bigquery.Init()
 	snowflake.Init()
+	deltalake.Init()
 }
 
 // sendEvent send event with corresponding payload and writeKey
