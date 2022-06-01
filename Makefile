@@ -86,5 +86,5 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	make wait-warehouse-integration
 
 warehouse-integration: setup-warehouse-integration
-	go test -v ./warehouse/integration__tests/warehouse_integration_test.go -integration -snowflakeintegration -redshiftintegration -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/integration__tests -integration -snowflakeintegration -redshiftintegration -count 1
 	make cleanup-warehouse-integration
