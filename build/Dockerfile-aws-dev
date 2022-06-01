@@ -8,6 +8,7 @@ ADD build/wait-for /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
 ADD objectboxinstall.sh /
+RUN [“chmod”, “+x”, "/objectboxinstall.sh”]
 RUN ./objectboxinstall.sh
 COPY scripts/generate-event /scripts
 COPY scripts/batch.json /scripts
