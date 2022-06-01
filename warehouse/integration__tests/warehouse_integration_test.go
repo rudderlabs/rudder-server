@@ -221,10 +221,11 @@ func run(m *testing.M) (int, error) {
 		close(svcDone)
 	}()
 
+	// TODO: Remove 5 to 1
 	// Waiting until health endpoint is ready
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	log.Println("healthEndpoint", healthEndpoint)
-	testhelper.WaitUntilReady(context.Background(), healthEndpoint, time.Minute, time.Second, "healthEndpoint")
+	testhelper.WaitUntilReady(context.Background(), healthEndpoint, 5*time.Minute, time.Second, "healthEndpoint")
 
 	code := m.Run()
 	blockOnHold()
