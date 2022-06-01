@@ -11,13 +11,13 @@ ARG PKG_NAME=github.com/rudderlabs/release-demo
 
 WORKDIR /rudder-server
 COPY objectboxinstall.sh .
-RUN ["chmod", "+x", "/objectboxinstall.sh"]
-RUN ./objectboxinstall.sh
+RUN ["chmod", "+x", "objectboxinstall.sh"]
 
 COPY go.mod .
 COPY go.sum .
 
 RUN go mod download 
+RUN ./objectboxinstall.sh
 
 COPY . . 
 
