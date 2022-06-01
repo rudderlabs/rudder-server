@@ -4,12 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -157,6 +158,7 @@ var (
 var (
 	maxParallelLoads      map[string]int
 	columnCountThresholds map[string]int
+	maxColumnCounts       map[string]int
 )
 
 func init() {
@@ -181,6 +183,15 @@ func setMaxParallelLoads() {
 		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
 		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
+	}
+	maxColumnCounts = map[string]int{
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.maxColumnCount", 1024),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.maxColumnCount", 10000),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.maxColumnCount", 1000),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.maxColumnCount", 1000),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.maxColumnCount", 1600),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.maxColumnCount", 1600),
+		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.maxColumnCount", 5000),
 	}
 }
 
