@@ -71,7 +71,7 @@ func TestCircuitBreaker(t *testing.T) {
 	newClientAttempt(t, manager, dest.ID, count, breakerError)
 }
 
-func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) {
+func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) { // skipcq: CRT-P0003
 	err := manager.onNewDestination(dest)
 	assert.EqualError(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
 }

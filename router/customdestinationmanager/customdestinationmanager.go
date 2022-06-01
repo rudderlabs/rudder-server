@@ -184,8 +184,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 	return respStatusCode, respBody
 }
 
-func (customManager *CustomManagerT) close(destination backendconfig.DestinationT) {
-	destID := destination.ID
+func (customManager *CustomManagerT) close(destID string) {
 	customDestination := customManager.client[destID]
 	switch customManager.managerType {
 	case STREAM:
@@ -220,7 +219,7 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 	return nil
 }
 
-func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error {
+func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error { // skipcq: CRT-P0003
 	var err error
 	clientLock, ok := customManager.clientLock[destination.ID]
 	if !ok {
@@ -230,13 +229,12 @@ func (customManager *CustomManagerT) onNewDestination(destination backendconfig.
 	clientLock.Lock()
 	defer clientLock.Unlock()
 	customManager.config[destination.ID] = destination
-	err = customManager.onConfigChange(destination)
+	err = customManager.onConfigChange(destination.ID, destination.Config)
 	return err
 }
-func (customManager *CustomManagerT) onConfigChange(destination backendconfig.DestinationT) error {
-	newDestConfig := destination.Config
-	_, hasOpenClient := customManager.client[destination.ID]
-	breaker, hasCircuitBreaker := customManager.breaker[destination.ID]
+func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig map[string]interface{}) error {
+	_, hasOpenClient := customManager.client[destID]
+	breaker, hasCircuitBreaker := customManager.breaker[destID]
 	if hasCircuitBreaker {
 		hasDestConfigChanged := !reflect.DeepEqual(
 			customManager.genComparisonConfig(breaker.config),
@@ -247,22 +245,22 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 			return nil
 		}
 		if hasOpenClient {
-			pkgLogger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
-			customManager.close(destination)
+			pkgLogger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destID)
+			customManager.close(destID)
 		}
 	}
-	customManager.breaker[destination.ID] = breakerHolder{
+	customManager.breaker[destID] = breakerHolder{
 		config: newDestConfig,
 		breaker: gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:    destination.ID,
+			Name:    destID,
 			Timeout: customManager.breakerTimeout,
 		}),
 	}
-	if err := customManager.newClient(destination.ID); err != nil {
-		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %v", customManager.destType, destination.ID, err)
+	if err := customManager.newClient(destID); err != nil {
+		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %v", customManager.destType, destID, err)
 		return err
 	}
-	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)
+	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destID)
 	return nil
 }
 
