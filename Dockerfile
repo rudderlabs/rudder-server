@@ -10,6 +10,7 @@ ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
 
 WORKDIR /rudder-server
+RUN bash <(curl -s https://raw.githubusercontent.com/objectbox/objectbox-go/main/install.sh)
 
 COPY go.mod .
 COPY go.sum .
