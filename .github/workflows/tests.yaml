@@ -84,13 +84,13 @@ jobs:
             ${{ runner.os }}-go-
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
-      - run: make setup-warehouse-integration
       - name: Warehouse Integration test
-        run: go test -v ./warehouse/integration__tests/warehouse_integration_test.go -integration -bigqueryintegration -count 1
+        run: make warehouse-integration
         env:
           RSERVER_ENABLE_MULTITENANCY: false
           BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
-      - run: make cleanup-warehouse-integration
+          REDSHIFT_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
+          SNOWFLAKE_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
 
   unit:
     name: Unit & Component Integration
