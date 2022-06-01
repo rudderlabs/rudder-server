@@ -1,6 +1,35 @@
 version: "3.7"
 
 services:
+  jobsDb:
+    container_name: jobsDb
+    image: postgres:11-alpine
+    environment:
+      - POSTGRES_DB=jobsdb
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=rudder
+    ports:
+      - "54328:5432"
+  transformer:
+    container_name: transformer
+    image: rudderlabs/rudder-transformer:latest
+    environment:
+      - CONFIG_BACKEND_URL=https://api.rudderlabs.com
+    ports:
+      - "54323:9090"
+    depends_on:
+      - jobsDb
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "54329:9000/tcp"
+    environment:
+      - MINIO_ACCESS_KEY=MYACCESSKEY
+      - MINIO_SECRET_KEY=MYSECRETKEY
+    command: server /data
+    depends_on:
+      - transformer
   postgres:
     container_name: postgres
     image: postgres:11-alpine
@@ -10,6 +39,8 @@ services:
       - POSTGRES_USER=rudder
     ports:
       - "54320:5432"
+    depends_on:
+      - minio
   clickhouse:
     container_name: clickhouse
     image: yandex/clickhouse-server:21-alpine
@@ -19,6 +50,8 @@ services:
       - CLICKHOUSE_USER=rudder
     ports:
       - "54321:9000"
+    depends_on:
+      - postgres
   mssql:
     container_name: mssql
     image: mcr.microsoft.com/azure-sql-edge:1.0.5
@@ -29,28 +62,16 @@ services:
       - SA_USER=SA
     ports:
       - "54322:1433"
-  transformer:
-    container_name: transformer
-    image: rudderlabs/rudder-transformer:latest
-    environment:
-      - CONFIG_BACKEND_URL=https://api.rudderlabs.com
-    ports:
-      - "54323:9090"
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    ports:
-      - "54329:9000/tcp"
-    environment:
-      - MINIO_ACCESS_KEY=MYACCESSKEY
-      - MINIO_SECRET_KEY=MYSECRETKEY
-    command: server /data
+    depends_on:
+      - clickhouse
   zookeeper:
     image: zookeeper:3.5
     container_name: clickhouse-zookeeper
     hostname: clickhouse-zookeeper
     networks:
       clickhouse-network:
+    depends_on:
+      - mssql
   clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse01
@@ -99,15 +120,6 @@ services:
       - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
       - zookeeper
-  jobsDb:
-    container_name: jobsDb
-    image: postgres:11-alpine
-    environment:
-      - POSTGRES_DB=jobsdb
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=rudder
-    ports:
-      - "54328:5432"
 
 networks:
   clickhouse-network:

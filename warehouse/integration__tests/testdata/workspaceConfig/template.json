@@ -1989,8 +1989,8 @@
             "createdAt": "2020-02-13T05:39:20.184Z",
             "updatedAt": "2022-02-08T06:46:45.432Z"
           },
-          "isConnectionEnabled": false,
-          "isProcessorEnabled": false
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
         }
       ],
       "sourceDefinition": {
@@ -2210,8 +2210,8 @@
             "createdAt": "2019-12-04T07:17:28.337Z",
             "updatedAt": "2022-02-08T06:46:22.804Z"
           },
-          "isConnectionEnabled": false,
-          "isProcessorEnabled": false
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
         }
       ],
       "sourceDefinition": {

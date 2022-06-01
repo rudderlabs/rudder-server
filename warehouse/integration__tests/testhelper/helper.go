@@ -94,7 +94,7 @@ func BatchRouterJobsSqlFunction() string {
 									FOR table_record IN SELECT * FROM batch_rt_jobs_1
 										LOOP
 											event_payload = (table_record.event_payload ->> 'data')::jsonb;
-											if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id THEN
+											if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id Or event_payload ->> 'USER_ID' = user_id Or event_payload ->> 'ID' = user_id THEN
 												job_id := table_record.job_id;
 												RETURN NEXT;
 											END IF;

@@ -93,6 +93,7 @@ func TestBigQuery(t *testing.T) {
 		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
 	}
 
+	t.Skip()
 	t.Parallel()
 
 	//Disabling big query dedup

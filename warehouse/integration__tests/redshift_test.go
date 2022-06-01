@@ -78,19 +78,19 @@ func TestRedshift(t *testing.T) {
 
 	t.Parallel()
 
-	sfTest := SFTest
+	rsTest := RSTest
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
-			SQL:  sfTest.DB,
+			SQL:  rsTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:     sfTest.EventsMap,
-		WriteKey:           sfTest.WriteKey,
+		EventsCountMap:     rsTest.EventsMap,
+		WriteKey:           rsTest.WriteKey,
 		UserId:             fmt.Sprintf("userId_redshift_%s", randomness),
-		Schema:             "rudderstack_sample_http_source",
-		TableTestQueryFreq: sfTest.TableTestQueryFreq,
+		Schema:             "redshift_wh_integration",
+		TableTestQueryFreq: rsTest.TableTestQueryFreq,
 	}
 
 	sendEvents(whDestTest)

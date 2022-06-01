@@ -78,19 +78,19 @@ func TestSnowflake(t *testing.T) {
 
 	t.Parallel()
 
-	rsTest := RSTest
+	sfTest := SFTest
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
-			SQL:  rsTest.DB,
+			SQL:  sfTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:     rsTest.EventsMap,
-		WriteKey:           rsTest.WriteKey,
+		EventsCountMap:     sfTest.EventsMap,
+		WriteKey:           sfTest.WriteKey,
 		UserId:             fmt.Sprintf("userId_snowflake_%s", randomness),
-		Schema:             "rudderstack_sample_http_source",
-		TableTestQueryFreq: rsTest.TableTestQueryFreq,
+		Schema:             "SNOWFLAKE_WH_INTEGRATION",
+		TableTestQueryFreq: sfTest.TableTestQueryFreq,
 	}
 
 	sendEvents(whDestTest)
