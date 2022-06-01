@@ -17,6 +17,10 @@ var (
 	JobRetention time.Duration
 )
 
+const (
+	DRAIN_ERROR_CODE int = 401
+)
+
 type BatchDestinationT struct {
 	Destination backendconfig.DestinationT
 	Sources     []backendconfig.SourceT

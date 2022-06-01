@@ -1963,7 +1963,6 @@ func (rt *HandleT) readAndProcess() int {
 		rt.configSubscriberLock.RLock()
 		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
 		rt.configSubscriberLock.RUnlock()
-		const drainErrorCode int = 401
 		if drain {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1971,7 +1970,7 @@ func (rt *HandleT) readAndProcess() int {
 				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				ErrorCode:     strconv.Itoa(drainErrorCode),
+				ErrorCode:     strconv.Itoa(router_utils.DRAIN_ERROR_CODE),
 				Parameters:    []byte(`{}`),
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 				WorkspaceId:   job.WorkspaceId,
@@ -2021,7 +2020,7 @@ func (rt *HandleT) readAndProcess() int {
 				if rt.transientSources.Apply(parameters.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
-				sd = utilTypes.CreateStatusDetail(status.JobState, 0, drainErrorCode, string(status.ErrorResponse), sampleEvent, eventName, eventType)
+				sd = utilTypes.CreateStatusDetail(status.JobState, 0, router_utils.DRAIN_ERROR_CODE, string(status.ErrorResponse), sampleEvent, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
 			sd.Count++
