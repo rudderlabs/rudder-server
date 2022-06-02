@@ -2,22 +2,22 @@
 # syntax=docker/dockerfile:1
 ARG GO_VERSION=1.17
 FROM golang:${GO_VERSION} AS builder
+COPY download.sh .
+RUN ["chmod", "+x", "download.sh"]
+RUN ./download.sh --install 0.16.0
 ARG VERSION
 ARG REVISION
 ARG COMMIT_HASH
 ARG RACE_ENABLED=false
-ARG CGO_ENABLED=0
+ARG CGO_ENABLED=1
 ARG PKG_NAME=github.com/rudderlabs/release-demo
 
 WORKDIR /rudder-server
-COPY objectboxinstall.sh .
-RUN ["chmod", "+x", "objectboxinstall.sh"]
 
 COPY go.mod .
 COPY go.sum .
 
-RUN go mod download 
-RUN ./objectboxinstall.sh
+RUN go mod download
 
 COPY . . 
 
