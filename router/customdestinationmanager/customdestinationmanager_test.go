@@ -46,13 +46,14 @@ func TestCircuitBreaker(t *testing.T) {
 	// after the 6th failed attempt the circuit opens
 	newClientAttempt(t, manager, dest.ID, count, breakerError)
 	count++
-	time.Sleep(breakerTimeout)
-	// after a timeout the circuit becomes half-open
+	<-time.After(breakerTimeout)
+	// after the circuit breaker's timeout passes the circuit becomes half-open
 	newClientAttempt(t, manager, dest.ID, count, normalError)
 	count++
 	// after another failure the circuit opens again
 	newClientAttempt(t, manager, dest.ID, count, breakerError)
 	count++
+
 	// sending the same destination again should not try to create a client
 	assert.Nil(t, manager.onNewDestination(dest))
 	// and shouldn't reset the circuit breaker either
