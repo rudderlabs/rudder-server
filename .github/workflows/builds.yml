@@ -23,7 +23,7 @@ jobs:
         with:
           images: |
             name=rudderlabs/develop-rudder-server
-            name=rudderlabs/rudder-server,enabled={{is_default_branch}}
+            name=rudderlabs/rudder-server,enable={{is_default_branch}}
           tags: |
             type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
