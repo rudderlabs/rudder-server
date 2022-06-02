@@ -15,6 +15,7 @@ import (
 
 var (
 	JobRetention time.Duration
+	EmptyPayload = []byte(`{}`)
 )
 
 const (

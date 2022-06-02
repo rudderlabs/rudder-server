@@ -511,7 +511,7 @@ func (worker *workerT) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
-					Parameters:    []byte(`{}`),
+					Parameters:    router_utils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
@@ -859,7 +859,7 @@ func (worker *workerT) processDestinationJobs() {
 			AttemptNum:  attemptNum,
 			ExecTime:    time.Now(),
 			RetryTime:   time.Now(),
-			Parameters:  []byte(`{}`),
+			Parameters:  router_utils.EmptyPayload,
 			WorkspaceId: destinationJobMetadata.WorkspaceId,
 		}
 
@@ -871,7 +871,7 @@ func (worker *workerT) processDestinationJobs() {
 				//Only one job is marked failed and the rest are marked waiting
 				//Job order logic requires that at any point of time, we should have only one failed job per user
 				//This is introduced to ensure the above statement
-				resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", prevFailedJobID)
+				resp := misc.UpdateJSONWithNewKeyVal(router_utils.EmptyPayload, "blocking_id", prevFailedJobID)
 				resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", destinationJobMetadata.UserID)
 				resp = misc.UpdateJSONWithNewKeyVal(resp, "moreinfo", "attempted to send in a batch")
 
@@ -888,7 +888,7 @@ func (worker *workerT) processDestinationJobs() {
 			status.AttemptNum++
 		}
 
-		status.ErrorResponse = []byte(`{}`)
+		status.ErrorResponse = router_utils.EmptyPayload
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
 		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
@@ -1261,7 +1261,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 	// job is behind in queue of failed job from same user
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
-		resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", previousFailedJobID)
+		resp := misc.UpdateJSONWithNewKeyVal(router_utils.EmptyPayload, "blocking_id", previousFailedJobID)
 		resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -1270,7 +1270,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			RetryTime:     time.Now(),
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: resp, // check
-			Parameters:    []byte(`{}`),
+			Parameters:    router_utils.EmptyPayload,
 			WorkspaceId:   job.WorkspaceId,
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
@@ -1539,7 +1539,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 			sampleEvent := resp.JobT.EventPayload
 			if rt.transientSources.Apply(parameters.SourceID) {
-				sampleEvent = []byte(`{}`)
+				sampleEvent = router_utils.EmptyPayload
 			}
 			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType)
 			statusDetailsMap[key] = sd
@@ -1971,8 +1971,8 @@ func (rt *HandleT) readAndProcess() int {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     strconv.Itoa(router_utils.DRAIN_ERROR_CODE),
-				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
+				Parameters:    router_utils.EmptyPayload,
+				ErrorResponse: router_utils.EnhanceJSON(router_utils.EmptyPayload, "reason", reason),
 				WorkspaceId:   job.WorkspaceId,
 			}
 			//Enhancing job parameter with the drain reason.
@@ -2001,6 +2001,7 @@ func (rt *HandleT) readAndProcess() int {
 			err := json.Unmarshal(job.Parameters, &parameters)
 			if err != nil {
 				rt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+				continue
 			}
 
 			eventName := gjson.GetBytes(job.Parameters, "event_name").String()
@@ -2018,7 +2019,7 @@ func (rt *HandleT) readAndProcess() int {
 			if !ok {
 				sampleEvent := job.EventPayload
 				if rt.transientSources.Apply(parameters.SourceID) {
-					sampleEvent = []byte(`{}`)
+					sampleEvent = router_utils.EmptyPayload
 				}
 				sd = utilTypes.CreateStatusDetail(status.JobState, 0, router_utils.DRAIN_ERROR_CODE, string(status.ErrorResponse), sampleEvent, eventName, eventType)
 				statusDetailsMap[key] = sd
@@ -2036,8 +2037,8 @@ func (rt *HandleT) readAndProcess() int {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-				Parameters:    []byte(`{}`),
+				ErrorResponse: router_utils.EmptyPayload, // check
+				Parameters:    router_utils.EmptyPayload,
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
