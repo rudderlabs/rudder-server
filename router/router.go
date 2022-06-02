@@ -80,7 +80,6 @@ type HandleT struct {
 	generatorResumeChannel                 chan bool
 	statusLoopPauseChannel                 chan *PauseT
 	statusLoopResumeChannel                chan bool
-	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
 	jobsDB                                 jobsdb.MultiTenantJobsDB
 	errorDB                                jobsdb.JobsDB
@@ -515,6 +514,7 @@ func (worker *workerT) workerProcess() {
 					Parameters:    router_utils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
+				job.EventPayload = nil // offload job payload from memory before adding it to the response queue
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
@@ -900,6 +900,7 @@ func (worker *workerT) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
+				destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 				continue
 			} else {
@@ -1122,6 +1123,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
+		destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -1218,6 +1220,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
+		destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 	}
 }
@@ -1296,6 +1299,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			Parameters:    router_utils.EmptyPayload,
 			WorkspaceId:   job.WorkspaceId,
 		}
+		job.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
 	}
@@ -1534,7 +1538,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
-	var jobsList []*jobsdb.JobT
+	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
@@ -1581,14 +1585,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
-			jobsList = append(jobsList, resp.JobT)
+			completedJobsList = append(completedJobsList, resp.JobT)
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
-			jobsList = append(jobsList, resp.JobT)
+			completedJobsList = append(completedJobsList, resp.JobT)
 		}
 
 		//REPORTING - ROUTER - END
@@ -1659,7 +1663,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
-			rsourcesStats.BeginProcessing(jobsList)
+			rsourcesStats.BeginProcessing(completedJobsList)
 			rsourcesStats.JobStatusesUpdated(statusList)
 			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
 			if err != nil {
@@ -1853,7 +1857,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 //To understand that, need to understand the complete lifecycle of a job.
 //The job goes through the following data-structures in order
 //   i>   generatorLoop Buffer (read from DB)
-//   ii>  requestQ
+//   ii>  requestQ (no longer used - RIP)
 //   iii> Worker Process
 //   iv>  responseQ
 //   v>   statusInsertLoop Buffer (enough jobs are buffered before updating status)
@@ -2216,7 +2220,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	rt.crashRecover()
-	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.failedEventsList = list.New()
