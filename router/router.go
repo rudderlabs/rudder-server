@@ -514,7 +514,6 @@ func (worker *workerT) workerProcess() {
 					Parameters:    router_utils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
-				job.EventPayload = nil // offload job payload from memory before adding it to the response queue
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
@@ -900,7 +899,6 @@ func (worker *workerT) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 				continue
 			} else {
@@ -1123,7 +1121,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
-		destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -1220,7 +1217,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
-		destinationJobMetadata.JobT.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 	}
 }
@@ -1299,7 +1295,6 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			Parameters:    router_utils.EmptyPayload,
 			WorkspaceId:   job.WorkspaceId,
 		}
-		job.EventPayload = nil // offload job payload from memory before adding it to the response queue
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
 	}
