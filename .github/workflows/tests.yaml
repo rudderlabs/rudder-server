@@ -86,7 +86,8 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
+    - run: ginkgo version
     - run: make test
 
   unit-enterprise:
@@ -116,7 +117,8 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.5)
+    - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
+    - run: ginkgo version
     - run: make enterprise-init
     - run: make test
     - uses: codecov/codecov-action@v2

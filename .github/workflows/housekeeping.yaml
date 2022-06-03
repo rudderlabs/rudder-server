@@ -5,7 +5,8 @@ on:
     - cron: '42 1 * * *'
 
 jobs:
-  stale:
+  prs:
+    name: Clean up stale prs
     runs-on: ubuntu-latest
 
     permissions:
@@ -20,4 +21,20 @@ jobs:
           days-before-pr-stale: 20
           days-before-pr-close: 7
           stale-pr-label: 'Stale'
+
+  branches:
+      name: Cleanup old branches
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v2
+        - name: Run delete-old-branches-action
+          uses: beatlabs/delete-old-branches-action@v0.0.9
+          with:
+            repo_token: ${{ github.token }}
+            date: '2 months ago'
+            dry_run: false
+            delete_tags: false
+            extra_protected_branch_regex: ^(main|master|release.*|rudder-saas)$
+            exclude_open_pr_branches: true
 

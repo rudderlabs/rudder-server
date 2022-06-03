@@ -155,6 +155,7 @@ func runAllInit() {
 	logger.Init()
 	misc.Init()
 	stats.Init()
+	stats.Setup()
 	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
@@ -255,9 +256,6 @@ func Run(ctx context.Context) {
 	ctx = bugsnag.StartSession(ctx)
 	defer misc.BugsnagNotify(ctx, "Core")()
 
-	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
-	stats.Setup()
-
 	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
 		pkgLogger.Info("Suppress User feature is either disabled or enterprise only. Unable to poll regulations.")
 	}
@@ -267,8 +265,12 @@ func Run(ctx context.Context) {
 		configEnvHandler = application.Features().ConfigEnv.Setup()
 	}
 
-	backendconfig.Setup(configEnvHandler)
-	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.GetWorkspaceToken())
+	if err := backendconfig.Setup(configEnvHandler); err != nil {
+		pkgLogger.Errorf("Unable to setup backend config: %s", err)
+		return
+	}
+
+	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -289,7 +291,7 @@ func Run(ctx context.Context) {
 
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return startWarehouseService(ctx, application)
 		}))
 	}

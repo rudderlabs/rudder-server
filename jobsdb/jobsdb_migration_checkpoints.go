@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -202,28 +203,28 @@ func (jd *HandleT) findDsFromSetupCheckpoint(migrationType MigrationOp) (dataSet
 }
 
 func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) dataSetT {
-	jd.dsListLock.Lock()
-	defer jd.dsListLock.Unlock()
-
-	dsList := jd.getDSList(true)
-	checkpoint := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
-
 	var ds dataSetT
-	switch migrationType {
-	case ExportOp:
-		ds = jd.getLastDsForExport(dsList)
-	case AcceptNewEventsOp:
-		ds = jd.getDsForNewEvents(dsList)
-	case ImportOp:
-		ds = jd.getDsForImport(dsList)
-	}
+	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		dsList := jd.refreshDSList(l)
+		checkpoint := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 
-	var err error
-	checkpoint.Payload, err = json.Marshal(ds)
-	if err != nil {
-		panic("Unable to Marshal")
-	}
-	jd.Checkpoint(checkpoint)
+		switch migrationType {
+		case ExportOp:
+			ds = jd.getLastDsForExport(dsList)
+		case AcceptNewEventsOp:
+			ds = jd.getDsForNewEvents(dsList)
+		case ImportOp:
+			ds = jd.getDsForImport(l)
+		}
+
+		var err error
+		checkpoint.Payload, err = json.Marshal(ds)
+		if err != nil {
+			panic("Unable to Marshal")
+		}
+		jd.Checkpoint(checkpoint)
+	})
+
 	return ds
 }
 

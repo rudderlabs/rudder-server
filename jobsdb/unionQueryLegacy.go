@@ -5,20 +5,38 @@ type MultiTenantLegacy struct {
 }
 
 func (mj *MultiTenantLegacy) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, _ int) []*JobT {
+	var list []*JobT
 	toQuery := 0
 	for workspace := range workspaceCount {
 		toQuery += workspaceCount[workspace]
 	}
-	retryList := mj.GetToRetry(GetQueryParamsT{CustomValFilters: params.CustomValFilters, JobCount: toQuery})
-	toQuery -= len(retryList)
-	waitList := mj.GetWaiting(GetQueryParamsT{CustomValFilters: params.CustomValFilters, JobCount: toQuery})
-	toQuery -= len(waitList)
-	unprocessedList := mj.GetUnprocessed(GetQueryParamsT{CustomValFilters: params.CustomValFilters, JobCount: toQuery})
+	params.JobsLimit = toQuery
 
-	var list []*JobT
-	list = append(list, retryList...)
-	list = append(list, waitList...)
-	list = append(list, unprocessedList...)
+	toRetry := mj.GetToRetry(params)
+	list = append(list, toRetry.Jobs...)
+	if toRetry.LimitsReached {
+		return list
+	}
+	updateParams(&params, toRetry)
 
+	waiting := mj.GetWaiting(params)
+	list = append(list, waiting.Jobs...)
+	if waiting.LimitsReached {
+		return list
+	}
+	updateParams(&params, waiting)
+
+	unprocessed := mj.GetUnprocessed(params)
+	list = append(list, unprocessed.Jobs...)
 	return list
+}
+
+func updateParams(params *GetQueryParamsT, jobs JobsResult) {
+	params.JobsLimit -= len(jobs.Jobs)
+	if params.EventsLimit > 0 {
+		params.EventsLimit -= jobs.EventsCount
+	}
+	if params.PayloadSizeLimit > 0 {
+		params.PayloadSizeLimit -= jobs.PayloadSize
+	}
 }

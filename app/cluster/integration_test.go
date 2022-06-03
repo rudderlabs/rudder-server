@@ -15,6 +15,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -170,7 +171,6 @@ func initJobsDB() {
 }
 
 func TestDynamicClusterManager(t *testing.T) {
-	//t.Skip("Skipping test for now on CI")
 	initJobsDB()
 
 	processor.SetFeaturesRetryAttempts(0)
@@ -192,33 +192,36 @@ func TestDynamicClusterManager(t *testing.T) {
 	clearDb := false
 	ctx := context.Background()
 
-	mtStat := &multitenant.MultitenantStatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{})
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockTransformer.EXPECT().Setup().Times(1)
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
-		Reporting:     &reportingNOOP{},
-		Multitenant:   mockMTI,
-		BackendConfig: mockBackendConfig,
-		RouterDB:      tDb,
-		ProcErrorDB:   errDB,
+		Reporting:        &reportingNOOP{},
+		Multitenant:      mockMTI,
+		BackendConfig:    mockBackendConfig,
+		RouterDB:         tDb,
+		ProcErrorDB:      errDB,
+		TransientSources: transientsource.NewEmptyService(),
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:     &reportingNOOP{},
-		Multitenant:   mockMTI,
-		BackendConfig: mockBackendConfig,
-		RouterDB:      brtDB,
-		ProcErrorDB:   errDB,
+		Reporting:        &reportingNOOP{},
+		Multitenant:      mockMTI,
+		BackendConfig:    mockBackendConfig,
+		RouterDB:         brtDB,
+		ProcErrorDB:      errDB,
+		TransientSources: transientsource.NewEmptyService(),
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 

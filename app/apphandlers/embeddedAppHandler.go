@@ -3,6 +3,7 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"net/http"
 
 	"golang.org/x/sync/errgroup"
@@ -10,10 +11,10 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
@@ -24,6 +25,8 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -70,6 +73,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	migrationMode := embedded.App.Options().MigrationMode
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
+	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
+	prebackupHandlers := []prebackup.Handler{
+		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
+	}
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
@@ -81,6 +88,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -90,6 +98,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(router.QueryFilters),
+		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -99,6 +108,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
+		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -108,11 +118,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
-	if config.GetBool("EnableMultitenancy", false) {
+	if misc.UseFairPickup() {
 		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
 		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       tenantRouterDB,
@@ -135,7 +146,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 					g.Go(misc.WithBugsnag(func() error {
 						StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP,
+							reportingI, multitenant.NOOP, transientSources,
 						)
 						return nil
 					}))
@@ -144,7 +155,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			startRouterFunc := func() {
 				if enableRouter {
 					g.Go(misc.WithBugsnag(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP)
+						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources)
 						return nil
 					}))
 				}
@@ -163,28 +174,46 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	var modeProvider *state.StaticProvider
-	// FIXME: hacky way to determine servermode
-	if enableProcessor && enableRouter {
-		modeProvider = state.NewStaticProvider(servermode.NormalMode)
-	} else {
-		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+	var modeProvider cluster.ChangeEventProvider
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	switch deploymentType {
+	case deployment.MultiTenantType:
+		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		modeProvider = state.NewETCDDynamicProvider()
+	case deployment.HostedType, deployment.DedicatedType:
+		// FIXME: hacky way to determine server mode
+		pkgLogger.Info("using Static Cluster Manager")
+		if enableProcessor && enableRouter {
+			modeProvider = state.NewStaticProvider(servermode.NormalMode)
+		} else {
+			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+		}
+	default:
+		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources)
 	rtFactory := &router.Factory{
-		Reporting:     reportingI,
-		Multitenant:   multitenantStats,
-		BackendConfig: backendconfig.DefaultBackendConfig,
-		RouterDB:      tenantRouterDB,
-		ProcErrorDB:   errDB,
+		Reporting:        reportingI,
+		Multitenant:      multitenantStats,
+		BackendConfig:    backendconfig.DefaultBackendConfig,
+		RouterDB:         tenantRouterDB,
+		ProcErrorDB:      errDB,
+		TransientSources: transientSources,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:     reportingI,
-		Multitenant:   multitenantStats,
-		BackendConfig: backendconfig.DefaultBackendConfig,
-		RouterDB:      batchRouterDB,
-		ProcErrorDB:   errDB,
+		Reporting:        reportingI,
+		Multitenant:      multitenantStats,
+		BackendConfig:    backendconfig.DefaultBackendConfig,
+		RouterDB:         batchRouterDB,
+		ProcErrorDB:      errDB,
+		TransientSources: transientSources,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
@@ -201,7 +230,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	if enableReplay && embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()
 		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
 	}
@@ -226,7 +255,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler, rsources.NewNoOpService())
 		defer gw.Shutdown()
 
 		g.Go(func() error {

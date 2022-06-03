@@ -37,4 +37,13 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
+  enterprise:
+    name: Check .enterprise-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
+      - run: git config --global url."https://${{secrets.GH_PAT}}:x-oauth-basic@github.com/rudderlabs/".insteadOf "git@github.com:rudderlabs/"
+      - run: make enterprise-is-at-master

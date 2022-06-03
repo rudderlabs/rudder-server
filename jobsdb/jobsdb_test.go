@@ -1,16 +1,25 @@
 package jobsdb
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/stretchr/testify/require"
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
@@ -97,6 +106,48 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		})
 	})
 
+	var _ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
+		func(before, after, expected string) {
+			setSkipZeroAssertionForMultitenant(true)
+			computedIdx, err := computeInsertIdx(before, after)
+			Expect(computedIdx).To(Equal(expected))
+			Expect(err).To(BeNil())
+			setSkipZeroAssertionForMultitenant(false)
+		},
+		//dList => 1 2 3 4 5
+		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+		Entry("Internal Migration for regular tables 1 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
+
+		//dList => 1_1 2 3 4 5
+		Entry("Internal Migration for regular tables 2 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2", "1_2"),
+		Entry("Internal Migration for regular tables 2 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
+
+		//dList => 1 2_1 3 4 5
+		Entry("Internal Migration for regular tables 3 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2_1", "1_1"),
+		Entry("Internal Migration for regular tables 3 Test 2 with skipZeroAssertionForMultitenant: ", "2_1", "3", "2_2"),
+		Entry("Internal Migration for regular tables 3 Test 3 with skipZeroAssertionForMultitenant: ", "3", "4", "3_1"),
+
+		//dList => 1_1 2_1 3 4 5
+		Entry("Internal Migration for regular tables 4 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2_1", "1_2"),
+
+		//dList => 0_1 1 2 3 4 5
+		Entry("Internal Migration for import tables Case 1 Test 2 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+
+		Entry("Internal Migration for import tables Case 2 Test 3 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
+
+		Entry("OrderTest Case 1 Test 1 with skipZeroAssertionForMultitenant: ", "9", "10", "9_1"),
+
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "10_1", "11_3", "10_2"),
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "1", "0_2"),
+		Entry("Internal Migration for tables with skipZeroAssertionForMultitenant: ", "0_1", "20", "0_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-1", "0", "-1_1"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "0", "1", "0_1"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1_1", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "-1", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
+		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
+	)
+
 	Context("computeInsertVals - good input tests", func() {
 		It("Should not throw error for input 0_1, 0_2", func() {
 			calculatedIdx, err := computeInsertVals([]string{"0", "1"}, []string{"0", "2"})
@@ -106,6 +157,18 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	})
 
 	Context("computeInsertVals - bad input tests", func() {
+		It("Should throw error for nil inputs", func() {
+			_, err := computeInsertVals(nil, nil)
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil before input", func() {
+			_, err := computeInsertVals(nil, []string{"1"})
+			Expect(err).To(HaveOccurred())
+		})
+		It("Should throw error for nil after input", func() {
+			_, err := computeInsertVals([]string{"1"}, nil)
+			Expect(err).To(HaveOccurred())
+		})
 		It("Should throw error for input 1, 1_1", func() {
 			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
 			Expect(err).To(HaveOccurred())
@@ -137,7 +200,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
@@ -151,17 +214,17 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "0_1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "2",
@@ -182,7 +245,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -197,12 +260,12 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -252,15 +315,6 @@ var sampleTestJob = JobT{
 	CustomVal:    "MOCKDS",
 }
 
-type tContext struct {
-}
-
-func (c *tContext) Setup() {
-}
-
-func (c *tContext) Finish() {
-}
-
 func initJobsDB() {
 	config.Load()
 	logger.Init()
@@ -273,18 +327,9 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *tContext
-
 	BeforeEach(func() {
-		c = &tContext{}
-		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
-	})
-
-	AfterEach(func() {
-		c.Finish()
 	})
 
 	Context("getDSList", func() {
@@ -294,7 +339,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
 		})
 
 		AfterEach(func() {
@@ -304,7 +349,7 @@ var _ = Describe("jobsdb", func() {
 		It("doesn't make db calls if !refreshFromDB", func() {
 			jd.datasetList = dsListInMemory
 
-			Expect(jd.getDSList(false)).To(Equal(dsListInMemory))
+			Expect(jd.getDSList()).To(Equal(dsListInMemory))
 		})
 	})
 })
@@ -320,4 +365,99 @@ var d2 = dataSetT{
 var dsListInMemory = []dataSetT{
 	d1,
 	d2,
+}
+
+func BenchmarkSanitizeJson(b *testing.B) {
+	size := 4_000
+	nulls := 100
+
+	// string with nulls
+	inputWithoutNulls := randomString(size - nulls*len(`\u0000`))
+	inputWithNulls := insertStringInString(inputWithoutNulls, `\u0000`, nulls)
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls)))
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls)))
+	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingRegexp(json.RawMessage(inputWithNulls)))
+	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingBytes string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingRegexp string of size %d with null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingRegexp(json.RawMessage(inputWithNulls))
+		}
+	})
+
+	// string without null characters
+	input := randomString(size)
+	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingStrings(json.RawMessage(input))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingBytes string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingBytes(json.RawMessage(input))
+		}
+	})
+	b.Run(fmt.Sprintf("SanitizeUsingRegexp string of size %d without null characters", size), func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			sanitizedJsonUsingRegexp(json.RawMessage(input))
+		}
+	})
+
+}
+
+func randomString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
+
+func insertStringInString(input string, c string, times int) string {
+	if times == 0 {
+		return input
+	}
+	pos := map[int]struct{}{}
+	for len(pos) < times {
+		newPos := rand.Intn(len(input))
+		pos[newPos] = struct{}{}
+	}
+	keys := make([]int, 0, len(pos))
+	for k := range pos {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	offset := len(c)
+	for i, idx := range keys {
+		oidx := idx + i*offset
+		input = input[:oidx] + c + input[oidx:]
+	}
+	return input
+}
+
+func sanitizedJsonUsingStrings(input json.RawMessage) json.RawMessage {
+	return json.RawMessage(strings.Replace(string(input), `\u0000`, "", -1))
+}
+
+func sanitizedJsonUsingBytes(input json.RawMessage) json.RawMessage {
+	return bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+}
+
+var sanitizeRegexp = regexp.MustCompile(`\\u0000`)
+
+func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
+	return json.RawMessage(sanitizeRegexp.ReplaceAllString(string(input), ""))
+}
+
+func setSkipZeroAssertionForMultitenant(b bool) {
+	skipZeroAssertionForMultitenant = b
 }

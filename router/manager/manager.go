@@ -4,7 +4,6 @@ import (
 	"context"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -77,8 +76,8 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 	//rt / batch_rt tables and there would be a delay readin from channel `ch`
 	//However, this shouldn't be the problem since backend config pushes config
 	//to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
-	batchrouterFactory.RouterDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+	routerFactory.RouterDB.DeleteExecuting()
+	batchrouterFactory.RouterDB.DeleteExecuting()
 
 loop:
 	for {

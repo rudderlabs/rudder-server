@@ -36,6 +36,20 @@ func (m *MockBackendConfig) EXPECT() *MockBackendConfigMockRecorder {
 	return m.recorder
 }
 
+// AccessToken mocks base method.
+func (m *MockBackendConfig) AccessToken() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AccessToken")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// AccessToken indicates an expected call of AccessToken.
+func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccessToken", reflect.TypeOf((*MockBackendConfig)(nil).AccessToken))
+}
+
 // Get mocks base method.
 func (m *MockBackendConfig) Get(arg0 string) (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()
@@ -91,6 +105,20 @@ func (m *MockBackendConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) bac
 func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
+}
+
+// IsConfigured mocks base method.
+func (m *MockBackendConfig) IsConfigured() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsConfigured")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsConfigured indicates an expected call of IsConfigured.
+func (mr *MockBackendConfigMockRecorder) IsConfigured() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsConfigured", reflect.TypeOf((*MockBackendConfig)(nil).IsConfigured))
 }
 
 // SetUp mocks base method.

@@ -25,6 +25,8 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 
@@ -44,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -143,27 +146,30 @@ type userWebRequestWorkerT struct {
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
-	application                                                app.Interface
-	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
-	jobsDB                                                     jobsdb.JobsDB
-	ackCount                                                   uint64
-	recvCount                                                  uint64
-	backendConfig                                              backendconfig.BackendConfig
-	rateLimiter                                                ratelimiter.RateLimiter
-	stats                                                      stats.Stats
-	batchSizeStat                                              stats.RudderStats
-	requestSizeStat                                            stats.RudderStats
-	dbWritesStat                                               stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
-	bodyReadTimeStat                                           stats.RudderStats
-	addToWebRequestQWaitTime                                   stats.RudderStats
-	ProcessRequestTime                                         stats.RudderStats
-	addToBatchRequestQWaitTime                                 stats.RudderStats
-	trackSuccessCount                                          int
-	trackFailureCount                                          int
-	requestMetricLock                                          sync.RWMutex
-	diagnosisTicker                                            *time.Ticker
+	application                  app.Interface
+	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
+	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
+	jobsDB                       jobsdb.JobsDB
+	ackCount                     uint64
+	recvCount                    uint64
+	backendConfig                backendconfig.BackendConfig
+	rateLimiter                  ratelimiter.RateLimiter
+
+	stats                                         stats.Stats
+	batchSizeStat                                 stats.RudderStats
+	requestSizeStat                               stats.RudderStats
+	dbWritesStat                                  stats.RudderStats
+	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
+	bodyReadTimeStat                              stats.RudderStats
+	addToWebRequestQWaitTime                      stats.RudderStats
+	ProcessRequestTime                            stats.RudderStats
+	addToBatchRequestQWaitTime                    stats.RudderStats
+
+	diagnosisTicker   *time.Ticker
+	requestMetricLock sync.Mutex
+	trackSuccessCount int
+	trackFailureCount int
+
 	webRequestBatchCount                                       uint64
 	userWebRequestWorkers                                      []*userWebRequestWorkerT
 	webhookHandler                                             *webhook.HandleT
@@ -179,6 +185,8 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
+
+	rsourcesService rsources.JobService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -234,7 +242,7 @@ func (gateway *HandleT) runUserWebRequestWorkers(ctx context.Context) {
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait()
 
 	close(gateway.userWorkerBatchRequestQ)
 }
@@ -250,7 +258,7 @@ func (gateway *HandleT) initDBWriterWorkers(ctx context.Context) {
 			return nil
 		}))
 	}
-	g.Wait()
+	_ = g.Wait()
 }
 
 // 	Batches together jobLists received on the `userWorkerBatchRequestQ` channel of the gateway
@@ -436,9 +444,22 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			gateway.requestSizeStat.Observe(float64(len(body)))
+			var err error
 			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
-				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+				body, err = sjson.SetBytes(body, "type", req.reqType)
+				if err != nil {
+					req.done <- response.GetStatus(response.NotRudderEvent)
+					preDbStoreCount++
+					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+					continue
+				}
+				body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+				if err != nil {
+					req.done <- response.GetStatus(response.NotRudderEvent)
+					preDbStoreCount++
+					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+					continue
+				}
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
@@ -469,7 +490,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
 			var builtUserID string
-			var notIdentifiable, containsAudienceList bool
+			var notIdentifiable, nonRudderEvent, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
@@ -495,7 +516,11 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					return false
 				}
 
-				toSet := vjson.Value().(map[string]interface{})
+				toSet, ok := vjson.Value().(map[string]interface{})
+				if !ok {
+					nonRudderEvent = true
+					return false
+				}
 				toSet["rudderId"] = rudderId
 				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
 					toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
@@ -521,6 +546,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				continue
 			}
 
+			if nonRudderEvent {
+				req.done <- response.GetStatus(response.NotRudderEvent)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				continue
+			}
+
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
 				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
@@ -533,7 +565,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
+			eventBatchesToRecord = append(eventBatchesToRecord, string(body))
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.Must(uuid.NewV4())
 
@@ -748,7 +780,7 @@ type pendingEventsRequestPayload struct {
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	//Force return that there are pending
 	if config.GetBool("Gateway.DisablePendingEvents", false) {
-		w.Write([]byte(`{ "pending_events": 1 }`))
+		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
@@ -844,24 +876,24 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	if !excludeGateway {
 		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
 		if err != nil || pending {
-			w.Write([]byte(`{ "pending_events": 1 }`))
+			_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
 			return
 		}
 	}
 
 	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
 	if err != nil || pending {
-		w.Write([]byte(`{ "pending_events": 1 }`))
+		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
 	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
 	if err != nil || pending {
-		w.Write([]byte(`{ "pending_events": 1 }`))
+		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
 		return
 	}
 
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
+	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
 }
 
 func getIntResponseFromBool(resp bool) int {
@@ -968,7 +1000,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 		resp = []byte("OK")
 	}
 
-	w.Write(resp)
+	_, _ = w.Write(resp)
 }
 
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
@@ -1065,7 +1097,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 
 	httpWriteTime := gateway.stats.NewTaggedStat("gateway.http_write_time", stats.TimerType, stats.Tags{"reqType": reqType})
 	httpWriteStartTime := time.Now()
-	w.Write([]byte(response.GetStatus(response.Ok)))
+	_, _ = w.Write([]byte(response.GetStatus(response.Ok)))
 	httpWriteTime.Since(httpWriteStartTime)
 }
 
@@ -1168,7 +1200,7 @@ func (gateway *HandleT) collectMetrics(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-gateway.diagnosisTicker.C:
-				gateway.requestMetricLock.RLock()
+				gateway.requestMetricLock.Lock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
 					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
 						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
@@ -1177,7 +1209,7 @@ func (gateway *HandleT) collectMetrics(ctx context.Context) {
 					gateway.trackSuccessCount = 0
 					gateway.trackFailureCount = 0
 				}
-				gateway.requestMetricLock.RUnlock()
+				gateway.requestMetricLock.Unlock()
 			}
 		}
 	}
@@ -1225,7 +1257,11 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 
 func sendPixelResponse(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "image/gif")
-	w.Write([]byte(response.GetPixelResponse()))
+	_, err := w.Write([]byte(response.GetPixelResponse()))
+	if err != nil {
+		pkgLogger.Warnf("Error while sending pixel response: %v", err)
+		return
+	}
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
@@ -1333,6 +1369,12 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
+	//rudder-sources new APIs
+	rsourcesHandler := rsources_http.NewHandler(
+		gateway.rsourcesService,
+		gateway.logger.Child("rsources"))
+	srvMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -1411,14 +1453,14 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
-		for _, source := range sources.Sources {
-			sourceIDToNameMap[source.ID] = source.Name
-			if source.Enabled {
-				enabledWriteKeysSourceMap[source.WriteKey] = source
-				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
-				if source.SourceDefinition.Category == "webhook" {
-					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
-					gateway.webhookHandler.Register(source.SourceDefinition.Name)
+		for i := range sources.Sources {
+			sourceIDToNameMap[sources.Sources[i].ID] = sources.Sources[i].Name
+			if sources.Sources[i].Enabled {
+				enabledWriteKeysSourceMap[sources.Sources[i].WriteKey] = sources.Sources[i]
+				enabledWriteKeyWorkspaceMap[sources.Sources[i].WriteKey] = sources.Sources[i].WorkspaceID
+				if sources.Sources[i].SourceDefinition.Category == "webhook" {
+					enabledWriteKeyWebhookMap[sources.Sources[i].WriteKey] = sources.Sources[i].SourceDefinition.Name
+					gateway.webhookHandler.Register(sources.Sources[i].SourceDefinition.Name)
 				}
 			}
 		}
@@ -1492,10 +1534,12 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
+
+	gateway.rsourcesService = rsourcesService
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	config.RegisterDurationConfigVariable(30, &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
@@ -1590,5 +1634,5 @@ func (gateway *HandleT) Shutdown() {
 		close(worker.webRequestQ)
 	}
 
-	gateway.backgroundWait()
+	_ = gateway.backgroundWait()
 }

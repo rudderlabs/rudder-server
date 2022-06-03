@@ -13,8 +13,8 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -30,6 +30,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -119,6 +120,10 @@ func (c *testContext) initializeEnterprizeAppFeatures() {
 		SuppressUser: c.mockSuppressUserFeature,
 	}
 	c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
+}
+
+func setAllowReqsWithoutUserIDAndAnonymousID(allow bool) {
+	allowReqsWithoutUserIDAndAnonymousID = allow
 }
 
 // Initiaze mocks and common expectations
@@ -214,7 +219,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		It("should not accept events from suppress users", func() {
@@ -263,7 +268,7 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		It("should wait for backend config", func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 	})
 
@@ -281,16 +286,16 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
-			json.Unmarshal(job.Parameters, &paramsMap)
+			_ = json.Unmarshal(job.Parameters, &paramsMap)
 			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": ""}`, SourceIDEnabled, batchId))
-			json.Unmarshal(expectedStr, &expectedParamsMap)
+			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(Equal(true))
 
@@ -379,7 +384,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
@@ -421,7 +426,7 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
 		// common tests for all web handlers
@@ -432,6 +437,16 @@ var _ = Describe("Gateway", func() {
 
 			It("should reject requests without username in Authorization header", func() {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
+			})
+
+			It("should reject requests without valid rudder event in request body", func() {
+				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
+				if handlerType == "batch" || handlerType == "import" {
+					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
+				}
+				setAllowReqsWithoutUserIDAndAnonymousID(true)
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(notRudderEvent)), 400, response.NotRudderEvent+"\n")
+				setAllowReqsWithoutUserIDAndAnonymousID(false)
 			})
 
 			It("should reject requests with both userId and anonymousId not present", func() {
@@ -522,33 +537,6 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
 		Expect(body).To(Equal(responseBody))
-	}, testTimeout)
-}
-
-type RequestExpectation struct {
-	request        *http.Request
-	handler        http.HandlerFunc
-	responseStatus int
-	responseBody   string
-}
-
-func expectBatch(expectations []*RequestExpectation) {
-	c := make(chan struct{})
-
-	for _, x := range expectations {
-		go func(e *RequestExpectation) {
-			defer GinkgoRecover()
-			expectHandlerResponse(e.handler, e.request, e.responseStatus, e.responseBody)
-			c <- struct{}{}
-		}(x)
-	}
-
-	misc.RunWithTimeout(func() {
-		for range expectations {
-			<-c
-		}
-	}, func() {
-		Fail("Not all batch requests responded on time")
 	}, testTimeout)
 }
 

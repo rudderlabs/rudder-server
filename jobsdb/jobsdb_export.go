@@ -45,7 +45,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	defer jd.dsListLock.RUnlock()
 	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated and got locks", jd.GetTablePrefix())
 
-	dsList := jd.getDSList(false)
+	dsList := jd.getDSList()
 	pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - dsList: %+v", jd.tablePrefix, dsList)
 	outJobs := make([]*JobT, 0)
 	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
@@ -84,7 +84,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		}
 
 		var updatedStates map[string][]string
-		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList, StatTagsT{StateFilters: []string{Migrating.State}})
+		updatedStates, txErr = jd.updateJobStatusDSInTx(txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
 		}
@@ -223,7 +223,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 
 	var updatedStatesMap map[dataSetT]map[string][]string
-	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList, StatTagsT{})
+	updatedStatesMap, err = jd.doUpdateJobStatusInTx(txn, statusList, statTags{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
@@ -257,7 +257,7 @@ func (jd *HandleT) IsMigrating() bool {
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := jd.getDSList()
 
 	if jd.migrationState.lastDsForExport.Index == "" {
 		return false
@@ -316,7 +316,7 @@ func (jd *HandleT) PreExportCleanup() {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := jd.getDSList()
 
 	for _, ds := range dsList {
 		jd.deleteMigratingJobStatusDS(ds)
@@ -331,7 +331,7 @@ func (jd *HandleT) PostExportCleanup() {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := jd.getDSList()
 
 	for _, ds := range dsList {
 		jd.deleteWontMigrateJobStatusDS(ds)
@@ -354,6 +354,6 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 }
 
 //GetUserID from job
-func (jd *HandleT) GetUserID(job *JobT) string {
+func (*HandleT) GetUserID(job *JobT) string {
 	return job.UserID
 }

@@ -2,18 +2,13 @@ package configuration_testing
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gofrs/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
-	"time"
-)
-
-const (
-	InvalidStep        = "Invalid step"
-	StagingTablePrefix = "setup_test_staging_"
 )
 
 var (
@@ -25,30 +20,33 @@ var (
 		"id":  1,
 		"val": "RudderStack",
 	}
-	TestNamespace = "_rudderstack_setup_test"
+	TestNamespace  = "_rudderstack_setup_test"
+	AlterColumnMap = map[string]string{
+		"val_alter": "string",
+	}
 )
 
 // warehouseAdapter returns warehouseT from info request
-func (ct *CTHandleT) warehouseAdapter() warehouseutils.WarehouseT {
-	destination := ct.infoRequest.Destination
+func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
+	destination := req.Destination
 
-	randomSourceId := GetRandomString()
-	randomSourceName := GetRandomString()
+	randomSourceId := randomString()
+	randomSourceName := randomString()
 	return warehouseutils.WarehouseT{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
 			Name: randomSourceName,
 		},
 		Destination: destination,
-		Namespace:   TestNamespace,
+		Namespace:   warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace),
 		Type:        destination.DestinationDefinition.Name,
 		Identifier:  warehouseutils.GetWarehouseIdentifier(destination.DestinationDefinition.Name, randomSourceId, destination.ID),
 	}
 }
 
-// fileManagerAdapter returns fileManager from info request
-func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, err error) {
-	destination := ct.infoRequest.Destination
+// fileManager returns fileManager from validation request
+func fileManager(req *DestinationValidationRequest) (fileManager filemanager.FileManager, err error) {
+	destination := req.Destination
 
 	provider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, misc.IsConfiguredToUseRudderObjectStorage(destination.Config))
 
@@ -59,7 +57,6 @@ func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, 
 			Config:           destination.Config,
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
 	})
-	fileManagerTimeout := time.Duration(15 * time.Second)
 	fileManager.SetTimeout(&fileManagerTimeout)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config for testing this destination id %s: err %v", destination.ID, err)
@@ -68,19 +65,17 @@ func (ct *CTHandleT) fileManagerAdapter() (fileManager filemanager.FileManager, 
 	return
 }
 
-func (ct *CTHandleT) parseOptions(req json.RawMessage, v interface{}) error {
+func parseOptions(req json.RawMessage, v interface{}) error {
 	if err := json.Unmarshal(req, v); err != nil {
 		return err
 	}
 	return nil
 }
 
-func GetRandomString() string {
+func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
-func (ct *CTHandleT) GetDestinationType() (destinationType string) {
-	destination := ct.infoRequest.Destination
-	destinationType = destination.DestinationDefinition.Name
-	return
+func stagingTableName() string {
+	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, randomString())
 }
