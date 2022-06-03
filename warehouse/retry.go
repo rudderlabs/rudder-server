@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"strings"
 )
@@ -186,11 +185,4 @@ func (retryReq *RetryRequest) validateReq() (err error) {
 		return
 	}
 	return
-}
-
-func (retryReq *RetryRequest) GetRetryInterval() int64 {
-	if retryReq.IntervalInHours <= 0 {
-		return config.GetInt64("Warehouse.retryIntervalInHrs", 12)
-	}
-	return retryReq.IntervalInHours
 }
