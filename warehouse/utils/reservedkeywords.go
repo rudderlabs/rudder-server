@@ -285,6 +285,7 @@ var ReservedKeywords = map[string]map[string]bool{
 		"END":               true,
 		"ESCAPE":            true,
 		"EXCEPT":            true,
+		"EVENT_DATE":        true,
 		"EXISTS":            true,
 		"EXTERNAL":          true,
 		"EXTRACT":           true,

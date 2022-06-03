@@ -48,6 +48,8 @@ const (
 	ErrorInParseForm = "Error during parsing form"
 	//ErrorInParseMultiform - Error during parsing multiform
 	ErrorInParseMultiform = "Error during parsing multiform"
+	// NonRudderEvent = Event is not a Valid Rudder Event
+	NotRudderEvent = "Event is not a valid rudder event"
 )
 
 var (
@@ -88,6 +90,7 @@ func loadStatusMap() {
 	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusBadRequest}
 	statusMap[ErrorInParseForm] = ResponseStatus{message: ErrorInParseForm, code: http.StatusBadRequest}
 	statusMap[ErrorInParseMultiform] = ResponseStatus{message: ErrorInParseMultiform, code: http.StatusBadRequest}
+	statusMap[NotRudderEvent] = ResponseStatus{message: NotRudderEvent, code: http.StatusBadRequest}
 }
 
 func GetStatus(key string) string {

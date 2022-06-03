@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
@@ -60,6 +61,9 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	}
 	var client *pubsub.Client
 	if config.Credentials != "" { // Normal configuration requires credentials
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
+			return nil, err
+		}
 		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithCredentialsJSON([]byte(config.Credentials))); err != nil {
 			return nil, err
 		}

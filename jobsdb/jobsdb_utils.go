@@ -19,7 +19,7 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 	datasetList := []dataSetT{}
 
 	//Read the table names from PG
-	tableNames := getAllTableNames(jd, dbHandle)
+	tableNames := mustGetAllTableNames(jd, dbHandle)
 
 	//Tables are of form jobs_ and job_status_. Iterate
 	//through them and sort them to produce and
@@ -137,29 +137,33 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 	}
 }
 
-//getAllTableNames Function to get all table names form Postgres
-func getAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
-	//Read the table names from PG
-	stmt, err := dbHandle.Prepare(`SELECT tablename
-                                        FROM pg_catalog.pg_tables
-                                        WHERE schemaname != 'pg_catalog' AND
-                                        schemaname != 'information_schema'`)
+//mustGetAllTableNames gets all table names from Postgres and panics in case of an error
+func mustGetAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
+	tableNames, err := getAllTableNames(dbHandle)
 	jd.assertError(err)
-	defer stmt.Close()
+	return tableNames
+}
 
-	rows, err := stmt.Query()
-	jd.assertError(err)
+//getAllTableNames gets all table names from Postgres
+func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
+	var tableNames []string
+	rows, err := dbHandle.Query(`SELECT tablename
+									FROM pg_catalog.pg_tables
+									WHERE schemaname != 'pg_catalog' AND
+									schemaname != 'information_schema'`)
+	if err != nil {
+		return tableNames, err
+	}
 	defer rows.Close()
-
-	tableNames := []string{}
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)
-		jd.assertError(err)
+		if err != nil {
+			return tableNames, err
+		}
 		tableNames = append(tableNames, tbName)
 	}
-
-	return tableNames
+	return tableNames, nil
 }
 
 //checkValidJobState Function to check validity of states

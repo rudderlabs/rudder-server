@@ -163,7 +163,7 @@ func TestProcessorManager(t *testing.T) {
 
 	dbRetention := time.Minute * 5
 	migrationMode := ""
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
 	tempDB := jobsdb.HandleT{
@@ -202,7 +202,7 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	mtStat := &multitenant.MultitenantStatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},

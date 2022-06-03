@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
 
@@ -19,13 +20,13 @@ func (jd *HandleT) SchemaMigrationTable() string {
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
 // If clearAll is set to true, all existing jobsdb tables will be removed first.
-func (jd *HandleT) setupDatabaseTables(clearAll bool) {
+func (jd *HandleT) setupDatabaseTables(l lock.DSListLockToken, clearAll bool) {
 	if clearAll {
-		jd.dropDatabaseTables()
+		jd.dropDatabaseTables(l)
 	}
 
 	// collect all existing dataset indices, and create template data
-	datasets := jd.getDSList(true)
+	datasets := jd.refreshDSList(l)
 
 	datasetIndices := make([]string, 0)
 	for _, dataset := range datasets {
@@ -59,13 +60,13 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 	}
 }
 
-func (jd *HandleT) dropDatabaseTables() {
+func (jd *HandleT) dropDatabaseTables(l lock.DSListLockToken) {
 
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
-	jd.dropAllDS()
+	jd.assertError(jd.dropAllDS(l))
 	jd.dropJournal()
-	jd.dropAllBackupDS()
+	jd.assertError(jd.dropAllBackupDS())
 	jd.dropMigrationCheckpointTables()
 }
 

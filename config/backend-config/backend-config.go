@@ -105,6 +105,7 @@ type SourceT struct {
 	Destinations               []DestinationT
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
+	Transient                  bool
 }
 
 type WorkspaceRegulationT struct {
