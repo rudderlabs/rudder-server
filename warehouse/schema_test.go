@@ -4,10 +4,13 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	. "github.com/rudderlabs/rudder-server/warehouse"
 )
 
 var _ = Describe("Schema", func() {
+	stats.Setup()
+
 	Describe("Handle schema change", func() {
 		Context("No discards", func() {
 			It("should send int values if existing datatype is int", func() {
