@@ -19,7 +19,7 @@ var (
 )
 
 const (
-	DRAIN_ERROR_CODE int = 401
+	DRAIN_ERROR_CODE int = 410
 )
 
 type BatchDestinationT struct {
