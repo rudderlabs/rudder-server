@@ -180,7 +180,7 @@ func (retryReq *RetryRequest) validateReq() (err error) {
 		return
 	}
 
-	if len(retryReq.UploadIds) == 0 && retryReq.IntervalInHours == 0 {
+	if len(retryReq.UploadIds) == 0 && retryReq.IntervalInHours <= 0 {
 		err = errors.New("please provide valid request parameters while retrying jobs with UploadIds or IntervalInHours")
 		return
 	}
