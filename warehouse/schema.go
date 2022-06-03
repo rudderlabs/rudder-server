@@ -21,7 +21,7 @@ type SchemaHandleT struct {
 	uploadSchema      warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
+func HandleSchemaChange(existingDataType string, columnType string, columnVal interface{}, destinationId string) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text
 		if columnType != "string" && columnType != "text" {
@@ -35,6 +35,7 @@ func HandleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = nil
 		} else {
 			newColumnVal = float64(intVal)
+			warehouseutils.NewCounterStat("int_schema_frequency", warehouseutils.Tag{Name: "destinationId", Value: destinationId}).Increment()
 		}
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := columnVal.(float64)
