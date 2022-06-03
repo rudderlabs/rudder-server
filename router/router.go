@@ -763,17 +763,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
 								// stat start
-								pkgLogger.Infof(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 								defer cancel()
 								//transformer proxy start
 								if worker.rt.transformerProxy {
 									jobId := destinationJob.JobMetadataArray[0].JobID
-									pkgLogger.Infof(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
 									rtl_time := time.Now()
 									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobId)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
-									pkgLogger.Infof(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
