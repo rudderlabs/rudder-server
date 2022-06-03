@@ -806,9 +806,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 						respBody = strings.Join(respBodyArr, " ")
 						if worker.rt.transformerProxy {
 							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
-								"destType":    worker.rt.destName,
-								"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-								"workspace":   workspaceID,
+								"destType":      worker.rt.destName,
+								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
 							}).Count(len(result))
 
 							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
@@ -818,9 +818,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							)
 
 							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
-								"destType":    worker.rt.destName,
-								"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-								"workspace":   workspaceID,
+								"destType":      worker.rt.destName,
+								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
 							}).Count(len(respBodyArr))
 						}
 					}
