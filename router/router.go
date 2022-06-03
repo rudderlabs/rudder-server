@@ -768,9 +768,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								defer cancel()
 								//transformer proxy start
 								if worker.rt.transformerProxy {
+									jobId := destinationJob.JobMetadataArray[0].JobID
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobId)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
 									if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -801,6 +804,25 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							}
 						}
 						respBody = strings.Join(respBodyArr, " ")
+						if worker.rt.transformerProxy {
+							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
+								"destType":      worker.rt.destName,
+								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
+							}).Count(len(result))
+
+							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
+								destinationJob.JobMetadataArray[0].JobID,
+								len(result),
+								len(respBodyArr),
+							)
+
+							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
+								"destType":      worker.rt.destName,
+								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
+							}).Count(len(respBodyArr))
+						}
 					}
 				}
 				ch <- struct{}{}

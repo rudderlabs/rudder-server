@@ -46,6 +46,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.31
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/snowflakedb/gosnowflake v1.6.3
+	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/viper v1.8.0
@@ -67,6 +68,7 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
+
 )
 
 replace github.com/segmentio/kafka-go => github.com/fracasula/kafka-go v0.4.32-0.20220509075905-7ccc623033ba

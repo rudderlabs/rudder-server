@@ -50,6 +50,20 @@ func (mr *MockJobServiceMockRecorder) AddFailedRecords(ctx, tx, jobRunId, key, r
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddFailedRecords", reflect.TypeOf((*MockJobService)(nil).AddFailedRecords), ctx, tx, jobRunId, key, records)
 }
 
+// CleanupLoop mocks base method.
+func (m *MockJobService) CleanupLoop(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupLoop", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CleanupLoop indicates an expected call of CleanupLoop.
+func (mr *MockJobServiceMockRecorder) CleanupLoop(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupLoop", reflect.TypeOf((*MockJobService)(nil).CleanupLoop), ctx)
+}
+
 // Delete mocks base method.
 func (m *MockJobService) Delete(ctx context.Context, jobRunId string) error {
 	m.ctrl.T.Helper()

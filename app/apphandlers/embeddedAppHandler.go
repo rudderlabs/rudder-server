@@ -3,6 +3,7 @@ package apphandlers
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"net/http"
 
 	"golang.org/x/sync/errgroup"
@@ -173,12 +174,28 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}
 	}
 
-	var modeProvider *state.StaticProvider
-	// FIXME: hacky way to determine servermode
-	if enableProcessor && enableRouter {
-		modeProvider = state.NewStaticProvider(servermode.NormalMode)
-	} else {
-		modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+	var modeProvider cluster.ChangeEventProvider
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	switch deploymentType {
+	case deployment.MultiTenantType:
+		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		modeProvider = state.NewETCDDynamicProvider()
+	case deployment.HostedType, deployment.DedicatedType:
+		// FIXME: hacky way to determine server mode
+		pkgLogger.Info("using Static Cluster Manager")
+		if enableProcessor && enableRouter {
+			modeProvider = state.NewStaticProvider(servermode.NormalMode)
+		} else {
+			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+		}
+	default:
+		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
 	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources)
