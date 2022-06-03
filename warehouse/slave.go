@@ -276,6 +276,14 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
+func (job *PayloadT) getColumnCountForAlltables() map[string]int {
+	tableColumnCountMap := make(map[string]int)
+	for tableName, _ := range job.LocalSchema {
+		tableColumnCountMap[tableName] = len(job.LocalSchema[tableName])
+	}
+	return tableColumnCountMap
+}
+
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
@@ -360,6 +368,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	}
 
 	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
+	tableColumnCountMap := job.getColumnCountForAlltables()
 
 	reader, endOfFile := jobRun.setStagingFileReader()
 	if endOfFile {
@@ -439,6 +448,21 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 				columnVal = int(floatVal)
 			}
 
+			columnCount, tableExists := tableColumnCountMap[tableName]
+			if tableExists && columnCount >= maxColumnCounts[job.DestinationType] {
+				if _, ok := job.LocalSchema[tableName][columnName]; ok {
+					cv := &ConstraintsViolationT{
+						isViolated: false,
+					}
+					err := jobRun.writeToDiscards(discardsTable, tableName, columnName, columnVal, columnData, cv)
+					if err != nil {
+						return nil, err
+					}
+					continue
+				}
+
+			}
+
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
@@ -450,19 +474,19 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 						eventLoader.AddEmptyColumn(columnName)
 					}
 
-					discardWriter, err := jobRun.GetWriter(discardsTable)
+					err = jobRun.writeToDiscards(discardsTable, tableName, columnName, columnVal, columnData, violatedConstraints)
 					if err != nil {
 						return nil, err
 					}
-					// add discardWriter to outputFileWritersMap
-					jobRun.outputFileWritersMap[discardsTable] = discardWriter
+					// // add discardWriter to outputFileWritersMap
+					// jobRun.outputFileWritersMap[discardsTable] = discardWriter
 
-					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
+					// err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
 
-					if err != nil {
-						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
-					}
-					jobRun.tableEventCountMap[discardsTable]++
+					// if err != nil {
+					// 	pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
+					// }
+					// jobRun.tableEventCountMap[discardsTable]++
 					continue
 				}
 				if newColumnVal == nil {
@@ -733,6 +757,23 @@ func setupSlave(ctx context.Context) error {
 		return notifier.RunMaintenanceWorker(ctx)
 	}))
 	return g.Wait()
+}
+
+func (jobRun *JobRunT) writeToDiscards(discardsTable string, tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT) error {
+	discardWriter, err := jobRun.GetWriter(discardsTable)
+	if err != nil {
+		return err
+	}
+	// add discardWriter to outputFileWritersMap
+	jobRun.outputFileWritersMap[discardsTable] = discardWriter
+
+	err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
+
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
+	}
+	jobRun.tableEventCountMap[discardsTable]++
+	return nil
 }
 
 func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {

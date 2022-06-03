@@ -33,6 +33,7 @@ type PayloadT struct {
 	Output               []loadFileUploadOutputT
 	LoadFilePrefix       string // prefix for the load file name
 	LoadFileType         string
+	LocalSchema          map[string]map[string]string
 }
 
 type ProcessStagingFilesJobT struct {
