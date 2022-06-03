@@ -35,7 +35,7 @@ func HandleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = nil
 		} else {
 			newColumnVal = float64(intVal)
-			warehouseutils.NewCounterStat("int_schema_frequency", warehouseutils.Tag{Name: "destinationId", Value: destinationId}).Increment()
+			warehouseutils.NewCounterStat("int_schema_frequency", warehouseutils.Tag{Name: "destinationId", Value: destinationId}).Count(1)
 		}
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := columnVal.(float64)
