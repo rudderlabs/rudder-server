@@ -158,7 +158,7 @@ func (retryReq *RetryRequest) whereClauses(sourceIDs []string) (clauses []string
 		clausesArgs = append(clausesArgs, pq.Array(retryReq.UploadIds))
 	} else {
 		clauses = append(clauses, fmt.Sprintf("created_at > NOW() - %s * INTERVAL '1 HOUR'", retryQueryPlaceHolder))
-		clausesArgs = append(clausesArgs, retryReq.GetRetryInterval())
+		clausesArgs = append(clausesArgs, retryReq.IntervalInHours)
 	}
 	return
 }
@@ -177,8 +177,12 @@ func (retryReq *RetryRequest) validateReq() (err error) {
 	}
 
 	if retryReq.SourceID == "" && retryReq.DestinationID == "" && retryReq.WorkspaceID == "" {
-		retryReq.API.log.Error(`WH: Please provide valid request parameters while retrying jobs.`)
 		err = errors.New("please provide valid request parameters while retrying jobs with workspaceId or sourceId or destinationId")
+		return
+	}
+
+	if len(retryReq.UploadIds) == 0 && retryReq.IntervalInHours == 0 {
+		err = errors.New("please provide valid request parameters while retrying jobs with UploadIds or IntervalInHours")
 		return
 	}
 	return
