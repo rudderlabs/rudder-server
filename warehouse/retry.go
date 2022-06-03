@@ -72,7 +72,7 @@ func (retryReq *RetryRequest) RetryWHUploads() (response RetryResponse, err erro
 	}
 
 	response = RetryResponse{
-		Message:    retryReq.successMessage(uploadsRetried),
+		Message:    successMessage(uploadsRetried),
 		StatusCode: 200,
 	}
 	return
@@ -112,7 +112,6 @@ func (retryReq *RetryRequest) retryUploads(sourceIDs []string) (rowsAffected int
 		WHERE %[1]s`,
 		clausesQuery,
 	)
-	retryReq.API.log.Info(preparedStatement)
 
 	// Executing the statement
 	result, err := retryReq.API.dbHandle.Exec(preparedStatement, clausesArgs...)
@@ -164,7 +163,7 @@ func (retryReq *RetryRequest) whereClauses(sourceIDs []string) (clauses []string
 	return
 }
 
-func (retryReq *RetryRequest) successMessage(uploadsRetried int64) string {
+func successMessage(uploadsRetried int64) string {
 	if uploadsRetried == 0 {
 		return "No retried uploads to sync for this destination"
 	}
@@ -178,11 +177,7 @@ func (retryReq *RetryRequest) validateReq() (err error) {
 	}
 
 	if retryReq.SourceID == "" && retryReq.DestinationID == "" && retryReq.WorkspaceID == "" {
-		retryReq.API.log.Errorf(`WH: Please provide valid request parameters while retrying jobs for workspaceId: %s, sourceId: %s, destinationId: %s`,
-			retryReq.WorkspaceID,
-			retryReq.SourceID,
-			retryReq.DestinationID,
-		)
+		retryReq.API.log.Error(`WH: Please provide valid request parameters while retrying jobs.`)
 		err = errors.New("please provide valid request parameters while retrying jobs with workspaceId or sourceId or destinationId")
 		return
 	}
