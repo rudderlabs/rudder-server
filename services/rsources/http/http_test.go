@@ -183,11 +183,11 @@ func getArgumentFilter(filter map[string][]string) rsources.JobFilter {
 
 	if len(filter["task_run_id"]) != 0 {
 		tID := filter["task_run_id"]
-		filterArg.TaskRunId = tID
+		filterArg.TaskRunID = tID
 	}
 	if len(filter["source_id"]) != 0 {
 		sID := filter["source_id"]
-		filterArg.SourceId = sID
+		filterArg.SourceID = sID
 	}
 
 	return filterArg
