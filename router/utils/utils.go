@@ -15,6 +15,11 @@ import (
 
 var (
 	JobRetention time.Duration
+	EmptyPayload = []byte(`{}`)
+)
+
+const (
+	DRAIN_ERROR_CODE int = 410
 )
 
 type BatchDestinationT struct {
