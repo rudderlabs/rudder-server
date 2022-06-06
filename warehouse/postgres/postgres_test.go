@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
 	"os"
 	"strings"
 	"testing"
@@ -32,7 +32,7 @@ func (*PostgresTest) EnhanceWorkspaceConfig(configMap map[string]string) {
 }
 
 func (*PostgresTest) SetUpDestination() {
-	PGTest.WriteKey = util.RandString(27)
+	PGTest.WriteKey = testhelper.RandString(27)
 	PGTest.Credentials = &postgres.CredentialsT{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
@@ -42,16 +42,15 @@ func (*PostgresTest) SetUpDestination() {
 		Port:     "54320",
 	}
 	PGTest.EventsMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       6,
-		"batchRT":       8,
+		"identifies": 1,
+		"users":      1,
+		"tracks":     1,
+		"pages":      1,
+		"screens":    1,
+		"aliases":    1,
+		"groups":     1,
+		"gateway":    6,
+		"batchRT":    8,
 	}
 	PGTest.TableTestQueryFreq = 100 * time.Millisecond
 
@@ -78,14 +77,19 @@ func TestPostgres(t *testing.T) {
 		EventsCountMap:           PGTest.EventsMap,
 		WriteKey:                 PGTest.WriteKey,
 		UserId:                   fmt.Sprintf("userId_postgres_%s", randomness),
+		Event:                    fmt.Sprintf("Product Track %s", randomness),
 		Schema:                   "postgres_wh_integration",
 		VerifyingTablesFrequency: PGTest.TableTestQueryFreq,
 	}
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_postgres_%s", randomness)
+	whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }

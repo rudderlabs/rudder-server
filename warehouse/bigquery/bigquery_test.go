@@ -1,4 +1,4 @@
-package bigquery
+package bigquery_test
 
 import (
 	"cloud.google.com/go/bigquery"
@@ -9,9 +9,9 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
+	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
 	"log"
 	"os"
 	"strings"
@@ -46,12 +46,12 @@ var (
 )
 
 func TestUnsupportedCredentials(t *testing.T) {
-	credentials := BQCredentialsT{
+	credentials := bigquery2.BQCredentialsT{
 		ProjectID:   "projectId",
 		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}
 
-	_, err := Connect(context.Background(), &credentials)
+	_, err := bigquery2.Connect(context.Background(), &credentials)
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
@@ -81,7 +81,7 @@ func (*BiqQueryTest) EnhanceWorkspaceConfig(configMap map[string]string) {
 }
 
 func (*BiqQueryTest) SetUpDestination() {
-	BQTest.WriteKey = util.RandString(27)
+	BQTest.WriteKey = testhelper.RandString(27)
 	BQTest.Credentials = bqCredentials()
 	BQTest.EventsMap = testhelper.EventsCountMap{
 		"identifies":    1,
@@ -109,7 +109,7 @@ func (*BiqQueryTest) SetUpDestination() {
 		log.Panicf("Error while unmarshalling credentials for bigquery with error: %s", err.Error())
 	}
 
-	BQTest.Credentials.CredentialsEscaped, err = util.JsonEscape(string(credentials))
+	BQTest.Credentials.CredentialsEscaped, err = testhelper.JsonEscape(string(credentials))
 	if err != nil {
 		log.Panicf("Error while doing json ecape for bigquery with error: %s", err.Error())
 		return
@@ -117,8 +117,8 @@ func (*BiqQueryTest) SetUpDestination() {
 
 	operation := func() error {
 		var err error
-		BQTest.DB, err = Connect(BQTest.Context,
-			&BQCredentialsT{
+		BQTest.DB, err = bigquery2.Connect(BQTest.Context,
+			&bigquery2.BQCredentialsT{
 				ProjectID:   BQTest.Credentials.ProjectID,
 				Credentials: string(credentials),
 			})
@@ -131,7 +131,7 @@ func (*BiqQueryTest) SetUpDestination() {
 	return
 }
 
-func TestBigQuery(t *testing.T) {
+func TestBigquery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}
@@ -144,7 +144,7 @@ func TestBigQuery(t *testing.T) {
 
 	//Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
-	Init()
+	bigquery2.Init()
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
@@ -156,7 +156,6 @@ func TestBigQuery(t *testing.T) {
 		WriteKey:                 BQTest.WriteKey,
 		UserId:                   fmt.Sprintf("userId_bq_%s", randomness),
 		Schema:                   "rudderstack_sample_http_source",
-		BQContext:                BQTest.Context,
 		Tables:                   BQTest.Tables,
 		PrimaryKeys:              BQTest.PrimaryKeys,
 		VerifyingTablesFrequency: BQTest.TableTestQueryFreq,
@@ -191,7 +190,7 @@ func TestBigQuery(t *testing.T) {
 
 	//Enabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
-	Init()
+	bigquery2.Init()
 
 	whDestTest.EventsCountMap = testhelper.EventsCountMap{
 		"identifies": 2,

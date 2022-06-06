@@ -1,9 +1,10 @@
 package testhelper
 
 import (
-	"context"
+	"database/sql"
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"time"
 )
 
@@ -18,6 +19,11 @@ type MinioResource struct {
 	Port            string
 }
 
+type JobsDBResource struct {
+	Credentials *postgres.CredentialsT
+	DB          *sql.DB
+}
+
 type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
@@ -25,8 +31,8 @@ type WareHouseDestinationTest struct {
 	EventsCountMap           EventsCountMap
 	WriteKey                 string
 	UserId                   string
+	Event                    string
 	Schema                   string
-	BQContext                context.Context
 	Tables                   []string
 	PrimaryKeys              []string
 	MessageId                string

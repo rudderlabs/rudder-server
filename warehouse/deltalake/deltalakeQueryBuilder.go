@@ -37,7 +37,7 @@ func mergeableLTSQLStatement(namespace string, tableName string, stagingTableNam
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
                                        USING ( %[3]s ) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
+									   ON MAIN.%[4]s = STAGING.%[4]s 
 									   WHEN MATCHED THEN UPDATE SET %[5]s
 									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
 		namespace,

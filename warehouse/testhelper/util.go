@@ -1,4 +1,4 @@
-package util
+package testhelper
 
 import (
 	"context"
@@ -28,7 +28,7 @@ const (
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "track",
-	  "event": "Product Track",
+	  "event": "%s",
 	  "properties": {
 		"review_id": "12345",
 		"product_id": "123",
@@ -92,7 +92,7 @@ const (
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "track",
-	  "event": "Product Track",
+	  "event": "%s",
 	  "properties": {
 		"review_id": "12345",
 		"product_id": "123",

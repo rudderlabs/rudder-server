@@ -55,6 +55,10 @@ var (
 	loadTableStrategy  string
 )
 
+var (
+	enablePartition bool
+)
+
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
@@ -135,6 +139,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
+	config.RegisterBoolConfigVariable(true, &enablePartition, true, "Warehouse.deltalake.enablePartition")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -149,7 +154,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
-		if name == "received_at" {
+		if name == "received_at" && enablePartition {
 			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
 			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
 		}
@@ -394,7 +399,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 }
 
 // sortedColumnNames returns sorted column names
-func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string) (sortedColumnNames string) {
+func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiffT) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
 	} else {
@@ -405,7 +410,19 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 			columnType := getDeltaLakeDataType(tableSchemaInUpload[columnName])
 			return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
 		}
-		return warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+		formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+		if len(diff.ColumnMap) > 0 {
+			diffCols := make([]string, 0, len(diff.ColumnMap))
+			for key, _ := range diff.ColumnMap {
+				diffCols = append(diffCols, key)
+			}
+			diffFormat := func(index int, value string) string {
+				return fmt.Sprintf(`NULL AS %s`, value)
+			}
+			diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
+			return fmt.Sprintf("%s, %s", formatString, diffString)
+		}
+		return formatString
 	}
 	return
 }
@@ -445,6 +462,19 @@ func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder 
 	return
 }
 
+func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT) (diff warehouseutils.TableSchemaDiffT) {
+	diff = warehouseutils.TableSchemaDiffT{
+		ColumnMap: make(map[string]string),
+	}
+	diff.ColumnMap = make(map[string]string)
+	for columnName, columnType := range tableSchemaAfterUpload {
+		if _, ok := tableSchemaInUpload[columnName]; !ok {
+			diff.ColumnMap[columnName] = columnType
+		}
+	}
+	return diff
+}
+
 // loadTable Loads table with table name
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
@@ -480,7 +510,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
-	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys)
+	var diff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, diff)
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
@@ -734,7 +765,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 	tableLocationSql := dl.getTableLocationSql(tableName)
 	var partitionedSql string
-	if _, ok := columns["received_at"]; ok {
+	if _, ok := columns["received_at"]; ok && enablePartition {
 		partitionedSql = `PARTITIONED BY(event_date)`
 	}
 

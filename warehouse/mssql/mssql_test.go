@@ -1,19 +1,21 @@
-package mssql
+package mssql_test
 
 import (
 	"database/sql"
 	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
 type MSSQLTest struct {
-	Credentials        *CredentialsT
+	Credentials        *mssql.CredentialsT
 	DB                 *sql.DB
 	EventsMap          testhelper.EventsCountMap
 	WriteKey           string
@@ -30,8 +32,8 @@ func (*MSSQLTest) EnhanceWorkspaceConfig(configMap map[string]string) {
 }
 
 func (*MSSQLTest) SetUpDestination() {
-	MTest.WriteKey = util.RandString(27)
-	MTest.Credentials = &CredentialsT{
+	MTest.WriteKey = testhelper.RandString(27)
+	MTest.Credentials = &mssql.CredentialsT{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",
@@ -40,21 +42,20 @@ func (*MSSQLTest) SetUpDestination() {
 		Port:     "54322",
 	}
 	MTest.EventsMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       6,
-		"batchRT":       8,
+		"identifies": 1,
+		"users":      1,
+		"tracks":     1,
+		"pages":      1,
+		"screens":    1,
+		"aliases":    1,
+		"groups":     1,
+		"gateway":    6,
+		"batchRT":    8,
 	}
 	MTest.TableTestQueryFreq = 100 * time.Millisecond
 
 	var err error
-	if MTest.DB, err = Connect(*MTest.Credentials); err != nil {
+	if MTest.DB, err = mssql.Connect(*MTest.Credentials); err != nil {
 		panic(fmt.Errorf("could not connect to warehouse mssql with error: %s", err.Error()))
 	}
 	if err = MTest.DB.Ping(); err != nil {
@@ -76,14 +77,24 @@ func TestMSSQL(t *testing.T) {
 		EventsCountMap:           MTest.EventsMap,
 		WriteKey:                 MTest.WriteKey,
 		UserId:                   fmt.Sprintf("userId_mssql_%s", randomness),
+		Event:                    fmt.Sprintf("Product Track %s", randomness),
 		Schema:                   "mssql_wh_integration",
 		VerifyingTablesFrequency: MTest.TableTestQueryFreq,
 	}
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_mssql_%s", randomness)
+	whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
+}
+
+func TestMain(m *testing.M) {
+	MTest = &MSSQLTest{}
+	os.Exit(testhelper.Setup(m, MTest))
 }

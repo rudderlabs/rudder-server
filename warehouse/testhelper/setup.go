@@ -5,9 +5,18 @@ import (
 	b64 "encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/iancoleman/strcase"
 	r "github.com/rudderlabs/rudder-server/cmd/run"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/temp"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"io"
 	"log"
 	"net/http"
@@ -33,6 +42,7 @@ var (
 
 var (
 	WaitFor2Min           = 2 * time.Minute
+	WaitFor5Min           = 5 * time.Minute
 	DefaultQueryFrequency = 100 * time.Millisecond
 )
 
@@ -42,7 +52,7 @@ var (
 )
 
 var (
-	jobsDB *temp.JobsDBResource
+	jobsDB *JobsDBResource
 )
 
 type ISetup interface {
@@ -64,11 +74,11 @@ func Setup(m *testing.M, setup ISetup) int {
 		}
 	}()
 
-	//// Initializing config
-	//temp.Init()
+	// Initializing config
+	initialize()
 
 	// Setting up jobsDB
-	jobsDB = temp.SetUpJobsDB()
+	jobsDB = SetUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 
 	// Setting up transformer
@@ -77,13 +87,13 @@ func Setup(m *testing.M, setup ISetup) int {
 	// Setting up minio
 	minio := SetupMinio()
 
-	// Setting up destination
-	setup.SetUpDestination()
-
 	// Loading env variables
-	if err := godotenv.Load("testhelper/.env"); err != nil {
+	if err := godotenv.Load("../testhelper/.env"); err != nil {
 		log.Printf("Error occurred while loading .env with error: %v", err)
 	}
+
+	// Setting up destination
+	setup.SetUpDestination()
 
 	// Setting up env variables
 	_ = os.Setenv("JOBS_DB_PORT", jobsDB.Credentials.Port)
@@ -108,7 +118,7 @@ func Setup(m *testing.M, setup ISetup) int {
 	httpAdminPort = strconv.Itoa(httpAdminPortInt)
 
 	// Setting up workspace config
-	workspaceID := util.RandString(27)
+	workspaceID := RandString(27)
 	workspaceConfigMap := map[string]string{
 		"workspaceId":     workspaceID,
 		"minioEndpoint":   minio.MinioEndpoint,
@@ -150,7 +160,7 @@ func Setup(m *testing.M, setup ISetup) int {
 	// Checking health endpoint for rudder server
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	log.Println("healthEndpoint", healthEndpoint)
-	util.WaitUntilReady(context.Background(), healthEndpoint, 1*time.Minute, time.Second, "healthEndpoint")
+	WaitUntilReady(context.Background(), healthEndpoint, 1*time.Minute, time.Second, "healthEndpoint")
 
 	// running module tests
 	code := m.Run()
@@ -219,12 +229,12 @@ func sendEvent(payload *strings.Reader, eventType, writeKey string) {
 func enhanceJobsDBWithSQLFunctions() {
 	var err error
 
-	_, err = jobsDB.DB.Exec(util.GWJobsForUserIdWriteKey())
+	_, err = jobsDB.DB.Exec(GWJobsForUserIdWriteKey())
 	if err != nil {
 		log.Panicf("error occurred with executing gw jobs function for events count with err %v", err.Error())
 	}
 
-	_, err = jobsDB.DB.Exec(util.BRTJobsForUserId())
+	_, err = jobsDB.DB.Exec(BRTJobsForUserId())
 	if err != nil {
 		log.Panicf("error occurred with executing brt jobs function for events count with err %s", err.Error())
 	}
@@ -236,7 +246,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending identifies events")
 		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(util.IdentifyPayload, wdt.UserId, wdt.MsgId()))
+			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wdt.UserId, wdt.MsgId()))
 			sendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -244,7 +254,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if track, exists := wdt.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending tracks events")
 		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(util.TrackPayload, wdt.UserId, wdt.MsgId()))
+			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wdt.UserId, wdt.MsgId(), wdt.Event))
 			sendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -252,7 +262,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if page, exists := wdt.EventsCountMap["pages"]; exists {
 		t.Logf("Sending pages events")
 		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(util.PagePayload, wdt.UserId, wdt.MsgId()))
+			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wdt.UserId, wdt.MsgId()))
 			sendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -260,7 +270,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if screen, exists := wdt.EventsCountMap["screens"]; exists {
 		t.Logf("Sending screens events")
 		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(util.ScreenPayload, wdt.UserId, wdt.MsgId()))
+			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wdt.UserId, wdt.MsgId()))
 			sendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -268,7 +278,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
 		t.Logf("Sending aliases events")
 		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(util.AliasPayload, wdt.UserId, wdt.MsgId()))
+			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wdt.UserId, wdt.MsgId()))
 			sendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -276,7 +286,7 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if group, exists := wdt.EventsCountMap["groups"]; exists {
 		t.Logf("Sending groups events")
 		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(util.GroupPayload, wdt.UserId, wdt.MsgId()))
+			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wdt.UserId, wdt.MsgId()))
 			sendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
@@ -288,7 +298,7 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending modified identifies events")
 		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(util.ModifiedIdentifyPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			sendEvent(payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
@@ -296,7 +306,7 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if track, exists := wdt.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending modified tracks events")
 		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(util.ModifiedTrackPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String(), wdt.Event))
 			sendEvent(payloadTrack, "track", wdt.WriteKey)
 		}
 	}
@@ -304,7 +314,7 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if page, exists := wdt.EventsCountMap["pages"]; exists {
 		t.Logf("Sending modified pages events")
 		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(util.ModifiedPagePayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			sendEvent(payloadPage, "page", wdt.WriteKey)
 		}
 	}
@@ -312,7 +322,7 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if screen, exists := wdt.EventsCountMap["screens"]; exists {
 		t.Logf("Sending modified screens events")
 		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(util.ModifiedScreenPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			sendEvent(payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
@@ -320,7 +330,7 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
 		t.Logf("Sending modified aliases events")
 		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(util.ModifiedAliasPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			sendEvent(payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
@@ -328,10 +338,11 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	if group, exists := wdt.EventsCountMap["groups"]; exists {
 		t.Logf("Sending modified groups events")
 		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(util.ModifiedGroupPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
 			sendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
+
 }
 
 func VerifyingDestination(t testing.TB, wdt *WareHouseDestinationTest) {
@@ -450,7 +461,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 }
 
 func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
-	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	tables := []string{"identifies", "users", "tracks", strcase.ToSnake(wdt.Event), "pages", "screens", "aliases", "groups"}
 	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 
 	if len(wdt.Tables) != 0 {
@@ -473,7 +484,7 @@ func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
 			count, _ = queryCount(wdt.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor2Min, wdt.VerifyingTablesFrequency)
+		require.Eventually(t, condition, WaitFor5Min, wdt.VerifyingTablesFrequency)
 	}
 }
 
@@ -483,4 +494,40 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
+}
+
+func SetUpJobsDB() (jobsDB *JobsDBResource) {
+	pgCredentials := &postgres.CredentialsT{
+		DBName:   "jobsdb",
+		Password: "password",
+		User:     "rudder",
+		Host:     "localhost",
+		SSLMode:  "disable",
+		Port:     "54328",
+	}
+	jobsDB = &JobsDBResource{}
+	jobsDB.Credentials = pgCredentials
+
+	var err error
+	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
+		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
+	}
+	if err = jobsDB.DB.Ping(); err != nil {
+		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
+	}
+	return
+}
+
+func initialize() {
+	config.Load()
+	logger.Init()
+	stats.Init()
+	stats.Setup()
+	postgres.Init()
+	clickhouse.Init()
+	mssql.Init()
+	bigquery.Init()
+	snowflake.Init()
+	redshift.Init()
+	deltalake.Init()
 }

@@ -4,6 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"runtime/pprof"
 
 	"strings"
@@ -146,6 +155,8 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
+	bigquery.Init()
+	clickhouse.Init()
 	archiver.Init()
 	destinationdebugger.Init()
 	pgnotifier.Init()
@@ -153,22 +164,19 @@ func runAllInit() {
 	jobsdb.Init2()
 	jobsdb.Init3()
 	destination_connection_tester.Init()
-	//warehouse.Init()
-	//warehouse.Init2()
-	//warehouse.Init3()
-	//warehouse.Init4()
-	//warehouse.Init5()
-	//warehouse.Init6()
-	//configuration_testing.Init()
-	//azuresynapse.Init()
-	//bigquery.Init()
-	//clickhouse.Init()
-	//deltalake.Init()
-	//datalake.Init()
-	//mssql.Init()
-	//postgres.Init()
-	//redshift.Init()
-	//snowflake.Init()
+	warehouse.Init()
+	warehouse.Init2()
+	warehouse.Init3()
+	warehouse.Init4()
+	warehouse.Init5()
+	warehouse.Init6()
+	configuration_testing.Init()
+	azuresynapse.Init()
+	mssql.Init()
+	postgres.Init()
+	redshift.Init()
+	snowflake.Init()
+	deltalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()

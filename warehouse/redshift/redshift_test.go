@@ -1,4 +1,4 @@
-package redshift
+package redshift_test
 
 import (
 	"database/sql"
@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
 	"log"
 	"os"
 	"strings"
@@ -69,19 +70,18 @@ func (*RedshiftTest) EnhanceWorkspaceConfig(configMap map[string]string) {
 }
 
 func (*RedshiftTest) SetUpDestination() {
-	RSTest.WriteKey = util.RandString(27)
+	RSTest.WriteKey = testhelper.RandString(27)
 	RSTest.Credentials = rsCredentials()
 	RSTest.EventsMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       6,
-		"batchRT":       8,
+		"identifies": 1,
+		"users":      1,
+		"tracks":     1,
+		"pages":      1,
+		"screens":    1,
+		"aliases":    1,
+		"groups":     1,
+		"gateway":    6,
+		"batchRT":    8,
 	}
 	RSTest.TableTestQueryFreq = 5000 * time.Millisecond
 
@@ -89,7 +89,7 @@ func (*RedshiftTest) SetUpDestination() {
 
 	operation := func() error {
 		var err error
-		RSTest.DB, err = Connect(RedshiftCredentialsT{
+		RSTest.DB, err = redshift.Connect(redshift.RedshiftCredentialsT{
 			Host:     RSTest.Credentials.Host,
 			Port:     RSTest.Credentials.Port,
 			DbName:   RSTest.Credentials.Database,
@@ -126,15 +126,19 @@ func TestRedshift(t *testing.T) {
 		EventsCountMap:           RSTest.EventsMap,
 		WriteKey:                 RSTest.WriteKey,
 		UserId:                   fmt.Sprintf("userId_redshift_%s", randomness),
+		Event:                    fmt.Sprintf("Product Track %s", randomness),
 		Schema:                   "redshift_wh_integration",
 		VerifyingTablesFrequency: RSTest.TableTestQueryFreq,
 	}
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_redshift_%s", randomness)
+	whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
+	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }
