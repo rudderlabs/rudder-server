@@ -156,5 +156,5 @@ func (workspaceConfig *SingleWorkspaceConfig) IsConfigured() bool {
 	if configFromFile {
 		return true
 	}
-	return workspaceConfig.Token != ""
+	return workspaceConfig.Token != "" || config.GetEnv("RSERVER_WAREHOUSE_MODE", "") == "slave"
 }
