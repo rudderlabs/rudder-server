@@ -24,7 +24,7 @@ var (
 	db     *sql.DB
 )
 
-func TestMain(m *testing.M) {
+func TestMain(m *testing.M) { // TODO: move this inside TestSourcesHandler
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -69,6 +69,18 @@ func TestMain(m *testing.M) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
+}
+
+func TestMultitenantSourcesHandler(t *testing.T) {
+	// Create 3 postgresql using wal_level logical (pgA, pgB, pgC)
+
+	// Start 2 JobServices
+	// 1. js1 with local=pgA, remote=pgC
+	// 2. js2 with local=pgB, remote=pgC
+
+	// Increment the same jobRunId from both services
+	// Query both services for the jobRunId and verify that same results are generated (use require.Eventually)
+
 }
 
 func TestSourcesHandler(t *testing.T) {
