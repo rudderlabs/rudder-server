@@ -104,7 +104,7 @@ func (*DeltalakeTest) SetUpDestination() {
 	return
 }
 
-func TestDeltalake(t *testing.T) {
+func TestDeltalakeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}

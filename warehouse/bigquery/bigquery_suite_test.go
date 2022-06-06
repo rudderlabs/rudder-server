@@ -1,6 +1,13 @@
 package bigquery_test
 
-//func TestBigquery(t *testing.T) {
-//	RegisterFailHandler(Fail)
-//	RunSpecs(t, "Bigquery Suite")
-//}
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+)
+
+func TestBigquery(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Bigquery Suite")
+}

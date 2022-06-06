@@ -64,7 +64,7 @@ func (*MSSQLTest) SetUpDestination() {
 	return
 }
 
-func TestMSSQL(t *testing.T) {
+func TestMSSQLIntegration(t *testing.T) {
 	t.Parallel()
 
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")

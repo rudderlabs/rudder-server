@@ -1,6 +1,13 @@
 package postgres_test
 
-//func TestPostgres(t *testing.T) {
-//	RegisterFailHandler(Fail)
-//	RunSpecs(t, "Postgres Suite")
-//}
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+)
+
+func TestPostgres(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Postgres Suite")
+}

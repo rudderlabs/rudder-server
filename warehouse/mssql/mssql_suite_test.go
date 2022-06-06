@@ -1,4 +1,4 @@
-package clickhouse_test
+package mssql_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestClickhouse(t *testing.T) {
+func TestMssql(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Clickhouse Suite")
+	RunSpecs(t, "Mssql Suite")
 }

@@ -106,7 +106,7 @@ func (*RedshiftTest) SetUpDestination() {
 	return
 }
 
-func TestRedshift(t *testing.T) {
+func TestRedshiftIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}

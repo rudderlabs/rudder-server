@@ -131,7 +131,7 @@ func (*BiqQueryTest) SetUpDestination() {
 	return
 }
 
-func TestBigquery(t *testing.T) {
+func TestBigQueryIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}

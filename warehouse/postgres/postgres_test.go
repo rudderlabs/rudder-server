@@ -64,7 +64,7 @@ func (*PostgresTest) SetUpDestination() {
 	return
 }
 
-func TestPostgres(t *testing.T) {
+func TestPostgresIntegration(t *testing.T) {
 	t.Parallel()
 
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")

@@ -1,4 +1,4 @@
-package clickhouse_test
+package deltalake_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestClickhouse(t *testing.T) {
+func TestDeltalake(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Clickhouse Suite")
+	RunSpecs(t, "Deltalake Suite")
 }

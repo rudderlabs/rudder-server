@@ -106,7 +106,7 @@ func (*SnowflakeTest) SetUpDestination() {
 	return
 }
 
-func TestSnowflake(t *testing.T) {
+func TestSnowflakeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}

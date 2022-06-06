@@ -191,7 +191,7 @@ func SetUpClickHouseClusterDestination() {
 	return
 }
 
-func TestClickHouse(t *testing.T) {
+func TestClickHouseIntegration(t *testing.T) {
 	t.Parallel()
 
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
@@ -346,7 +346,7 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 	}
 }
 
-func TestClickHouseCluster(t *testing.T) {
+func TestClickHouseClusterIntegration(t *testing.T) {
 	t.Parallel()
 
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
