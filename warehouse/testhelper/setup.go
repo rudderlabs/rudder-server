@@ -5,7 +5,7 @@ import (
 	b64 "encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper/server"
+	r "github.com/rudderlabs/rudder-server/cmd/run"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper/temp"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
 	"io"
@@ -64,8 +64,8 @@ func Setup(m *testing.M, setup ISetup) int {
 		}
 	}()
 
-	// Initializing config
-	temp.Init()
+	//// Initializing config
+	//temp.Init()
 
 	// Setting up jobsDB
 	jobsDB = temp.SetUpJobsDB()
@@ -117,7 +117,7 @@ func Setup(m *testing.M, setup ISetup) int {
 	setup.EnhanceWorkspaceConfig(workspaceConfigMap)
 
 	// Setting up workspace
-	workspaceConfigPath := CreateWorkspaceConfig("testdata/workspaceConfigMap/template.json", workspaceConfigMap)
+	workspaceConfigPath := CreateWorkspaceConfig("../testdata/workspaceConfig/template.json", workspaceConfigMap)
 	log.Println("workspace config path:", workspaceConfigPath)
 	defer func() {
 		err := os.Remove(workspaceConfigPath)
@@ -140,7 +140,12 @@ func Setup(m *testing.M, setup ISetup) int {
 	_ = os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 
 	// Starting rudder server and rudder warehouse
-	svcCancel, svcDone := server.StartServer()
+	svcCtx, svcCancel := context.WithCancel(context.Background())
+	svcDone := make(chan struct{})
+	go func() {
+		r.Run(svcCtx)
+		close(svcDone)
+	}()
 
 	// Checking health endpoint for rudder server
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)

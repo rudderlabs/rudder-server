@@ -247,7 +247,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 		return
 	}
 	if connectionResponse.GetErrorCode() != "" {
-		err = fmt.Errorf("error connecting to Delta lake with response: %w", connectionResponse.GetErrorMessage())
+		err = fmt.Errorf("error connecting to Delta lake with response: %s", connectionResponse.GetErrorMessage())
 		return
 	}
 

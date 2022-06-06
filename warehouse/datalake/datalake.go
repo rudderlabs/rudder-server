@@ -15,7 +15,7 @@ var (
 	pkgLogger logger.LoggerI
 )
 
-func init() {
+func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake")
 }
 

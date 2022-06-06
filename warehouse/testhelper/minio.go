@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/minio/minio-go"
+	"log"
 	"net/http"
 	"strconv"
 )
@@ -26,7 +27,7 @@ func SetupMinio() *MinioResource {
 		return nil
 	}
 	if err := backoff.Retry(operation, backoff.NewExponentialBackOff()); err != nil {
-		panic(fmt.Sprintf("Error while checking health status of minio with error: %s", err.Error()))
+		log.Panicf("Error while checking health status of minio with error: %s", err.Error())
 	}
 
 	var minioClient *minio.Client
@@ -35,7 +36,7 @@ func SetupMinio() *MinioResource {
 	// now we can instantiate minio client
 	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
 	if err != nil {
-		panic(fmt.Sprintf("Error while instantiate minio client with error: %s", err.Error()))
+		log.Panicf("Error while instantiate minio client with error: %s", err.Error())
 	}
 
 	// Create bucket for MINIO
@@ -46,7 +47,7 @@ func SetupMinio() *MinioResource {
 		var exists bool
 		exists, err = minioClient.BucketExists(minioBucketName)
 		if !exists || err != nil {
-			panic(fmt.Sprintf("Error while making minio bucket with error: %s", err.Error()))
+			log.Panicf("Error while making minio bucket with error: %s", err.Error())
 		}
 	}
 

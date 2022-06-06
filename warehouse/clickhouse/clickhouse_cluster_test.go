@@ -1,98 +1,130 @@
-package integration__tests
+package clickhouse
 
 import (
+	"database/sql"
 	"fmt"
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/integration__tests/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper/util"
 	"github.com/stretchr/testify/require"
+	"log"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
-// SetupClickHouseCluster setup warehouse clickhouse cluster mode destination
-func SetupClickHouseCluster() (chClusterTest *testhelper.ClickHouseClusterTest) {
-	chClusterTest = &testhelper.ClickHouseClusterTest{
-		WriteKey: testhelper.RandString(27),
-		EventsMap: testhelper.EventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
-		},
-		Resources: []*testhelper.ClickHouseClusterResource{
-			{
-				Name:     "clickhouse01",
-				HostName: "clickhouse01",
-				Credentials: &clickhouse.CredentialsT{
-					Host:          "localhost",
-					User:          "rudder",
-					Password:      "rudder-password",
-					DBName:        "rudderdb",
-					Secure:        "false",
-					SkipVerify:    "true",
-					TLSConfigName: "",
-					Port:          "54324",
-				},
-			},
-			{
-				Name:     "clickhouse02",
-				HostName: "clickhouse02",
-				Credentials: &clickhouse.CredentialsT{
-					Host:          "localhost",
-					User:          "rudder",
-					Password:      "rudder-password",
-					DBName:        "rudderdb",
-					Secure:        "false",
-					SkipVerify:    "true",
-					TLSConfigName: "",
-					Port:          "54325",
-				},
-			},
-			{
-				Name:     "clickhouse03",
-				HostName: "clickhouse03",
-				Credentials: &clickhouse.CredentialsT{
-					Host:          "localhost",
-					User:          "rudder",
-					Password:      "rudder-password",
-					DBName:        "rudderdb",
-					Secure:        "false",
-					SkipVerify:    "true",
-					TLSConfigName: "",
-					Port:          "54326",
-				},
-			},
-			{
-				Name:     "clickhouse04",
-				HostName: "clickhouse04",
-				Credentials: &clickhouse.CredentialsT{
-					Host:          "localhost",
-					User:          "rudder",
-					Password:      "rudder-password",
-					DBName:        "rudderdb",
-					Secure:        "false",
-					SkipVerify:    "true",
-					TLSConfigName: "",
-					Port:          "54327",
-				},
-			},
-		},
-		TableTestQueryFreq: 100 * time.Millisecond,
+type ClickHouseClusterResource struct {
+	Name        string
+	HostName    string
+	IPAddress   string
+	Credentials *CredentialsT
+	Port        string
+	DB          *sql.DB
+}
+
+type ClickHouseClusterResources []*ClickHouseClusterResource
+
+type ClickHouseClusterTest struct {
+	Resources          ClickHouseClusterResources
+	EventsMap          testhelper.EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
+}
+
+var (
+	CHClusterTest *ClickHouseClusterTest
+)
+
+func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource {
+	if len(resources.Resources) == 0 {
+		log.Panic("No such clickhouse cluster resource available.")
 	}
+	return resources.Resources[0]
+}
+
+func (*ClickHouseClusterTest) EnhanceWorkspaceConfig(configMap map[string]string) {
+	configMap["clickHouseClusterWriteKey"] = CHClusterTest.WriteKey
+	configMap["clickHouseClusterPort"] = CHClusterTest.GetResource().Credentials.Port
+}
+
+func (*ClickHouseClusterTest) SetUpDestination() {
+	CHClusterTest.WriteKey = util.RandString(27)
+	CHClusterTest.Resources = []*ClickHouseClusterResource{
+		{
+			Name:     "clickhouse01",
+			HostName: "clickhouse01",
+			Credentials: &CredentialsT{
+				Host:          "localhost",
+				User:          "rudder",
+				Password:      "rudder-password",
+				DBName:        "rudderdb",
+				Secure:        "false",
+				SkipVerify:    "true",
+				TLSConfigName: "",
+				Port:          "54324",
+			},
+		},
+		{
+			Name:     "clickhouse02",
+			HostName: "clickhouse02",
+			Credentials: &CredentialsT{
+				Host:          "localhost",
+				User:          "rudder",
+				Password:      "rudder-password",
+				DBName:        "rudderdb",
+				Secure:        "false",
+				SkipVerify:    "true",
+				TLSConfigName: "",
+				Port:          "54325",
+			},
+		},
+		{
+			Name:     "clickhouse03",
+			HostName: "clickhouse03",
+			Credentials: &CredentialsT{
+				Host:          "localhost",
+				User:          "rudder",
+				Password:      "rudder-password",
+				DBName:        "rudderdb",
+				Secure:        "false",
+				SkipVerify:    "true",
+				TLSConfigName: "",
+				Port:          "54326",
+			},
+		},
+		{
+			Name:     "clickhouse04",
+			HostName: "clickhouse04",
+			Credentials: &CredentialsT{
+				Host:          "localhost",
+				User:          "rudder",
+				Password:      "rudder-password",
+				DBName:        "rudderdb",
+				Secure:        "false",
+				SkipVerify:    "true",
+				TLSConfigName: "",
+				Port:          "54327",
+			},
+		},
+	}
+	CHClusterTest.EventsMap = testhelper.EventsCountMap{
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       6,
+		"batchRT":       8,
+	}
+	CHClusterTest.TableTestQueryFreq = 100 * time.Millisecond
 
 	var err error
-	for i, chResource := range chClusterTest.Resources {
-		if chResource.DB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
+	for i, chResource := range CHClusterTest.Resources {
+		if chResource.DB, err = Connect(*chResource.Credentials, true); err != nil {
 			panic(fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %s", i, err.Error()))
 		}
 		if err = chResource.DB.Ping(); err != nil {
@@ -102,14 +134,12 @@ func SetupClickHouseCluster() (chClusterTest *testhelper.ClickHouseClusterTest) 
 	return
 }
 
-// initializeClickhouseClusterMode Initialize cluster mode setup
 func initializeClickhouseClusterMode(t *testing.T) {
 	type ColumnInfoT struct {
 		ColumnName string
 		ColumnType string
 	}
 
-	chClusterTest := CHClusterTest
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	tableColumnInfoMap := map[string][]ColumnInfoT{
 		"identifies": {
@@ -201,19 +231,19 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	// Rename tables to tables_shard
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
-		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
+		_, err := CHClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Create distribution views for tables
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(received_at), id)));", table)
-		_, err := chClusterTest.GetResource().DB.Exec(sqlStatement)
+		_, err := CHClusterTest.GetResource().DB.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Alter columns to all the cluster tables
-	for _, chResource := range chClusterTest.Resources {
+	for _, chResource := range CHClusterTest.Resources {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			for _, columnInfo := range columnInfos {
 				sqlStatement := fmt.Sprintf("ALTER TABLE rudderdb.%[1]s_shard ADD COLUMN IF NOT EXISTS %[2]s %[3]s;", tableName, columnInfo.ColumnName, columnInfo.ColumnType)
@@ -227,28 +257,27 @@ func initializeClickhouseClusterMode(t *testing.T) {
 func TestClickHouseCluster(t *testing.T) {
 	t.Parallel()
 
-	chClusterTest := CHClusterTest
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
-			SQL:  chClusterTest.GetResource().DB,
+			SQL:  CHClusterTest.GetResource().DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:     chClusterTest.EventsMap,
-		WriteKey:           chClusterTest.WriteKey,
-		UserId:             fmt.Sprintf("userId_clickhouse_cluster_%s", randomness),
-		Schema:             "rudderdb",
-		TableTestQueryFreq: chClusterTest.TableTestQueryFreq,
+		EventsCountMap:           CHClusterTest.EventsMap,
+		WriteKey:                 CHClusterTest.WriteKey,
+		UserId:                   fmt.Sprintf("userId_clickhouse_cluster_%s", randomness),
+		Schema:                   "rudderdb",
+		VerifyingTablesFrequency: CHClusterTest.TableTestQueryFreq,
 	}
-	sendEvents(whDestTest)
-	destinationTest(t, whDestTest)
+	testhelper.SendEvents(t, whDestTest)
+	testhelper.VerifyingDestination(t, whDestTest)
 
 	initializeClickhouseClusterMode(t)
 
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_cluster%s", randomness)
-	sendUpdatedEvents(whDestTest)
+	testhelper.SendModifiedEvents(t, whDestTest)
 
 	// Update events count Map
 	// This is required as because of the cluster mode setup and distributed view, events are getting duplicated.
@@ -264,5 +293,5 @@ func TestClickHouseCluster(t *testing.T) {
 		"gateway":       6,
 		"batchRT":       8,
 	}
-	destinationTest(t, whDestTest)
+	testhelper.VerifyingDestination(t, whDestTest)
 }
