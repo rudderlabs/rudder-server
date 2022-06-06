@@ -160,7 +160,7 @@ func (sh *sourcesHandler) readDB() *sql.DB {
 
 func (sh *sourcesHandler) init() error {
 	ctx := context.TODO()
-	err := setupStatsTable(ctx, sh.localDB, sh.config.Host)
+	err := setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
 	if err != nil {
 		return fmt.Errorf("failed to setup local stats table: %w", err)
 	}
@@ -218,7 +218,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 			return fmt.Errorf("failed to create publication on local database: %w", err)
 		}
 	}
-	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", sh.config.Host)
+	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", sh.config.LocalHostname)
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionQuery := `CREATE SUBSCRIPTION $1 CONNECTION $2 PUBLICATION "rsources_stats_pub"`
 	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery, subscriptionName, sh.config.LocalConnection)

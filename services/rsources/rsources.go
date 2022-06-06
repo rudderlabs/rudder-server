@@ -80,7 +80,7 @@ type StatsIncrementer interface {
 }
 
 type JobServiceConfig struct {
-	Host             string
+	LocalHostname    string
 	MaxPoolSize      int
 	LocalConnection  string
 	SharedConnection string
@@ -126,6 +126,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		localDB.SetMaxOpenConns(config.MaxPoolSize)
 	}
 	handler := &sourcesHandler{
+		config:   config,
 		localDB:  localDB,
 		sharedDB: sharedDB,
 	}

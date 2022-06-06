@@ -82,7 +82,7 @@ func TestSourcesHandler(t *testing.T) {
 	prepareService := func() (JobService, string) {
 		jobRunId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 		config := JobServiceConfig{
-			Host:            "localhost",
+			LocalHostname:   "localhost",
 			MaxPoolSize:     1,
 			LocalConnection: DB_DSN,
 		}
