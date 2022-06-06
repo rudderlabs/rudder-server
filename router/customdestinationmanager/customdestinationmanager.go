@@ -220,6 +220,8 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 }
 
 func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error { // skipcq: CRT-P0003
+	customManager.mapLock.Lock()
+	defer customManager.mapLock.Unlock()
 	var err error
 	clientLock, ok := customManager.clientLock[destination.ID]
 	if !ok {
@@ -308,7 +310,6 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
-		customManager.mapLock.Lock()
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
@@ -317,7 +318,6 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
-		customManager.mapLock.Unlock()
 	}
 }
 
