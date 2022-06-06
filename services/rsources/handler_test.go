@@ -81,7 +81,12 @@ func TestSourcesHandler(t *testing.T) {
 
 	prepareService := func() (JobService, string) {
 		jobRunId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-		sh, err := NewJobService(db)
+		config := JobServiceConfig{
+			Host:            "localhost",
+			MaxPoolSize:     1,
+			LocalConnection: DB_DSN,
+		}
+		sh, err := NewJobService(config)
 		require.NoError(t, err, "it should be able to create the service")
 
 		key := JobTargetKey{

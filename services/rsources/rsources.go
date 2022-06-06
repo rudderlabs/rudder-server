@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-
-	"github.com/rudderlabs/rudder-server/services/rsources/internal/extension"
+	"fmt"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -80,6 +79,13 @@ type StatsIncrementer interface {
 	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
 }
 
+type JobServiceConfig struct {
+	Host             string
+	MaxPoolSize      int
+	LocalConnection  string
+	SharedConnection string
+}
+
 // JobService manages information about jobs created by rudder-sources
 type JobService interface {
 	StatsIncrementer
@@ -100,24 +106,30 @@ type JobService interface {
 	CleanupLoop(ctx context.Context) error
 }
 
-func NewJobService(db *sql.DB) (JobService, error) {
-	defExt, err := extension.NewStandardExtension(db)
-	if err != nil {
-		return nil, err
-	}
-	return &sourcesHandler{
-		Extension: defExt,
-	}, nil
-}
+func NewJobService(config JobServiceConfig) (JobService, error) {
+	var (
+		localDB, sharedDB *sql.DB
+		err               error
+	)
 
-func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) (JobService, error) {
-	multiExt, err := extension.NewMultitenantExtension(db, readDB)
+	localDB, err = sql.Open("postgres", config.LocalConnection)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
-	return &sourcesHandler{
-		Extension: multiExt,
-	}, nil
+	localDB.SetMaxOpenConns(config.MaxPoolSize)
+
+	if config.SharedConnection != "" {
+		sharedDB, err = sql.Open("postgres", config.SharedConnection)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
+		}
+		localDB.SetMaxOpenConns(config.MaxPoolSize)
+	}
+	handler := &sourcesHandler{
+		localDB:  localDB,
+		sharedDB: sharedDB,
+	}
+	return handler, handler.init()
 }
 
 func NewNoOpService() JobService {
