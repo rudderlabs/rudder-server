@@ -37,19 +37,21 @@ var (
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
 	SendData(jsonData json.RawMessage, destID string) (int, string)
+	BackendConfigInitialized() <-chan struct{}
 }
 
 // CustomManagerT handles this module
 type CustomManagerT struct {
-	destType       string
-	managerType    string
-	mapLock        sync.RWMutex
-	clientLock     map[string]*sync.RWMutex
-	client         map[string]*clientHolder
-	config         map[string]backendconfig.DestinationT
-	breaker        map[string]breakerHolder
-	timeout        time.Duration
-	breakerTimeout time.Duration
+	destType                 string
+	managerType              string
+	mapLock                  sync.RWMutex
+	clientLock               map[string]*sync.RWMutex
+	client                   map[string]*clientHolder
+	config                   map[string]backendconfig.DestinationT
+	breaker                  map[string]breakerHolder
+	timeout                  time.Duration
+	breakerTimeout           time.Duration
+	backendConfigInitialized chan struct{}
 }
 
 //clientHolder keeps the config of a destination and corresponding producer for a stream destination
@@ -285,18 +287,22 @@ func New(destType string, o Opts) DestinationManager {
 		}
 
 		customManager = &CustomManagerT{
-			timeout:     o.Timeout,
-			destType:    destType,
-			managerType: managerType,
-			client:      make(map[string]*clientHolder),
-			clientLock:  make(map[string]*sync.RWMutex),
-			config:      make(map[string]backendconfig.DestinationT),
-			breaker:     make(map[string]breakerHolder),
+			timeout:                  o.Timeout,
+			destType:                 destType,
+			managerType:              managerType,
+			client:                   make(map[string]*clientHolder),
+			clientLock:               make(map[string]*sync.RWMutex),
+			config:                   make(map[string]backendconfig.DestinationT),
+			breaker:                  make(map[string]breakerHolder),
+			backendConfigInitialized: make(chan struct{}),
 		}
+
 		if !skipBackendConfigSubscriber {
 			rruntime.Go(func() {
 				customManager.backendConfigSubscriber()
 			})
+		} else {
+			close(customManager.backendConfigInitialized)
 		}
 
 		return customManager
@@ -305,7 +311,12 @@ func New(destType string, o Opts) DestinationManager {
 	return nil
 }
 
+func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} {
+	return customManager.backendConfigInitialized
+}
+
 func (customManager *CustomManagerT) backendConfigSubscriber() {
+	var once sync.Once
 	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
@@ -318,6 +329,9 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
+		once.Do(func() {
+			customManager.backendConfigInitialized <- struct{}{}
+		})
 	}
 }
 

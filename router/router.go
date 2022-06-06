@@ -103,7 +103,6 @@ type HandleT struct {
 	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
 	throttler                              throttler.Throttler
-	throttlerMutex                         sync.RWMutex
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
 	enableBatching                         bool
@@ -2306,6 +2305,9 @@ func (rt *HandleT) Start() {
 	ctx := rt.backgroundCtx
 	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
+		if rt.customDestinationManager != nil {
+			<-rt.customDestinationManager.BackendConfigInitialized()
+		}
 		rt.generatorLoop(ctx)
 		return nil
 	})
