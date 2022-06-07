@@ -16,6 +16,7 @@ import (
 	"github.com/gofrs/uuid"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
+	assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,13 +25,61 @@ var (
 	db     *sql.DB
 )
 
-func TestMain(m *testing.M) { // TODO: move this inside TestSourcesHandler
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+func TestMain(m *testing.M) {
+	code := m.Run()
+	// blockOnHold()
+	defer os.Exit(code)
+}
+
+func TestMultitenantSourcesHandler(t *testing.T) {
+
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+	// Create 3 postgresql using wal_level logical (pgA, pgB, pgC)
+	pgA, pgA_DSN := dbResource(pool)
+	pgB, pgB_DSN := dbResource(pool)
+	pgC, pgC_DSN := dbResource(pool)
+	defer purgeResource(pool, pgA, pgB, pgC)
 
+	// Start 2 JobServices
+	// 1. js1 with local=pgA, remote=pgC
+	// 2. js2 with local=pgB, remote=pgC
+	// Increment the same jobRunId from both services
+	ctx := context.Background()
+	shA, jobRunIdA := prepareService(ctx, Stats{
+		In:     10,
+		Out:    4,
+		Failed: 6,
+	}, t, pgA_DSN, pgC_DSN, "job_run_id")
+	shB, jobRunIdB := prepareService(ctx, Stats{
+		In:     10,
+		Out:    4,
+		Failed: 6,
+	}, t, pgB_DSN, pgC_DSN, "job_run_id")
+
+	require.Equal(t, jobRunIdA, jobRunIdB, "jobRunIds should be the same")
+	// Query both services for the jobRunId and verify that same results are generated (use require.Eventually)
+	t.Run("Status from both services should be same", func(t *testing.T) {
+		require.Eventually(t, func() bool {
+			statsA, err := shA.GetStatus(ctx, jobRunIdA, JobFilter{
+				SourceID:  []string{"source_id"},
+				TaskRunID: []string{"task_run_id"},
+			})
+			require.NoError(t, err, "it should be able to get stats from JobServiceA")
+			statsB, err := shB.GetStatus(ctx, jobRunIdB, JobFilter{
+				SourceID:  []string{"source_id"},
+				TaskRunID: []string{"task_run_id"},
+			})
+			require.NoError(t, err, "it should be able to get stats from JobServiceA")
+			return assert.Equal(t, statsA, statsB)
+		}, 10*time.Second, 10*time.Millisecond, "Status from both services should be same")
+	})
+
+}
+
+func dbResource(pool *dockertest.Pool) (*dockertest.Resource, string) {
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
 	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
@@ -41,7 +90,6 @@ func TestMain(m *testing.M) { // TODO: move this inside TestSourcesHandler
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-
 	port := resourcePostgres.GetPort("5432/tcp")
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
 	fmt.Println("DB_DSN:", DB_DSN)
@@ -60,30 +108,57 @@ func TestMain(m *testing.M) { // TODO: move this inside TestSourcesHandler
 	}); err != nil {
 		log.Fatalf("Could not connect to docker after backoff: %s", err)
 	}
-
-	code := m.Run()
-	// blockOnHold()
-	defer os.Exit(code)
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	return resourcePostgres, DB_DSN
 }
 
-func TestMultitenantSourcesHandler(t *testing.T) {
-	// Create 3 postgresql using wal_level logical (pgA, pgB, pgC)
+func purgeResource(pool *dockertest.Pool, resources ...*dockertest.Resource) {
+	for _, resource := range resources {
+		err := pool.Purge(resource)
+		if err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}
+}
 
-	// Start 2 JobServices
-	// 1. js1 with local=pgA, remote=pgC
-	// 2. js2 with local=pgB, remote=pgC
+func prepareService(ctx context.Context, stats Stats, t *testing.T, localDSN, sharedDSN, jobRunId string) (JobService, string) {
+	if jobRunId == "" {
+		jobRunId = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	}
+	config := JobServiceConfig{
+		LocalHostname:   "localhost",
+		MaxPoolSize:     1,
+		LocalConnection: DB_DSN,
+	}
+	sh, err := NewJobService(config)
+	require.NoError(t, err, "it should be able to create the service")
 
-	// Increment the same jobRunId from both services
-	// Query both services for the jobRunId and verify that same results are generated (use require.Eventually)
+	key := JobTargetKey{
+		SourceID:      "source_id",
+		DestinationID: "destination_id",
+		TaskRunID:     "task_run_id",
+	}
 
+	tx, err := db.Begin()
+	require.NoError(t, err, "it should be able to begin the transaction")
+
+	require.NoError(t, sh.IncrementStats(ctx, tx, jobRunId, key, stats), "it should be able to increment stats")
+
+	require.NoError(t, tx.Commit(), "it should be able to commit the transaction")
+	return sh, jobRunId
 }
 
 func TestSourcesHandler(t *testing.T) {
+	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	resourcePostgres, DB_DSN := dbResource(pool)
+	defer func() {
+		purgeResource(pool, resourcePostgres)
+	}()
+
 	ctx := context.Background()
 	stats := Stats{
 		In:     10,
@@ -91,33 +166,8 @@ func TestSourcesHandler(t *testing.T) {
 		Failed: 6,
 	}
 
-	prepareService := func() (JobService, string) {
-		jobRunId := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-		config := JobServiceConfig{
-			LocalHostname:   "localhost",
-			MaxPoolSize:     1,
-			LocalConnection: DB_DSN,
-		}
-		sh, err := NewJobService(config)
-		require.NoError(t, err, "it should be able to create the service")
-
-		key := JobTargetKey{
-			SourceID:      "source_id",
-			DestinationID: "destination_id",
-			TaskRunID:     "task_run_id",
-		}
-
-		tx, err := db.Begin()
-		require.NoError(t, err, "it should be able to begin the transaction")
-
-		require.NoError(t, sh.IncrementStats(ctx, tx, jobRunId, key, stats), "it should be able to increment stats")
-
-		require.NoError(t, tx.Commit(), "it should be able to commit the transaction")
-		return sh, jobRunId
-	}
-
 	t.Run("Get Status", func(t *testing.T) {
-		sh, jobRunId := prepareService()
+		sh, jobRunId := prepareService(ctx, stats, t, DB_DSN, "", "")
 		jobFilters := JobFilter{
 			SourceID:  []string{"source_id"},
 			TaskRunID: []string{"task_run_id"},
@@ -152,7 +202,7 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("Delete clears all the pertinent tables(for now the stats table only)", func(t *testing.T) {
-		sh, jobRunId := prepareService()
+		sh, jobRunId := prepareService(ctx, stats, t, DB_DSN, "", "")
 		tx, err := db.Begin()
 		require.NoError(t, err, "it should be able to begin the transaction")
 		err = sh.Delete(ctx, jobRunId)
@@ -171,7 +221,7 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("GetStatus with filtering", func(t *testing.T) {
-		sh, jobRunId := prepareService()
+		sh, jobRunId := prepareService(ctx, stats, t, DB_DSN, "", "")
 		wg := &sync.WaitGroup{}
 		wg.Add(5)
 		go increment(ctx, t, db, jobRunId, JobTargetKey{
@@ -305,7 +355,7 @@ func TestSourcesHandler(t *testing.T) {
 	})
 
 	t.Run("Cleanup loop", func(t *testing.T) {
-		sh, _ := prepareService()
+		sh, _ := prepareService(ctx, stats, t, DB_DSN, "", "")
 		ts := time.Now().Add(-48 * time.Hour)
 		stmt, err := db.Prepare(`update "rsources_stats" set ts = $1`)
 		require.NoError(t, err)
