@@ -325,7 +325,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 			}
 		}
 		once.Do(func() {
-			customManager.backendConfigInitialized <- struct{}{}
+			close(customManager.backendConfigInitialized)
 		})
 	}
 }
