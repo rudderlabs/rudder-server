@@ -1657,12 +1657,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 
 			// rsources stats
-			rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
-			rsourcesStats.BeginProcessing(completedJobsList)
-			rsourcesStats.JobStatusesUpdated(statusList)
-			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			err = rt.updateRudderSourcesStats(context.TODO(), tx, completedJobsList, statusList)
 			if err != nil {
-				rt.logger.Errorf("[Router] :: Error occurred while publishing rsources stats. Err: %v", err)
 				return err
 			}
 
@@ -2125,12 +2121,8 @@ func (rt *HandleT) readAndProcess() int {
 				return err
 			}
 			// rsources stats
-			rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
-			rsourcesStats.BeginProcessing(drainJobList)
-			rsourcesStats.JobStatusesUpdated(drainList)
-			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
 			if err != nil {
-				pkgLogger.Errorf("Error occurred while publishing rsources stats. Err: %w", err)
 				return err
 			}
 
@@ -2487,4 +2479,16 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
 	}
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
+}
+
+func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+
+	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
+	rsourcesStats.BeginProcessing(jobs)
+	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	err := rsourcesStats.Publish(ctx, tx.Tx())
+	if err != nil {
+		rt.logger.Errorf("[Router] Error occurred while publishing rsources stats. Err: %v", err)
+	}
+	return err
 }

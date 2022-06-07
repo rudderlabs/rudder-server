@@ -490,7 +490,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 
 									// rsources stats
-									return brt.updateSourcesStats(context.TODO(), tx, importingList, statusList)
+									return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -554,7 +554,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 
 									// rsources stats
-									return brt.updateSourcesStats(context.TODO(), tx, importingList, statusList)
+									return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -1344,7 +1344,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		// rsources stats
-		err = brt.updateSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
+		err = brt.updateRudderSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
 		if err != nil {
 			return err
 		}
@@ -1729,7 +1729,7 @@ func (worker *workerT) workerProcess() {
 					}
 
 					// rsources stats
-					return brt.updateSourcesStats(context.TODO(), tx, drainJobList, drainList)
+					return brt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
 
 				})
 				if err != nil {
@@ -2372,7 +2372,7 @@ func (brt *HandleT) Shutdown() {
 	_ = brt.backgroundWait()
 }
 
-func (brt *HandleT) updateSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
 
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)

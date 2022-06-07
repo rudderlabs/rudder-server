@@ -1565,9 +1565,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			}
 
 			// rsources stats
-			brouterStats := rsources.NewStatsCollector(proc.rsourcesService)
-			brouterStats.JobsStored(batchDestJobs)
-			err = brouterStats.Publish(context.TODO(), tx.Tx())
+			err = proc.updateRudderSourcesStats(context.TODO(), tx, batchDestJobs)
 			if err != nil {
 				proc.logger.Errorf("Publishing rsources stats for batch router failed with error: %v", err)
 				proc.logger.Errorf("batchDestJobs: %v", destJobs)
@@ -1607,9 +1605,7 @@ func (proc *HandleT) Store(in storeMessage) {
 			}
 
 			// rsources stats
-			routerStats := rsources.NewStatsCollector(proc.rsourcesService)
-			routerStats.JobsStored(destJobs)
-			err = routerStats.Publish(context.TODO(), tx.Tx())
+			err = proc.updateRudderSourcesStats(context.TODO(), tx, destJobs)
 			if err != nil {
 				proc.logger.Errorf("Publishing rsources stats for router failed with error: %v", err)
 				proc.logger.Errorf("destJobs: %v", destJobs)
@@ -2507,4 +2503,11 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 
 func (proc *HandleT) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
+}
+
+func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats.JobsStored(jobs)
+	err := rsourcesStats.Publish(ctx, tx.Tx())
+	return err
 }
