@@ -213,7 +213,7 @@ type BackendConfig interface {
 	IsConfigured() bool
 }
 type CommonBackendConfig struct {
-	eb               pubsub.PublishSubscriber
+	eb               *pubsub.PublishSubscriber
 	configEnvHandler types.ConfigEnvI
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -277,7 +277,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func configUpdate(eb pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
+func configUpdate(eb *pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
 
 	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
@@ -306,7 +306,7 @@ func configUpdate(eb pubsub.PublishSubscriber, statConfigBackendError stats.Rudd
 	}
 }
 
-func pollConfigUpdate(ctx context.Context, eb pubsub.PublishSubscriber, workspaces string) {
+func pollConfigUpdate(ctx context.Context, eb *pubsub.PublishSubscriber, workspaces string) {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		configUpdate(eb, statConfigBackendError, workspaces)
@@ -392,14 +392,20 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		backendConfig = &SingleWorkspaceConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
+				eb:               &pubsub.PublishSubscriber{},
 			},
 		}
 	case deployment.HostedType:
-		backendConfig = &HostedWorkspacesConfig{}
+		backendConfig = &HostedWorkspacesConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				eb: &pubsub.PublishSubscriber{},
+			},
+		}
 	case deployment.MultiTenantType:
 		backendConfig = &MultiTenantWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
+				eb:               &pubsub.PublishSubscriber{},
 			},
 		}
 	// Fallback to dedicated
