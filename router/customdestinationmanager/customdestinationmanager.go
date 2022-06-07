@@ -28,7 +28,6 @@ var (
 	ObjectStreamDestinations    []string
 	KVStoreDestinations         []string
 	Destinations                []string
-	customManagerMap            map[string]*CustomManagerT
 	pkgLogger                   logger.LoggerI
 	disableEgress               bool
 	skipBackendConfigSubscriber bool
@@ -76,7 +75,6 @@ func loadConfig() {
 	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD", "PERSONALIZE", "GOOGLESHEETS", "BQSTREAM"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
-	customManagerMap = make(map[string]*CustomManagerT)
 	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 }
 
@@ -283,12 +281,7 @@ func New(destType string, o Opts) DestinationManager {
 			managerType = KV
 		}
 
-		customManager, ok := customManagerMap[destType]
-		if ok {
-			return customManager
-		}
-
-		customManager = &CustomManagerT{
+		customManager := &CustomManagerT{
 			timeout:                  o.Timeout,
 			destType:                 destType,
 			managerType:              managerType,
