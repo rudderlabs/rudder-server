@@ -4,7 +4,6 @@ import (
 	"cloud.google.com/go/bigquery"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
@@ -41,8 +40,7 @@ type BigQueryCredentials struct {
 }
 
 var (
-	runBigQueryTest bool
-	BQTest          *BiqQueryTest
+	BQTest *BiqQueryTest
 )
 
 func TestUnsupportedCredentials(t *testing.T) {
@@ -135,9 +133,6 @@ func TestBigQueryIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}
-	if runBigQueryTest == false {
-		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
-	}
 
 	t.Skip()
 	t.Parallel()
@@ -220,10 +215,6 @@ func TestBigQueryIntegration(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
-	flag.Parse()
-
 	BQTest = &BiqQueryTest{}
-
 	os.Exit(testhelper.Setup(m, BQTest))
 }

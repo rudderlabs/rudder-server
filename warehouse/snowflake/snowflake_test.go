@@ -3,7 +3,6 @@ package snowflake_test
 import (
 	"database/sql"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
@@ -38,8 +37,7 @@ type SnowflakeTest struct {
 }
 
 var (
-	runSnowflakeTest bool
-	SFTest           *SnowflakeTest
+	SFTest *SnowflakeTest
 )
 
 func sfCredentials() (sfCredentials *SnowflakeCredentials) {
@@ -110,9 +108,6 @@ func TestSnowflakeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}
-	if runSnowflakeTest == false {
-		t.Skip("Snowflake integration skipped. use -snowflakeintegration to add this test ")
-	}
 
 	t.Parallel()
 
@@ -144,10 +139,6 @@ func TestSnowflakeIntegration(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&runSnowflakeTest, "snowflakeintegration", false, "run snowflake test")
-	flag.Parse()
-
 	SFTest = &SnowflakeTest{}
-
 	os.Exit(testhelper.Setup(m, SFTest))
 }

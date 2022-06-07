@@ -2,7 +2,6 @@ package deltalake_test
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
@@ -38,8 +37,7 @@ type DeltalakeCredentials struct {
 }
 
 var (
-	runDeltalakeTest bool
-	DLTest           *DeltalakeTest
+	DLTest *DeltalakeTest
 )
 
 func deltalakeCredentials() (credentials *DeltalakeCredentials) {
@@ -108,9 +106,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}
-	if runDeltalakeTest == false {
-		t.Skip("deltalake integration skipped. use -redshiftintegration to add this test ")
-	}
 
 	t.Parallel()
 
@@ -174,10 +169,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&runDeltalakeTest, "deltalakeintegration", false, "run deltalake test")
-	flag.Parse()
-
 	DLTest = &DeltalakeTest{}
-
 	os.Exit(testhelper.Setup(m, DLTest))
 }

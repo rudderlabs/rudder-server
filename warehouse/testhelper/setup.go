@@ -160,7 +160,7 @@ func Setup(m *testing.M, setup ISetup) int {
 	// Checking health endpoint for rudder server
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	log.Println("healthEndpoint", healthEndpoint)
-	WaitUntilReady(context.Background(), healthEndpoint, 1*time.Minute, time.Second, "healthEndpoint")
+	WaitUntilReady(context.Background(), healthEndpoint, WaitFor2Min, time.Second, "healthEndpoint")
 
 	// running module tests
 	code := m.Run()
@@ -241,8 +241,6 @@ func enhanceJobsDBWithSQLFunctions() {
 }
 
 func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	t.Helper()
-
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending identifies events")
 		for i := 0; i < identify; i++ {
@@ -293,8 +291,6 @@ func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 }
 
 func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	t.Helper()
-
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending modified identifies events")
 		for i := 0; i < identify; i++ {
@@ -346,24 +342,20 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 }
 
 func VerifyingDestination(t testing.TB, wdt *WareHouseDestinationTest) {
-	t.Helper()
-
 	t.Logf("Started verifying gateway events")
 	VerifyingGatewayEvents(t, wdt)
 	t.Logf("Completed verifying gateway events")
 
 	t.Logf("Started verifying batch router events")
 	VerifyingBatchRouterEvents(t, wdt)
-	t.Logf("Started verifying batch router events")
+	t.Logf("Completed verifying batch router events")
 
 	t.Logf("Started verifying tables events")
 	VerifyingTablesEventCount(t, wdt)
-	t.Logf("Started verifying tables events")
+	t.Logf("Completed verifying tables events")
 }
 
 func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	t.Helper()
-
 	require.Contains(t, wdt.EventsCountMap, "gateway")
 	gwEvents := wdt.EventsCountMap["gateway"]
 
@@ -411,8 +403,6 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 }
 
 func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	t.Helper()
-
 	require.Contains(t, wdt.EventsCountMap, "batchRT")
 	brtEvents := wdt.EventsCountMap["batchRT"]
 

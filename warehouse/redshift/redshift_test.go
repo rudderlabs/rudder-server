@@ -3,7 +3,6 @@ package redshift_test
 import (
 	"database/sql"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
@@ -38,8 +37,7 @@ type RedshiftTest struct {
 }
 
 var (
-	runRedshiftTest bool
-	RSTest          *RedshiftTest
+	RSTest *RedshiftTest
 )
 
 func rsCredentials() (rsCredentials *RedshiftCredentials) {
@@ -110,9 +108,6 @@ func TestRedshiftIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test. Remove -short flag to run integration test.")
 	}
-	if runRedshiftTest == false {
-		t.Skip("redshift integration skipped. use -redshiftintegration to add this test ")
-	}
 
 	t.Parallel()
 
@@ -144,10 +139,6 @@ func TestRedshiftIntegration(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&runRedshiftTest, "redshiftintegration", false, "run redshift test")
-	flag.Parse()
-
 	RSTest = &RedshiftTest{}
-
 	os.Exit(testhelper.Setup(m, RSTest))
 }
