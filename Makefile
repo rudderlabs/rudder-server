@@ -82,6 +82,11 @@ cleanup-warehouse-integration:
 setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build --detach
 
-run-warehouse-integration: setup-warehouse-integration
-	go test -v github.com/rudderlabs/rudder-server/warehouse -integration -snowflakeintegration -redshiftintegration -count 1
-	make cleanup-warehouse-integration
+run-warehouse-integration:
+	go test -v github.com/rudderlabs/rudder-server/warehouse/bigquery/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/clickhouse/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/deltalake/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/mssql/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/postgres/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/redshift/... -count 1
+	go test -v github.com/rudderlabs/rudder-server/warehouse/snowflake/... -count 1

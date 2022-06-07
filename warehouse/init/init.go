@@ -1,5 +1,0 @@
-package init
-
-func InitDestinations() {
-	
-}

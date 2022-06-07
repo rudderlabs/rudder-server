@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"os"
 	"strings"
@@ -125,7 +126,9 @@ func TestSnowflakeIntegration(t *testing.T) {
 		Schema:                   "SNOWFLAKE_WH_INTEGRATION",
 		VerifyingTablesFrequency: SFTest.TableTestQueryFreq,
 	}
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+	whDestTest.Tables = []string{"identifies", "users", "tracks", warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, strcase.ToSnake(whDestTest.Event)), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
+	whDestTest.EventsCountMap[strings.ToUpper(strcase.ToSnake(whDestTest.Event))] = 1
 
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
@@ -133,7 +136,9 @@ func TestSnowflakeIntegration(t *testing.T) {
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_snowflake_%s", randomness)
 	whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+	whDestTest.EventsCountMap[strings.ToUpper(strcase.ToSnake(whDestTest.Event))] = 1
+	whDestTest.Tables = []string{"identifies", "users", "tracks", warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, strcase.ToSnake(whDestTest.Event)), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }

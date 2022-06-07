@@ -5,7 +5,6 @@ import (
 	b64 "encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/iancoleman/strcase"
 	r "github.com/rudderlabs/rudder-server/cmd/run"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -451,20 +450,9 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 }
 
 func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
-	tables := []string{"identifies", "users", "tracks", strcase.ToSnake(wdt.Event), "pages", "screens", "aliases", "groups"}
-	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
-
-	if len(wdt.Tables) != 0 {
-		tables = wdt.Tables
-	}
-	if len(wdt.PrimaryKeys) != 0 {
-		primaryKeys = wdt.PrimaryKeys
-	}
-
 	var count int64
-
-	for idx, table := range tables {
-		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKeys[idx], wdt.UserId)
+	for idx, table := range wdt.Tables {
+		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, wdt.PrimaryKeys[idx], wdt.UserId)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
 		require.Contains(t, wdt.EventsCountMap, table)

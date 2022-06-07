@@ -26,8 +26,6 @@ type BiqQueryTest struct {
 	Context            context.Context
 	EventsMap          testhelper.EventsCountMap
 	WriteKey           string
-	Tables             []string
-	PrimaryKeys        []string
 	TableTestQueryFreq time.Duration
 }
 
@@ -95,8 +93,6 @@ func (*BiqQueryTest) SetUpDestination() {
 		"batchRT":       8,
 	}
 	BQTest.Context = context.Background()
-	BQTest.Tables = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"}
-	BQTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	BQTest.TableTestQueryFreq = 5000 * time.Millisecond
 
 	var err error
@@ -151,11 +147,10 @@ func TestBigQueryIntegration(t *testing.T) {
 		WriteKey:                 BQTest.WriteKey,
 		UserId:                   fmt.Sprintf("userId_bq_%s", randomness),
 		Schema:                   "rudderstack_sample_http_source",
-		Tables:                   BQTest.Tables,
-		PrimaryKeys:              BQTest.PrimaryKeys,
 		VerifyingTablesFrequency: BQTest.TableTestQueryFreq,
 	}
-
+	whDestTest.Tables = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	whDestTest.MessageId = uuid.Must(uuid.NewV4()).String()
 
 	whDestTest.EventsCountMap = testhelper.EventsCountMap{

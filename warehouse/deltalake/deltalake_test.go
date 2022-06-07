@@ -124,6 +124,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 			Schema:                   "deltalake_wh_integration",
 			VerifyingTablesFrequency: DLTest.TableTestQueryFreq,
 		}
+		whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+		whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 		whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 
 		testhelper.SendEvents(t, whDestTest)
@@ -133,6 +135,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		whDestTest.UserId = fmt.Sprintf("userId_deltalake_%s", randomness)
 		whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
 		whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+		whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+		whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 		testhelper.SendModifiedEvents(t, whDestTest)
 		testhelper.VerifyingDestination(t, whDestTest)
 	}

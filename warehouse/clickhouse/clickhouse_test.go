@@ -208,6 +208,8 @@ func TestClickHouseIntegration(t *testing.T) {
 		Schema:                   "rudderdb",
 		VerifyingTablesFrequency: CHTest.TableTestQueryFreq,
 	}
+	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 
 	testhelper.SendEvents(t, whDestTest)
@@ -216,6 +218,8 @@ func TestClickHouseIntegration(t *testing.T) {
 	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_%s", randomness)
 	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }
@@ -364,6 +368,8 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 		VerifyingTablesFrequency: CHClusterTest.TableTestQueryFreq,
 	}
 	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
@@ -372,6 +378,8 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_cluster%s", randomness)
 	whDestTest.Event = "Product Track"
 	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
+	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
+	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 
 	initializeClickhouseClusterMode(t, whDestTest)
 
