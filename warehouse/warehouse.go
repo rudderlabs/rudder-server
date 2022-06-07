@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"math/rand"
 	"net/http"
