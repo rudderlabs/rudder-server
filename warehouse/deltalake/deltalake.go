@@ -429,7 +429,7 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 		formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
 		if len(diff.ColumnMap) > 0 {
 			diffCols := make([]string, 0, len(diff.ColumnMap))
-			for key, _ := range diff.ColumnMap {
+			for key := range diff.ColumnMap {
 				diffCols = append(diffCols, key)
 			}
 			diffFormat := func(index int, value string) string {
