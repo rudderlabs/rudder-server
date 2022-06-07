@@ -126,7 +126,7 @@ func versionInfo() map[string]interface{} {
 func versionHandler(w http.ResponseWriter, r *http.Request) {
 	var version = versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
-	w.Write(versionFormatted)
+	_, _ = w.Write(versionFormatted)
 }
 
 func printVersion() {
@@ -265,12 +265,15 @@ func Run(ctx context.Context) {
 		configEnvHandler = application.Features().ConfigEnv.Setup()
 	}
 
-	if err := backendconfig.Setup(configEnvHandler); err != nil {
-		pkgLogger.Errorf("Unable to setup backend config: %s", err)
-		return
+	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
+		if err := backendconfig.Setup(configEnvHandler); err != nil {
+			pkgLogger.Errorf("Unable to setup backend config: %s", err)
+			return
+		}
+
+		backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	}
 
-	backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
@@ -319,12 +322,12 @@ func Run(ctx context.Context) {
 		)
 
 		fmt.Print("\n\n")
-		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		_ = pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		fmt.Print("\n\n")
 
 		application.Stop()
 		if logger.Log != nil {
-			logger.Log.Sync()
+			_ = logger.Log.Sync()
 		}
 		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
@@ -346,7 +349,7 @@ func Run(ctx context.Context) {
 	)
 	// clearing zap Log buffer to std output
 	if logger.Log != nil {
-		logger.Log.Sync()
+		_ = logger.Log.Sync()
 	}
 	stats.StopPeriodicStats()
 }
