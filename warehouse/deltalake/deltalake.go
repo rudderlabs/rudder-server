@@ -415,7 +415,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 }
 
 // sortedColumnNames returns sorted column names
-func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string) (sortedColumnNames string) {
+func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiffT) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
 	} else {
@@ -426,7 +426,19 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 			columnType := getDeltaLakeDataType(tableSchemaInUpload[columnName])
 			return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
 		}
-		return warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+		formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+		if len(diff.ColumnMap) > 0 {
+			diffCols := make([]string, 0, len(diff.ColumnMap))
+			for key := range diff.ColumnMap {
+				diffCols = append(diffCols, key)
+			}
+			diffFormat := func(index int, value string) string {
+				return fmt.Sprintf(`NULL AS %s`, value)
+			}
+			diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
+			return fmt.Sprintf("%s, %s", formatString, diffString)
+		}
+		return formatString
 	}
 	return
 }
@@ -466,6 +478,19 @@ func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder 
 	return
 }
 
+func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT) (diff warehouseutils.TableSchemaDiffT) {
+	diff = warehouseutils.TableSchemaDiffT{
+		ColumnMap: make(map[string]string),
+	}
+	diff.ColumnMap = make(map[string]string)
+	for columnName, columnType := range tableSchemaAfterUpload {
+		if _, ok := tableSchemaInUpload[columnName]; !ok {
+			diff.ColumnMap[columnName] = columnType
+		}
+	}
+	return diff
+}
+
 // loadTable Loads table with table name
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
@@ -501,7 +526,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
-	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys)
+	var tableSchemaDiff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+

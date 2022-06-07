@@ -511,7 +511,7 @@ func (worker *workerT) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
-					Parameters:    []byte(`{}`),
+					Parameters:    router_utils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
@@ -583,61 +583,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	worker.handleWorkerDestinationJobs(context.TODO())
-	//routerJobs/destinationJobs are processed. Clearing the queues.
-	worker.routerJobs = make([]types.RouterJobT, 0)
-	worker.destinationJobs = make([]types.DestinationJobT, 0)
-	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
-}
-
-func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
-	if prevRespStatusCode == 0 {
-		return true
-	}
-
-	if !worker.rt.guaranteeUserEventOrder {
-		//if guaranteeUserEventOrder is false, letting the next jobs pass
-		return true
-	}
-
-	//If batching is enabled, we send the request only if the previous one succeeds
-	if worker.rt.enableBatching {
-		return isSuccessStatus(prevRespStatusCode)
-	}
-
-	//If the destinationJob has come through router transform,
-	//drop the request if it is of a failed user, else send
-	for _, metadata := range destinationJob.JobMetadataArray {
-		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
-			return false
-		}
-	}
-
-	return true
-}
-
-func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
-	var err error
-	var response integrations.PostParametersT
-	responseArray := make([]integrations.PostParametersT, 0)
-	if transformAt == "router" {
-		err = json.Unmarshal(payload, &response)
-		if err != nil {
-			err = json.Unmarshal(payload, &responseArray)
-		} else {
-			responseArray = append(responseArray, response)
-		}
-	} else {
-		err = json.Unmarshal(payload, &response)
-		if err == nil {
-			responseArray = append(responseArray, response)
-		}
-	}
-
-	return responseArray, err
-}
-
-func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
+	ctx := context.TODO()
 	worker.batchTimeStat.Start()
 
 	var respContentType string
@@ -935,7 +881,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			AttemptNum:  attemptNum,
 			ExecTime:    time.Now(),
 			RetryTime:   time.Now(),
-			Parameters:  []byte(`{}`),
+			Parameters:  router_utils.EmptyPayload,
 			WorkspaceId: destinationJobMetadata.WorkspaceId,
 		}
 
@@ -947,7 +893,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//Only one job is marked failed and the rest are marked waiting
 				//Job order logic requires that at any point of time, we should have only one failed job per user
 				//This is introduced to ensure the above statement
-				resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", prevFailedJobID)
+				resp := misc.UpdateJSONWithNewKeyVal(router_utils.EmptyPayload, "blocking_id", prevFailedJobID)
 				resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", destinationJobMetadata.UserID)
 				resp = misc.UpdateJSONWithNewKeyVal(resp, "moreinfo", "attempted to send in a batch")
 
@@ -964,7 +910,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			status.AttemptNum++
 		}
 
-		status.ErrorResponse = []byte(`{}`)
+		status.ErrorResponse = router_utils.EmptyPayload
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
 		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
@@ -998,6 +944,58 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 	worker.decrementInThrottleMap(apiCallsCount)
 	worker.batchTimeStat.End()
+
+	//routerJobs/destinationJobs are processed. Clearing the queues.
+	worker.routerJobs = make([]types.RouterJobT, 0)
+	worker.destinationJobs = make([]types.DestinationJobT, 0)
+	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
+}
+
+func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
+	if prevRespStatusCode == 0 {
+		return true
+	}
+
+	if !worker.rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is false, letting the next jobs pass
+		return true
+	}
+
+	//If batching is enabled, we send the request only if the previous one succeeds
+	if worker.rt.enableBatching {
+		return isSuccessStatus(prevRespStatusCode)
+	}
+
+	//If the destinationJob has come through router transform,
+	//drop the request if it is of a failed user, else send
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostParametersT, error) {
+	var err error
+	var response integrations.PostParametersT
+	responseArray := make([]integrations.PostParametersT, 0)
+	if transformAt == "router" {
+		err = json.Unmarshal(payload, &response)
+		if err != nil {
+			err = json.Unmarshal(payload, &responseArray)
+		} else {
+			responseArray = append(responseArray, response)
+		}
+	} else {
+		err = json.Unmarshal(payload, &response)
+		if err == nil {
+			responseArray = append(responseArray, response)
+		}
+	}
+
+	return responseArray, err
 }
 
 type RouterJobResponse struct {
@@ -1285,7 +1283,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 	// job is behind in queue of failed job from same user
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
-		resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "blocking_id", previousFailedJobID)
+		resp := misc.UpdateJSONWithNewKeyVal(router_utils.EmptyPayload, "blocking_id", previousFailedJobID)
 		resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -1294,7 +1292,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			RetryTime:     time.Now(),
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: resp, // check
-			Parameters:    []byte(`{}`),
+			Parameters:    router_utils.EmptyPayload,
 			WorkspaceId:   job.WorkspaceId,
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
@@ -1563,7 +1561,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 			sampleEvent := resp.JobT.EventPayload
 			if rt.transientSources.Apply(parameters.SourceID) {
-				sampleEvent = []byte(`{}`)
+				sampleEvent = router_utils.EmptyPayload
 			}
 			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType)
 			statusDetailsMap[key] = sd
@@ -1978,6 +1976,9 @@ func (rt *HandleT) readAndProcess() int {
 
 	rt.throttledUserMap = make(map[string]struct{})
 	throttledAtTime := time.Now()
+	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
+	transformedAtMap := make(map[string]string)
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
@@ -1991,9 +1992,9 @@ func (rt *HandleT) readAndProcess() int {
 				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				ErrorCode:     "",
-				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
+				ErrorCode:     strconv.Itoa(router_utils.DRAIN_ERROR_CODE),
+				Parameters:    router_utils.EmptyPayload,
+				ErrorResponse: router_utils.EnhanceJSON(router_utils.EmptyPayload, "reason", reason),
 				WorkspaceId:   job.WorkspaceId,
 			}
 			//Enhancing job parameter with the drain reason.
@@ -2016,6 +2017,37 @@ func (rt *HandleT) readAndProcess() int {
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+
+			// REPORTING - ROUTER - START
+			var parameters JobParametersT
+			err := json.Unmarshal(job.Parameters, &parameters)
+			if err != nil {
+				rt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+				continue
+			}
+
+			eventName := gjson.GetBytes(job.Parameters, "event_name").String()
+			eventType := gjson.GetBytes(job.Parameters, "event_type").String()
+
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, status.JobState, status.ErrorCode, eventName, eventType)
+			_, ok := connectionDetailsMap[key]
+			if !ok {
+				cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				connectionDetailsMap[key] = cd
+				transformedAtMap[key] = parameters.TransformAt
+			}
+
+			sd, ok := statusDetailsMap[key]
+			if !ok {
+				sampleEvent := job.EventPayload
+				if rt.transientSources.Apply(parameters.SourceID) {
+					sampleEvent = router_utils.EmptyPayload
+				}
+				sd = utilTypes.CreateStatusDetail(status.JobState, 0, router_utils.DRAIN_ERROR_CODE, string(status.ErrorResponse), sampleEvent, eventName, eventType)
+				statusDetailsMap[key] = sd
+			}
+			sd.Count++
+			// REPORTING - ROUTER - END
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -2027,8 +2059,8 @@ func (rt *HandleT) readAndProcess() int {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-				Parameters:    []byte(`{}`),
+				ErrorResponse: router_utils.EmptyPayload, // check
+				Parameters:    router_utils.EmptyPayload,
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
@@ -2050,7 +2082,38 @@ func (rt *HandleT) readAndProcess() int {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+
+		//REPORTING - ROUTER - START
+		utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
+		for k, cd := range connectionDetailsMap {
+			var inPu string
+			if transformedAtMap[k] == "processor" {
+				inPu = utilTypes.DEST_TRANSFORMER
+			} else {
+				inPu = utilTypes.EVENT_FILTER
+			}
+			m := &utilTypes.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			if m.StatusDetail.Count != 0 {
+				reportMetrics = append(reportMetrics, m)
+			}
+		}
+		//REPORTING - ROUTER - END
+
+		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				return err
+			}
+			rt.Reporting.Report(reportMetrics, tx.Tx())
+			return nil
+		})
+
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
