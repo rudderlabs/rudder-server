@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -87,8 +88,8 @@ var (
 )
 
 var (
-	host, user, password, dbname, sslmode string
-	port                                  int
+	host, user, password, dbname, sslmode, appName string
+	port                                           int
 )
 
 // warehouses worker modes
@@ -180,6 +181,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -1610,8 +1612,8 @@ func getConnectionString() string {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+		"password=%s dbname=%s sslmode=%s application_name=%s",
+		host, port, user, password, dbname, sslmode, appName)
 }
 
 func startWebHandler(ctx context.Context) error {
