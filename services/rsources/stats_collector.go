@@ -115,10 +115,10 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 }
 
 const (
-	source_job_run_id  = "source_job_run_id"
-	source_task_run_id = "source_task_run_id"
-	source_id          = "source_id"
-	destination_id     = "destination_id"
+	sourceJobRunID  = "source_job_run_id"
+	sourceTaskRunID = "source_task_run_id"
+	sourceID        = "source_id"
+	destinationID   = "destination_id"
 )
 
 func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string, incrementIn bool) { // skipcq: RVV-A0005
@@ -127,14 +127,14 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		jobRunId := gjson.GetBytes(job.Parameters, source_job_run_id).Str
+		jobRunId := gjson.GetBytes(job.Parameters, sourceJobRunID).Str
 		if jobRunId != "" {
 			sk := statKey{
 				jobRunId: jobRunId,
 				JobTargetKey: JobTargetKey{
-					TaskRunID:     gjson.GetBytes(job.Parameters, source_task_run_id).Str,
-					SourceID:      gjson.GetBytes(job.Parameters, source_id).Str,
-					DestinationID: gjson.GetBytes(job.Parameters, destination_id).Str,
+					TaskRunID:     gjson.GetBytes(job.Parameters, sourceTaskRunID).Str,
+					SourceID:      gjson.GetBytes(job.Parameters, sourceID).Str,
+					DestinationID: gjson.GetBytes(job.Parameters, destinationID).Str,
 				},
 			}
 			var stats *Stats

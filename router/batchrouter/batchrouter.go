@@ -782,7 +782,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 }
 
-func (brt *HandleT) sendJobsToStorage(_ string, batchJobs BatchJobsT, _ map[string]interface{}) {
+func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 	if disableEgress {
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
@@ -1842,7 +1842,7 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(asyncDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config)
+						brt.sendJobsToStorage(batchJobs)
 						destUploadStat.End()
 					}
 					wg.Done()

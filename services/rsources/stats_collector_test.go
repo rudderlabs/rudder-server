@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"testing"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/tidwall/gjson"
 )
 
 var _ = Describe("Using StatsCollector", Serial, func() {
@@ -338,4 +341,44 @@ func newJobStatus(jobId int64, state string) *jobsdb.JobStatusT {
 		JobID:    jobId,
 		JobState: state,
 	}
+}
+
+func BenchmarkParamsParsing(b *testing.B) {
+	type params struct {
+		TaskRunID     string `json:"source_task_run_id"`
+		SourceID      string `json:"source_id"`
+		DestinationID string `json:"destination_id"`
+	}
+
+	jsonStr := []byte(`{
+		"source_job_run_id": "source_job_run_id",
+		"source_task_run_id": "source_task_run_id",
+		"source_id": "source_id",
+		"destination_id": "destination_id",
+		"prop1": "prop1",
+		"prop2": "prop2",
+		"prop3": "prop3",
+		"prop4": "prop4",
+		"prop5": "prop5",
+		"prop6": "prop6"
+	}`)
+	b.Run("parse params using gjson.GetBytes 3 times", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = params{
+				TaskRunID:     gjson.GetBytes(jsonStr, sourceTaskRunID).Str,
+				SourceID:      gjson.GetBytes(jsonStr, sourceID).Str,
+				DestinationID: gjson.GetBytes(jsonStr, destinationID).Str,
+			}
+		}
+	})
+
+	b.Run("parse params using jsoniter.Unmarshall", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			var p params
+			err := jsoniter.Unmarshal(jsonStr, &p)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
