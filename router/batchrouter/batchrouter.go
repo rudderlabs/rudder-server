@@ -490,14 +490,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 
 									// rsources stats
-									rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
-									rsourcesStats.BeginProcessing(importingList)
-									rsourcesStats.JobStatusesUpdated(statusList)
-									err = rsourcesStats.Publish(context.TODO(), tx.Tx())
-									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
-									}
-									return err
+									return brt.updateSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -561,14 +554,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 
 									// rsources stats
-									rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
-									rsourcesStats.BeginProcessing(importingList)
-									rsourcesStats.JobStatusesUpdated(statusList)
-									err = rsourcesStats.Publish(context.TODO(), tx.Tx())
-									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
-									}
-									return err
+									return brt.updateSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -1358,12 +1344,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		// rsources stats
-		rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
-		rsourcesStats.BeginProcessing(batchJobs.Jobs)
-		rsourcesStats.JobStatusesUpdated(statusList)
-		err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+		err = brt.updateSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
 		if err != nil {
-			brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
 			return err
 		}
 
@@ -1747,14 +1729,8 @@ func (worker *workerT) workerProcess() {
 					}
 
 					// rsources stats
-					rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
-					rsourcesStats.BeginProcessing(drainJobList)
-					rsourcesStats.JobStatusesUpdated(drainList)
-					err = rsourcesStats.Publish(context.TODO(), tx.Tx())
-					if err != nil {
-						brt.logger.Errorf("Error occurred while publishing rsources stats. Err: %v", err)
-					}
-					return err
+					return brt.updateSourcesStats(context.TODO(), tx, drainJobList, drainList)
+
 				})
 				if err != nil {
 					panic(err)
@@ -2394,4 +2370,16 @@ func (brt *HandleT) Shutdown() {
 		close(worker.resumeChannel)
 	}
 	_ = brt.backgroundWait()
+}
+
+func (brt *HandleT) updateSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+
+	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
+	rsourcesStats.BeginProcessing(jobs)
+	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	err := rsourcesStats.Publish(ctx, tx.Tx())
+	if err != nil {
+		brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
+	}
+	return err
 }
