@@ -42,13 +42,15 @@ type DestinationManager interface {
 
 // CustomManagerT handles this module
 type CustomManagerT struct {
-	destType                 string
-	managerType              string
-	mapLock                  sync.RWMutex
-	clientLock               map[string]*sync.RWMutex
-	client                   map[string]*clientHolder
-	config                   map[string]backendconfig.DestinationT
-	breaker                  map[string]breakerHolder
+	destType    string
+	managerType string
+
+	stateMu  sync.RWMutex // protecting all 4 maps below
+	config   map[string]backendconfig.DestinationT
+	breaker  map[string]breakerHolder
+	clientMu map[string]*sync.RWMutex
+	client   map[string]*clientHolder
+
 	timeout                  time.Duration
 	breakerTimeout           time.Duration
 	backendConfigInitialized chan struct{}
@@ -142,9 +144,9 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		return 200, `200: outgoing disabled`
 	}
 
-	customManager.mapLock.RLock()
-	clientLock, ok := customManager.clientLock[destID]
-	customManager.mapLock.RUnlock()
+	customManager.stateMu.RLock()
+	clientLock, ok := customManager.clientMu[destID]
+	customManager.stateMu.RUnlock()
 	if !ok {
 		return 500, fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s. Config might not have been updated. Please wait for a min before sending events.", customManager.destType, destID)
 	}
@@ -222,13 +224,13 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 }
 
 func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error { // skipcq: CRT-P0003
-	customManager.mapLock.Lock()
-	defer customManager.mapLock.Unlock()
+	customManager.stateMu.Lock()
+	defer customManager.stateMu.Unlock()
 	var err error
-	clientLock, ok := customManager.clientLock[destination.ID]
+	clientLock, ok := customManager.clientMu[destination.ID]
 	if !ok {
 		clientLock = &sync.RWMutex{}
-		customManager.clientLock[destination.ID] = clientLock
+		customManager.clientMu[destination.ID] = clientLock
 	}
 	clientLock.Lock()
 	defer clientLock.Unlock()
@@ -291,7 +293,7 @@ func New(destType string, o Opts) DestinationManager {
 			destType:                 destType,
 			managerType:              managerType,
 			client:                   make(map[string]*clientHolder),
-			clientLock:               make(map[string]*sync.RWMutex),
+			clientMu:                 make(map[string]*sync.RWMutex),
 			config:                   make(map[string]backendconfig.DestinationT),
 			breaker:                  make(map[string]breakerHolder),
 			backendConfigInitialized: make(chan struct{}),

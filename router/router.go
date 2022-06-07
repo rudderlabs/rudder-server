@@ -2304,9 +2304,19 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 func (rt *HandleT) Start() {
 	ctx := rt.backgroundCtx
 	rt.backgroundGroup.Go(func() error {
-		<-rt.backendConfigInitialized
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-rt.backendConfigInitialized:
+			// no-op, just wait
+		}
 		if rt.customDestinationManager != nil {
-			<-rt.customDestinationManager.BackendConfigInitialized()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-rt.customDestinationManager.BackendConfigInitialized():
+				// no-op, just wait
+			}
 		}
 		rt.generatorLoop(ctx)
 		return nil
