@@ -163,7 +163,7 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 }
 
 func BenchmarkFindReasonablePayload(b *testing.B) {
-	maxTime := 30 * time.Second
+	maxTime := 2 * time.Second
 
 loop:
 	for no := 100000; ; no += 100000 {
