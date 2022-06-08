@@ -14,6 +14,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"math/rand"
@@ -37,9 +40,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
-
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
 	kafkaclient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
@@ -50,6 +50,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -459,6 +460,8 @@ func run(m *testing.M) (int, error) {
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
+
+	config.SetInt("BatchRouter.BQ.jobQueryBatchSize", 1)
 	go func() {
 		main.Run(svcCtx)
 		close(svcDone)
@@ -1016,7 +1019,7 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-func TestWHBigQuery(t *testing.T) {
+func TestWHBigQueryWithMultiStagingFile(t *testing.T) {
 	if runBigQueryTest == false {
 		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
 
@@ -1028,6 +1031,10 @@ func TestWHBigQuery(t *testing.T) {
 	//Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bq.Init()
+	config.SetInt("Warehouse.uploadFreqInS", 1)
+	warehouse.Init4()
+	config.SetInt("BatchRouter.uploadFreqInS", 1)
+	batchrouter.Init()
 	bqTest := wht.Test.BQTest
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 
