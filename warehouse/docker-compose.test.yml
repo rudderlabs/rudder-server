@@ -1,4 +1,4 @@
-version: "3.7"
+version: "2.1"
 
 # Currently, we have added static ports around the services ranging from
 # 54320 to 54330
@@ -12,22 +12,31 @@ services:
       - POSTGRES_USER=rudder
     ports:
       - "54328:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      timeout: 60s
+      retries: 10
   transformer:
     container_name: transformer
     image: rudderlabs/rudder-transformer:latest
-    environment:
-      - CONFIG_BACKEND_URL=https://api.rudderlabs.com
     ports:
       - "54323:9090"
-    depends_on:
-      - jobsDb
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.2.0
     container_name: databricks-connector
     ports:
       - "54330:50051"
-    depends_on:
-      - transformer
+    healthcheck:
+      test: /bin/grpc_health_probe -addr=localhost:50051
+      interval: 1s
+      timeout: 60s
+      retries: 10
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -37,8 +46,11 @@ services:
       - MINIO_ACCESS_KEY=MYACCESSKEY
       - MINIO_SECRET_KEY=MYSECRETKEY
     command: server /data
-    depends_on:
-      - databricks-connector
+    healthcheck:
+      test: curl --fail http://localhost:9000/minio/health/live || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   postgres:
     container_name: postgres
     image: postgres:11-alpine
@@ -48,8 +60,11 @@ services:
       - POSTGRES_USER=rudder
     ports:
       - "54320:5432"
-    depends_on:
-      - minio
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      timeout: 60s
+      retries: 10
   clickhouse:
     container_name: clickhouse
     image: yandex/clickhouse-server:21-alpine
@@ -59,8 +74,11 @@ services:
       - CLICKHOUSE_USER=rudder
     ports:
       - "54321:9000"
-    depends_on:
-      - postgres
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   mssql:
     container_name: mssql
     image: mcr.microsoft.com/azure-sql-edge:1.0.5
@@ -71,16 +89,22 @@ services:
       - SA_USER=SA
     ports:
       - "54322:1433"
-    depends_on:
-      - clickhouse
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   zookeeper:
     image: zookeeper:3.5
     container_name: clickhouse-zookeeper
     hostname: clickhouse-zookeeper
     networks:
       clickhouse-network:
-    depends_on:
-      - mssql
+    healthcheck:
+      test: nc -z localhost 2181 || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse01
@@ -93,6 +117,11 @@ services:
       - ./testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
     depends_on:
       - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   clickhouse02:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse02
@@ -105,6 +134,11 @@ services:
       - ./testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
     depends_on:
       - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   clickhouse03:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse03
@@ -117,6 +151,11 @@ services:
       - ./testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
     depends_on:
       - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
   clickhouse04:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse04
@@ -129,6 +168,38 @@ services:
       - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
       - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 10
+  start_dependencies:
+    image: alpine:latest
+    depends_on:
+      jobsDb:
+        condition: service_healthy
+      transformer:
+        condition: service_healthy
+      databricks-connector:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      mssql:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+      clickhouse01:
+        condition: service_healthy
+      clickhouse02:
+        condition: service_healthy
+      clickhouse03:
+        condition: service_healthy
+      clickhouse04:
+        condition: service_healthy
 
 networks:
   clickhouse-network:
