@@ -3,28 +3,24 @@ package clickhouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/gofrs/uuid"
-	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 	"log"
 	"os"
-	"strings"
 	"testing"
-	"time"
 )
 
 type NOOP struct{}
 
 type ClickHouseTest struct {
 	NOOP
-	WriteKey           string
-	Credentials        *clickhouse.CredentialsT
-	DB                 *sql.DB
-	EventsMap          testhelper.EventsCountMap
-	TableTestQueryFreq time.Duration
+	Credentials *clickhouse.CredentialsT
+	DB          *sql.DB
+	EventsMap   testhelper.EventsCountMap
+	WriteKey    string
 }
 
 type ClickHouseClusterResource struct {
@@ -40,10 +36,9 @@ type ClickHouseClusterResources []*ClickHouseClusterResource
 
 type ClickHouseClusterTest struct {
 	NOOP
-	Resources          ClickHouseClusterResources
-	EventsMap          testhelper.EventsCountMap
-	WriteKey           string
-	TableTestQueryFreq time.Duration
+	Resources ClickHouseClusterResources
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
 var (
@@ -82,28 +77,19 @@ func SetUpClickHouseDestination() {
 		TLSConfigName: "",
 		Port:          "54321",
 	}
-	CHTest.EventsMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       6,
-		"batchRT":       8,
-	}
-	CHTest.TableTestQueryFreq = 100 * time.Millisecond
+	CHTest.EventsMap = testhelper.DefaultEventMap()
 
-	var err error
-	if CHTest.DB, err = clickhouse.Connect(*CHTest.Credentials, true); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse clickhouse with error: %s", err.Error()))
-	}
-	if err = CHTest.DB.Ping(); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse clickhouse while pinging with error: %s", err.Error()))
-	}
-	return
+	testhelper.ConnectWithBackoff(func() (err error) {
+		if CHTest.DB, err = clickhouse.Connect(*CHTest.Credentials, true); err != nil {
+			err = fmt.Errorf("could not connect to warehouse clickhouse with error: %w", err)
+			return
+		}
+		if err = CHTest.DB.Ping(); err != nil {
+			err = fmt.Errorf("could not connect to warehouse clickhouse while pinging with error: %w", err)
+			return
+		}
+		return
+	})
 }
 
 func SetUpClickHouseClusterDestination() {
@@ -166,60 +152,40 @@ func SetUpClickHouseClusterDestination() {
 			},
 		},
 	}
-	CHClusterTest.EventsMap = testhelper.EventsCountMap{
-		"identifies": 1,
-		"users":      1,
-		"tracks":     1,
-		"pages":      1,
-		"screens":    1,
-		"aliases":    1,
-		"groups":     1,
-		"gateway":    6,
-		"batchRT":    8,
-	}
-	CHClusterTest.TableTestQueryFreq = 100 * time.Millisecond
+	CHClusterTest.EventsMap = testhelper.DefaultEventMap()
 
-	var err error
 	for i, chResource := range CHClusterTest.Resources {
-		if chResource.DB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
-			panic(fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %s", i, err.Error()))
-		}
-		if err = chResource.DB.Ping(); err != nil {
-			panic(fmt.Errorf("could not connect to warehouse clickhouse cluster: %d while pinging with error: %s", i, err.Error()))
-		}
+		testhelper.ConnectWithBackoff(func() (err error) {
+			if chResource.DB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
+				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %w", i, err)
+				return
+			}
+			if err = chResource.DB.Ping(); err != nil {
+				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d while pinging with error: %w", i, err)
+				return
+			}
+			return
+		})
 	}
-	return
 }
 
 func TestClickHouseIntegration(t *testing.T) {
-	t.Parallel()
-
-	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  CHTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:           CHTest.EventsMap,
 		WriteKey:                 CHTest.WriteKey,
-		UserId:                   fmt.Sprintf("userId_clickhouse_%s", randomness),
-		Event:                    fmt.Sprintf("Product Track %s", randomness),
 		Schema:                   "rudderdb",
-		VerifyingTablesFrequency: CHTest.TableTestQueryFreq,
+		EventsCountMap:           CHTest.EventsMap,
+		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 
+	whDestTest.Reset(warehouseutils.CLICKHOUSE, true)
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
-	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_%s", randomness)
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
+	whDestTest.Reset(warehouseutils.CLICKHOUSE, true)
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }
@@ -351,38 +317,23 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 }
 
 func TestClickHouseClusterIntegration(t *testing.T) {
-	t.Parallel()
-
-	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  CHClusterTest.GetResource().DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:           CHClusterTest.EventsMap,
 		WriteKey:                 CHClusterTest.WriteKey,
-		UserId:                   fmt.Sprintf("userId_clickhouse_cluster_%s", randomness),
-		Event:                    "Product Track",
 		Schema:                   "rudderdb",
-		VerifyingTablesFrequency: CHClusterTest.TableTestQueryFreq,
+		EventsCountMap:           CHClusterTest.EventsMap,
+		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 
+	whDestTest.Reset(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), false)
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
-	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	whDestTest.UserId = fmt.Sprintf("userId_clickhouse_cluster%s", randomness)
-	whDestTest.Event = "Product Track"
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
-
+	whDestTest.Reset(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), false)
 	initializeClickhouseClusterMode(t, whDestTest)
-
 	testhelper.SendModifiedEvents(t, whDestTest)
 
 	// Update events count Map

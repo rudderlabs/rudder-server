@@ -3,23 +3,19 @@ package postgres_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/gofrs/uuid"
-	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"os"
-	"strings"
 	"testing"
-	"time"
 )
 
 type PostgresTest struct {
-	Credentials        *postgres.CredentialsT
-	DB                 *sql.DB
-	EventsMap          testhelper.EventsCountMap
-	WriteKey           string
-	TableTestQueryFreq time.Duration
+	Credentials *postgres.CredentialsT
+	DB          *sql.DB
+	EventsMap   testhelper.EventsCountMap
+	WriteKey    string
 }
 
 var (
@@ -41,59 +37,38 @@ func (*PostgresTest) SetUpDestination() {
 		SSLMode:  "disable",
 		Port:     "54320",
 	}
-	PGTest.EventsMap = testhelper.EventsCountMap{
-		"identifies": 1,
-		"users":      1,
-		"tracks":     1,
-		"pages":      1,
-		"screens":    1,
-		"aliases":    1,
-		"groups":     1,
-		"gateway":    6,
-		"batchRT":    8,
-	}
-	PGTest.TableTestQueryFreq = 100 * time.Millisecond
+	PGTest.EventsMap = testhelper.DefaultEventMap()
 
-	var err error
-	if PGTest.DB, err = postgres.Connect(*PGTest.Credentials); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse postgres with error: %s", err.Error()))
-	}
-	if err = PGTest.DB.Ping(); err != nil {
-		panic(fmt.Errorf("could not connect to warehouse postgres while pinging with error: %s", err.Error()))
-	}
-	return
+	testhelper.ConnectWithBackoff(func() (err error) {
+		if PGTest.DB, err = postgres.Connect(*PGTest.Credentials); err != nil {
+			err = fmt.Errorf("could not connect to warehouse postgres with error: %w", err)
+			return
+		}
+		if err = PGTest.DB.Ping(); err != nil {
+			err = fmt.Errorf("could not connect to warehouse postgres while pinging with error: %w", err)
+			return
+		}
+		return
+	})
 }
 
 func TestPostgresIntegration(t *testing.T) {
-	t.Parallel()
-
-	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  PGTest.DB,
 			Type: client.SQLClient,
 		},
-		EventsCountMap:           PGTest.EventsMap,
 		WriteKey:                 PGTest.WriteKey,
-		UserId:                   fmt.Sprintf("userId_postgres_%s", randomness),
-		Event:                    fmt.Sprintf("Product Track %s", randomness),
 		Schema:                   "postgres_wh_integration",
-		VerifyingTablesFrequency: PGTest.TableTestQueryFreq,
+		EventsCountMap:           PGTest.EventsMap,
+		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
 
+	whDestTest.Reset(warehouseutils.POSTGRES, true)
 	testhelper.SendEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 
-	randomness = strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	whDestTest.UserId = fmt.Sprintf("userId_postgres_%s", randomness)
-	whDestTest.Event = fmt.Sprintf("Product Track %s", randomness)
-	whDestTest.EventsCountMap[strcase.ToSnake(whDestTest.Event)] = 1
-	whDestTest.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(whDestTest.Event), "pages", "screens", "aliases", "groups"}
-	whDestTest.PrimaryKeys = []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
+	whDestTest.Reset(warehouseutils.POSTGRES, true)
 	testhelper.SendModifiedEvents(t, whDestTest)
 	testhelper.VerifyingDestination(t, whDestTest)
 }

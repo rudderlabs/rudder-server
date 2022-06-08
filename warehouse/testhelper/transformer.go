@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 )
 
 func SetupTransformer() *TransformerResource {
@@ -13,7 +12,7 @@ func SetupTransformer() *TransformerResource {
 	url := fmt.Sprintf("%s/health", transformerEndPoint)
 
 	// Waiting until transformer is ready
-	WaitUntilReady(context.Background(), url, time.Minute, time.Second, "transformer")
+	WaitUntilReady(context.Background(), url, WaitFor2Minute, WaitFor1Second, "transformer")
 
 	return &TransformerResource{
 		Url:  transformerEndPoint,

@@ -2,9 +2,12 @@ package testhelper
 
 import (
 	"database/sql"
+	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"strings"
 	"time"
 )
 
@@ -28,15 +31,15 @@ type EventsCountMap map[string]int
 
 type WareHouseDestinationTest struct {
 	Client                   *client.Client
-	EventsCountMap           EventsCountMap
 	WriteKey                 string
+	Schema                   string
+	VerifyingTablesFrequency time.Duration
+	EventsCountMap           EventsCountMap
 	UserId                   string
 	Event                    string
-	Schema                   string
 	Tables                   []string
 	PrimaryKeys              []string
 	MessageId                string
-	VerifyingTablesFrequency time.Duration
 }
 
 func (w *WareHouseDestinationTest) MsgId() string {
@@ -44,4 +47,17 @@ func (w *WareHouseDestinationTest) MsgId() string {
 		return uuid.Must(uuid.NewV4()).String()
 	}
 	return w.MessageId
+}
+
+func (w *WareHouseDestinationTest) Reset(destType string, randomProduct bool) {
+	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), randomness)
+
+	if randomProduct {
+		w.Event = fmt.Sprintf("Product Track %s", randomness)
+	} else {
+		w.Event = "Product Track"
+	}
+	w.EventsCountMap[strcase.ToSnake(w.Event)] = 1
+	w.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(w.Event), "pages", "screens", "aliases", "groups"}
 }

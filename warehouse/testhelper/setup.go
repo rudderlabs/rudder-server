@@ -2,7 +2,6 @@ package testhelper
 
 import (
 	"context"
-	b64 "encoding/base64"
 	"flag"
 	"fmt"
 	r "github.com/rudderlabs/rudder-server/cmd/run"
@@ -16,9 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -27,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/phayes/freeport"
@@ -40,9 +36,11 @@ var (
 )
 
 var (
-	WaitFor2Min           = 2 * time.Minute
-	WaitFor5Min           = 5 * time.Minute
-	DefaultQueryFrequency = 100 * time.Millisecond
+	WaitFor2Minute            = 2 * time.Minute
+	WaitFor5Minute            = 5 * time.Minute
+	WaitFor1Second            = 1 * time.Second
+	DefaultQueryFrequency     = 100 * time.Millisecond
+	LongRunningQueryFrequency = 5000 * time.Millisecond
 )
 
 var (
@@ -52,6 +50,11 @@ var (
 
 var (
 	jobsDB *JobsDBResource
+)
+
+var (
+	ConnectBackoffDuration = 1 * time.Second
+	ConnectBackoffRetryMax = 5
 )
 
 type ISetup interface {
@@ -159,7 +162,7 @@ func Setup(m *testing.M, setup ISetup) int {
 	// Checking health endpoint for rudder server
 	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	log.Println("healthEndpoint", healthEndpoint)
-	WaitUntilReady(context.Background(), healthEndpoint, WaitFor2Min, time.Second, "healthEndpoint")
+	WaitUntilReady(context.Background(), healthEndpoint, WaitFor2Minute, WaitFor1Second, "healthEndpoint")
 
 	// running module tests
 	code := m.Run()
@@ -186,45 +189,6 @@ func blockOnHold() {
 	<-c
 }
 
-func sendEvent(payload *strings.Reader, eventType, writeKey string) {
-	log.Printf("Sending event: %s for writeKey: %s", eventType, writeKey)
-
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, eventType)
-	method := "POST"
-	httpClient := &http.Client{}
-
-	req, err := http.NewRequest(method, url, payload)
-	if err != nil {
-		log.Printf("Error occurred while creating new http request for sending event with error: %s", err.Error())
-		return
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
-
-	res, err := httpClient.Do(req)
-	if err != nil {
-		log.Printf("Error occurred while making http request for sending event with error: %s", err.Error())
-		return
-	}
-	defer func() { _ = res.Body.Close() }()
-
-	_, err = io.ReadAll(res.Body)
-	if err != nil {
-		log.Printf("Error occurred while reading http response for sending event with error: %s", err.Error())
-		return
-	}
-	if res.Status != "200 OK" {
-		return
-	}
-
-	log.Printf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
-}
-
 func enhanceJobsDBWithSQLFunctions() {
 	var err error
 
@@ -237,107 +201,6 @@ func enhanceJobsDBWithSQLFunctions() {
 	if err != nil {
 		log.Panicf("error occurred with executing brt jobs function for events count with err %s", err.Error())
 	}
-}
-
-func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
-		t.Logf("Sending identifies events")
-		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wdt.UserId, wdt.MsgId()))
-			sendEvent(payloadIdentify, "identify", wdt.WriteKey)
-		}
-	}
-
-	if track, exists := wdt.EventsCountMap["tracks"]; exists {
-		t.Logf("Sending tracks events")
-		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wdt.UserId, wdt.MsgId(), wdt.Event))
-			sendEvent(payloadTrack, "track", wdt.WriteKey)
-		}
-	}
-
-	if page, exists := wdt.EventsCountMap["pages"]; exists {
-		t.Logf("Sending pages events")
-		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wdt.UserId, wdt.MsgId()))
-			sendEvent(payloadPage, "page", wdt.WriteKey)
-		}
-	}
-
-	if screen, exists := wdt.EventsCountMap["screens"]; exists {
-		t.Logf("Sending screens events")
-		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wdt.UserId, wdt.MsgId()))
-			sendEvent(payloadScreen, "screen", wdt.WriteKey)
-		}
-	}
-
-	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
-		t.Logf("Sending aliases events")
-		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wdt.UserId, wdt.MsgId()))
-			sendEvent(payloadAlias, "alias", wdt.WriteKey)
-		}
-	}
-
-	if group, exists := wdt.EventsCountMap["groups"]; exists {
-		t.Logf("Sending groups events")
-		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wdt.UserId, wdt.MsgId()))
-			sendEvent(payloadGroup, "group", wdt.WriteKey)
-		}
-	}
-}
-
-func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
-		t.Logf("Sending modified identifies events")
-		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			sendEvent(payloadIdentify, "identify", wdt.WriteKey)
-		}
-	}
-
-	if track, exists := wdt.EventsCountMap["tracks"]; exists {
-		t.Logf("Sending modified tracks events")
-		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String(), wdt.Event))
-			sendEvent(payloadTrack, "track", wdt.WriteKey)
-		}
-	}
-
-	if page, exists := wdt.EventsCountMap["pages"]; exists {
-		t.Logf("Sending modified pages events")
-		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			sendEvent(payloadPage, "page", wdt.WriteKey)
-		}
-	}
-
-	if screen, exists := wdt.EventsCountMap["screens"]; exists {
-		t.Logf("Sending modified screens events")
-		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			sendEvent(payloadScreen, "screen", wdt.WriteKey)
-		}
-	}
-
-	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
-		t.Logf("Sending modified aliases events")
-		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			sendEvent(payloadAlias, "alias", wdt.WriteKey)
-		}
-	}
-
-	if group, exists := wdt.EventsCountMap["groups"]; exists {
-		t.Logf("Sending modified groups events")
-		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			sendEvent(payloadGroup, "group", wdt.WriteKey)
-		}
-	}
-
 }
 
 func VerifyingDestination(t testing.TB, wdt *WareHouseDestinationTest) {
@@ -367,7 +230,7 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		require.Equal(t, err, nil)
 		return count == int64(gwEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 
 	var jobIds []string
 	var jobId int64
@@ -389,7 +252,7 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		}
 		return gwEvents == len(jobIds)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 
 	sqlStatement = fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 	t.Logf("Checking for gateway jobs state for sqlStatement: %s", sqlStatement)
@@ -398,7 +261,7 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		require.Equal(t, nil, err)
 		return count == int64(gwEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 }
 
 func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
@@ -414,7 +277,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		require.Equal(t, err, nil)
 		return count == int64(brtEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 
 	var jobIds []string
 	var jobId int64
@@ -436,7 +299,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		}
 		return brtEvents == len(jobIds)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 
 	// Checking for the batch router jobs state
 	sqlStatement = fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
@@ -446,13 +309,18 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 		require.Equal(t, err, nil)
 		return count == int64(brtEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Min, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 }
 
 func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
 	var count int64
-	for idx, table := range wdt.Tables {
-		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, wdt.PrimaryKeys[idx], wdt.UserId)
+	for _, table := range wdt.Tables {
+		primaryKey := "user_id"
+		if table == "users" {
+			primaryKey = "id"
+		}
+
+		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKey, wdt.UserId)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
 		require.Contains(t, wdt.EventsCountMap, table)
@@ -462,7 +330,7 @@ func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
 			count, _ = queryCount(wdt.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor5Min, wdt.VerifyingTablesFrequency)
+		require.Eventually(t, condition, WaitFor5Minute, wdt.VerifyingTablesFrequency)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff"
 	"log"
 	"math/rand"
 	"net/http"
@@ -210,6 +211,15 @@ func JsonEscape(i string) (string, error) {
 	return strings.Trim(string(b), `"`), nil
 }
 
+func ConnectWithBackoff(operation func() error) {
+	var err error
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(ConnectBackoffDuration), uint64(ConnectBackoffRetryMax))
+	if err = backoff.Retry(operation, backoffWithMaxRetry); err != nil {
+		log.Panicf("could not connect to warehouse with error: %s", err.Error())
+	}
+}
+
 func GWJobsForUserIdWriteKey() string {
 	return `CREATE OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(user_id varchar, write_key varchar)
 								RETURNS TABLE
@@ -260,4 +270,18 @@ func BRTJobsForUserId() string {
 										END LOOP;
 								END ;
 								$$ LANGUAGE plpgsql`
+}
+
+func DefaultEventMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies": 1,
+		"users":      1,
+		"tracks":     1,
+		"pages":      1,
+		"screens":    1,
+		"aliases":    1,
+		"groups":     1,
+		"gateway":    6,
+		"batchRT":    8,
+	}
 }
