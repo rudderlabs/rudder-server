@@ -1192,20 +1192,19 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byt
 			continue
 		}
 
-		uuid := rudderID.String()
-		tempValue, ok := userMap[uuid]
+		uuidStr := rudderID.String()
+		tempValue, ok := userMap[uuidStr]
 		if !ok {
-			userCnt[uuid] = 0
-			userMap[uuid] = append([]byte(`{"batch":[`), evt.MarshalTo(nil)...)
-			userMap[uuid] = append(userMap[uuid], ']', '}')
+			userCnt[uuidStr] = 0
+			userMap[uuidStr] = append([]byte(`{"batch":[`), append(evt.MarshalTo(nil), ']', '}')...)
 		} else {
-			path := "batch." + strconv.Itoa(userCnt[uuid]+1)
+			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
 			raw, err := sjson.SetRaw(string(tempValue), path, string(evt.MarshalTo(nil)))
 			if err != nil {
 				continue
 			}
-			userCnt[uuid]++
-			userMap[uuid] = []byte(raw)
+			userCnt[uuidStr]++
+			userMap[uuidStr] = []byte(raw)
 		}
 	}
 
