@@ -84,4 +84,11 @@ setup-warehouse-integration: cleanup-warehouse-integration
 
 run-warehouse-integration: setup-warehouse-integration
 	go test -v github.com/rudderlabs/rudder-server/warehouse/postgres/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/mssql/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/clickhouse/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/redshift/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/snowflake/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/deltalake/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/datalake/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/bigquery/... -integration
 	make cleanup-warehouse-integration
