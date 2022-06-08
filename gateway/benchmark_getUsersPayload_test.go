@@ -87,15 +87,6 @@ func TestRegressions(t *testing.T) {
 	}
 }
 
-func TestNoIDs(t *testing.T) {
-	validBody := []byte(`{"batch": [{"data": "valid-json"}]}`)
-	res, err := getUsersPayloadOriginal(validBody)
-	t.Log(convertResultToMapInterface(t, res), err)
-
-	res, err = getUsersPayloadFinal(validBody)
-	t.Log(convertResultToMapInterface(t, res), err)
-}
-
 func BenchmarkGetUsersPayload(b *testing.B) {
 	validBody := generatePayload(20000)
 	b.Logf("Running benchmark with %s payload", byteCountIEC(len(validBody)))
