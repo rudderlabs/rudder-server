@@ -61,10 +61,6 @@ func TestRegressions(t *testing.T) {
 }
 
 func BenchmarkGetUsersPayload(b *testing.B) {
-	var (
-		gateway = &HandleT{}
-	)
-
 	validBody, err := os.ReadFile("./testdata/small_output.json")
 	require.NoError(b, err)
 
@@ -76,7 +72,7 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			b.StartTimer()
-			_, err = gateway.getUsersPayload(validBody)
+			_, err = getUsersPayloadOriginal(validBody)
 			b.StopTimer()
 		}
 
