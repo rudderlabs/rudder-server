@@ -17,10 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/valyala/fastjson"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
-	"github.com/mailru/easyjson"
 	"github.com/rs/cors"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -1154,8 +1155,16 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 }
 
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
-	var b batch
-	err := easyjson.Unmarshal(requestPayload, &b)
+	var p fastjson.Parser
+	v, err := p.ParseBytes(requestPayload)
+	if err != nil {
+		return nil, errors.New(response.InvalidJSON)
+	}
+	batch := v.Get("batch")
+	if batch == nil {
+		return nil, errors.New(response.InvalidJSON)
+	}
+	events, err := batch.Array()
 	if err != nil {
 		return nil, errors.New(response.InvalidJSON)
 	}
@@ -1164,27 +1173,42 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byt
 		userCnt = make(map[string]int)
 		userMap = make(map[string][]byte)
 	)
-	for index, row := range b.Entries {
-		rudderID, err := misc.GetMD5UUID(row.UserID + ":" + row.AnonymousID)
+
+	for _, evt := range events {
+		userID := evt.Get("userId")
+		anonymousID := evt.Get("anonymousId")
+		if userID == nil && anonymousID == nil {
+			continue
+		}
+		var userIDStr, anonymousIDStr string
+		if userID != nil {
+			userIDStr = string(userID.GetStringBytes())
+		}
+		if anonymousID != nil {
+			anonymousIDStr = string(anonymousID.GetStringBytes())
+		}
+		rudderID, err := misc.GetMD5UUID(userIDStr + ":" + anonymousIDStr)
 		if err != nil {
 			continue
 		}
-		uuidStr := rudderID.String()
-		globalPath := "batch." + strconv.Itoa(index)
-		tempValue, ok := userMap[uuidStr]
+
+		uuid := rudderID.String()
+		tempValue, ok := userMap[uuid]
 		if !ok {
-			userCnt[uuidStr] = 0
-			userMap[uuidStr] = []byte(`{"batch":[` + gjson.GetBytes(requestPayload, globalPath).String() + `]}`)
+			userCnt[uuid] = 0
+			userMap[uuid] = append([]byte(`{"batch":[`), evt.MarshalTo(nil)...)
+			userMap[uuid] = append(userMap[uuid], ']', '}')
 		} else {
-			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
-			raw, err := sjson.SetRaw(string(tempValue), path, gjson.GetBytes(requestPayload, globalPath).String())
+			path := "batch." + strconv.Itoa(userCnt[uuid]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, string(evt.MarshalTo(nil)))
 			if err != nil {
 				continue
 			}
-			userCnt[uuidStr]++
-			userMap[uuidStr] = []byte(raw)
+			userCnt[uuid]++
+			userMap[uuid] = []byte(raw)
 		}
 	}
+
 	return userMap, nil
 }
 
