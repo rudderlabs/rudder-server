@@ -1177,9 +1177,6 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byt
 	for _, evt := range events {
 		userID := evt.Get("userId")
 		anonymousID := evt.Get("anonymousId")
-		if userID == nil && anonymousID == nil {
-			continue
-		}
 		var userIDStr, anonymousIDStr string
 		if userID != nil {
 			userIDStr = string(userID.GetStringBytes())

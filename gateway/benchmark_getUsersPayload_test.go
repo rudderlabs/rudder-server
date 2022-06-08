@@ -87,6 +87,15 @@ func TestRegressions(t *testing.T) {
 	}
 }
 
+func TestNoIDs(t *testing.T) {
+	validBody := []byte(`{"batch": [{"data": "valid-json"}]}`)
+	res, err := getUsersPayloadOriginal(validBody)
+	t.Log(convertResultToMapInterface(t, res), err)
+
+	res, err = getUsersPayloadFinal(validBody)
+	t.Log(convertResultToMapInterface(t, res), err)
+}
+
 func BenchmarkGetUsersPayload(b *testing.B) {
 	validBody := generatePayload(20000)
 	b.Logf("Running benchmark with %s payload", byteCountIEC(len(validBody)))
@@ -380,9 +389,6 @@ func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
 	for _, evt := range events {
 		userID := evt.Get("userId")
 		anonymousID := evt.Get("anonymousId")
-		if userID == nil && anonymousID == nil {
-			continue
-		}
 		var userIDStr, anonymousIDStr string
 		if userID != nil {
 			userIDStr = string(userID.GetStringBytes())
