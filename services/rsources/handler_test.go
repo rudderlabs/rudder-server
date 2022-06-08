@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strings"
@@ -37,12 +36,12 @@ func TestSourcesHandler(t *testing.T) {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		t.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	resource := newDBResource(pool, "", "postgres")
+	resource := newDBResource(t, pool, "", "postgres")
 	defer func() {
-		purgeResource(pool, resource.resource)
+		purgeResource(t, pool, resource.resource)
 	}()
 
 	stats := Stats{
@@ -284,14 +283,14 @@ func TestMultitenantSourcesHandler(t *testing.T) {
 
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		t.Fatalf("Could not connect to docker: %s", err)
 	}
 	const networkId = "postgres-network"
 	network, _ := pool.Client.NetworkInfo(networkId)
 	if network == nil {
 		network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
 		if err != nil {
-			log.Fatalf("could not create a network: %s", err)
+			t.Fatalf("could not create a network: %s", err)
 		}
 	}
 
@@ -300,10 +299,10 @@ func TestMultitenantSourcesHandler(t *testing.T) {
 	}()
 
 	// Create 3 postgresql using wal_level logical (pgA, pgB, pgC)
-	pgA := newDBResource(pool, network.ID, "postgres-1", "wal_level=logical")
-	pgB := newDBResource(pool, network.ID, "postgres-2", "wal_level=logical")
-	pgC := newDBResource(pool, network.ID, "postgres-3")
-	defer purgeResource(pool, pgA.resource, pgB.resource, pgC.resource)
+	pgA := newDBResource(t, pool, network.ID, "postgres-1", "wal_level=logical")
+	pgB := newDBResource(t, pool, network.ID, "postgres-2", "wal_level=logical")
+	pgC := newDBResource(t, pool, network.ID, "postgres-3")
+	defer purgeResource(t, pool, pgA.resource, pgB.resource, pgC.resource)
 
 	var serviceA JobService
 	configA := JobServiceConfig{
@@ -424,7 +423,7 @@ func newJobRunId() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
-func newDBResource(pool *dockertest.Pool, networkId string, hostname string, params ...string) postgresResource {
+func newDBResource(t *testing.T, pool *dockertest.Pool, networkId string, hostname string, params ...string) postgresResource {
 	database := "jobsdb"
 	cmd := []string{"postgres"}
 	if len(params) > 0 {
@@ -445,7 +444,7 @@ func newDBResource(pool *dockertest.Pool, networkId string, hostname string, par
 		Cmd: cmd,
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		t.Fatalf("Could not start resource: %s", err)
 	}
 
 	port := resource.GetPort("5432/tcp")
@@ -459,12 +458,12 @@ func newDBResource(pool *dockertest.Pool, networkId string, hostname string, par
 			"host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable",
 			port))
 		if err != nil {
-			log.Println(err)
+			t.Log(err)
 			return err
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker after backoff: %s", err)
+		t.Fatalf("Could not connect to docker after backoff: %s", err)
 	}
 	return postgresResource{
 		db:          db,
@@ -474,11 +473,11 @@ func newDBResource(pool *dockertest.Pool, networkId string, hostname string, par
 	}
 }
 
-func purgeResource(pool *dockertest.Pool, resources ...*dockertest.Resource) {
+func purgeResource(t *testing.T, pool *dockertest.Pool, resources ...*dockertest.Resource) {
 	for _, resource := range resources {
 		err := pool.Purge(resource)
 		if err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			t.Logf("Could not purge resource: %s \n", err)
 		}
 	}
 }
