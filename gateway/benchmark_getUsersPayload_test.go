@@ -21,6 +21,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+//easyjson:json
+type batch struct {
+	Entries []batchEntry `json:"batch"`
+}
+
+//easyjson:json
+type batchEntry struct {
+	UserID      string `json:"userId"`
+	AnonymousID string `json:"anonymousId"`
+}
+
 func TestRegressions(t *testing.T) {
 	var validBody = []byte(`{"batch": [{
 			"anonymousId": "anon_id_1",
