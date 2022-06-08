@@ -162,9 +162,16 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 	)
 	var _ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
-			testValidBody := `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_3","event":"event_3_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_2","event":"event_2_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`
+			testValidBody := `{"batch":[
+				{"anonymousId":"anon_id_1","event":"event_1_1"},
+				{"anonymousId":"anon_id_2","event":"event_2_1"},
+				{"anonymousId":"anon_id_3","event":"event_3_1"},
+				{"anonymousId":"anon_id_1","event":"event_1_2"},
+				{"anonymousId":"anon_id_2","event":"event_2_2"},
+				{"anonymousId":"anon_id_1","event":"event_1_3"}
+			]}`
 			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
-			key, err := misc.GetMD5UUID((inputKey))
+			key, err := misc.GetMD5UUID(inputKey)
 			Expect(string(response[key.String()])).To(Equal(value))
 			Expect(err).To(BeNil())
 			Expect(payloadError).To(BeNil())
