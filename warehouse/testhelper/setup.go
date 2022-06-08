@@ -32,7 +32,8 @@ import (
 )
 
 var (
-	hold = true
+	hold           bool = true
+	runIntegration bool
 )
 
 var (
@@ -63,9 +64,15 @@ type ISetup interface {
 }
 
 func Setup(m *testing.M, setup ISetup) int {
-	// Getting hold flag variable
+	// Getting flag variable
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
+	flag.BoolVar(&runIntegration, "integration", false, "run warehouse integration tests")
 	flag.Parse()
+
+	if !runIntegration {
+		log.Println("Skipping integration test. Use `-integration` to run them.")
+		return 0
+	}
 
 	var tearDownStart time.Time
 	defer func() {
