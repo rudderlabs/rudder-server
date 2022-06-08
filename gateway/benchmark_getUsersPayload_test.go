@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -89,8 +88,8 @@ func TestRegressions(t *testing.T) {
 }
 
 func BenchmarkGetUsersPayload(b *testing.B) {
-	validBody, err := os.ReadFile("./testdata/small_output.json")
-	require.NoError(b, err)
+	validBody := generatePayload(20000)
+	b.Logf("Running benchmark with %s payload", byteCountIEC(len(validBody)))
 
 	b.Run("original", func(b *testing.B) {
 		var (
