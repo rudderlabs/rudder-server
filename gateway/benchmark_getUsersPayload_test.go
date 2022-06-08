@@ -152,7 +152,8 @@ loop:
 		case <-done:
 			b.Logf("getUsersPayloadFinal took %s", time.Since(start))
 		case <-timeout:
-			b.Logf("Payload %s took more than 3 minutes to process, terminating...", byteCountIEC(no))
+			requestPayload := generatePayload(no)
+			b.Logf("Payload of %s took more than 3 minutes to process", byteCountIEC(len(requestPayload)))
 			break loop
 		}
 	}
