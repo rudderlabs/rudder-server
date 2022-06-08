@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mailru/easyjson"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,34 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 		// check at least once that we got no errors
 		require.NoError(b, err)
 	})
+}
+
+func BenchmarkFindReasonablePayload(b *testing.B) {
+loop:
+	for no := 10000; ; no += 10000 {
+		done := make(chan struct{})
+		timeout := time.After(3 * time.Minute)
+
+		var start time.Time
+		go func(no int) {
+			defer close(done)
+			requestPayload := generatePayload(no)
+			b.Logf("Processing %s payload", byteCountIEC(len(requestPayload)))
+
+			start = time.Now()
+			b.StartTimer()
+			_, err := getUsersPayloadFinal(requestPayload)
+			b.StopTimer()
+			require.NoError(b, err)
+		}(no)
+		select {
+		case <-done:
+			b.Logf("getUsersPayloadFinal took %s", time.Since(start))
+		case <-timeout:
+			b.Logf("Payload %s took more than 3 minutes to process, terminating...", byteCountIEC(no))
+			break loop
+		}
+	}
 }
 
 func getUsersPayloadOriginal(requestPayload []byte) (map[string][]byte, error) {
@@ -281,6 +310,30 @@ func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
 	}
 
 	return userMap, nil
+}
+
+func generatePayload(noOfEvents int) []byte {
+	m := []byte(`{"batch":[`)
+	for i := 0; i < noOfEvents; i++ {
+		idx := strconv.Itoa(i)
+		m = append(m, []byte(`{"userId":"user_id_`+idx+`",`+
+			`"anonymousId":"anon_id_`+idx+`",`+
+			`"event":"event_`+idx+`"},`)...)
+	}
+	return append(m[:len(m)-1], ']', '}')
+}
+
+func byteCountIEC(b int) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := unit, 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func convertBytesMap(m map[string][]byte) map[string]string {
