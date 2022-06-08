@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mailru/easyjson"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -1157,39 +1158,38 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 }
 
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
-	userMap := make(map[string][][]byte)
-	var index int
-
-	if !gjson.ValidBytes(requestPayload) {
-		return make(map[string][]byte), errors.New(response.InvalidJSON)
+	var b batch
+	err := easyjson.Unmarshal(requestPayload, &b)
+	if err != nil {
+		return nil, errors.New(response.InvalidJSON)
 	}
 
-	result := gjson.GetBytes(requestPayload, "batch")
-
-	result.ForEach(func(_, _ gjson.Result) bool {
-		anonIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
-		userIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.userId`, index)).String())
-		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+	var (
+		userCnt = make(map[string]int)
+		userMap = make(map[string][]byte)
+	)
+	for index, row := range b.Entries {
+		rudderID, err := misc.GetMD5UUID(row.UserID + ":" + row.AnonymousID)
 		if err != nil {
-			return false
+			continue
 		}
-		userMap[rudderID.String()] = append(userMap[rudderID.String()], []byte(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v`, index)).String()))
-		index++
-		return true
-	})
-	recontructedUserMap := make(map[string][]byte)
-	for key := range userMap {
-		var tempValue string
-		var err error
-		for index = 0; index < len(userMap[key]); index++ {
-			tempValue, err = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
+		uuidStr := rudderID.String()
+		globalPath := "batch." + strconv.Itoa(index)
+		tempValue, ok := userMap[uuidStr]
+		if !ok {
+			userCnt[uuidStr] = 0
+			userMap[uuidStr] = []byte(`{"batch":[` + gjson.GetBytes(requestPayload, globalPath).String() + `]}`)
+		} else {
+			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, gjson.GetBytes(requestPayload, globalPath).String())
 			if err != nil {
-				return recontructedUserMap, err
+				continue
 			}
+			userCnt[uuidStr]++
+			userMap[uuidStr] = []byte(raw)
 		}
-		recontructedUserMap[key] = []byte(tempValue)
 	}
-	return recontructedUserMap, nil
+	return userMap, nil
 }
 
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
