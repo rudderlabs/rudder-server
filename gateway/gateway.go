@@ -1135,7 +1135,6 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
 func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	errorMessage := ""
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
@@ -1146,14 +1145,12 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 		gateway.addToWebRequestQ(w, r, done, "batch", usersPayload[key], writeKey)
 	}
 
-	interimMsgs := []string{}
+	var interimMsgs []string
 	for index := 0; index < count; index++ {
 		interimErrorMessage := <-done
 		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}
-	errorMessage = strings.Join(interimMsgs[:], "")
-
-	return errorMessage
+	return strings.Join(interimMsgs, "")
 }
 
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
