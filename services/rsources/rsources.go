@@ -17,9 +17,9 @@ type JobFilter struct {
 }
 
 type JobTargetKey struct {
-	TaskRunID     string
-	SourceID      string
-	DestinationID string
+	TaskRunID     string `json:"source_task_run_id"`
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 type Stats struct {

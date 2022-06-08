@@ -344,37 +344,31 @@ func newJobStatus(jobId int64, state string) *jobsdb.JobStatusT {
 }
 
 func BenchmarkParamsParsing(b *testing.B) {
-	type params struct {
-		TaskRunID     string `json:"source_task_run_id"`
-		SourceID      string `json:"source_id"`
-		DestinationID string `json:"destination_id"`
-	}
 
 	jsonStr := []byte(`{
-		"source_job_run_id": "source_job_run_id",
-		"source_task_run_id": "source_task_run_id",
-		"source_id": "source_id",
-		"destination_id": "destination_id",
 		"prop1": "prop1",
 		"prop2": "prop2",
 		"prop3": "prop3",
-		"prop4": "prop4",
+		"prop4": "prop4","source_job_run_id": "source_job_run_id",
+		"source_task_run_id": "source_task_run_id",
+		"source_id": "source_id",
+		"destination_id": "destination_id",
 		"prop5": "prop5",
 		"prop6": "prop6"
 	}`)
 	b.Run("parse params using gjson.GetBytes 3 times", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = params{
-				TaskRunID:     gjson.GetBytes(jsonStr, sourceTaskRunID).Str,
-				SourceID:      gjson.GetBytes(jsonStr, sourceID).Str,
-				DestinationID: gjson.GetBytes(jsonStr, destinationID).Str,
+			_ = JobTargetKey{
+				TaskRunID:     gjson.GetBytes(jsonStr, "source_task_run_id").Str,
+				SourceID:      gjson.GetBytes(jsonStr, "source_id").Str,
+				DestinationID: gjson.GetBytes(jsonStr, "destination_id").Str,
 			}
 		}
 	})
 
 	b.Run("parse params using jsoniter.Unmarshall", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			var p params
+			var p JobTargetKey
 			err := jsoniter.Unmarshal(jsonStr, &p)
 			if err != nil {
 				b.Fatal(err)

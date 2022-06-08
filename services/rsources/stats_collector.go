@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	uuid "github.com/gofrs/uuid"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/tidwall/gjson"
 )
@@ -115,10 +116,7 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 }
 
 const (
-	sourceJobRunID  = "source_job_run_id"
-	sourceTaskRunID = "source_task_run_id"
-	sourceID        = "source_id"
-	destinationID   = "destination_id"
+	sourceJobRunID = "source_job_run_id"
 )
 
 func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string, incrementIn bool) { // skipcq: RVV-A0005
@@ -129,13 +127,11 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		}
 		jobRunId := gjson.GetBytes(job.Parameters, sourceJobRunID).Str
 		if jobRunId != "" {
+			var jobTargetKey JobTargetKey
+			_ = jsoniter.Unmarshal(job.Parameters, &jobTargetKey)
 			sk := statKey{
-				jobRunId: jobRunId,
-				JobTargetKey: JobTargetKey{
-					TaskRunID:     gjson.GetBytes(job.Parameters, sourceTaskRunID).Str,
-					SourceID:      gjson.GetBytes(job.Parameters, sourceID).Str,
-					DestinationID: gjson.GetBytes(job.Parameters, destinationID).Str,
-				},
+				jobRunId:     jobRunId,
+				JobTargetKey: jobTargetKey,
 			}
 			var stats *Stats
 			stats, ok := r.statsIndex[sk]
