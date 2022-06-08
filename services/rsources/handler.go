@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -213,18 +215,24 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
 	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
 	if err != nil {
-		pqError := err.(pq.Error)
-		if pqError.Code != pq.ErrorCode("42710") { // duplicate
+		pqError, ok := err.(*pq.Error)
+		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
 			return fmt.Errorf("failed to create publication on local database: %w", err)
 		}
 	}
-	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", sh.config.LocalHostname)
+
+	normalizedHostname := regexp.MustCompile(`[^a-z0-9_]`).ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
+	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
 	// Create subscription for the above publication (ignore already exists error)
-	subscriptionQuery := `CREATE SUBSCRIPTION $1 CONNECTION $2 PUBLICATION "rsources_stats_pub"`
-	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery, subscriptionName, sh.config.LocalConnection)
+	subscriptionConn := sh.config.SubscriptionTargetConn
+	if subscriptionConn == "" {
+		subscriptionConn = sh.config.LocalConn
+	}
+	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn)
+	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery)
 	if err != nil {
-		pqError := err.(pq.Error)
-		if pqError.Code != pq.ErrorCode("42710") { // duplicate
+		pqError, ok := err.(*pq.Error)
+		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
 		}
 	}

@@ -80,10 +80,11 @@ type StatsIncrementer interface {
 }
 
 type JobServiceConfig struct {
-	LocalHostname    string
-	MaxPoolSize      int
-	LocalConnection  string
-	SharedConnection string
+	LocalHostname          string
+	LocalConn              string
+	MaxPoolSize            int
+	SharedConn             string
+	SubscriptionTargetConn string
 }
 
 // JobService manages information about jobs created by rudder-sources
@@ -112,14 +113,14 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		err               error
 	)
 
-	localDB, err = sql.Open("postgres", config.LocalConnection)
+	localDB, err = sql.Open("postgres", config.LocalConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
 	localDB.SetMaxOpenConns(config.MaxPoolSize)
 
-	if config.SharedConnection != "" {
-		sharedDB, err = sql.Open("postgres", config.SharedConnection)
+	if config.SharedConn != "" {
+		sharedDB, err = sql.Open("postgres", config.SharedConn)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
