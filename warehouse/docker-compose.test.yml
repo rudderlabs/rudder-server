@@ -15,8 +15,8 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   transformer:
     container_name: transformer
     image: rudderlabs/rudder-transformer:latest
@@ -25,8 +25,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.2.0
     container_name: databricks-connector
@@ -35,8 +35,8 @@ services:
     healthcheck:
       test: /bin/grpc_health_probe -addr=localhost:50051
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -49,8 +49,8 @@ services:
     healthcheck:
       test: curl --fail http://localhost:9000/minio/health/live || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   postgres:
     container_name: postgres
     image: postgres:11-alpine
@@ -63,8 +63,8 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   clickhouse:
     container_name: clickhouse
     image: yandex/clickhouse-server:21-alpine
@@ -77,8 +77,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   mssql:
     container_name: mssql
     image: mcr.microsoft.com/azure-sql-edge:1.0.5
@@ -92,8 +92,8 @@ services:
     healthcheck:
       test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   zookeeper:
     image: zookeeper:3.5
     container_name: clickhouse-zookeeper
@@ -103,8 +103,8 @@ services:
     healthcheck:
       test: nc -z localhost 2181 || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse01
@@ -120,8 +120,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   clickhouse02:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse02
@@ -137,8 +137,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   clickhouse03:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse03
@@ -154,8 +154,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   clickhouse04:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse04
@@ -171,8 +171,8 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
-      timeout: 60s
-      retries: 10
+      timeout: 30s
+      retries: 25
   start_dependencies:
     image: alpine:latest
     depends_on:
