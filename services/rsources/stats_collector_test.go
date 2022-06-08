@@ -336,12 +336,6 @@ func newAbortedStatus(jobId int64) *jobsdb.JobStatusT {
 		JobState: jobsdb.Aborted.State,
 	}
 }
-func newJobStatus(jobId int64, state string) *jobsdb.JobStatusT {
-	return &jobsdb.JobStatusT{
-		JobID:    jobId,
-		JobState: state,
-	}
-}
 
 func BenchmarkParamsParsing(b *testing.B) {
 
@@ -356,6 +350,31 @@ func BenchmarkParamsParsing(b *testing.B) {
 		"prop5": "prop5",
 		"prop6": "prop6"
 	}`)
+
+	b.Run("parse params using gjson.ForEach", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			r := gjson.ParseBytes(jsonStr)
+			var tk JobTargetKey
+			found := 0
+			r.ForEach(func(key, value gjson.Result) bool {
+				if key.Str == "source_task_run_id" {
+					tk.TaskRunID = value.Str
+					found++
+				} else if key.Str == "source_id" {
+					tk.SourceID = value.Str
+					found++
+				} else if key.Str == "destination_id" {
+					tk.DestinationID = value.Str
+					found++
+				}
+				if found == 3 {
+					return false
+				}
+				return true
+			})
+		}
+	})
+
 	b.Run("parse params using gjson.GetBytes 3 times", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_ = JobTargetKey{

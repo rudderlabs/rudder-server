@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	uuid "github.com/gofrs/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/tidwall/gjson"
 )
@@ -115,20 +114,36 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-const (
-	sourceJobRunID = "source_job_run_id"
-)
-
 func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string, incrementIn bool) { // skipcq: RVV-A0005
 	for i := range jobs {
 		job := jobs[i]
 		if _, ok := failedJobs[job.UUID]; ok {
 			continue
 		}
-		jobRunId := gjson.GetBytes(job.Parameters, sourceJobRunID).Str
+		var jobRunId string
+		var jobTargetKey JobTargetKey
+		remaining := 4
+		jp := gjson.ParseBytes(job.Parameters)
+		jp.ForEach(func(key, value gjson.Result) bool {
+			if key.Str == "source_job_run_id" {
+				jobRunId = value.Str
+				remaining--
+			} else if key.Str == "source_task_run_id" {
+				jobTargetKey.TaskRunID = value.Str
+				remaining--
+			} else if key.Str == "source_id" {
+				jobTargetKey.SourceID = value.Str
+				remaining--
+			} else if key.Str == "destination_id" {
+				jobTargetKey.DestinationID = value.Str
+				remaining--
+			}
+			if remaining == 0 {
+				return false
+			}
+			return true
+		})
 		if jobRunId != "" {
-			var jobTargetKey JobTargetKey
-			_ = jsoniter.Unmarshal(job.Parameters, &jobTargetKey)
 			sk := statKey{
 				jobRunId:     jobRunId,
 				JobTargetKey: jobTargetKey,
