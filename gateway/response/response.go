@@ -30,6 +30,8 @@ const (
 	InvalidWebhookSource = "Source does not accept webhook events"
 	//SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
 	SourceTransformerResponseErrorReadFailed = "Failed to read error from source transformer response"
+	//SourceDisabled - write key is present, but the source for it is disabled.
+	SourceDisabled = "Source is disabled"
 	//SourceTransformerFailed - Internal server error in source transformer
 	SourceTransformerFailed = "Internal server error in source transformer"
 	//SourceTransformerFailedToReadOutput - Output not found in source transformer response
@@ -77,9 +79,10 @@ func loadStatusMap() {
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
+	statusMap[SourceDisabled] = ResponseStatus{message: SourceDisabled, code: http.StatusNotFound}
 	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
 	// webhook specific status
-	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusBadRequest}
+	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusNotFound}
 	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
 	statusMap[SourceTransformerResponseErrorReadFailed] = ResponseStatus{message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest}
 	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}

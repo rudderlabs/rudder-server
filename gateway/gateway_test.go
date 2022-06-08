@@ -432,11 +432,11 @@ var _ = Describe("Gateway", func() {
 		// common tests for all web handlers
 		assertHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should reject requests without Authorization header", func() {
-				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, response.NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, unauthorizedRequest(nil), 401, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
 			It("should reject requests without username in Authorization header", func() {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 401, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
 			It("should reject requests without valid rudder event in request body", func() {
@@ -458,7 +458,7 @@ var _ = Describe("Gateway", func() {
 			})
 
 			It("should reject requests without request body", func() {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, fmt.Sprintf("read payload from request: %s\n", response.RequestBodyNil))
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
 			})
 
 			It("should reject requests without valid json in request body", func() {
@@ -479,7 +479,7 @@ var _ = Describe("Gateway", func() {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
 				if handlerType != "audiencelist" {
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 413, response.RequestBodyTooLarge+"\n")
 				}
 			})
 
@@ -488,15 +488,15 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 401, response.InvalidWriteKey+"\n")
 			})
 
-			It("should reject requests with disabled write keys", func() {
+			It("should reject requests with disabled write keys (source)", func() {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 404, response.SourceDisabled+"\n")
 			})
 		}
 
