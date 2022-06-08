@@ -949,24 +949,28 @@ func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix s
 	return
 }
 
-func isDateFormatExists(connIdentifier string) bool {
+func getDateFormat(connIdentifier string) (dateFormat string, exists bool) {
 	dateFormatMapLock.RLock()
 	defer dateFormatMapLock.RUnlock()
-	_, ok := dateFormatMap[connIdentifier]
-	return ok
+	dateFormat, exists = dateFormatMap[connIdentifier]
+	return
+}
+
+func setDateFormat(connIdentifier, dateFormat string) {
+	dateFormatMapLock.Lock()
+	defer dateFormatMapLock.Unlock()
+	dateFormatMap[connIdentifier] = dateFormat
 }
 
 func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
 	connIdentifier := connectionIdentifier(DestinationT{Destination: destination.Destination, Source: destination.Source})
-	if isDateFormatExists(connIdentifier) {
-		return dateFormatMap[connIdentifier], err
+	if format, exists := getDateFormat(connIdentifier); exists {
+		return format, err
 	}
 
 	defer func() {
 		if err == nil {
-			dateFormatMapLock.RLock()
-			defer dateFormatMapLock.RUnlock()
-			dateFormatMap[connIdentifier] = dateFormat
+			setDateFormat(connIdentifier, dateFormat)
 		}
 	}()
 
