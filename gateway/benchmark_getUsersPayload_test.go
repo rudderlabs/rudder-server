@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/valyala/fastjson"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -43,21 +45,35 @@ func TestRegressions(t *testing.T) {
 
 	resp1, err := getUsersPayloadOriginal(validBody)
 	require.NoError(t, err)
+	respObj1 := convertResultToMapInterface(t, resp1)
+
 	resp2, err := getUsersPayloadFinal(validBody)
 	require.NoError(t, err)
+	respObj2 := convertResultToMapInterface(t, resp2)
+
 	resp3, err := getUsersPayloadEasyJsonDoubleAllocation(validBody)
 	require.NoError(t, err)
+	respObj3 := convertResultToMapInterface(t, resp3)
+
 	resp4, err := getUsersPayloadWithMD5Cache(validBody)
 	require.NoError(t, err)
+	respObj4 := convertResultToMapInterface(t, resp4)
 
-	if !reflect.DeepEqual(resp1, resp2) {
-		t.Fatalf("Expected: %s\n\nGot: %s", convertBytesMap(resp1), convertBytesMap(resp2))
+	resp5, err := getUsersPayloadEasyGJsonHybrid(validBody)
+	require.NoError(t, err)
+	respObj5 := convertResultToMapInterface(t, resp5)
+
+	if !reflect.DeepEqual(respObj1, respObj2) {
+		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj2)
 	}
-	if !reflect.DeepEqual(resp1, resp3) {
-		t.Fatalf("Expected: %s\n\nGot: %s", convertBytesMap(resp1), convertBytesMap(resp3))
+	if !reflect.DeepEqual(respObj1, respObj3) {
+		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj3)
 	}
-	if !reflect.DeepEqual(resp1, resp4) {
-		t.Fatalf("Expected: %s\n\nGot: %s", convertBytesMap(resp1), convertBytesMap(resp4))
+	if !reflect.DeepEqual(respObj1, respObj4) {
+		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj4)
+	}
+	if !reflect.DeepEqual(respObj1, respObj5) {
+		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj5)
 	}
 }
 
@@ -113,7 +129,23 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 		require.NoError(b, err)
 	})
 
-	b.Run("easyjson-final", func(b *testing.B) {
+	b.Run("easyjson-no-md5-cache", func(b *testing.B) {
+		var (
+			err error
+		)
+
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			b.StartTimer()
+			_, err = getUsersPayloadEasyGJsonHybrid(validBody)
+			b.StopTimer()
+		}
+
+		// check at least once that we got no errors
+		require.NoError(b, err)
+	})
+
+	b.Run("fastjson", func(b *testing.B) {
 		var (
 			err error
 		)
@@ -131,10 +163,12 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 }
 
 func BenchmarkFindReasonablePayload(b *testing.B) {
+	maxTime := 30 * time.Second
+
 loop:
-	for no := 10000; ; no += 10000 {
+	for no := 100000; ; no += 100000 {
 		done := make(chan struct{})
-		timeout := time.After(3 * time.Minute)
+		timeout := time.After(maxTime)
 
 		var start time.Time
 		go func(no int) {
@@ -153,7 +187,7 @@ loop:
 			b.Logf("getUsersPayloadFinal took %s", time.Since(start))
 		case <-timeout:
 			requestPayload := generatePayload(no)
-			b.Logf("Payload of %s took more than 3 minutes to process", byteCountIEC(len(requestPayload)))
+			b.Logf("Payload of %s took more than %s to process", maxTime, byteCountIEC(len(requestPayload)))
 			break loop
 		}
 	}
@@ -276,7 +310,7 @@ func getUsersPayloadWithMD5Cache(requestPayload []byte) (map[string][]byte, erro
 	return userMap, nil
 }
 
-func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
+func getUsersPayloadEasyGJsonHybrid(requestPayload []byte) (map[string][]byte, error) {
 	var b batch
 	err := easyjson.Unmarshal(requestPayload, &b)
 	if err != nil {
@@ -313,6 +347,64 @@ func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
 	return userMap, nil
 }
 
+func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
+	var p fastjson.Parser
+	v, err := p.ParseBytes(requestPayload)
+	if err != nil {
+		return nil, errors.New(response.InvalidJSON)
+	}
+	batch := v.Get("batch")
+	if batch == nil {
+		return nil, errors.New(response.InvalidJSON)
+	}
+	events, err := batch.Array()
+	if err != nil {
+		return nil, errors.New(response.InvalidJSON)
+	}
+
+	var (
+		userCnt = make(map[string]int)
+		userMap = make(map[string][]byte)
+	)
+
+	for _, evt := range events {
+		userID := evt.Get("userId")
+		anonymousID := evt.Get("anonymousId")
+		if userID == nil && anonymousID == nil {
+			continue
+		}
+		var userIDStr, anonymousIDStr string
+		if userID != nil {
+			userIDStr = string(userID.GetStringBytes())
+		}
+		if anonymousID != nil {
+			anonymousIDStr = string(anonymousID.GetStringBytes())
+		}
+		rudderID, err := misc.GetMD5UUID(userIDStr + ":" + anonymousIDStr)
+		if err != nil {
+			continue
+		}
+
+		uuid := rudderID.String()
+		tempValue, ok := userMap[uuid]
+		if !ok {
+			userCnt[uuid] = 0
+			userMap[uuid] = append([]byte(`{"batch":[`), evt.MarshalTo(nil)...)
+			userMap[uuid] = append(userMap[uuid], ']', '}')
+		} else {
+			path := "batch." + strconv.Itoa(userCnt[uuid]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, string(evt.MarshalTo(nil)))
+			if err != nil {
+				continue
+			}
+			userCnt[uuid]++
+			userMap[uuid] = []byte(raw)
+		}
+	}
+
+	return userMap, nil
+}
+
 func generatePayload(noOfEvents int) []byte {
 	m := []byte(`{"batch":[`)
 	for i := 0; i < noOfEvents; i++ {
@@ -337,10 +429,14 @@ func byteCountIEC(b int) string {
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func convertBytesMap(m map[string][]byte) map[string]string {
-	nm := make(map[string]string)
-	for k, v := range m {
-		nm[k] = string(v)
+func convertResultToMapInterface(t *testing.T, res map[string][]byte) map[string]interface{} {
+	t.Helper()
+	rm := make(map[string]interface{})
+	for k, v := range res {
+		m := make(map[string]interface{})
+		err := json.Unmarshal(v, &m)
+		require.NoError(t, err)
+		rm[k] = m
 	}
-	return nm
+	return rm
 }
