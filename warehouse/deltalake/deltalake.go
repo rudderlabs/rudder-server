@@ -510,8 +510,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
-	var diff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
-	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, diff)
+	var tableSchemaDiff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
