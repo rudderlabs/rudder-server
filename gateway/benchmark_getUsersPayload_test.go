@@ -73,6 +73,10 @@ func TestRegressions(t *testing.T) {
 	require.NoError(t, err)
 	respObj5 := convertResultToMapInterface(t, resp5)
 
+	resp6, err := getUsersPayloadEasyGJsonHybrid(validBody)
+	require.NoError(t, err)
+	respObj6 := convertResultToMapInterface(t, resp6)
+
 	if !reflect.DeepEqual(respObj1, respObj2) {
 		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj2)
 	}
@@ -84,6 +88,9 @@ func TestRegressions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(respObj1, respObj5) {
 		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj5)
+	}
+	if !reflect.DeepEqual(respObj1, respObj6) {
+		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj6)
 	}
 }
 
@@ -164,6 +171,22 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			b.StartTimer()
 			_, err = getUsersPayloadFinal(validBody)
+			b.StopTimer()
+		}
+
+		// check at least once that we got no errors
+		require.NoError(b, err)
+	})
+
+	b.Run("gjson-revised", func(b *testing.B) {
+		var (
+			err error
+		)
+
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			b.StartTimer()
+			_, err = getUsersPayloadGJsonRevised(validBody)
 			b.StopTimer()
 		}
 
@@ -354,6 +377,45 @@ func getUsersPayloadEasyGJsonHybrid(requestPayload []byte) (map[string][]byte, e
 		}
 	}
 
+	return userMap, nil
+}
+
+func getUsersPayloadGJsonRevised(requestPayload []byte) (map[string][]byte, error) {
+	if !gjson.ValidBytes(requestPayload) {
+		return make(map[string][]byte), errors.New(response.InvalidJSON)
+	}
+
+	result := gjson.GetBytes(requestPayload, "batch")
+
+	var (
+		userCnt = make(map[string]int)
+		userMap = make(map[string][]byte)
+	)
+	result.ForEach(func(key, value gjson.Result) bool {
+		anonIDFromReq := value.Get("anonymousId").String()
+		userIDFromReq := value.Get("userId").String()
+		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			return false
+		}
+
+		uuidStr := rudderID.String()
+		tempValue, ok := userMap[uuidStr]
+		if !ok {
+			userCnt[uuidStr] = 0
+			userMap[uuidStr] = append([]byte(`{"batch":[`), append([]byte(value.Raw), ']', '}')...)
+		} else {
+			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, value.Raw)
+			if err != nil {
+				return false
+			}
+			userCnt[uuidStr]++
+			userMap[uuidStr] = []byte(raw)
+		}
+
+		return true
+	})
 	return userMap, nil
 }
 
