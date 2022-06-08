@@ -170,6 +170,8 @@ func SetUpClickHouseClusterDestination() {
 }
 
 func TestClickHouseIntegration(t *testing.T) {
+	t.Parallel()
+
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  CHTest.DB,
@@ -317,6 +319,8 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 }
 
 func TestClickHouseClusterIntegration(t *testing.T) {
+	t.Parallel()
+
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  CHClusterTest.GetResource().DB,
