@@ -328,7 +328,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+func GetTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
 		ColumnMap:     make(map[string]string),
 		UpdatedSchema: make(map[string]string),
@@ -344,7 +344,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedS
 		diff.TableToBeCreated = true
 		diff.ColumnMap = uploadSchema[tableName]
 		diff.UpdatedSchema = uploadSchema[tableName]
-		for _, k := range excludedSchema[tableName] {
+		for k, _ := range excludedSchema[tableName] {
 			delete(diff.ColumnMap, k)
 			delete(diff.UpdatedSchema, k)
 		}
@@ -366,7 +366,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedS
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		}
-		for _, k := range excludedSchema[tableName] {
+		for k, _ := range excludedSchema[tableName] {
 			delete(diff.ColumnMap, k)
 			delete(diff.UpdatedSchema, k)
 		}

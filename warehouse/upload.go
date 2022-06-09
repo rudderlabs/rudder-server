@@ -943,7 +943,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
+	tableSchemaDiff := GetTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1127,7 +1127,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
+		tableSchemaDiff := GetTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
