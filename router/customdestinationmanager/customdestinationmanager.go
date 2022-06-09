@@ -28,7 +28,6 @@ var (
 	ObjectStreamDestinations    []string
 	KVStoreDestinations         []string
 	Destinations                []string
-	customManagerMap            map[string]*CustomManagerT
 	pkgLogger                   logger.LoggerI
 	disableEgress               bool
 	skipBackendConfigSubscriber bool
@@ -37,19 +36,23 @@ var (
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
 	SendData(jsonData json.RawMessage, destID string) (int, string)
+	BackendConfigInitialized() <-chan struct{}
 }
 
 // CustomManagerT handles this module
 type CustomManagerT struct {
-	destType       string
-	managerType    string
-	mapLock        sync.RWMutex
-	clientLock     map[string]*sync.RWMutex
-	client         map[string]*clientHolder
-	config         map[string]backendconfig.DestinationT
-	breaker        map[string]breakerHolder
-	timeout        time.Duration
-	breakerTimeout time.Duration
+	destType    string
+	managerType string
+
+	stateMu  sync.RWMutex // protecting all 4 maps below
+	config   map[string]backendconfig.DestinationT
+	breaker  map[string]breakerHolder
+	clientMu map[string]*sync.RWMutex
+	client   map[string]*clientHolder
+
+	timeout                  time.Duration
+	breakerTimeout           time.Duration
+	backendConfigInitialized chan struct{}
 }
 
 //clientHolder keeps the config of a destination and corresponding producer for a stream destination
@@ -72,7 +75,6 @@ func loadConfig() {
 	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD", "PERSONALIZE", "GOOGLESHEETS", "BQSTREAM"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
-	customManagerMap = make(map[string]*CustomManagerT)
 	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 }
 
@@ -140,9 +142,9 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		return 200, `200: outgoing disabled`
 	}
 
-	customManager.mapLock.RLock()
-	clientLock, ok := customManager.clientLock[destID]
-	customManager.mapLock.RUnlock()
+	customManager.stateMu.RLock()
+	clientLock, ok := customManager.clientMu[destID]
+	customManager.stateMu.RUnlock()
 	if !ok {
 		return 500, fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s. Config might not have been updated. Please wait for a min before sending events.", customManager.destType, destID)
 	}
@@ -220,11 +222,13 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 }
 
 func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error { // skipcq: CRT-P0003
+	customManager.stateMu.Lock()
+	defer customManager.stateMu.Unlock()
 	var err error
-	clientLock, ok := customManager.clientLock[destination.ID]
+	clientLock, ok := customManager.clientMu[destination.ID]
 	if !ok {
 		clientLock = &sync.RWMutex{}
-		customManager.clientLock[destination.ID] = clientLock
+		customManager.clientMu[destination.ID] = clientLock
 	}
 	clientLock.Lock()
 	defer clientLock.Unlock()
@@ -277,24 +281,23 @@ func New(destType string, o Opts) DestinationManager {
 			managerType = KV
 		}
 
-		customManager, ok := customManagerMap[destType]
-		if ok {
-			return customManager
+		customManager := &CustomManagerT{
+			timeout:                  o.Timeout,
+			destType:                 destType,
+			managerType:              managerType,
+			client:                   make(map[string]*clientHolder),
+			clientMu:                 make(map[string]*sync.RWMutex),
+			config:                   make(map[string]backendconfig.DestinationT),
+			breaker:                  make(map[string]breakerHolder),
+			backendConfigInitialized: make(chan struct{}),
 		}
 
-		customManager = &CustomManagerT{
-			timeout:     o.Timeout,
-			destType:    destType,
-			managerType: managerType,
-			client:      make(map[string]*clientHolder),
-			clientLock:  make(map[string]*sync.RWMutex),
-			config:      make(map[string]backendconfig.DestinationT),
-			breaker:     make(map[string]breakerHolder),
-		}
 		if !skipBackendConfigSubscriber {
 			rruntime.Go(func() {
 				customManager.backendConfigSubscriber()
 			})
+		} else {
+			close(customManager.backendConfigInitialized)
 		}
 
 		return customManager
@@ -303,12 +306,16 @@ func New(destType string, o Opts) DestinationManager {
 	return nil
 }
 
+func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} {
+	return customManager.backendConfigInitialized
+}
+
 func (customManager *CustomManagerT) backendConfigSubscriber() {
+	var once sync.Once
 	ch := make(chan pubsub.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
-		customManager.mapLock.Lock()
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
@@ -317,7 +324,9 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
-		customManager.mapLock.Unlock()
+		once.Do(func() {
+			close(customManager.backendConfigInitialized)
+		})
 	}
 }
 
