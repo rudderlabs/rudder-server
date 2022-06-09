@@ -1163,7 +1163,7 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byt
 		userCnt = make(map[string]int)
 		userMap = make(map[string][]byte)
 	)
-	result.ForEach(func(key, value gjson.Result) bool {
+	result.ForEach(func(_, value gjson.Result) bool {
 		anonIDFromReq := value.Get("anonymousId").String()
 		userIDFromReq := value.Get("userId").String()
 		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
