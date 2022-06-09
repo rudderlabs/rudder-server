@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/rudderlabs/rudder-server/warehouse"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var _ = Describe("Schema", func() {
@@ -218,6 +219,81 @@ var _ = Describe("Schema", func() {
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
+		})
+	})
+
+	Describe("Excluded schema", func() {
+		var uploadSchema = warehouseutils.SchemaT{
+			"demo_event": {
+				"anonymous_id":       "string",
+				"channel":            "string",
+				"context_ip":         "string",
+				"context_passed_ip":  "string",
+				"context_request_ip": "string",
+				"event_text":         "string",
+				"group_id":           "string",
+				"id":                 "string",
+				"name":               "string",
+				"original_timestamp": "datetime",
+				"previous_id":        "string",
+				"received_at":        "datetime",
+				"record_id":          "string",
+				"sent_at":            "datetime",
+				"timestamp":          "datetime",
+				"user_id":            "string", // end of 16 rudder columns
+				"ad_name":            "string",
+				"blendo_id":          "string",
+				"clicks":             "int",
+				"currency":           "float",
+				"date_start":         "datatime",
+				"sample_event":       "json",
+			},
+		}
+
+		var schemaInWarehouse = warehouseutils.SchemaT{
+			"demo_event": {
+				"anonymous_id":       "string",
+				"channel":            "string",
+				"context_ip":         "string",
+				"context_passed_ip":  "string",
+				"context_request_ip": "string",
+				"event_text":         "string",
+				"group_id":           "string",
+				"id":                 "string",
+				"name":               "string",
+				"original_timestamp": "datetime",
+				"previous_id":        "string",
+				"received_at":        "datetime",
+				"record_id":          "string",
+				"sent_at":            "datetime",
+				"timestamp":          "datetime",
+				"user_id":            "string", // end of 16 rudder columns
+				"ad_name":            "string",
+				"blendo_id":          "string",
+			},
+		}
+		// With max col limit: 20
+		var ExcludedSchema = warehouseutils.SchemaT{
+			"demo_event": {
+				"date_start":   "datatime",
+				"sample_event": "json",
+			},
+		}
+
+		It("Should not contain excluded schema if max column count is not reached", func() {
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 1000)
+			Expect(excludedSchema).To(Equal(warehouseutils.SchemaT{}))
+		})
+
+		It("Should contain excluded schema if max column count is reached and picked in sorted order", func() {
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 20)
+			Expect(excludedSchema).To(Equal(ExcludedSchema))
+		})
+
+		It("Should contain rudder reserved columns in included column list if it is a new event and max limit is reached", func() {
+			delete(schemaInWarehouse, "demo_event")
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 20)
+			Expect(excludedSchema).To(Equal(ExcludedSchema))
 		})
 	})
 })

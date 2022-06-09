@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -327,7 +328,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT, maxColumnCount int) (diff warehouseutils.TableSchemaDiffT) {
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
 		ColumnMap:     make(map[string]string),
 		UpdatedSchema: make(map[string]string),
@@ -343,6 +344,10 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		diff.TableToBeCreated = true
 		diff.ColumnMap = uploadSchema[tableName]
 		diff.UpdatedSchema = uploadSchema[tableName]
+		for _, k := range excludedSchema[tableName] {
+			delete(diff.ColumnMap, k)
+			delete(diff.UpdatedSchema, k)
+		}
 		return diff
 	}
 
@@ -352,14 +357,18 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 
 	diff.ColumnMap = make(map[string]string)
 	for columnName, columnType := range uploadSchema[tableName] {
-		if _, ok := currentTableSchema[columnName]; !ok && len(currentTableSchema) < maxColumnCount {
+		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
-		} else if columnType == "text" && currentTableSchema[columnName] == "string" && len(currentTableSchema) < maxColumnCount {
+		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
 			diff.StringColumnsToBeAlteredToText = append(diff.StringColumnsToBeAlteredToText, columnName)
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
+		}
+		for _, k := range excludedSchema[tableName] {
+			delete(diff.ColumnMap, k)
+			delete(diff.UpdatedSchema, k)
 		}
 	}
 	return diff
@@ -402,4 +411,47 @@ func mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload warehou
 		}
 	}
 	return mergedSchema
+}
+
+func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, maxColumnCount int) warehouseutils.SchemaT {
+	excludedSchema := warehouseutils.SchemaT{}
+	for tableName, columnMap := range uploadSchema {
+		// Get distinct columns from schema in warehouse
+		sortedTableColumns := []string{}
+		var currTableColumnCount int
+
+		_, schemaExists := schemaInWarehouse[tableName]
+		if schemaExists {
+			for k := range columnMap {
+				if _, ok := schemaInWarehouse[tableName][k]; !ok {
+					sortedTableColumns = append(sortedTableColumns, k)
+				}
+			}
+			currTableColumnCount = len(schemaInWarehouse[tableName])
+		} else {
+			for k := range columnMap {
+				if !misc.ContainsString(warehouseutils.RudderReservedColumns, k) {
+					sortedTableColumns = append(sortedTableColumns, k)
+				}
+			}
+			currTableColumnCount = len(warehouseutils.RudderReservedColumns)
+		}
+
+		// return if columns does not exceed max limit
+		if len(sortedTableColumns)+currTableColumnCount <= maxColumnCount {
+			continue
+		}
+
+		sort.Strings(sortedTableColumns)
+		includedColumnCount := maxColumnCount - currTableColumnCount
+		// Add exceeded columns in excluded schema
+		for _, col := range sortedTableColumns[includedColumnCount:] {
+			// init map if not exists
+			if _, ok := excludedSchema[tableName]; !ok {
+				excludedSchema[tableName] = map[string]string{}
+			}
+			excludedSchema[tableName][col] = uploadSchema[tableName][col]
+		}
+	}
+	return excludedSchema
 }

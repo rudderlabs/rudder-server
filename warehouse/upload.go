@@ -93,6 +93,7 @@ type UploadT struct {
 	Status               string
 	UploadSchema         warehouseutils.SchemaT
 	MergedSchema         warehouseutils.SchemaT
+	ExcludedSchema       warehouseutils.SchemaT
 	Error                json.RawMessage
 	Timings              []map[string]string
 	FirstAttemptAt       time.Time
@@ -238,6 +239,21 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	// set upload schema
 	err := job.setUploadSchema(schemaHandle.uploadSchema)
 	return err
+}
+
+// exceeded columns are included in excluded schema
+func (job *UploadJobT) generateExcludedSchema() {
+	uploadSchema := job.upload.UploadSchema
+	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		uploadSchema = job.upload.MergedSchema
+	}
+
+	excludedSchema := GetExcludedSchema(uploadSchema, job.schemaHandle.localSchema, maxColumnCounts[job.upload.DestinationType])
+	if len(excludedSchema) > 0 {
+		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
+	}
+	// set excluded schema
+	job.upload.ExcludedSchema = excludedSchema
 }
 
 func (job *UploadJobT) initTableUploads() error {
@@ -403,6 +419,7 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
+			job.generateExcludedSchema()
 			newStatus = nextUploadState.completed
 
 		case CreatedTableUploads:
@@ -922,7 +939,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, maxColumnCounts[job.upload.DestinationType])
+	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1106,7 +1123,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, maxColumnCounts[job.upload.DestinationType])
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1755,6 +1772,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				StagingFileID:        stagingFile.ID,
 				StagingFileLocation:  stagingFile.Location,
 				UploadSchema:         job.upload.UploadSchema,
+				ExcludedSchema:       job.upload.ExcludedSchema,
 				LoadFileType:         job.upload.LoadFileType,
 				SourceID:             job.warehouse.Source.ID,
 				SourceName:           job.warehouse.Source.Name,
@@ -1766,7 +1784,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UniqueLoadGenID:      uniqueLoadGenID,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
-				LocalSchema:          job.schemaHandle.localSchema,
 			}
 
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {

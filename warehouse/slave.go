@@ -276,14 +276,6 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
-func (job *PayloadT) getColumnCountForAlltables() map[string]int {
-	tableColumnCountMap := make(map[string]int)
-	for tableName, _ := range job.LocalSchema {
-		tableColumnCountMap[tableName] = len(job.LocalSchema[tableName])
-	}
-	return tableColumnCountMap
-}
-
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
@@ -368,7 +360,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	}
 
 	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
-	tableColumnCountMap := job.getColumnCountForAlltables()
 
 	reader, endOfFile := jobRun.setStagingFileReader()
 	if endOfFile {
@@ -424,6 +415,8 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			return nil, err
 		}
 
+		excludedTable := len(job.ExcludedSchema[tableName]) != 0
+
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
@@ -448,9 +441,9 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 				columnVal = int(floatVal)
 			}
 
-			columnCount, tableExists := tableColumnCountMap[tableName]
-			if tableExists && columnCount >= maxColumnCounts[job.DestinationType] {
-				if _, ok := job.LocalSchema[tableName][columnName]; ok {
+			// if tableExists && misc.ContainsString(excludedColumns, columnName) {
+			if excludedTable {
+				if _, ok := job.ExcludedSchema[tableName][columnName]; ok {
 					cv := &ConstraintsViolationT{
 						isViolated: false,
 					}
@@ -460,7 +453,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 					}
 					continue
 				}
-
 			}
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]

@@ -88,6 +88,25 @@ const (
 	CTStagingTablePrefix = "setup_test_staging"
 )
 
+var RudderReservedColumns = []string{
+	"anonymous_id",
+	"channel",
+	"context_ip",
+	"context_passed_ip",
+	"context_request_ip",
+	"event_text",
+	"group_id",
+	"id",
+	"name",
+	"original_timestamp",
+	"previous_id",
+	"received_at",
+	"record_id",
+	"sent_at",
+	"timestamp",
+	"user_id",
+}
+
 var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
