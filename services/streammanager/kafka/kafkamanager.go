@@ -9,16 +9,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-
+	"github.com/linkedin/goavro"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
 )
 
 type Opts struct {
 	Timeout time.Duration
+}
+
+// Schema is the AVRO schema required to convert the data to AVRO
+type Schema struct {
+	AVROSchema string
 }
 
 // configuration is the config that is required to send data to Kafka
@@ -32,6 +37,8 @@ type configuration struct {
 	SaslType      string
 	Username      string
 	Password      string
+	ConvertToAvro bool
+	AVROSchema    []Schema
 }
 
 func (c *configuration) validate() error {
@@ -394,9 +401,48 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 	}
 }
 
-func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time) (
+// This function is used to create the error string of idividual schema
+func createErrString(err error, index int) string {
+	return fmt.Sprintf(" Schema[%d]: ", index+1) + err.Error() + "."
+}
+
+// This function is used to serialize the binary data according to the AVROSchema.
+// It iterate over the schemas provided by the customer and try to serialize the data.
+// If it ables to serialize the data then it returns the converted data otherwise it throws error.
+// We are using linkedin goavro library to serialize the data. For ref: https://github.com/linkedin/goavro
+
+func serialize(value []byte, AVROSchema []Schema) ([]byte, error) {
+	var errorStr string
+	for i := 0; i < len(AVROSchema); i++ {
+		codec, err := goavro.NewCodec(AVROSchema[i].AVROSchema)
+		if err != nil {
+			errorStr += createErrString(err, i)
+			continue
+		}
+		native, _, err := codec.NativeFromTextual(value)
+		if err != nil {
+			errorStr += createErrString(err, i)
+			continue
+		}
+		binary, err := codec.BinaryFromNative(nil, native)
+		if err != nil {
+			errorStr += createErrString(err, i)
+			continue
+		}
+		if err == nil {
+			return binary, nil
+		} else {
+			errorStr += createErrString(err, i)
+		}
+	}
+	return nil, fmt.Errorf("unable convert the event with any of the given schema." + errorStr)
+}
+
+func prepareBatchOfMessages(conf configuration, batch []map[string]interface{}, timestamp time.Time) (
 	[]client.Message, error,
 ) {
+	convertToAvro := conf.ConvertToAvro
+	AVROSchema := conf.AVROSchema
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
 
@@ -405,21 +451,26 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the message attribute", topic)
+			pkgLogger.Errorf("batch from topic %s is missing the message attribute", conf.Topic)
 			continue
 		}
 		userID, ok := data["userId"].(string)
 		if !ok && !allowReqsWithoutUserIDAndAnonymousID {
 			kafkaStats.missingUserID.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
+			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", conf.Topic)
 			continue
 		}
-
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
 			return nil, err
 		}
-		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
+		if convertToAvro {
+			marshalledMsg, err = serialize(marshalledMsg, AVROSchema)
+			if err != nil {
+				return messages, err
+			}
+		}
+		messages = append(messages, prepareMessage(conf.Topic, userID, marshalledMsg, timestamp))
 	}
 	return messages, nil
 }
@@ -470,13 +521,13 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, p, conf)
 	}
 
-	return sendMessage(ctx, jsonData, p, conf.Topic)
+	return sendMessage(ctx, jsonData, p, conf)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, conf configuration) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -484,7 +535,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp)
+	batchOfMessages, err := prepareBatchOfMessages(conf, batch, timestamp)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -497,8 +548,9 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	returnMessage := "Kafka: Message delivered in batch"
 	return 200, returnMessage, returnMessage
 }
-
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, conf configuration) (int, string, string) {
+	convertToAvro := conf.ConvertToAvro
+	AVROSchema := conf.AVROSchema
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -513,12 +565,18 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
-	message := prepareMessage(topic, userID, value, timestamp)
+	if convertToAvro {
+		value, err = serialize(value, AVROSchema)
+		if err != nil {
+			return makeErrorResponse(err)
+		}
+	}
+	message := prepareMessage(conf.Topic, userID, value, timestamp)
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(err)
 	}
 
-	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
+	returnMessage := fmt.Sprintf("Message delivered to topic: %s", conf.Topic)
 	return 200, returnMessage, returnMessage
 }
 
