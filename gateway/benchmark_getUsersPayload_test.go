@@ -1,22 +1,34 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/mailru/easyjson"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fastjson"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
+	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -93,6 +105,85 @@ func TestRegressions(t *testing.T) {
 		t.Fatalf("Expected: %s\n\nGot: %s", respObj1, respObj6)
 	}
 }
+
+var _ = Describe("Gateway import", func() {
+	initGW()
+
+	var c *testContext
+
+	BeforeEach(func() {
+		c = &testContext{}
+		c.Setup()
+
+		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
+		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
+		c.initializeEnterprizeAppFeatures()
+
+		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser)
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(true).AnyTimes()
+
+		// setup static requirements of dependencies
+		stats.Setup()
+
+		// setup common environment, override in BeforeEach when required
+		SetEnableRateLimit(false)
+		SetEnableSuppressUserFeature(true)
+		SetEnableEventSchemasFeature(false)
+	})
+
+	AfterEach(func() {
+		c.Finish()
+	})
+
+	Context("Import benchmark", func() {
+		gateway := &HandleT{}
+
+		BeforeEach(func() {
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+		})
+
+		It("should perform reasonably", func() { // run this with -memprofile mem.out
+			port, err := freeport.GetFreePort()
+			Expect(err).To(BeNil())
+
+			done := make(chan struct{})
+			srv := http.Server{
+				Addr: ":" + strconv.Itoa(port),
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gateway.webRequestHandler(gateway.irh, w, r, "import")
+					close(done)
+				}),
+			}
+			go func() {
+				_ = srv.ListenAndServe()
+			}()
+
+			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":"%s"}]}`, SuppressedUserID)
+			parsedURL, err := url.Parse(fmt.Sprintf("http://localhost:%d", port))
+			Expect(err).To(BeNil())
+
+			fileContent, err := ioutil.ReadFile("./testdata/output.json")
+			Expect(err).To(BeNil())
+
+			req := authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData))
+			req.ContentLength = int64(len(fileContent))
+			req.Method = "POST"
+			req.Body = &nopCloser{Buffer: bytes.NewBuffer(fileContent)}
+			req.URL = parsedURL
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).To(BeNil())
+
+			respBody, err := ioutil.ReadAll(resp.Body)
+			Expect(err).To(BeNil())
+			Expect(resp.StatusCode).To(BeIdenticalTo(http.StatusOK))
+
+			fmt.Println(string(respBody), resp.StatusCode)
+
+			<-done
+		})
+	})
+})
 
 func BenchmarkGetUsersPayload(b *testing.B) {
 	validBody := generatePayload(20000)
@@ -508,3 +599,9 @@ func convertResultToMapInterface(t *testing.T, res map[string][]byte) map[string
 	}
 	return rm
 }
+
+type nopCloser struct {
+	*bytes.Buffer
+}
+
+func (rc *nopCloser) Close() error { return nil }
