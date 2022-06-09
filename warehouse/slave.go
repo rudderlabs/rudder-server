@@ -470,15 +470,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 					if err != nil {
 						return nil, err
 					}
-					// // add discardWriter to outputFileWritersMap
-					// jobRun.outputFileWritersMap[discardsTable] = discardWriter
-
-					// err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
-
-					// if err != nil {
-					// 	pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
-					// }
-					// jobRun.tableEventCountMap[discardsTable]++
 					continue
 				}
 				if newColumnVal == nil {
