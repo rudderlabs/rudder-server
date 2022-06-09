@@ -186,13 +186,17 @@ func setMaxParallelLoads() {
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
 	}
 	maxColumnCounts = map[string]int{
-		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.maxColumnCount", 1024),
-		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.maxColumnCount", 10000),
-		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.maxColumnCount", 1000),
-		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.maxColumnCount", 1000),
-		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.maxColumnCount", 1600),
-		warehouseutils.RS:            config.GetInt("Warehouse.redshift.maxColumnCount", 1600),
-		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.maxColumnCount", 5000),
+		warehouseutils.AZURE_SYNAPSE:  config.GetInt("Warehouse.azure_synapse.maxColumnCount", 1024),
+		warehouseutils.BQ:             config.GetInt("Warehouse.bigquery.maxColumnCount", 10000),
+		warehouseutils.CLICKHOUSE:     config.GetInt("Warehouse.clickhouse.maxColumnCount", 1000),
+		warehouseutils.MSSQL:          config.GetInt("Warehouse.mssql.maxColumnCount", 1000),
+		warehouseutils.POSTGRES:       config.GetInt("Warehouse.postgres.maxColumnCount", 1600),
+		warehouseutils.RS:             config.GetInt("Warehouse.redshift.maxColumnCount", 1600),
+		warehouseutils.SNOWFLAKE:      config.GetInt("Warehouse.snowflake.maxColumnCount", 5000),
+		warehouseutils.S3_DATALAKE:    config.GetInt("Warehouse.s3_datalake.maxColumnCount", 10000),
+		warehouseutils.GCS_DATALAKE:   config.GetInt("Warehouse.gcs_datalake.maxColumnCount", 10000),
+		warehouseutils.AZURE_DATALAKE: config.GetInt("Warehouse.azure_datalake.maxColumnCount", 10000),
+		warehouseutils.DELTALAKE:      config.GetInt("Warehouse.deltalake.maxColumnCount", 10000),
 	}
 }
 
