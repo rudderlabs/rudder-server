@@ -2311,6 +2311,10 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
+				if true {
+					nextSleepTime = 10 * time.Second
+					continue
+				}
 				if !isUnLocked {
 					nextSleepTime = proc.maxLoopSleep
 					continue

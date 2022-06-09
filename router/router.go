@@ -1875,8 +1875,8 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			pkgLogger.Infof("Generator loop is resumed. Dest type: %s", rt.destName)
 		case <-timeout:
 			timeout = time.After(10 * time.Millisecond)
-			if rt.pausingWorkers {
-				time.Sleep(time.Second)
+			if true {
+				time.Sleep(10 * time.Second)
 				continue
 			}
 			generatorStat.Start()
