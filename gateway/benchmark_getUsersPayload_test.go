@@ -57,7 +57,7 @@ func TestRegressions(t *testing.T) {
 	require.NoError(t, err)
 	respObj1 := convertResultToMapInterface(t, resp1)
 
-	resp2, err := getUsersPayloadFinal(validBody)
+	resp2, err := getUsersPayloadFastJson(validBody)
 	require.NoError(t, err)
 	respObj2 := convertResultToMapInterface(t, resp2)
 
@@ -73,7 +73,7 @@ func TestRegressions(t *testing.T) {
 	require.NoError(t, err)
 	respObj5 := convertResultToMapInterface(t, resp5)
 
-	resp6, err := getUsersPayloadEasyGJsonHybrid(validBody)
+	resp6, err := getUsersPayloadGJsonRevised(validBody)
 	require.NoError(t, err)
 	respObj6 := convertResultToMapInterface(t, resp6)
 
@@ -170,7 +170,7 @@ func BenchmarkGetUsersPayload(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			b.StartTimer()
-			_, err = getUsersPayloadFinal(validBody)
+			_, err = getUsersPayloadFastJson(validBody)
 			b.StopTimer()
 		}
 
@@ -211,13 +211,13 @@ loop:
 
 			start = time.Now()
 			b.StartTimer()
-			_, err := getUsersPayloadFinal(requestPayload)
+			_, err := getUsersPayloadGJsonRevised(requestPayload)
 			b.StopTimer()
 			require.NoError(b, err)
 		}(no)
 		select {
 		case <-done:
-			b.Logf("getUsersPayloadFinal took %s", time.Since(start))
+			b.Logf("Processing took %s", time.Since(start))
 		case <-timeout:
 			requestPayload := generatePayload(no)
 			b.Logf("Payload of %s took more than %s to process", byteCountIEC(len(requestPayload)), maxTime)
@@ -419,7 +419,7 @@ func getUsersPayloadGJsonRevised(requestPayload []byte) (map[string][]byte, erro
 	return userMap, nil
 }
 
-func getUsersPayloadFinal(requestPayload []byte) (map[string][]byte, error) {
+func getUsersPayloadFastJson(requestPayload []byte) (map[string][]byte, error) {
 	var p fastjson.Parser
 	v, err := p.ParseBytes(requestPayload)
 	if err != nil {
