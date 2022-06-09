@@ -604,4 +604,4 @@ type nopCloser struct {
 	*bytes.Buffer
 }
 
-func (rc *nopCloser) Close() error { return nil }
+func (*nopCloser) Close() error { return nil }
