@@ -1152,6 +1152,7 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 	return strings.Join(interimMsgs, "")
 }
 
+// for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	if !gjson.ValidBytes(requestPayload) {
 		return make(map[string][]byte), errors.New(response.InvalidJSON)
