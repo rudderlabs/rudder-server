@@ -43,14 +43,14 @@ require (
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
-	github.com/segmentio/kafka-go v0.4.31
+	github.com/segmentio/kafka-go v0.4.32
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/snowflakedb/gosnowflake v1.6.3
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/viper v1.8.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/thoas/go-funk v0.9.1
 	github.com/tidwall/gjson v1.10.2
 	github.com/tidwall/sjson v1.0.4
@@ -70,8 +70,6 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 
 )
-
-replace github.com/segmentio/kafka-go => github.com/fracasula/kafka-go v0.4.32-0.20220509075905-7ccc623033ba
 
 require (
 	cloud.google.com/go v0.100.2 // indirect
@@ -174,5 +172,5 @@ require (
 	google.golang.org/genproto v0.0.0-20220314164441-57ef72a4c106 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
+	gopkg.in/yaml.v3 v3.0.0-20220512140231-539c8e751b99 // indirect
 )
