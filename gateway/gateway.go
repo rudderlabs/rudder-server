@@ -17,38 +17,37 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/gateway/webhook"
-	"github.com/rudderlabs/rudder-server/middleware"
-	"github.com/rudderlabs/rudder-server/router"
-	recovery "github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bugsnag/bugsnag-go/v2"
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/middleware"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	recovery "github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
-
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 /*
@@ -1135,7 +1134,6 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
 func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	errorMessage := ""
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
@@ -1146,50 +1144,52 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 		gateway.addToWebRequestQ(w, r, done, "batch", usersPayload[key], writeKey)
 	}
 
-	interimMsgs := []string{}
+	var interimMsgs []string
 	for index := 0; index < count; index++ {
 		interimErrorMessage := <-done
 		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}
-	errorMessage = strings.Join(interimMsgs[:], "")
-
-	return errorMessage
+	return strings.Join(interimMsgs, "")
 }
 
+// for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
-	userMap := make(map[string][][]byte)
-	var index int
-
 	if !gjson.ValidBytes(requestPayload) {
 		return make(map[string][]byte), errors.New(response.InvalidJSON)
 	}
 
 	result := gjson.GetBytes(requestPayload, "batch")
 
-	result.ForEach(func(_, _ gjson.Result) bool {
-		anonIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
-		userIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.userId`, index)).String())
+	var (
+		userCnt = make(map[string]int)
+		userMap = make(map[string][]byte)
+	)
+	result.ForEach(func(_, value gjson.Result) bool {
+		anonIDFromReq := value.Get("anonymousId").String()
+		userIDFromReq := value.Get("userId").String()
 		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			return false
 		}
-		userMap[rudderID.String()] = append(userMap[rudderID.String()], []byte(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v`, index)).String()))
-		index++
+
+		uuidStr := rudderID.String()
+		tempValue, ok := userMap[uuidStr]
+		if !ok {
+			userCnt[uuidStr] = 0
+			userMap[uuidStr] = append([]byte(`{"batch":[`), append([]byte(value.Raw), ']', '}')...)
+		} else {
+			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, value.Raw)
+			if err != nil {
+				return false
+			}
+			userCnt[uuidStr]++
+			userMap[uuidStr] = []byte(raw)
+		}
+
 		return true
 	})
-	recontructedUserMap := make(map[string][]byte)
-	for key := range userMap {
-		var tempValue string
-		var err error
-		for index = 0; index < len(userMap[key]); index++ {
-			tempValue, err = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
-			if err != nil {
-				return recontructedUserMap, err
-			}
-		}
-		recontructedUserMap[key] = []byte(tempValue)
-	}
-	return recontructedUserMap, nil
+	return userMap, nil
 }
 
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
