@@ -1,0 +1,20 @@
+on:
+  push:
+    branches:
+      - "master"
+      - "release/*"
+name: release-please
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+      - uses: google-github-actions/release-please-action@v3
+        with:
+          token: ${{ secrets.PAT }}
+          release-type: go
+          package-name: lean-realeaser
+          default-branch: ${{ steps.extract_branch.outputs.branch }}
