@@ -41,7 +41,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.1.4
 	github.com/onsi/gomega v1.19.0
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
-	github.com/rs/cors v1.7.0
+	github.com/rs/cors v1.8.2
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/segmentio/kafka-go v0.4.32
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
