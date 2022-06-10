@@ -303,7 +303,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		var data []map[string]interface{}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now())
+		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, time.Now())
 		require.NoError(t, err)
 		require.Nil(t, batch)
 	})
@@ -315,7 +315,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
 		}}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now())
+		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, time.Now())
 		require.NoError(t, err)
 		require.Nil(t, batch)
 	})
@@ -332,7 +332,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"message": "msg02", "userId": "123"},
 			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456"},
 		}
-		batch, err := prepareBatchOfMessages("some-topic", data, now)
+		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, now)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -360,7 +360,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"not-interesting": "some value"},
 			{"message": "msg01"},
 		}
-		batch, err := prepareBatchOfMessages("some-topic", data, now)
+		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, now)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -495,7 +495,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage("{{{"),
 			nil,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -508,7 +508,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
 			nil,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -526,7 +526,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
@@ -549,7 +549,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 500, sc)
 		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
@@ -572,7 +572,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Kafka: Message delivered in batch", res)
@@ -588,14 +588,14 @@ func TestSendBatchedMessage(t *testing.T) {
 
 func TestSendMessage(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
 	})
 
 	t.Run("no message", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -605,7 +605,7 @@ func TestSendMessage(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), 1)
 
 		p := &pMockErr{error: nil}
-		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: some-topic", res)
 		require.Equal(t, "Message delivered to topic: some-topic", err)
@@ -625,7 +625,7 @@ func TestSendMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao","userId":"123"}`),
 			p,
-			"some-topic",
+			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
