@@ -48,7 +48,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.6.3
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/cast v1.3.1
+	github.com/spf13/cast v1.5.0
 	github.com/spf13/viper v1.8.0
 	github.com/stretchr/testify v1.7.1
 	github.com/thoas/go-funk v0.9.1
@@ -124,7 +124,6 @@ require (
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/klauspost/compress v1.14.4 // indirect
 	github.com/klauspost/cpuid v1.2.3 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/minio/md5-simd v1.1.0 // indirect
