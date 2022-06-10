@@ -35,9 +35,9 @@ type StatsCollector interface {
 }
 
 // NewStatsCollector creates a new stats collector
-func NewStatsCollector(service JobService) StatsCollector {
+func NewStatsCollector(incrementer StatsIncrementer) StatsCollector {
 	return &statsCollector{
-		service:            service,
+		incrementer:        incrementer,
 		jobIdsToStatsIndex: map[int64]*Stats{},
 		statsIndex:         map[statKey]*Stats{},
 	}
@@ -52,7 +52,7 @@ var _ StatsCollector = (*statsCollector)(nil)
 
 type statsCollector struct {
 	processing         bool
-	service            JobService
+	incrementer        StatsIncrementer
 	jobIdsToStatsIndex map[int64]*Stats
 	statsIndex         map[statKey]*Stats
 }
@@ -92,14 +92,14 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 }
 
 func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
-	if r.service == nil {
-		return fmt.Errorf("No JobService provided during initialization")
+	if r.incrementer == nil {
+		return fmt.Errorf("No StatsIncrementer provided during initialization")
 	}
 	for k, v := range r.statsIndex {
 		if v.Failed+v.In+v.Out == 0 {
 			continue
 		}
-		err := r.service.IncrementStats(ctx, tx, k.jobRunId, k.JobTargetKey, *v)
+		err := r.incrementer.IncrementStats(ctx, tx, k.jobRunId, k.JobTargetKey, *v)
 		if err != nil {
 			return err
 		}
