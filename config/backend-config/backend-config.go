@@ -392,20 +392,20 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		backendConfig = &SingleWorkspaceConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
-				eb:               &pubsub.PublishSubscriber{},
+				eb:               pubsub.New(),
 			},
 		}
 	case deployment.HostedType:
 		backendConfig = &HostedWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
-				eb: &pubsub.PublishSubscriber{},
+				eb: pubsub.New(),
 			},
 		}
 	case deployment.MultiTenantType:
 		backendConfig = &MultiTenantWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
-				eb:               &pubsub.PublishSubscriber{},
+				eb:               pubsub.New(),
 			},
 		}
 	// Fallback to dedicated

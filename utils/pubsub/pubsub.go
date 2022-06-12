@@ -24,6 +24,10 @@ type PublishSubscriber struct {
 	subscriptions map[string]subPublishers
 }
 
+func New() *PublishSubscriber {
+	return &PublishSubscriber{}
+}
+
 func (eb *PublishSubscriber) Publish(topic string, data interface{}) {
 	eb.subscriptionsMutex.RLock()
 	defer eb.subscriptionsMutex.RUnlock()
