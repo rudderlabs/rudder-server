@@ -401,20 +401,20 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 	}
 }
 
-// This function is used to create the error string of idividual schema
+// This function is used to create the error string of an individual schema
 func createErrString(err error, index int) string {
 	return fmt.Sprintf(" Schema[%d]: ", index+1) + err.Error() + "."
 }
 
 // This function is used to serialize the binary data according to the AVROSchema.
-// It iterate over the schemas provided by the customer and try to serialize the data.
-// If it ables to serialize the data then it returns the converted data otherwise it throws error.
-// We are using linkedin goavro library to serialize the data. For ref: https://github.com/linkedin/goavro
+// It iterates over the schemas provided by the customer and tries to serialize the data.
+// If it's able to serialize the data then it returns the converted data otherwise it returns an error.
+// We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
 
-func serialize(value []byte, AVROSchema []Schema) ([]byte, error) {
+func serialize(value []byte, avroSchemas []Schema) ([]byte, error) {
 	var errorStr string
-	for i := 0; i < len(AVROSchema); i++ {
-		codec, err := goavro.NewCodec(AVROSchema[i].AVROSchema)
+	for i, avroSchema := range avroSchemas {
+		codec, err := goavro.NewCodec(avroSchema.AVROSchema)
 		if err != nil {
 			errorStr += createErrString(err, i)
 			continue
