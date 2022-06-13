@@ -414,29 +414,29 @@ var _ = Describe("Schema", func() {
 				Expect(tableSchemaDiff).To(Equal(diff))
 			})
 
-			// It("Should exclude excluded schema in diff for an existing event", func() {
-			// 	var excludedSchema warehouseutils.SchemaT
-			// 	var currentSchema = warehouseutils.SchemaT{
-			// 		tableName: {
-			// 			"id":        "int",
-			// 			"record_id": "string",
-			// 		},
-			// 	}
-			// 	var diff = warehouseutils.TableSchemaDiffT{
-			// 		Exists: true,
-			// 		ColumnMap: map[string]string{
-			// 			"sent_at": "datetime",
-			// 		},
-			// 		UpdatedSchema: map[string]string{
-			// 			"id":        "int",
-			// 			"record_id": "string",
-			// 			"sent_at":   "datetime",
-			// 		},
-			// 	}
+			It("Should exclude excluded schema in diff for an existing event", func() {
+				var excludedSchema warehouseutils.SchemaT
+				var currentSchema = warehouseutils.SchemaT{
+					tableName: {
+						"id":        "int",
+						"record_id": "string",
+					},
+				}
+				var diff = warehouseutils.TableSchemaDiffT{
+					Exists: true,
+					ColumnMap: map[string]string{
+						"sent_at": "datetime",
+					},
+					UpdatedSchema: map[string]string{
+						"id":        "int",
+						"record_id": "string",
+						"sent_at":   "datetime",
+					},
+				}
 
-			// 	tableSchemaDiff := GetTableSchemaDiff(tableName, currentSchema, uploadSchema, excludedSchema)
-			// 	Expect(tableSchemaDiff).To(Equal(diff))
-			// })
+				tableSchemaDiff := GetTableSchemaDiff(tableName, currentSchema, uploadSchema, excludedSchema)
+				Expect(tableSchemaDiff).To(Equal(diff))
+			})
 		})
 	})
 })
