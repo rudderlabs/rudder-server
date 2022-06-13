@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +47,7 @@ type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string)
+	ProxyRequestTest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -322,6 +325,223 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	return respData, respCode, nil
 }
 
+func (trans *HandleT) MakeDeliveryRequest(ctx context.Context, structData integrations.PostParametersT) (interface{}, error) {
+	postInfo := structData
+	isRest := postInfo.Type == "REST"
+
+	isMultipart := len(postInfo.Files) > 0
+
+	// going forward we may want to support GraphQL and multipart requests
+	// the files key in the response is specifically to handle the multipart usecase
+	// for type GraphQL may need to support more keys like expected response format etc
+	// in future it's expected that we will build on top of this response type
+	// so, code addition should be done here instead of version bumping of response.
+	if isRest && !isMultipart {
+		requestMethod := postInfo.RequestMethod
+		requestBody := postInfo.Body
+		requestQueryParams := postInfo.QueryParams
+		var bodyFormat string
+		var bodyValue map[string]interface{}
+		for k, v := range requestBody {
+			if len(v.(map[string]interface{})) > 0 {
+				bodyFormat = k
+				bodyValue = v.(map[string]interface{})
+				break
+			}
+		}
+
+		var payload io.Reader
+		// support for JSON and FORM body type
+		if len(bodyValue) > 0 {
+			switch bodyFormat {
+			case "JSON":
+				jsonValue, err := jsonfast.Marshal(bodyValue)
+				if err != nil {
+					// panic(err)
+					return nil, fmt.Errorf("400 Unable to parse bodyValue. Unexpected transformer response: %+v", bodyValue)
+				}
+				payload = strings.NewReader(string(jsonValue))
+			case "JSON_ARRAY":
+				// support for JSON ARRAY
+				jsonListStr, ok := bodyValue["batch"].(string)
+				if !ok {
+					trans.logger.Error("400 Unable to parse json list. Unexpected transformer response")
+					return nil, fmt.Errorf("400 Unable to parse json list. Unexpected transformer response")
+					// 	return &utils.SendPostResponse{
+					// 		StatusCode:   400,
+					// 		ResponseBody: []byte("400 Unable to parse json list. Unexpected transformer response"),
+					// 	}
+				}
+				payload = strings.NewReader(jsonListStr)
+			case "XML":
+				strValue, ok := bodyValue["payload"].(string)
+				if !ok {
+					trans.logger.Error("400 Unable to construct xml payload. Unexpected transformer response")
+					return nil, fmt.Errorf("400 Unable to construct xml payload. Unexpected transformer response")
+					// 	return &utils.SendPostResponse{
+					// 		StatusCode:   400,
+					// 		ResponseBody: []byte("400 Unable to construct xml payload. Unexpected transformer response"),
+					// 	}
+				}
+				payload = strings.NewReader(strValue)
+			case "FORM":
+				formValues := url.Values{}
+				for key, val := range bodyValue {
+					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+				}
+				payload = strings.NewReader(formValues.Encode())
+			default:
+				return nil, fmt.Errorf("bodyFormat: %s is not supported", bodyFormat)
+			}
+		}
+
+		payloadBytes, err := ioutil.ReadAll(payload)
+		if err != nil {
+			return nil, fmt.Errorf("problem in ReadAll: %s", err)
+		}
+
+		// return string(payloadBytes), nil
+
+		// THINK: Shall return before forming the http.Request object ?
+		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)
+		if err != nil {
+			errStr := fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
+			trans.logger.Error(errStr)
+			return nil, fmt.Errorf(errStr)
+			// return &utils.SendPostResponse{
+			// 	StatusCode:   400,
+			// 	ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
+			// }
+		}
+
+		// add queryparams to the url
+		// support of array type in params is handled if the
+		// response from transformers are "," seperated
+		queryParams := req.URL.Query()
+		for key, val := range requestQueryParams {
+
+			// list := strings.Split(valString, ",")
+			// for _, listItem := range list {
+			// 	queryParams.Add(key, fmt.Sprint(listItem))
+			// }
+			formattedVal := handleQueryParam(val)
+			queryParams.Add(key, formattedVal)
+		}
+
+		req.URL.RawQuery = queryParams.Encode()
+		headerKV := postInfo.Headers
+		for key, val := range headerKV {
+			req.Header.Add(key, val.(string))
+		}
+
+		req.Header.Add("User-Agent", "RudderLabs")
+
+		// This is being done to facilitate compatible comparison
+		// As map[string][]string is the data-type for headers in golang
+		// But headers is an object in Javascript, hence we need to level the plane for effective comparison
+		headersMap := make(map[string]string)
+		for k, v := range req.Header {
+			headersMap[strings.ToLower(k)] = string(v[0])
+		}
+
+		rtDelPayload := RouterDelPayload{
+			Data:     string(payloadBytes),
+			Method:   requestMethod,
+			Params:   req.URL.Query(),
+			Endpoint: postInfo.URL,
+			Headers:  headersMap,
+		}
+
+		return rtDelPayload, nil
+	}
+	return nil, fmt.Errorf("this type of request currently is not supported")
+}
+
+//temp solution for handling complex query params
+func handleQueryParam(param interface{}) string {
+	switch p := param.(type) {
+	case string:
+		return p
+	case map[string]interface{}:
+		temp, err := jsonfast.Marshal(p)
+		if err != nil {
+			return fmt.Sprint(p)
+		}
+
+		jsonParam := string(temp)
+		return jsonParam
+	default:
+		return fmt.Sprint(param)
+	}
+}
+
+type RouterDelPayload struct {
+	// The data of the router payload after some changes are applied while preparing the event delivery request
+	Data interface{} `json:"data"`
+	// The event delivery request method
+	Method string `json:"method"`
+	// The query parameters for the event delivery
+	Params interface{} `json:"params"`
+	// The url to which the event has to be sent
+	Endpoint string `json:"endpoint"`
+	// The headers for the event delivery request
+	Headers interface{} `json:"headers"`
+}
+
+type ProxyTestReqBody struct {
+	// The event delivery request payload formed by Router
+	RouterDeliveryPayload RouterDelPayload
+	// The payload which will be used by transformer to form event delivery request payload
+	ProxyRequestPayload integrations.PostParametersT
+}
+
+func (trans *HandleT) ProxyRequestTest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string) {
+	proxyReqBody := ProxyTestReqBody{}
+	var delErr error
+	var routerDeliveryRequest interface{}
+	routerDeliveryRequest, delErr = trans.MakeDeliveryRequest(ctx, responseData)
+	if delErr != nil {
+		trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} MakeRouterDelivery Error, with %[3]v`, destName, jobId, delErr.Error())
+		return http.StatusOK, delErr.Error()
+	}
+	// proxyReqBody.RouterDeliveryPayload, delErr = jsonfast.Marshal(*routerDelPayload)
+	// if delErr != nil {
+	// 	trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} RouterDeliveryMarshal Error, with %[3]v`, destName, jobId, delErr.Error())
+	// 	return http.StatusOK, delErr.Error()
+	// }
+	// respPayload, respMarshErr := jsonfast.Marshal(responseData)
+	// if respMarshErr != nil {
+	// 	trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} ProxyReqBody Marshal Error, with %[3]v`, destName, jobId, respMarshErr.Error())
+	// 	return http.StatusOK, respMarshErr.Error()
+	// }
+
+	proxyReqBody.RouterDeliveryPayload = routerDeliveryRequest.(RouterDelPayload)
+	proxyReqBody.ProxyRequestPayload = responseData
+
+	payload, marshErr := jsonfast.Marshal(proxyReqBody)
+	if marshErr != nil {
+		trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} ProxyReqBody Marshal Error, with %[3]v`, destName, jobId, marshErr.Error())
+		return http.StatusOK, marshErr.Error()
+	}
+	// ProxyTest Url
+	url := getProxyTestURL(destName)
+	// New Request for ProxyTest endpoint
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
+		return http.StatusOK, err.Error()
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	_, err = trans.client.Do(req)
+	if err != nil {
+		trans.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} Error in response or request to proxyTest with Error: %[3]v`, destName, jobId, err.Error())
+		return http.StatusOK, err.Error()
+	}
+
+	return http.StatusOK, "ProxyTest Request Success [OK]"
+}
+
 func getBatchURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
 }
@@ -332,4 +552,8 @@ func getRouterTransformURL() string {
 
 func getProxyURL(destName string) string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+}
+
+func getProxyTestURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxyTest"
 }

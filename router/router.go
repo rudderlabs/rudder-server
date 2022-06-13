@@ -716,7 +716,8 @@ func (worker *workerT) processDestinationJobs() {
 									jobId := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
 									rtl_time := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobId)
+									// Proxy Request Test
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequestTest(ctx, val, worker.rt.destName, jobId)
 									worker.routerProxyStat.SendTiming(time.Since(rtl_time))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
