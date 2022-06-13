@@ -51,6 +51,21 @@ func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1, arg2, arg3 inter
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1, arg2, arg3)
 }
 
+// ProxyRequestTest mocks base method.
+func (m *MockTransformer) ProxyRequestTest(arg0 context.Context, arg1 integrations.PostParametersT, arg2 string, arg3 int64) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ProxyRequestTest", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// ProxyRequestTest indicates an expected call of ProxyRequestTest.
+func (mr *MockTransformerMockRecorder) ProxyRequestTest(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequestTest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequestTest), arg0, arg1, arg2, arg3)
+}
+
 // Setup mocks base method.
 func (m *MockTransformer) Setup() {
 	m.ctrl.T.Helper()
