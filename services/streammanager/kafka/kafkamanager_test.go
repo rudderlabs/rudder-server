@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/linkedin/goavro"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
@@ -303,7 +304,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		var data []map[string]interface{}
-		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, time.Now())
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
 		require.NoError(t, err)
 		require.Nil(t, batch)
 	})
@@ -311,11 +313,11 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 	t.Run("no message", func(t *testing.T) {
 		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-
+		p := &pMockErr{error: nil}
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
 		}}
-		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, time.Now())
+		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
 		require.NoError(t, err)
 		require.Nil(t, batch)
 	})
@@ -332,7 +334,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"message": "msg02", "userId": "123"},
 			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456"},
 		}
-		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, now)
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, now, p)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -360,7 +363,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"not-interesting": "some value"},
 			{"message": "msg01"},
 		}
-		batch, err := prepareBatchOfMessages(configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}}, data, now)
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, now, p)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -495,7 +499,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage("{{{"),
 			nil,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -508,7 +512,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
 			nil,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -526,7 +530,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
@@ -549,7 +553,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 500, sc)
 		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
@@ -572,7 +576,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
 			p,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Kafka: Message delivered in batch", res)
@@ -588,14 +592,14 @@ func TestSendBatchedMessage(t *testing.T) {
 
 func TestSendMessage(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
 	})
 
 	t.Run("no message", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -605,7 +609,7 @@ func TestSendMessage(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), 1)
 
 		p := &pMockErr{error: nil}
-		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}})
+		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), p, "some-topic")
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: some-topic", res)
 		require.Equal(t, "Message delivered to topic: some-topic", err)
@@ -625,7 +629,7 @@ func TestSendMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao","userId":"123"}`),
 			p,
-			configuration{"some-topic", "localhost", "9092", false, "", false, "", "", "", false, []Schema{}},
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
@@ -650,6 +654,7 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats
 type pMockErr struct {
 	error error
 	calls [][]client.Message
+	codec []goavro.Codec
 }
 
 func (*pMockErr) getTimeout() time.Duration       { return 0 }
@@ -657,6 +662,11 @@ func (p *pMockErr) Close(_ context.Context) error { return p.error }
 func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	p.calls = append(p.calls, msgs)
 	return p.error
+}
+
+// func (p *pMockErr) getCodec(_ context.Context)
+func (p *pMockErr) getCodec() []goavro.Codec {
+	return p.codec
 }
 
 type nopLogger struct{}

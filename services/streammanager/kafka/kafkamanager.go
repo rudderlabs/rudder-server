@@ -21,8 +21,8 @@ type Opts struct {
 	Timeout time.Duration
 }
 
-// Schema is the AVRO schema required to convert the data to AVRO
-type Schema struct {
+// schema is the AVRO schema required to convert the data to AVRO
+type schema struct {
 	AVROSchema string
 }
 
@@ -38,7 +38,7 @@ type configuration struct {
 	Username      string
 	Password      string
 	ConvertToAvro bool
-	AVROSchema    []Schema
+	AVROSchema    []schema
 }
 
 func (c *configuration) validate() error {
@@ -107,11 +107,13 @@ type producer interface {
 	Publish(context.Context, ...client.Message) error
 
 	getTimeout() time.Duration
+	getCodec() []goavro.Codec
 }
 
 type producerImpl struct {
 	p       *client.Producer
 	timeout time.Duration
+	codec   []goavro.Codec
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
@@ -128,6 +130,9 @@ func (p *producerImpl) Close(ctx context.Context) error {
 }
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
+}
+func (p *producerImpl) getCodec() []goavro.Codec {
+	return p.codec
 }
 
 type logger interface {
@@ -288,7 +293,19 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	convertToAvro := destConfig.ConvertToAvro
+	AVROSchema := destConfig.AVROSchema
+	var codec []goavro.Codec
+	if convertToAvro {
+		for _, avroSchema := range AVROSchema {
+			tempCodec, err := goavro.NewCodec(avroSchema.AVROSchema)
+			if err != nil {
+				return nil, err
+			}
+			codec = append(codec, *tempCodec)
+		}
+	}
+	return &producerImpl{p: p, timeout: o.Timeout, codec: codec}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
@@ -410,15 +427,9 @@ func createErrString(err error, index int) string {
 // It iterates over the schemas provided by the customer and tries to serialize the data.
 // If it's able to serialize the data then it returns the converted data otherwise it returns an error.
 // We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
-
-func serialize(value []byte, avroSchemas []Schema) ([]byte, error) {
+func serialize(value []byte, codecs []goavro.Codec) ([]byte, error) {
 	var errorStr string
-	for i, avroSchema := range avroSchemas {
-		codec, err := goavro.NewCodec(avroSchema.AVROSchema)
-		if err != nil {
-			errorStr += createErrString(err, i)
-			continue
-		}
+	for i, codec := range codecs {
 		native, _, err := codec.NativeFromTextual(value)
 		if err != nil {
 			errorStr += createErrString(err, i)
@@ -438,11 +449,9 @@ func serialize(value []byte, avroSchemas []Schema) ([]byte, error) {
 	return nil, fmt.Errorf("unable convert the event with any of the given schema." + errorStr)
 }
 
-func prepareBatchOfMessages(conf configuration, batch []map[string]interface{}, timestamp time.Time) (
+func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producer) (
 	[]client.Message, error,
 ) {
-	convertToAvro := conf.ConvertToAvro
-	AVROSchema := conf.AVROSchema
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
 
@@ -451,26 +460,27 @@ func prepareBatchOfMessages(conf configuration, batch []map[string]interface{}, 
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the message attribute", conf.Topic)
+			pkgLogger.Errorf("batch from topic %s is missing the message attribute", topic)
 			continue
 		}
 		userID, ok := data["userId"].(string)
 		if !ok && !allowReqsWithoutUserIDAndAnonymousID {
 			kafkaStats.missingUserID.Increment()
-			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", conf.Topic)
+			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
 			continue
 		}
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
 			return nil, err
 		}
-		if convertToAvro {
-			marshalledMsg, err = serialize(marshalledMsg, AVROSchema)
+		codec := p.getCodec()
+		if codec != nil {
+			marshalledMsg, err = serialize(marshalledMsg, codec)
 			if err != nil {
 				return messages, err
 			}
 		}
-		messages = append(messages, prepareMessage(conf.Topic, userID, marshalledMsg, timestamp))
+		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
 	}
 	return messages, nil
 }
@@ -521,13 +531,12 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p, conf)
+		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
-
-	return sendMessage(ctx, jsonData, p, conf)
+	return sendMessage(ctx, jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, conf configuration) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -535,7 +544,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(conf, batch, timestamp)
+	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp, p)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -548,9 +557,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	returnMessage := "Kafka: Message delivered in batch"
 	return 200, returnMessage, returnMessage
 }
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, conf configuration) (int, string, string) {
-	convertToAvro := conf.ConvertToAvro
-	AVROSchema := conf.AVROSchema
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -565,18 +572,19 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, conf
 
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
-	if convertToAvro {
-		value, err = serialize(value, AVROSchema)
+	codec := p.getCodec()
+	if codec != nil {
+		value, err = serialize(value, codec)
 		if err != nil {
 			return makeErrorResponse(err)
 		}
 	}
-	message := prepareMessage(conf.Topic, userID, value, timestamp)
+	message := prepareMessage(topic, userID, value, timestamp)
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(err)
 	}
 
-	returnMessage := fmt.Sprintf("Message delivered to topic: %s", conf.Topic)
+	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
 	return 200, returnMessage, returnMessage
 }
 
