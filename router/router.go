@@ -901,9 +901,8 @@ func (worker *workerT) processDestinationJobs() {
 				status.ErrorResponse = resp
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 				continue
-			} else {
-				userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 			}
+			userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 		}
 
 		if attemptedToSendTheJob {
