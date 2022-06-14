@@ -50,81 +50,64 @@ const (
 	ErrorInParseForm = "Error during parsing form"
 	//ErrorInParseMultiform - Error during parsing multiform
 	ErrorInParseMultiform = "Error during parsing multiform"
-	// NonRudderEvent = Event is not a Valid Rudder Event
+	// NotRudderEvent = Event is not a Valid Rudder Event
 	NotRudderEvent = "Event is not a valid rudder event"
+
+	transPixelResponse = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04" +
+		"\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
 )
 
 var (
-	statusMap map[string]ResponseStatus
+	statusMap = map[string]status{
+		Ok:                      {message: Ok, code: http.StatusOK},
+		RequestBodyNil:          {message: RequestBodyNil, code: http.StatusBadRequest},
+		InvalidRequestMethod:    {message: InvalidRequestMethod, code: http.StatusBadRequest},
+		TooManyRequests:         {message: TooManyRequests, code: http.StatusTooManyRequests},
+		NoWriteKeyInBasicAuth:   {message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized},
+		NoWriteKeyInQueryParams: {message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized},
+		RequestBodyReadFailed:   {message: RequestBodyReadFailed, code: http.StatusBadRequest},
+		RequestBodyTooLarge:     {message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge},
+		InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
+		SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
+		InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
+		// webhook specific status
+		InvalidWebhookSource:                           {message: InvalidWebhookSource, code: http.StatusNotFound},
+		SourceTransformerFailed:                        {message: SourceTransformerFailed, code: http.StatusBadRequest},
+		SourceTransformerResponseErrorReadFailed:       {message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest},
+		SourceTransformerFailedToReadOutput:            {message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest},
+		SourceTransformerInvalidResponseFormat:         {message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest},
+		SourceTransformerInvalidOutputFormatInResponse: {message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest},
+		SourceTransformerInvalidOutputJSON:             {message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest},
+		NonIdentifiableRequest:                         {message: NonIdentifiableRequest, code: http.StatusBadRequest},
+		ErrorInMarshal:                                 {message: ErrorInMarshal, code: http.StatusBadRequest},
+		ErrorInParseForm:                               {message: ErrorInParseForm, code: http.StatusBadRequest},
+		ErrorInParseMultiform:                          {message: ErrorInParseMultiform, code: http.StatusBadRequest},
+		NotRudderEvent:                                 {message: NotRudderEvent, code: http.StatusBadRequest},
+	}
 )
 
-//ResponseStatus holds gateway response status message and code
-type ResponseStatus struct {
+// status holds the gateway response status message and code
+type status struct {
 	message string
 	code    int
-}
-
-func init() {
-	loadStatusMap()
-}
-
-func loadStatusMap() {
-	statusMap = make(map[string]ResponseStatus)
-	statusMap[Ok] = ResponseStatus{message: Ok, code: http.StatusOK}
-	statusMap[RequestBodyNil] = ResponseStatus{message: RequestBodyNil, code: http.StatusBadRequest}
-	statusMap[InvalidRequestMethod] = ResponseStatus{message: InvalidRequestMethod, code: http.StatusBadRequest}
-	statusMap[TooManyRequests] = ResponseStatus{message: TooManyRequests, code: http.StatusTooManyRequests}
-	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
-	statusMap[NoWriteKeyInQueryParams] = ResponseStatus{message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized}
-	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
-	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
-	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
-	statusMap[SourceDisabled] = ResponseStatus{message: SourceDisabled, code: http.StatusNotFound}
-	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
-	// webhook specific status
-	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusNotFound}
-	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
-	statusMap[SourceTransformerResponseErrorReadFailed] = ResponseStatus{message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest}
-	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidResponseFormat] = ResponseStatus{message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
-	statusMap[NonIdentifiableRequest] = ResponseStatus{message: NonIdentifiableRequest, code: http.StatusBadRequest}
-	statusMap[ErrorInMarshal] = ResponseStatus{message: ErrorInMarshal, code: http.StatusBadRequest}
-	statusMap[ErrorInParseForm] = ResponseStatus{message: ErrorInParseForm, code: http.StatusBadRequest}
-	statusMap[ErrorInParseMultiform] = ResponseStatus{message: ErrorInParseMultiform, code: http.StatusBadRequest}
-	statusMap[NotRudderEvent] = ResponseStatus{message: NotRudderEvent, code: http.StatusBadRequest}
 }
 
 func GetStatus(key string) string {
 	if status, ok := statusMap[key]; ok {
 		return status.message
 	}
-
 	return key
 }
 
 func GetPixelResponse() string {
-
-	const transPixel = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
-
-	return transPixel
+	return transPixelResponse
 }
 
 func GetStatusCode(key string) int {
 	if status, ok := statusMap[key]; ok {
 		return status.code
 	}
-
-	return 200
-}
-
-//Always returns a valid response json
-func GetResponse(key string) string {
-	if status, ok := statusMap[key]; ok {
-		return fmt.Sprintf(`{"msg": "%s"}`, status.message)
-	}
-	return fmt.Sprintf(`{"msg": "%s"}`, key)
+	return http.StatusOK
 }
 
 func MakeResponse(msg string) string {
