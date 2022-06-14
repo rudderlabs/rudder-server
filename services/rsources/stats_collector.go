@@ -139,10 +139,7 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 				jobTargetKey.DestinationID = value.Str
 				remaining--
 			}
-			if remaining != 0 {
-				return true
-			}
-			return false
+			return remaining != 0
 		})
 		if jobRunId != "" {
 			sk := statKey{
