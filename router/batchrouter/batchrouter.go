@@ -23,6 +23,7 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -127,6 +128,7 @@ type HandleT struct {
 
 	payloadLimit     int64
 	transientSources transientsource.Service
+	rsourcesService  rsources.JobService
 }
 
 type BatchDestinationDataT struct {
@@ -429,9 +431,9 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 											err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 											if err != nil {
-												brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-												return err
+												return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 											}
+											// no need to update rsources stats here since no terminal job state is recorded
 											return nil
 										})
 										if err != nil {
@@ -475,16 +477,17 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if len(abortedJobs) > 0 {
 									err := brt.errorDB.Store(abortedJobs)
 									if err != nil {
-										brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-										panic(err)
+										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
 								}
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 									err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
-									return err
+
+									// rsources stats
+									return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -535,17 +538,18 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if len(abortedJobs) > 0 {
 									err := brt.errorDB.Store(abortedJobs)
 									if err != nil {
-										brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-										panic(err)
+										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
 								}
 
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 									err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
-									return err
+
+									// rsources stats
+									return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
 								if err != nil {
 									panic(err)
@@ -759,19 +763,23 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 }
 
-func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry bool, isAsync bool) {
+func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 	if disableEgress {
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error())
 		}
-		brt.setMultipleJobStatus(out)
+
+		// rsources stats
+		rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
+		rsourcesStats.BeginProcessing(batchJobs.Jobs)
+
+		brt.setMultipleJobStatus(out, rsourcesStats)
 		return
 	}
 
 	destinationID := batchJobs.BatchDestination.Destination.ID
-	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if ok {
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
@@ -782,7 +790,12 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
 			}
-			brt.setMultipleJobStatus(out)
+
+			// rsources stats
+			rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
+			rsourcesStats.BeginProcessing(batchJobs.Jobs)
+
+			brt.setMultipleJobStatus(out, rsourcesStats)
 			return
 		}
 	}
@@ -804,6 +817,8 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	defer file.Close()
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
+
+	brt.asyncDestinationStruct[destinationID].RsourcesStats.BeginProcessing(batchJobs.Jobs)
 	for _, job := range batchJobs.Jobs {
 		transformedData := asyncdestinationmanager.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch {
@@ -864,8 +879,8 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := asyncdestinationmanager.Upload(resolveURL(transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
-					brt.setMultipleJobStatus(uploadResponse)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 			}
@@ -922,6 +937,8 @@ func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	brt.asyncDestinationStruct[destinationID].Exists = true
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
+	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
+
 }
 
 func (brt *HandleT) asyncStructCleanUp(destinationID string) {
@@ -933,6 +950,7 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].Count = 0
 	brt.asyncDestinationStruct[destinationID].CanUpload = false
 	brt.asyncDestinationStruct[destinationID].URL = ""
+	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
 }
 
 func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
@@ -1319,6 +1337,13 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 			return err
 		}
+
+		// rsources stats
+		err = brt.updateRudderSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
+		if err != nil {
+			return err
+		}
+
 		//Save msgids of aborted jobs
 		if len(jobRunIDAbortedEventsMap) > 0 {
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
@@ -1344,7 +1369,7 @@ func (brt *HandleT) GetWorkspaceIDForDestID(destID string) string {
 	return workspaceID
 }
 
-func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput) {
+func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
 	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
@@ -1425,6 +1450,14 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		err := brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 		if err != nil {
 			brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+			return err
+		}
+
+		// rsources stats
+		rsourcesStats.JobStatusesUpdated(statusList)
+		err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+		if err != nil {
+			brt.logger.Errorf("publishing rsources stats: %w", err)
 		}
 		return err
 	})
@@ -1680,12 +1713,19 @@ func (worker *workerT) workerProcess() {
 			if len(drainList) > 0 {
 				err := brt.errorDB.Store(drainJobList)
 				if err != nil {
-					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-					panic(err)
+					panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 				}
-				err = brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				err = brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+					err := brt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{brt.destType}, parameterFilters)
+					if err != nil {
+						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
+					}
+
+					// rsources stats
+					return brt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
+
+				})
 				if err != nil {
-					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
 				}
 				for destID, destDrainStat := range drainStatsbyDest {
@@ -1771,7 +1811,7 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(asyncDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config, true, true)
+						brt.sendJobsToStorage(batchJobs)
 						destUploadStat.End()
 					}
 					wg.Done()
@@ -2201,7 +2241,7 @@ func setQueryFilters() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
@@ -2217,6 +2257,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 	brt.multitenantI = multitenantStat
 	brt.transientSources = transientSources
+	brt.rsourcesService = rsourcesService
 	//waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
@@ -2322,4 +2363,16 @@ func (brt *HandleT) Shutdown() {
 		close(worker.resumeChannel)
 	}
 	_ = brt.backgroundWait()
+}
+
+func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {
+
+	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
+	rsourcesStats.BeginProcessing(jobs)
+	rsourcesStats.JobStatusesUpdated(jobStatuses)
+	err := rsourcesStats.Publish(ctx, tx.Tx())
+	if err != nil {
+		return fmt.Errorf("publishing rsources stats: %w", err)
+	}
+	return nil
 }

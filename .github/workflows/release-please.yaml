@@ -14,7 +14,9 @@ jobs:
         id: extract_branch
       - uses: google-github-actions/release-please-action@v3
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.GH_PAT }}
           release-type: go
-          package-name: lean-realeaser
+          package-name: rudder-server
           default-branch: ${{ steps.extract_branch.outputs.branch }}
+          bump-minor-pre-major: true
+          bump-patch-for-minor-pre-major: true
