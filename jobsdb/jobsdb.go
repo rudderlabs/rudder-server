@@ -1744,13 +1744,13 @@ func (jd *HandleT) renameDS(ds dataSetT) error {
 	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *sql.Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
-		_, err := jd.dbHandle.Exec(sqlStatement)
+		_, err := tx.Exec(sqlStatement)
 		if err != nil {
 			return err
 		}
 
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
-		_, err = jd.dbHandle.Exec(sqlStatement)
+		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			return err
 		}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -44,6 +45,7 @@ type AsyncDestinationStruct struct {
 	CanUpload       bool
 	UploadMutex     sync.RWMutex
 	URL             string
+	RsourcesStats   rsources.StatsCollector
 }
 
 type AsyncUploadT struct {

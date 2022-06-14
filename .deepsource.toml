@@ -5,6 +5,10 @@ test_patterns = [
     "tests/**"
 ]
 
+exclude_patterns = [
+  "**/mock_*.go"
+]
+
 [[analyzers]]
 name = "go"
 enabled = true

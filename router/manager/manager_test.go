@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -185,6 +186,7 @@ func TestRouterManager(t *testing.T) {
 	asyncHelper.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).Do(func(
@@ -216,6 +218,7 @@ func TestRouterManager(t *testing.T) {
 		RouterDB:         tDb,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reportingNOOP{},
@@ -224,6 +227,7 @@ func TestRouterManager(t *testing.T) {
 		RouterDB:         brtDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	r := New(rtFactory, brtFactory, mockBackendConfig)
 
