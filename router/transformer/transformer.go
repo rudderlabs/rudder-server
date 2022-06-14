@@ -337,9 +337,9 @@ type RouterDelPayload struct {
 
 type ProxyTestRequestPayload struct {
 	// The event delivery request payload formed by Router
-	RouterDeliveryPayload RouterDelPayload `json:"deliveryPayload"`
+	RouterDeliveryPayload RouterDelPayload `json:"destinationRequestPayload"`
 	// The payload which will be used by the transformer to the form event delivery request payload
-	ProxyRequestPayload integrations.PostParametersT `json:"destinationRequestPayload"`
+	ProxyRequestPayload integrations.PostParametersT `json:"deliveryPayload"`
 }
 
 func getBatchURL() string {
