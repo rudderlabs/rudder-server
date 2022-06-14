@@ -3,11 +3,13 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime"
 	"net/http"
 	"net/url"
@@ -15,7 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -36,7 +40,7 @@ type NetHandleT struct {
 
 //Network interface
 type NetHandleI interface {
-	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
+	SendPost(ctx context.Context, structData integrations.PostParametersT, destName string, jobId int64, transformerProxy bool) *utils.SendPostResponse
 }
 
 //temp solution for handling complex query params
@@ -59,7 +63,7 @@ func handleQueryParam(param interface{}) string {
 
 //SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT, destName string, jobId int64, transformerProxy bool) *utils.SendPostResponse {
 	if disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
@@ -163,6 +167,101 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 		req.Header.Add("User-Agent", "RudderLabs")
 
+		// We will change this to `transformerProxy`
+		if transformerProxy {
+			// Send to the "proxyTest" endpoint
+			var payloadBytes []byte
+
+			// payload will be "nil" when params or files is set during destination transformation
+			if payload != nil {
+				payloadBytes, err = ioutil.ReadAll(payload)
+				if err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
+					}
+				}
+			}
+
+			// This is being done to facilitate compatible comparison
+			// As map[string][]string is the data-type for headers in golang
+			// But headers is an object in Javascript, hence we need to level the plane for effective comparison
+			headersMap := make(map[string]string)
+			for k, v := range req.Header {
+				headersMap[strings.ToLower(k)] = string(v[0])
+			}
+
+			// This is being done to facilitate compatible comparison
+			// As map[string][]string is the data-type for url.Values in golang
+			// But params is an object in Javascript, hence we need to level the plane for effective comparison
+			queryParamsMap := make(map[string]string)
+			for k, v := range req.URL.Query() {
+				queryParamsMap[strings.ToLower(k)] = string(v[0])
+			}
+
+			rtPayload := transformer.RouterDelPayload{
+				Method:   requestMethod,
+				Params:   queryParamsMap,
+				Endpoint: postInfo.URL,
+				Headers:  headersMap,
+			}
+			if payloadBytes != nil {
+				rtPayload.Data = string(payloadBytes)
+			}
+
+			proxyReqBody := transformer.ProxyTestRequestPayload{
+				RouterDeliveryPayload: rtPayload,
+				ProxyRequestPayload:   postInfo,
+			}
+
+			proxyPayload, marshErr := json.Marshal(proxyReqBody)
+			if marshErr != nil {
+				network.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} ProxyReqBody Marshal Error, with %[3]v`, destName, jobId, marshErr.Error())
+				return &utils.SendPostResponse{
+					StatusCode:   400,
+					ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v" with error: %[5]v`, destName, jobId, requestMethod, postInfo.URL, marshErr.Error())),
+				}
+			}
+			// ProxyTest Url
+			url := getProxyTestURL(destName)
+			// New Request for ProxyTest endpoint
+			proxyTestReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(proxyPayload))
+			if err != nil {
+				network.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
+				return &utils.SendPostResponse{
+					StatusCode:   400,
+					ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v" with error: %[5]v`, destName, jobId, requestMethod, postInfo.URL, err.Error())),
+				}
+			}
+			proxyTestReq.Header.Set("Content-Type", "application/json")
+
+			var proxyResp *http.Response
+			proxyResp, err = client.Do(proxyTestReq)
+			if err != nil {
+				network.logger.Errorf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} Error in response or request to proxyTest with Error: %[3]v`, destName, jobId, err.Error())
+				return &utils.SendPostResponse{
+					StatusCode:   400,
+					ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v" with error: %[5]v`, destName, jobId, requestMethod, postInfo.URL, err.Error())),
+				}
+			}
+
+			defer proxyResp.Body.Close()
+
+			respBody, err := io.ReadAll(proxyResp.Body)
+			if err != nil {
+				return &utils.SendPostResponse{
+					StatusCode:   proxyResp.StatusCode,
+					ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} Failed to read response body for request for URL : "%[3]v"`, destName, jobId, postInfo.URL)),
+				}
+			}
+
+			return &utils.SendPostResponse{
+				StatusCode:          proxyResp.StatusCode,
+				ResponseBody:        respBody,
+				ResponseContentType: proxyResp.Header.Get("Content-Type"),
+			}
+		}
+
 		resp, err := client.Do(req)
 		if err != nil {
 			return &utils.SendPostResponse{
@@ -257,4 +356,8 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+}
+
+func getProxyTestURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxyTest"
 }

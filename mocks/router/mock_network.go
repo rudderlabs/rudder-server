@@ -37,15 +37,15 @@ func (m *MockNetHandleI) EXPECT() *MockNetHandleIMockRecorder {
 }
 
 // SendPost mocks base method.
-func (m *MockNetHandleI) SendPost(arg0 context.Context, arg1 integrations.PostParametersT) *utils.SendPostResponse {
+func (m *MockNetHandleI) SendPost(arg0 context.Context, arg1 integrations.PostParametersT, arg2 string, arg3 int64, arg4 bool) *utils.SendPostResponse {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SendPost", arg0, arg1)
+	ret := m.ctrl.Call(m, "SendPost", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(*utils.SendPostResponse)
 	return ret0
 }
 
 // SendPost indicates an expected call of SendPost.
-func (mr *MockNetHandleIMockRecorder) SendPost(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockNetHandleIMockRecorder) SendPost(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPost", reflect.TypeOf((*MockNetHandleI)(nil).SendPost), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPost", reflect.TypeOf((*MockNetHandleI)(nil).SendPost), arg0, arg1, arg2, arg3, arg4)
 }
