@@ -49,20 +49,8 @@ func credentials() (sfCredentials *SnowflakeCredentials) {
 	return
 }
 
-func (*SnowflakeTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["snowflakeEventWriteKey"] = SFTest.WriteKey
-	configMap["snowflakeAccount"] = SFTest.Credentials.Account
-	configMap["snowflakeDatabase"] = SFTest.Credentials.Database
-	configMap["snowflakeWarehouse"] = SFTest.Credentials.Warehouse
-	configMap["snowflakeUser"] = SFTest.Credentials.User
-	configMap["snowflakePassword"] = SFTest.Credentials.Password
-	configMap["snowflakeBucketName"] = SFTest.Credentials.BucketName
-	configMap["snowflakeAccesskeyID"] = SFTest.Credentials.AccessKeyID
-	configMap["snowflakeAccesskey"] = SFTest.Credentials.AccessKey
-}
-
 func (*SnowflakeTest) SetUpDestination() {
-	SFTest.WriteKey = testhelper.RandString(27)
+	SFTest.WriteKey = "2eSJyYtqwcFiUILzXv2fcNIrWO7"
 	SFTest.Credentials = credentials()
 	SFTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -105,5 +93,5 @@ func TestSnowflakeIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	SFTest = &SnowflakeTest{}
-	os.Exit(testhelper.Setup(m, SFTest))
+	os.Exit(testhelper.Run(m, SFTest))
 }

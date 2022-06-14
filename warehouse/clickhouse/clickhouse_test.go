@@ -53,29 +53,22 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 	return resources.Resources[0]
 }
 
-func (*NOOP) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["clickHouseWriteKey"] = CHTest.WriteKey
-	configMap["clickHousePort"] = CHTest.Credentials.Port
-	configMap["clickHouseClusterWriteKey"] = CHClusterTest.WriteKey
-	configMap["clickHouseClusterPort"] = CHClusterTest.GetResource().Credentials.Port
-}
-
 func (*NOOP) SetUpDestination() {
 	SetUpClickHouseDestination()
 	SetUpClickHouseClusterDestination()
 }
 
 func SetUpClickHouseDestination() {
-	CHTest.WriteKey = testhelper.RandString(27)
+	CHTest.WriteKey = "C5AWX39IVUWSP2NcHciWvqZTa2N"
 	CHTest.Credentials = &clickhouse.CredentialsT{
-		Host:          "localhost",
+		Host:          "clickhouse",
 		User:          "rudder",
 		Password:      "rudder-password",
 		DBName:        "rudderdb",
 		Secure:        "false",
 		SkipVerify:    "true",
 		TLSConfigName: "",
-		Port:          "54321",
+		Port:          "9000",
 	}
 	CHTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -93,13 +86,13 @@ func SetUpClickHouseDestination() {
 }
 
 func SetUpClickHouseClusterDestination() {
-	CHClusterTest.WriteKey = testhelper.RandString(27)
+	CHClusterTest.WriteKey = "95RxRTZHWUsaD6HEdz0ThbXfQ6p"
 	CHClusterTest.Resources = []*ClickHouseClusterResource{
 		{
 			Name:     "clickhouse01",
 			HostName: "clickhouse01",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "host.docker.internal",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -113,7 +106,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse02",
 			HostName: "clickhouse02",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "host.docker.internal",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -127,7 +120,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse03",
 			HostName: "clickhouse03",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "host.docker.internal",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -141,7 +134,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse04",
 			HostName: "clickhouse04",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "host.docker.internal",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -361,5 +354,5 @@ func TestMain(m *testing.M) {
 	CHTest = &ClickHouseTest{}
 	CHClusterTest = &ClickHouseClusterTest{}
 	NOOP := &NOOP{}
-	os.Exit(testhelper.Setup(m, NOOP))
+	os.Exit(testhelper.Run(m, NOOP))
 }

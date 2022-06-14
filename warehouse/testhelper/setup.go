@@ -1,10 +1,8 @@
 package testhelper
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	r "github.com/rudderlabs/rudder-server/cmd/run"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -16,37 +14,25 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"log"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-	"github.com/phayes/freeport"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	hold           bool = true
 	runIntegration bool
 )
 
 var (
 	WaitFor2Minute            = 2 * time.Minute
 	WaitFor5Minute            = 5 * time.Minute
-	WaitFor1Second            = 1 * time.Second
 	DefaultQueryFrequency     = 100 * time.Millisecond
 	LongRunningQueryFrequency = 5000 * time.Millisecond
-)
-
-var (
-	httpPort      string
-	httpAdminPort string
 )
 
 var (
@@ -59,141 +45,30 @@ var (
 )
 
 type ISetup interface {
-	EnhanceWorkspaceConfig(map[string]string)
 	SetUpDestination()
 }
 
-func Setup(m *testing.M, setup ISetup) int {
-	// Getting flag variable
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
+func Run(m *testing.M, setup ISetup) int {
 	flag.BoolVar(&runIntegration, "integration", false, "run warehouse integration tests")
 	flag.Parse()
 
+	if testing.Short() {
+		log.Println("Skipping warehouse integration test. Remove `-short` to run them.")
+		return 0
+	}
 	if !runIntegration {
-		log.Println("Skipping integration test. Use `-integration` to run them.")
+		log.Println("Skipping warehouse integration test. Use `-integration` to run them.")
 		return 0
 	}
 
-	var tearDownStart time.Time
-	defer func() {
-		if tearDownStart == (time.Time{}) {
-			log.Println("--- Teardown done (unexpected)")
-		} else {
-			log.Printf("--- Teardown done (%s)", time.Since(tearDownStart))
-		}
-	}()
-
-	// Initializing config
 	initialize()
 
-	// Setting up jobsDB
 	jobsDB = SetUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 
-	// Setting up transformer
-	transformer := SetupTransformer()
-
-	// Setting up minio
-	minio := SetupMinio()
-
-	// Loading env variables
-	if err := godotenv.Load("../testhelper/.env"); err != nil {
-		log.Printf("Error occurred while loading .env with error: %v", err)
-	}
-
-	// Setting up destination
 	setup.SetUpDestination()
 
-	// Setting up env variables
-	_ = os.Setenv("JOBS_DB_PORT", jobsDB.Credentials.Port)
-	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", jobsDB.Credentials.Port)
-	_ = os.Setenv("DEST_TRANSFORM_URL", transformer.Url)
-	_ = os.Setenv("DATABRICKS_CONNECTOR_URL", "localhost:54330")
-
-	// Getting free http port for running rudder-server
-	httpPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panicf("error occurred while getting free port for http: %v", err)
-		return 0
-	}
-	httpPort = strconv.Itoa(httpPortInt)
-
-	// Getting free ports for http admin
-	httpAdminPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panicf("error occurred while getting free port for http admin: %v", err)
-		return 0
-	}
-	httpAdminPort = strconv.Itoa(httpAdminPortInt)
-
-	// Setting up workspace config
-	workspaceID := RandString(27)
-	workspaceConfigMap := map[string]string{
-		"workspaceId":     workspaceID,
-		"minioEndpoint":   minio.MinioEndpoint,
-		"minioBucketName": minio.MinioBucketName,
-	}
-	setup.EnhanceWorkspaceConfig(workspaceConfigMap)
-
-	// Setting up workspace
-	workspaceConfigPath := CreateWorkspaceConfig("../testdata/workspaceConfig/template.json", workspaceConfigMap)
-	log.Println("workspace config path:", workspaceConfigPath)
-	defer func() {
-		err := os.Remove(workspaceConfigPath)
-		log.Println(err)
-	}()
-
-	// Setting up warehouse temp directory
-	rudderTmpDir, err := os.MkdirTemp("", "rudder_warehouse_test")
-	if err != nil {
-		log.Panicf("error occurred while creating temp directory for warehouse test with error: %v", err)
-		return 0
-	}
-	defer func() { _ = os.RemoveAll(rudderTmpDir) }()
-
-	// Setting up env variables
-	_ = os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	_ = os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", httpAdminPort)
-	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
-	_ = os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	_ = os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-
-	// Starting rudder server and rudder warehouse
-	svcCtx, svcCancel := context.WithCancel(context.Background())
-	svcDone := make(chan struct{})
-	go func() {
-		r.Run(svcCtx)
-		close(svcDone)
-	}()
-
-	// Checking health endpoint for rudder server
-	healthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
-	log.Println("healthEndpoint", healthEndpoint)
-	WaitUntilReady(context.Background(), healthEndpoint, WaitFor2Minute, WaitFor1Second, "healthEndpoint")
-
-	// running module tests
-	code := m.Run()
-	blockOnHold()
-
-	svcCancel()
-	log.Println("waiting for service to stop")
-	<-svcDone
-
-	tearDownStart = time.Now()
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	log.Println("Test on hold, before cleanup")
-	log.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
+	return m.Run()
 }
 
 func enhanceJobsDBWithSQLFunctions() {
@@ -354,9 +229,9 @@ func SetUpJobsDB() (jobsDB *JobsDBResource) {
 		DBName:   "jobsdb",
 		Password: "password",
 		User:     "rudder",
-		Host:     "localhost",
+		Host:     "jobsDb",
 		SSLMode:  "disable",
-		Port:     "54328",
+		Port:     "5432",
 	}
 	jobsDB = &JobsDBResource{}
 	jobsDB.Credentials = pgCredentials

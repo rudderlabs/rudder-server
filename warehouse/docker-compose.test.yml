@@ -108,7 +108,6 @@ services:
   clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse01
-    hostname: clickhouse01
     networks:
       clickhouse-network:
     ports:
@@ -173,8 +172,7 @@ services:
       interval: 1s
       timeout: 30s
       retries: 25
-  start_dependencies:
-    image: alpine:latest
+  backend:
     depends_on:
       jobsDb:
         condition: service_healthy
@@ -200,7 +198,29 @@ services:
         condition: service_healthy
       clickhouse04:
         condition: service_healthy
-
+    links:
+      - clickhouse01
+      - clickhouse02
+      - clickhouse03
+      - clickhouse04
+    build:
+      context: ../
+      dockerfile: build/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - testhelper/docker.env
+    entrypoint: sh -c 'go run warehouse/testhelper/config/workspace.go && go run main.go'
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:54331/health || exit 1
+      interval: 1s
+      timeout: 30s
+      retries: 25
+  start_dependencies:
+    image: alpine:latest
+    depends_on:
+      - backend
 networks:
   clickhouse-network:
     name: clickhouse-network
+    external: true

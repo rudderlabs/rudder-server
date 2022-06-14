@@ -11,17 +11,6 @@ import (
 	"time"
 )
 
-type TransformerResource struct {
-	Url  string
-	Port string
-}
-
-type MinioResource struct {
-	MinioEndpoint   string
-	MinioBucketName string
-	Port            string
-}
-
 type JobsDBResource struct {
 	Credentials *postgres.CredentialsT
 	DB          *sql.DB

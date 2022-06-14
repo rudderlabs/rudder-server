@@ -22,20 +22,15 @@ var (
 	MTest *MSSQLTest
 )
 
-func (*MSSQLTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["mssqlWriteKey"] = MTest.WriteKey
-	configMap["mssqlPort"] = MTest.Credentials.Port
-}
-
 func (*MSSQLTest) SetUpDestination() {
-	MTest.WriteKey = testhelper.RandString(27)
+	MTest.WriteKey = "YSQ3n267l1VQKGNbSuJE9fQbzON"
 	MTest.Credentials = &mssql.CredentialsT{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",
-		Host:     "localhost",
+		Host:     "mssql",
 		SSLMode:  "disable",
-		Port:     "54322",
+		Port:     "1433",
 	}
 	MTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -75,5 +70,5 @@ func TestMSSQLIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	MTest = &MSSQLTest{}
-	os.Exit(testhelper.Setup(m, MTest))
+	os.Exit(testhelper.Run(m, MTest))
 }

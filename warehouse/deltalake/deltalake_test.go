@@ -49,19 +49,8 @@ func credentials() (credentials *DeltalakeCredentials) {
 	return
 }
 
-func (*DeltalakeTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["deltalakeEventWriteKey"] = DLTest.WriteKey
-	configMap["deltalakeHost"] = DLTest.Credentials.Host
-	configMap["deltalakePort"] = DLTest.Credentials.Port
-	configMap["deltalakePath"] = DLTest.Credentials.Path
-	configMap["deltalakeToken"] = DLTest.Credentials.Token
-	configMap["deltalakeAccountName"] = DLTest.Credentials.AccountName
-	configMap["deltalakeAccountKey"] = DLTest.Credentials.AccountKey
-	configMap["deltalakeContainerName"] = DLTest.Credentials.ContainerName
-}
-
 func (*DeltalakeTest) SetUpDestination() {
-	DLTest.WriteKey = testhelper.RandString(27)
+	DLTest.WriteKey = "sToFgoilA0U1WxNeW1gdgUVDsEW"
 	DLTest.Credentials = credentials()
 	DLTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -137,5 +126,5 @@ func TestDeltalakeIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	DLTest = &DeltalakeTest{}
-	os.Exit(testhelper.Setup(m, DLTest))
+	os.Exit(testhelper.Run(m, DLTest))
 }

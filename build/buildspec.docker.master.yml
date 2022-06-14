@@ -46,14 +46,14 @@ phases:
       - DATE=$(date "+%F,%T")
       # Build Open source version
       - make test
-      - go test -v ./docker_test.go -integration -count 1
+      - go test -v ./docker_test.go -integration -count 1 -short
       - bash build/codecov.sh
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderlabs/rudder-server:$VERSION -f build/Dockerfile-aws .
       # Build Enterprise version
       - make enterprise-init
       - make test
-      - go test -v ./docker_test.go -integration -count 1
+      - go test -v ./docker_test.go -integration -count 1 -short
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws .
   post_build:

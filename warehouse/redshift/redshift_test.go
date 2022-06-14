@@ -49,20 +49,8 @@ func credentials() (rsCredentials *RedshiftCredentials) {
 	return
 }
 
-func (*RedshiftTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["redshiftEventWriteKey"] = RSTest.WriteKey
-	configMap["redshiftHost"] = RSTest.Credentials.Host
-	configMap["redshiftPort"] = RSTest.Credentials.Port
-	configMap["redshiftDatabase"] = RSTest.Credentials.Database
-	configMap["redshiftUser"] = RSTest.Credentials.User
-	configMap["redshiftPassword"] = RSTest.Credentials.Password
-	configMap["redshiftBucketName"] = RSTest.Credentials.BucketName
-	configMap["redshiftAccessKeyID"] = RSTest.Credentials.AccessKeyID
-	configMap["redshiftAccessKey"] = RSTest.Credentials.AccessKey
-}
-
 func (*RedshiftTest) SetUpDestination() {
-	RSTest.WriteKey = testhelper.RandString(27)
+	RSTest.WriteKey = "JAAwdCxmM8BIabKERsUhPNmMmdf"
 	RSTest.Credentials = credentials()
 	RSTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -105,5 +93,5 @@ func TestRedshiftIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	RSTest = &RedshiftTest{}
-	os.Exit(testhelper.Setup(m, RSTest))
+	os.Exit(testhelper.Run(m, RSTest))
 }

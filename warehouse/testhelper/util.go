@@ -1,15 +1,11 @@
 package testhelper
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/cenkalti/backoff"
 	"log"
-	"math/rand"
-	"net/http"
 	"strings"
-	"time"
 )
 
 const (
@@ -170,38 +166,6 @@ const (
 	  }
 	}`
 )
-
-func WaitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
-	probe := time.NewTicker(interval)
-	timeout := time.After(atMost)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout:
-			log.Panicf("endpoint was not ready after %s, for the end point: %s, caller: %s", atMost, endpoint, caller)
-		case <-probe.C:
-			resp, err := http.Get(endpoint)
-			if err != nil {
-				continue
-			}
-			if resp.StatusCode == http.StatusOK {
-				log.Printf("endpoint ready for caller: %s", caller)
-				return
-			}
-		}
-	}
-}
-
-func RandString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
 
 func JsonEscape(i string) (string, error) {
 	b, err := json.Marshal(i)

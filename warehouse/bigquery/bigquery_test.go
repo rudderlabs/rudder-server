@@ -63,16 +63,8 @@ func credentials() (bqCredentials *BigQueryCredentials) {
 	return
 }
 
-func (*BiqQueryTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["bqEventWriteKey"] = BQTest.WriteKey
-	configMap["bqProject"] = BQTest.Credentials.ProjectID
-	configMap["bqLocation"] = BQTest.Credentials.Location
-	configMap["bqBucketName"] = BQTest.Credentials.Bucket
-	configMap["bqCredentials"] = BQTest.Credentials.CredentialsEscaped
-}
-
 func (*BiqQueryTest) SetUpDestination() {
-	BQTest.WriteKey = testhelper.RandString(27)
+	BQTest.WriteKey = "J77aX7tLFJ84qYU6UrN8ctecwZt"
 	BQTest.Credentials = credentials()
 	BQTest.EventsMap = testhelper.DefaultEventMap()
 	BQTest.EventsMap["_groups"] = 1
@@ -180,5 +172,5 @@ func TestBigQueryIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	BQTest = &BiqQueryTest{}
-	os.Exit(testhelper.Setup(m, BQTest))
+	os.Exit(testhelper.Run(m, BQTest))
 }

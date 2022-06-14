@@ -14,7 +14,7 @@ import (
 func sendEvent(payload *strings.Reader, eventType, writeKey string) {
 	log.Printf("Sending event: %s for writeKey: %s", eventType, writeKey)
 
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, eventType)
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", "54331", eventType)
 	method := "POST"
 	httpClient := &http.Client{}
 

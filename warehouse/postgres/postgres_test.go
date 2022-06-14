@@ -22,20 +22,15 @@ var (
 	PGTest *PostgresTest
 )
 
-func (*PostgresTest) EnhanceWorkspaceConfig(configMap map[string]string) {
-	configMap["postgresWriteKey"] = PGTest.WriteKey
-	configMap["postgresPort"] = PGTest.Credentials.Port
-}
-
 func (*PostgresTest) SetUpDestination() {
-	PGTest.WriteKey = testhelper.RandString(27)
+	PGTest.WriteKey = "kwzDkh9h2fhfUVuS9jZ8uVbhV3v"
 	PGTest.Credentials = &postgres.CredentialsT{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
 		User:     "rudder",
-		Host:     "localhost",
+		Host:     "postgres",
 		SSLMode:  "disable",
-		Port:     "54320",
+		Port:     "5432",
 	}
 	PGTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -75,5 +70,5 @@ func TestPostgresIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	PGTest = &PostgresTest{}
-	os.Exit(testhelper.Setup(m, PGTest))
+	os.Exit(testhelper.Run(m, PGTest))
 }
