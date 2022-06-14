@@ -175,7 +175,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 
 			// payload will be "nil" when params or files is set during destination transformation
-			if payload != nil && (bodyFormat == "JSON" || bodyFormat == "FORM" || bodyFormat == "XML") {
+			if payload != nil {
 				var payloadBytes []byte
 				payloadBytes, err = ioutil.ReadAll(payload)
 				if err != nil {
@@ -184,12 +184,18 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 						ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
 					}
 				}
-				err := json.Unmarshal(payloadBytes, &rtPayload.Data)
+
+				tempJson := make(map[string]interface{})
+				err := json.Unmarshal(payloadBytes, &tempJson)
 				if err != nil {
-					return &utils.SendPostResponse{
-						StatusCode:   400,
-						ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to unmarshal payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
+					if (bodyFormat == "JSON" || bodyFormat == "FORM") {
+						return &utils.SendPostResponse{
+							StatusCode:   400,
+							ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to unmarshal payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
+						}
 					}
+				} else {
+					rtPayload.Data = tempJson
 				}
 			}
 
