@@ -223,4 +223,3 @@ services:
 networks:
   clickhouse-network:
     name: clickhouse-network
-    external: true
