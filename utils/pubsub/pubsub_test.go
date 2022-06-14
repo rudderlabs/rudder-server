@@ -17,7 +17,7 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 	bus.Publish(topic, 1)
 	v := <-normal
 	if v.Data.(int) != 1 {
-		t.Errorf("Expected slow consumer to have consumed 5, instead got %d.", v.Data.(int))
+		t.Errorf("Expected normal consumer to have consumed 1, instead got %d.", v.Data.(int))
 	}
 	v = <-slow
 	if v.Data.(int) != 1 {
