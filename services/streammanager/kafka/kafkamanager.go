@@ -23,7 +23,7 @@ type Opts struct {
 
 // schema is the AVRO schema required to convert the data to AVRO
 type schema struct {
-	AVROSchema string
+	avroSchema string
 }
 
 // configuration is the config that is required to send data to Kafka
@@ -38,7 +38,7 @@ type configuration struct {
 	Username      string
 	Password      string
 	ConvertToAvro bool
-	AVROSchema    []schema
+	avroSchema    []schema
 }
 
 func (c *configuration) validate() error {
@@ -107,13 +107,13 @@ type producer interface {
 	Publish(context.Context, ...client.Message) error
 
 	getTimeout() time.Duration
-	getCodec() []goavro.Codec
+	getCodecs() []goavro.Codec
 }
 
 type producerImpl struct {
 	p       *client.Producer
 	timeout time.Duration
-	codec   []goavro.Codec
+	codecs  []goavro.Codec
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
@@ -131,8 +131,8 @@ func (p *producerImpl) Close(ctx context.Context) error {
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
-func (p *producerImpl) getCodec() []goavro.Codec {
-	return p.codec
+func (p *producerImpl) getCodecs() []goavro.Codec {
+	return p.codecs
 }
 
 type logger interface {
@@ -294,18 +294,18 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 		return nil, err
 	}
 	convertToAvro := destConfig.ConvertToAvro
-	AVROSchema := destConfig.AVROSchema
-	var codec []goavro.Codec
+	avroSchema := destConfig.avroSchema
+	codecs := make([]goavro.Codec, len(avroSchema))
 	if convertToAvro {
-		for _, avroSchema := range AVROSchema {
-			tempCodec, err := goavro.NewCodec(avroSchema.AVROSchema)
+		for i, avroSchema := range avroSchema {
+			tempCodec, err := goavro.NewCodec(avroSchema.avroSchema)
 			if err != nil {
 				return nil, err
 			}
-			codec = append(codec, *tempCodec)
+			codecs[i] = *tempCodec
 		}
 	}
-	return &producerImpl{p: p, timeout: o.Timeout, codec: codec}, nil
+	return &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
@@ -423,7 +423,7 @@ func createErrString(err error, index int) string {
 	return fmt.Sprintf(" Schema[%d]: ", index+1) + err.Error() + "."
 }
 
-// This function is used to serialize the binary data according to the AVROSchema.
+// This function is used to serialize the binary data according to the avroSchema.
 // It iterates over the schemas provided by the customer and tries to serialize the data.
 // If it's able to serialize the data then it returns the converted data otherwise it returns an error.
 // We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
@@ -473,7 +473,7 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		if err != nil {
 			return nil, err
 		}
-		codec := p.getCodec()
+		codec := p.getCodecs()
 		if codec != nil {
 			marshalledMsg, err = serialize(marshalledMsg, codec)
 			if err != nil {
@@ -572,7 +572,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
-	codec := p.getCodec()
+	codec := p.getCodecs()
 	if codec != nil {
 		value, err = serialize(value, codec)
 		if err != nil {

@@ -652,9 +652,9 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats
 
 // Mocks
 type pMockErr struct {
-	error error
-	calls [][]client.Message
-	codec []goavro.Codec
+	error  error
+	calls  [][]client.Message
+	codecs []goavro.Codec
 }
 
 func (*pMockErr) getTimeout() time.Duration       { return 0 }
@@ -664,9 +664,8 @@ func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	return p.error
 }
 
-// func (p *pMockErr) getCodec(_ context.Context)
-func (p *pMockErr) getCodec() []goavro.Codec {
-	return p.codec
+func (p *pMockErr) getCodecs() []goavro.Codec {
+	return p.codecs
 }
 
 type nopLogger struct{}
