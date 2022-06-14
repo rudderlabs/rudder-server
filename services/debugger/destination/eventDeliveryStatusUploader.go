@@ -1,6 +1,7 @@
 package destinationdebugger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -10,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -137,8 +137,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := make(chan pubsub.DataEvent)
-	backendConfig.Subscribe(configChannel, "backendConfig")
+	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
 	for config := range configChannel {
 		updateConfig(config.Data.(backendconfig.ConfigT))
 	}

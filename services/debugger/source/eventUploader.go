@@ -1,6 +1,7 @@
 package sourcedebugger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -12,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 //GatewayEventBatchT is a structure to hold batch of events
@@ -172,10 +172,8 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := make(chan pubsub.DataEvent)
-	backendConfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
-	for {
-		config := <-configChannel
+	ch := backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		updateConfig(config.Data.(backendconfig.ConfigT))
 	}
 }

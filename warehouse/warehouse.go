@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"math/rand"
 	"net/http"
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
@@ -36,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -240,10 +241,8 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-	for {
-		config := <-ch
+	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	for config := range ch {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.ConfigT)
@@ -1112,10 +1111,8 @@ func (wh *HandleT) resetInProgressJobs() {
 }
 
 func minimalConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-	for {
-		config := <-ch
+	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	for config := range ch {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
@@ -1158,18 +1155,11 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context) {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := backendconfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case config := <-ch:
-			onConfigDataEvent(config, dstToWhRouter)
-		}
+	for config := range ch {
+		onConfigDataEvent(config, dstToWhRouter)
 	}
 
 	g, _ := errgroup.WithContext(context.Background())

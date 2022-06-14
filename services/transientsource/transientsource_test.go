@@ -3,6 +3,7 @@ package transientsource
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -55,11 +56,12 @@ func Test_Service_ApplyParams(t *testing.T) {
 }
 
 func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
+
 	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
-	var ch chan pubsub.DataEvent
+	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
 	ready.Add(2)
@@ -70,11 +72,15 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 	config.EXPECT().Subscribe(
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
-	).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-			ch = channel
-			ready.Done()
-		})
+	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+		ready.Done()
+		go func() {
+			<-ctx.Done()
+			close(configCh)
+		}()
+
+		return configCh
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Given I have a service reading from the backend
@@ -84,6 +90,7 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 
 	go func() {
 		ready.Done()
+		fmt.Println("sourceIdsSupplier")
 		sourceIds = sourceIdsSupplier()
 		gotSourceIds.Done()
 	}()
@@ -91,11 +98,12 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 	// When the config backend has not published any event yet
 	ready.Wait()
 
+	fmt.Println("Empty sources")
 	// Then source ids are still empty
 	Expect(sourceIds).To(BeEmpty())
 
 	// When the config backend publishes an event with two skipped sources
-	ch <- pubsub.DataEvent{
+	configCh <- pubsub.DataEvent{
 		Data: backendconfig.ConfigT{
 			Sources: []backendconfig.SourceT{
 				{
@@ -110,6 +118,9 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 		},
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
+
+	fmt.Println("Got sources")
+
 	gotSourceIds.Wait()
 	// Then source ids will contain the two expected elements
 	Expect(sourceIds).To(Equal([]string{"one", "two"}))
@@ -130,8 +141,15 @@ func Test_SourceIdsSupplier_Context_Cancelled(t *testing.T) {
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
 	).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ready.Done()
+
+			ch := make(chan pubsub.DataEvent)
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
 		})
 	ctx, cancel := context.WithCancel(context.Background())
 

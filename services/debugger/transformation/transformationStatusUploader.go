@@ -1,6 +1,7 @@
 package transformationdebugger
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -153,10 +153,8 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber() {
-	configChannel := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
-	for {
-		config := <-configChannel
+	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		updateConfig(config.Data.(backendconfig.ConfigT))
 	}
 }
