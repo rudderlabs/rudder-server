@@ -83,5 +83,5 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_dependencies
 
 run-warehouse-integration: setup-warehouse-integration
-	go test -v github.com/rudderlabs/rudder-server/warehouse/... -integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/...
 	make cleanup-warehouse-integration

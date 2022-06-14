@@ -49,15 +49,9 @@ type ISetup interface {
 }
 
 func Run(m *testing.M, setup ISetup) int {
-	flag.BoolVar(&runIntegration, "integration", false, "run warehouse integration tests")
 	flag.Parse()
-
 	if testing.Short() {
 		log.Println("Skipping warehouse integration test. Remove `-short` to run them.")
-		return 0
-	}
-	if !runIntegration {
-		log.Println("Skipping warehouse integration test. Use `-integration` to run them.")
 		return 0
 	}
 
