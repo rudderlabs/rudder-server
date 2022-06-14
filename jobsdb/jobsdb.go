@@ -423,6 +423,7 @@ type HandleT struct {
 	maxReaders                    int
 	maxWriters                    int
 	maxOpenConnections            int
+	analyzeThreshold              int
 	MaxDSSize                     *int
 	queryFilterKeys               QueryFiltersT
 	backgroundCancel              context.CancelFunc
@@ -870,6 +871,8 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 	maxOpenConnectionsKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "JobsDB." + "maxOpenConnections"}
 	config.RegisterIntConfigVariable(20, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
+	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
+	config.RegisterIntConfigVariable(30000, &jd.analyzeThreshold, false, 1, analyzeThresholdKeys...)
 
 }
 
@@ -2229,12 +2232,12 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 	return err
 }
 
-func (*HandleT) doStoreJobsInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
+func (jd *HandleT) doStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*JobT) error {
 	store := func() error {
 		var stmt *sql.Stmt
 		var err error
 
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+		stmt, err = tx.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
 		if err != nil {
 			return err
 		}
@@ -2250,21 +2253,27 @@ func (*HandleT) doStoreJobsInTx(txHandler transactionHandler, ds dataSetT, jobLi
 				return err
 			}
 		}
-		_, err = stmt.Exec()
+		if _, err = stmt.Exec(); err != nil {
+			return err
+		}
+		if len(jobList) > jd.analyzeThreshold {
+			_, err = stmt.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
+		}
+
 		return err
 	}
 	const (
 		savepointSql = "SAVEPOINT doStoreJobsInTx"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
-	if _, err := txHandler.Exec(savepointSql); err != nil {
+	if _, err := tx.Exec(savepointSql); err != nil {
 		return err
 	}
 	err := store()
 	var e *pq.Error
 	if err != nil && errors.As(err, &e) {
 		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
-			if _, err := txHandler.Exec(rollbackSql); err != nil {
+			if _, err := tx.Exec(rollbackSql); err != nil {
 				return err
 			}
 			for i := range jobList {
@@ -2829,7 +2838,7 @@ func (jd *HandleT) copyJobStatusDS(tx *sql.Tx, ds dataSetT, statusList []*JobSta
 	return nil
 }
 
-func (jd *HandleT) updateJobStatusDSInTx(txHandler transactionHandler, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string][]string, err error) {
+func (jd *HandleT) updateJobStatusDSInTx(tx *sql.Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string][]string, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -2839,7 +2848,7 @@ func (jd *HandleT) updateJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	defer queryStat.End()
 	updatedStatesMap := map[string]map[string]bool{}
 	store := func() error {
-		stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+		stmt, err := tx.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 			"retry_time", "error_code", "error_response", "parameters"))
 		if err != nil {
 			return err
@@ -2869,21 +2878,28 @@ func (jd *HandleT) updateJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 			}
 		}
 
-		_, err = stmt.Exec()
+		if _, err = stmt.Exec(); err != nil {
+			return err
+		}
+
+		if len(statusList) > jd.analyzeThreshold {
+			_, err = stmt.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
+		}
+
 		return err
 	}
 	const (
 		savepointSql = "SAVEPOINT updateJobStatusDSInTx"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
-	if _, err = txHandler.Exec(savepointSql); err != nil {
+	if _, err = tx.Exec(savepointSql); err != nil {
 		return
 	}
 	err = store()
 	var e *pq.Error
 	if err != nil && errors.As(err, &e) {
 		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
-			if _, err = txHandler.Exec(rollbackSql); err != nil {
+			if _, err = tx.Exec(rollbackSql); err != nil {
 				return
 			}
 			for i := range statusList {
@@ -3727,7 +3743,7 @@ doUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) doUpdateJobStatusInTx(txHandler transactionHandler, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string][]string, err error) {
+func (jd *HandleT) doUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string][]string, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -3757,7 +3773,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(txHandler transactionHandler, statusLis
 						statusList[i-1].JobID, lastPos, i-1)
 				}
 				var updatedStates map[string][]string
-				updatedStates, err = jd.updateJobStatusDSInTx(txHandler, ds.ds, statusList[lastPos:i], tags)
+				updatedStates, err = jd.updateJobStatusDSInTx(tx, ds.ds, statusList[lastPos:i], tags)
 				if err != nil {
 					return
 				}
@@ -3773,7 +3789,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(txHandler transactionHandler, statusLis
 		if i == len(statusList) && lastPos < i {
 			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			var updatedStates map[string][]string
-			updatedStates, err = jd.updateJobStatusDSInTx(txHandler, ds.ds, statusList[lastPos:i], tags)
+			updatedStates, err = jd.updateJobStatusDSInTx(tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
 				return
 			}
@@ -3794,7 +3810,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(txHandler transactionHandler, statusLis
 		//Update status in the last element
 		jd.logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates map[string][]string
-		updatedStates, err = jd.updateJobStatusDSInTx(txHandler, dsList[len(dsList)-1], statusList[lastPos:], tags)
+		updatedStates, err = jd.updateJobStatusDSInTx(tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
 			return
 		}
