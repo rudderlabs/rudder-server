@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/objectbox/objectbox-go/objectbox"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
@@ -71,7 +71,7 @@ func loadConfigHandler() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectbox.ObjectBox) error {
+func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectdb.Box) error {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreDBValidator()

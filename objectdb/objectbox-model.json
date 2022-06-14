@@ -205,7 +205,7 @@
     },
     {
       "id": "11:7535172036551034281",
-      "lastPropertyId": "19:1472550507374473002",
+      "lastPropertyId": "22:8762647828934847572",
       "name": "GatewayJob",
       "properties": [
         {
@@ -217,11 +217,6 @@
         {
           "id": "2:8998124193677116215",
           "name": "UserID",
-          "type": 9
-        },
-        {
-          "id": "3:5426418910289756453",
-          "name": "JobState",
           "type": 9
         },
         {
@@ -303,12 +298,20 @@
           "id": "19:1472550507374473002",
           "name": "SourceDefinitionID",
           "type": 9
+        },
+        {
+          "id": "22:8762647828934847572",
+          "name": "JobState",
+          "indexId": "32:1840706778753093380",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "JobState"
         }
       ]
     },
     {
       "id": "12:1783554444946226019",
-      "lastPropertyId": "2:550566190863348300",
+      "lastPropertyId": "4:4906743161327179062",
       "name": "UserID",
       "properties": [
         {
@@ -323,6 +326,19 @@
           "name": "Id",
           "type": 6,
           "flags": 1
+        },
+        {
+          "id": "3:4067736146473397357",
+          "name": "WorkspaceID_Name",
+          "indexId": "30:1675531499413512674",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "4:4906743161327179062",
+          "name": "WorkspaceID_Id",
+          "type": 6,
+          "flags": 8192
         }
       ]
     },
@@ -388,7 +404,7 @@
     },
     {
       "id": "16:5832772456384049602",
-      "lastPropertyId": "37:5594534062280191769",
+      "lastPropertyId": "53:7668437685278783062",
       "name": "Job",
       "properties": [
         {
@@ -396,58 +412,6 @@
           "name": "JobID",
           "type": 6,
           "flags": 1
-        },
-        {
-          "id": "2:7099285379978433904",
-          "name": "UserID_Name",
-          "indexId": "15:1088552936429905895",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "3:710197340335372228",
-          "name": "UserID_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "4:4790478674350552580",
-          "name": "CustomVal_Name",
-          "indexId": "16:4778146743233483799",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "5:5142322196797001815",
-          "name": "CustomVal_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "6:2014740645906731359",
-          "name": "JobState_Name",
-          "indexId": "17:5803846118189756607",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "7:8690923483671989547",
-          "name": "JobState_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "8:7005368517087895505",
-          "name": "WorkspaceID_Name",
-          "indexId": "18:7856539576289346480",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "9:560330897020134006",
-          "name": "WorkspaceID_Id",
-          "type": 6,
-          "flags": 8192
         },
         {
           "id": "10:7106951967886408155",
@@ -490,134 +454,116 @@
           "type": 23
         },
         {
-          "id": "18:1036413255105589974",
-          "name": "SourceID_Name",
-          "indexId": "19:8693586707121841945",
-          "type": 9,
-          "flags": 2080
+          "id": "40:3042348783157172492",
+          "name": "UserID",
+          "indexId": "33:4877169249664958698",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "UserID"
         },
         {
-          "id": "19:4442547919345481303",
-          "name": "SourceID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "41:2071120973776802755",
+          "name": "CustomVal",
+          "indexId": "34:5037101523527118098",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "CustomVal"
         },
         {
-          "id": "20:7870494279688839896",
-          "name": "DestinationID_Name",
-          "indexId": "20:2719255913803474029",
-          "type": 9,
-          "flags": 2080
+          "id": "42:5122653054431000007",
+          "name": "JobState",
+          "indexId": "35:1366186124628883454",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "JobState"
         },
         {
-          "id": "21:7900396756164807634",
-          "name": "DestinationID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "43:8144272903735204058",
+          "name": "WorkspaceID",
+          "indexId": "36:2357027698069627474",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "WorkspaceID"
         },
         {
-          "id": "22:6359132790664622615",
-          "name": "SourceBatchID_Name",
-          "indexId": "21:762658924468973223",
-          "type": 9,
-          "flags": 2080
+          "id": "44:8610878198325866345",
+          "name": "SourceID",
+          "indexId": "37:3089018102894541440",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceID"
         },
         {
-          "id": "23:4068302751621631703",
-          "name": "SourceBatchID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "45:1057960152962549689",
+          "name": "DestinationID",
+          "indexId": "38:4519515515875662665",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "DestinationID"
         },
         {
-          "id": "24:3457207826898017398",
-          "name": "SourceTaskID_Name",
-          "indexId": "22:817520939057098261",
-          "type": 9,
-          "flags": 2080
+          "id": "46:8569631397197285140",
+          "name": "SourceBatchID",
+          "indexId": "39:3518950310168793848",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceBatchID"
         },
         {
-          "id": "25:2434623127428887024",
-          "name": "SourceTaskID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "47:6424778231630426226",
+          "name": "SourceTaskID",
+          "indexId": "40:8473818058248742039",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceTaskID"
         },
         {
-          "id": "26:4868938027604613756",
-          "name": "SourceTaskRunID_Name",
-          "indexId": "23:1782014146488391713",
-          "type": 9,
-          "flags": 2080
+          "id": "48:7635458947838938119",
+          "name": "SourceTaskRunID",
+          "indexId": "41:3229491963333007707",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceTaskRunID"
         },
         {
-          "id": "27:2664011058148494637",
-          "name": "SourceTaskRunID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "49:701077357602919545",
+          "name": "SourceJobID",
+          "indexId": "42:3390164061571661995",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceJobID"
         },
         {
-          "id": "28:2933472893315614163",
-          "name": "SourceJobID_Name",
-          "indexId": "24:4198834430812501915",
-          "type": 9,
-          "flags": 2080
+          "id": "50:5265816004363620398",
+          "name": "SourceJobRunID",
+          "indexId": "43:1945346861651276869",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceJobRunID"
         },
         {
-          "id": "29:630615508811927491",
-          "name": "SourceJobID_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "51:1680458030143719343",
+          "name": "SourceDefinitionID",
+          "indexId": "44:5457944158408500393",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceDefinitionID"
         },
         {
-          "id": "30:978832687571356313",
-          "name": "SourceJobRunID_Name",
-          "indexId": "25:4135416111576494273",
-          "type": 9,
-          "flags": 2080
+          "id": "52:5461107612318027280",
+          "name": "DestinationDefinitionID",
+          "indexId": "45:3200365787560679796",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "DestinationDefinitionID"
         },
         {
-          "id": "31:1171386810879964138",
-          "name": "SourceJobRunID_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "32:7141420158795663912",
-          "name": "SourceDefinitionID_Name",
-          "indexId": "26:7653539556594406310",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "33:5468349371132374023",
-          "name": "SourceDefinitionID_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "34:7423375865888233353",
-          "name": "DestinationDefinitionID_Name",
-          "indexId": "27:1017625041415179128",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "35:387071259876002936",
-          "name": "DestinationDefinitionID_Id",
-          "type": 6,
-          "flags": 8192
-        },
-        {
-          "id": "36:1078124556180274539",
-          "name": "SourceCategory_Name",
-          "indexId": "28:4193512282878406178",
-          "type": 9,
-          "flags": 2080
-        },
-        {
-          "id": "37:5594534062280191769",
-          "name": "SourceCategory_Id",
-          "type": 6,
-          "flags": 8192
+          "id": "53:7668437685278783062",
+          "name": "SourceCategory",
+          "indexId": "46:1105806168230230020",
+          "type": 11,
+          "flags": 520,
+          "relationTarget": "SourceCategory"
         }
       ]
     },
@@ -641,13 +587,64 @@
     }
   ],
   "lastEntityId": "17:6231449756449352834",
-  "lastIndexId": "28:4193512282878406178",
+  "lastIndexId": "46:1105806168230230020",
   "lastRelationId": "",
   "modelVersion": 5,
   "modelVersionParserMinimum": 5,
   "retiredEntityUids": [],
-  "retiredIndexUids": [],
-  "retiredPropertyUids": [],
+  "retiredIndexUids": [
+    3892371123644491058,
+    1088552936429905895,
+    4778146743233483799,
+    5803846118189756607,
+    7856539576289346480,
+    8693586707121841945,
+    2719255913803474029,
+    762658924468973223,
+    817520939057098261,
+    1782014146488391713,
+    4198834430812501915,
+    4135416111576494273,
+    7653539556594406310,
+    1017625041415179128,
+    4193512282878406178,
+    7107842101393062172
+  ],
+  "retiredPropertyUids": [
+    5426418910289756453,
+    7836861251054800080,
+    1831511685293604212,
+    7099285379978433904,
+    710197340335372228,
+    4790478674350552580,
+    5142322196797001815,
+    2014740645906731359,
+    8690923483671989547,
+    7005368517087895505,
+    560330897020134006,
+    1036413255105589974,
+    4442547919345481303,
+    7870494279688839896,
+    7900396756164807634,
+    6359132790664622615,
+    4068302751621631703,
+    3457207826898017398,
+    2434623127428887024,
+    4868938027604613756,
+    2664011058148494637,
+    2933472893315614163,
+    630615508811927491,
+    978832687571356313,
+    1171386810879964138,
+    7141420158795663912,
+    5468349371132374023,
+    7423375865888233353,
+    387071259876002936,
+    1078124556180274539,
+    5594534062280191769,
+    4604666405513792467,
+    185523245714325697
+  ],
   "retiredRelationUids": [],
   "version": 1
 }

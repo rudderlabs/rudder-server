@@ -4,8 +4,9 @@ package objectdb
 // generic aggreation attributes
 type (
 	UserID struct {
-		Name string `objectbox:"unique"`
-		Id   uint64
+		Name        string `objectbox:"unique"`
+		Id          uint64
+		WorkspaceID *WorkspaceID `objectbox:"index:link"`
 	}
 	CustomVal struct {
 		Name string `objectbox:"unique"`

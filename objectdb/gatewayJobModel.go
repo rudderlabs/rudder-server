@@ -9,7 +9,7 @@ import (
 type GatewayJob struct {
 	JobID       uint64 `objectbox:"id"`
 	UserID      string
-	JobState    string
+	JobState    *JobState `objectbox:"link"`
 	WorkspaceID string
 
 	CreatedAt    time.Time `objectbox:"date"`

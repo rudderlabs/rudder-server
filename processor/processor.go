@@ -1287,7 +1287,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
-		subJobs.GWJobs[idx].JobState = "succeeded"
+		subJobs.GWJobs[idx].JobState = objectdb.JobStateMap[jobsdb.Succeeded.State]
 	}
 
 	//REPORTING - GATEWAY metrics - START
@@ -1638,9 +1638,12 @@ func (proc *HandleT) Store(in storeMessage) {
 		// }
 		err := proc.GWJobBox.ObjectBox.RunInWriteTx(func() error {
 			for i := range in.GWJobs {
-				_, putError := proc.GWJobBox.Put(in.GWJobs[i])
-				if putError != nil {
-					return putError
+				// check if backup enabled -> in which case mark as successful and not remove for later backup
+				// _, putError := proc.GWJobBox.Put(in.GWJobs[i])
+				// otherwise simply remove like so
+				delError := proc.GWJobBox.RemoveId(in.GWJobs[i].JobID)
+				if delError != nil {
+					return delError
 				}
 			}
 			return nil
@@ -2140,18 +2143,9 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 
 	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
 
-	// eventCount := maxEventsToProcess
-	// if !enableEventCount {
-	// 	eventCount = 0
-	// }
 	unprocessedList := jobsdb.JobsResult{}
-	// unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-	// 	CustomValFilters: []string{GWCustomVal},
-	// 	JobsLimit:        maxEventsToProcess,
-	// 	EventsLimit:      eventCount,
-	// 	PayloadSizeLimit: proc.payloadLimit,
-	// })
-	newList, err := proc.GWJobBox.Query(objectdb.GatewayJob_.JobState.Equals("", true)).Limit(uint64(maxEventsToProcess)).Find()
+	// newList, err := proc.GWJobBox.Query(objectdb.GatewayJob_.JobState.Equals("", true)).Limit(uint64(maxEventsToProcess)).Find()
+	newList, err := proc.GWJobBox.Query(objectdb.GatewayJob_.JobState.Property.IsNil()).Limit(uint64(maxEventsToProcess)).Find()
 	if err != nil {
 		panic(err)
 	}
@@ -2218,29 +2212,9 @@ func (proc *HandleT) markExecuting(jobs []*objectdb.GatewayJob) error {
 	start := time.Now()
 	defer proc.stats.statMarkExecuting.Since(start)
 
-	// statusList := make([]*jobsdb.JobStatusT, len(jobs))
-	// for i, job := range jobs {
-	// 	statusList[i] = &jobsdb.JobStatusT{
-	// 		JobID:         job.JobID,
-	// 		AttemptNum:    job.LastJobStatus.AttemptNum,
-	// 		JobState:      jobsdb.Executing.State,
-	// 		ExecTime:      start,
-	// 		RetryTime:     start,
-	// 		ErrorCode:     "",
-	// 		ErrorResponse: []byte(`{}`),
-	// 		Parameters:    []byte(`{}`),
-	// 		WorkspaceId:   job.WorkspaceId,
-	// 	}
-	// }
-	//Mark the jobs as executing
-	// err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-	// if err != nil {
-	// 	return fmt.Errorf("marking jobs as executing: %w", err)
-	// }
-
-	err := proc.GWJobBox.ObjectBox.RunInWriteTx(func() error {
+	return proc.GWJobBox.ObjectBox.RunInWriteTx(func() error {
 		for i := range jobs {
-			jobs[i].JobState = "Executing"
+			jobs[i].JobState = objectdb.JobStateMap[jobsdb.Executing.State]
 			_, putError := proc.GWJobBox.Put(jobs[i])
 			if putError != nil {
 				return putError
@@ -2248,7 +2222,6 @@ func (proc *HandleT) markExecuting(jobs []*objectdb.GatewayJob) error {
 		}
 		return nil
 	})
-	return err
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately

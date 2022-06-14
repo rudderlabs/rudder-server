@@ -11,10 +11,10 @@ type Job struct {
 	JobID uint64 `objectbox:"id"`
 
 	// Generic Attributes - Aggregation
-	UserID      *UserID      `objectbox:"index:hash64"`
-	CustomVal   *CustomVal   `objectbox:"index:hash64"`
-	JobState    *JobState    `objectbox:"index:hash64"`
-	WorkspaceID *WorkspaceID `objectbox:"index:hash64"`
+	UserID      *UserID      `objectbox:"link"`
+	CustomVal   *CustomVal   `objectbox:"link"`
+	JobState    *JobState    `objectbox:"link"`
+	WorkspaceID *WorkspaceID `objectbox:"link"`
 	// ErrorCode
 
 	// Attributes particular to a job
@@ -37,14 +37,14 @@ type Job struct {
 	// StateParameters json.RawMessage
 
 	// connection attributes
-	SourceID                *SourceID
-	DestinationID           *DestinationID
-	SourceBatchID           *SourceBatchID
-	SourceTaskID            *SourceTaskID
-	SourceTaskRunID         *SourceTaskRunID
-	SourceJobID             *SourceJobID
-	SourceJobRunID          *SourceJobRunID
-	SourceDefinitionID      *SourceDefinitionID
-	DestinationDefinitionID *DestinationDefinitionID
-	SourceCategory          *SourceCategory
+	SourceID                *SourceID                `objectbox:"link"`
+	DestinationID           *DestinationID           `objectbox:"link"`
+	SourceBatchID           *SourceBatchID           `objectbox:"link"`
+	SourceTaskID            *SourceTaskID            `objectbox:"link"`
+	SourceTaskRunID         *SourceTaskRunID         `objectbox:"link"`
+	SourceJobID             *SourceJobID             `objectbox:"link"`
+	SourceJobRunID          *SourceJobRunID          `objectbox:"link"`
+	SourceDefinitionID      *SourceDefinitionID      `objectbox:"link"`
+	DestinationDefinitionID *DestinationDefinitionID `objectbox:"link"`
+	SourceCategory          *SourceCategory          `objectbox:"link"`
 }

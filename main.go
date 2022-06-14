@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"runtime/pprof"
 
-	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
@@ -283,17 +282,19 @@ func Run(ctx context.Context) {
 		return p.StartServer(ctx)
 	})
 
-	objectBox, err := objectbox.NewBuilder().Model(objectdb.ObjectBoxModel()).Build()
+	box, err := objectdb.NewObjectBox()
 	if err != nil {
 		panic(err)
 	}
-	defer objectBox.Close()
+	defer box.Close()
+	// setup jobstates
+	// jobsdb.SetupJobStates(objectdb.JobStateMap, objectBox)
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() error {
-			return appHandler.StartRudderCore(ctx, options, objectBox)
+			return appHandler.StartRudderCore(ctx, options, box)
 		}))
 	}
 

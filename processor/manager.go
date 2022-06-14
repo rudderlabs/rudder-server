@@ -5,7 +5,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/objectbox/objectbox-go/objectbox"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/objectdb"
@@ -63,8 +62,8 @@ func (proc *LifecycleManager) Stop() {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, objectBox *objectbox.ObjectBox) *LifecycleManager {
-	gwJobBox := objectdb.BoxForGatewayJob(objectBox)
+	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, box *objectdb.Box) *LifecycleManager {
+	gwJobBox := objectdb.BoxForGatewayJob(box.ObjectBox)
 	if *clearDb {
 		gwJobBox.RemoveAll()
 	}

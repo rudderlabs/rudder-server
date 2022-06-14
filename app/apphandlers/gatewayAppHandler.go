@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
@@ -36,7 +36,7 @@ func (*GatewayApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.GATEWAY)
 }
 
-func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectbox.ObjectBox) error {
+func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectdb.Box) error {
 	pkgLogger.Info("Gateway starting")
 
 	rudderCoreDBValidator()

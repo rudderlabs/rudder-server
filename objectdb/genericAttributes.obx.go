@@ -24,8 +24,10 @@ var UserIDBinding = userID_EntityInfo{
 
 // UserID_ contains type-based Property helpers to facilitate some common operations such as Queries.
 var UserID_ = struct {
-	Name *objectbox.PropertyString
-	Id   *objectbox.PropertyUint64
+	Name             *objectbox.PropertyString
+	Id               *objectbox.PropertyUint64
+	WorkspaceID_Name *objectbox.PropertyString
+	WorkspaceID_Id   *objectbox.PropertyUint64
 }{
 	Name: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
@@ -36,6 +38,18 @@ var UserID_ = struct {
 	Id: &objectbox.PropertyUint64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     2,
+			Entity: &UserIDBinding.Entity,
+		},
+	},
+	WorkspaceID_Name: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     3,
+			Entity: &UserIDBinding.Entity,
+		},
+	},
+	WorkspaceID_Id: &objectbox.PropertyUint64{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     4,
 			Entity: &UserIDBinding.Entity,
 		},
 	},
@@ -54,7 +68,12 @@ func (userID_EntityInfo) AddToModel(model *objectbox.Model) {
 	model.PropertyIndex(11, 418488054825019415)
 	model.Property("Id", 6, 2, 550566190863348300)
 	model.PropertyFlags(1)
-	model.EntityLastPropertyId(2, 550566190863348300)
+	model.Property("WorkspaceID_Name", 9, 3, 4067736146473397357)
+	model.PropertyFlags(2080)
+	model.PropertyIndex(30, 1675531499413512674)
+	model.Property("WorkspaceID_Id", 6, 4, 4906743161327179062)
+	model.PropertyFlags(8192)
+	model.EntityLastPropertyId(4, 4906743161327179062)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -77,11 +96,16 @@ func (userID_EntityInfo) PutRelated(ob *objectbox.ObjectBox, object interface{},
 func (userID_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builder, id uint64) error {
 	obj := object.(*UserID)
 	var offsetName = fbutils.CreateStringOffset(fbb, obj.Name)
+	var offsetWorkspaceID_Name = fbutils.CreateStringOffset(fbb, obj.WorkspaceID.Name)
 
 	// build the FlatBuffers object
-	fbb.StartObject(2)
+	fbb.StartObject(4)
 	fbutils.SetUOffsetTSlot(fbb, 0, offsetName)
 	fbutils.SetUint64Slot(fbb, 1, id)
+	if obj.WorkspaceID != nil {
+		fbutils.SetUOffsetTSlot(fbb, 2, offsetWorkspaceID_Name)
+		fbutils.SetUint64Slot(fbb, 3, obj.WorkspaceID.Id)
+	}
 	return nil
 }
 
@@ -101,6 +125,10 @@ func (userID_EntityInfo) Load(ob *objectbox.ObjectBox, bytes []byte) (interface{
 	return &UserID{
 		Name: fbutils.GetStringSlot(table, 4),
 		Id:   propId,
+		WorkspaceID: &WorkspaceID{
+			Name: fbutils.GetStringSlot(table, 8),
+			Id:   fbutils.GetUint64Slot(table, 10),
+		},
 	}, nil
 }
 

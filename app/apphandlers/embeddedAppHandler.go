@@ -7,7 +7,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/objectbox/objectbox-go/objectbox"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
@@ -15,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/processor"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
@@ -45,7 +45,7 @@ func (*EmbeddedApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
-func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectbox.ObjectBox) error {
+func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options, objectBox *objectdb.Box) error {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreDBValidator()

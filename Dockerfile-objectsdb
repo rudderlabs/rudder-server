@@ -29,21 +29,23 @@ RUN apt-get update
 RUN apt-get install bash
 RUN apt-get install ca-certificates
 RUN apt-get install -y postgresql-client
+RUN apt-get install curl
+RUN apt-get install -y netcat
 
 COPY download.sh .
 RUN ["chmod", "+x", "download.sh"]
 RUN ./download.sh --install
 
-COPY --from=builder rudder-server/rudder-server .
-COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
-COPY --from=builder rudder-server/build/regulation-worker . 
+COPY --from=builder rudder-server/rudder-server /
+COPY --from=builder rudder-server/build/wait-for-go/wait-for-go /
+COPY --from=builder rudder-server/build/regulation-worker /
 
 
-ADD build/docker-entrypoint.sh /
+COPY build/docker-entrypoint.sh /
 COPY build/wait-for /
 COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 COPY scripts/generate-event /scripts
 COPY scripts/batch.json /scripts
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["./rudder-server"]
+CMD ["/rudder-server"]

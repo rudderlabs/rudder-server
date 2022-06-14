@@ -27,7 +27,6 @@ var GatewayJobBinding = gatewayJob_EntityInfo{
 var GatewayJob_ = struct {
 	JobID              *objectbox.PropertyUint64
 	UserID             *objectbox.PropertyString
-	JobState           *objectbox.PropertyString
 	WorkspaceID        *objectbox.PropertyString
 	CreatedAt          *objectbox.PropertyInt64
 	ExpireAt           *objectbox.PropertyInt64
@@ -44,6 +43,7 @@ var GatewayJob_ = struct {
 	SourceJobID        *objectbox.PropertyString
 	SourceJobRunID     *objectbox.PropertyString
 	SourceDefinitionID *objectbox.PropertyString
+	JobState           *objectbox.RelationToOne
 }{
 	JobID: &objectbox.PropertyUint64{
 		BaseProperty: &objectbox.BaseProperty{
@@ -54,12 +54,6 @@ var GatewayJob_ = struct {
 	UserID: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     2,
-			Entity: &GatewayJobBinding.Entity,
-		},
-	},
-	JobState: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     3,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
@@ -159,6 +153,13 @@ var GatewayJob_ = struct {
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
+	JobState: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     22,
+			Entity: &GatewayJobBinding.Entity,
+		},
+		Target: &JobStateBinding.Entity,
+	},
 }
 
 // GeneratorVersion is called by ObjectBox to verify the compatibility of the generator used to generate this code
@@ -172,7 +173,6 @@ func (gatewayJob_EntityInfo) AddToModel(model *objectbox.Model) {
 	model.Property("JobID", 6, 1, 5143458760441539061)
 	model.PropertyFlags(1)
 	model.Property("UserID", 9, 2, 8998124193677116215)
-	model.Property("JobState", 9, 3, 5426418910289756453)
 	model.Property("WorkspaceID", 9, 4, 4207858374913391455)
 	model.Property("CreatedAt", 10, 5, 655876097213894740)
 	model.Property("ExpireAt", 10, 6, 257177343896885499)
@@ -189,7 +189,10 @@ func (gatewayJob_EntityInfo) AddToModel(model *objectbox.Model) {
 	model.Property("SourceJobID", 9, 17, 99980625877429802)
 	model.Property("SourceJobRunID", 9, 18, 2497701676685710269)
 	model.Property("SourceDefinitionID", 9, 19, 1472550507374473002)
-	model.EntityLastPropertyId(19, 1472550507374473002)
+	model.Property("JobState", 11, 22, 8762647828934847572)
+	model.PropertyFlags(520)
+	model.PropertyRelation("JobState", 32, 1840706778753093380)
+	model.EntityLastPropertyId(22, 8762647828934847572)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -205,6 +208,16 @@ func (gatewayJob_EntityInfo) SetId(object interface{}, id uint64) error {
 
 // PutRelated is called by ObjectBox to put related entities before the object itself is flattened and put
 func (gatewayJob_EntityInfo) PutRelated(ob *objectbox.ObjectBox, object interface{}, id uint64) error {
+	if rel := object.(*GatewayJob).JobState; rel != nil {
+		if rId, err := JobStateBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForJobState(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -248,7 +261,6 @@ func (gatewayJob_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builde
 	}
 
 	var offsetUserID = fbutils.CreateStringOffset(fbb, obj.UserID)
-	var offsetJobState = fbutils.CreateStringOffset(fbb, obj.JobState)
 	var offsetWorkspaceID = fbutils.CreateStringOffset(fbb, obj.WorkspaceID)
 	var offsetEventPayload = fbutils.CreateByteVectorOffset(fbb, []byte(obj.EventPayload))
 	var offsetErrorResponse = fbutils.CreateByteVectorOffset(fbb, []byte(obj.ErrorResponse))
@@ -260,11 +272,22 @@ func (gatewayJob_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builde
 	var offsetSourceJobRunID = fbutils.CreateStringOffset(fbb, obj.SourceJobRunID)
 	var offsetSourceDefinitionID = fbutils.CreateStringOffset(fbb, obj.SourceDefinitionID)
 
+	var rIdJobState uint64
+	if rel := obj.JobState; rel != nil {
+		if rId, err := JobStateBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdJobState = rId
+		}
+	}
+
 	// build the FlatBuffers object
-	fbb.StartObject(19)
+	fbb.StartObject(22)
 	fbutils.SetUint64Slot(fbb, 0, id)
 	fbutils.SetUOffsetTSlot(fbb, 1, offsetUserID)
-	fbutils.SetUOffsetTSlot(fbb, 2, offsetJobState)
+	if obj.JobState != nil {
+		fbutils.SetUint64Slot(fbb, 21, rIdJobState)
+	}
 	fbutils.SetUOffsetTSlot(fbb, 3, offsetWorkspaceID)
 	fbutils.SetInt64Slot(fbb, 4, propCreatedAt)
 	fbutils.SetInt64Slot(fbb, 5, propExpireAt)
@@ -317,10 +340,19 @@ func (gatewayJob_EntityInfo) Load(ob *objectbox.ObjectBox, bytes []byte) (interf
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.RetryTime: " + err.Error())
 	}
 
+	var relJobState *JobState
+	if rId := fbutils.GetUint64PtrSlot(table, 46); rId != nil && *rId > 0 {
+		if rObject, err := BoxForJobState(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relJobState = rObject
+		}
+	}
+
 	return &GatewayJob{
 		JobID:              propJobID,
 		UserID:             fbutils.GetStringSlot(table, 6),
-		JobState:           fbutils.GetStringSlot(table, 8),
+		JobState:           relJobState,
 		WorkspaceID:        fbutils.GetStringSlot(table, 10),
 		CreatedAt:          propCreatedAt,
 		ExpireAt:           propExpireAt,

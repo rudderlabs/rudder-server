@@ -25,95 +25,33 @@ var JobBinding = job_EntityInfo{
 
 // Job_ contains type-based Property helpers to facilitate some common operations such as Queries.
 var Job_ = struct {
-	JobID                        *objectbox.PropertyUint64
-	UserID_Name                  *objectbox.PropertyString
-	UserID_Id                    *objectbox.PropertyUint64
-	CustomVal_Name               *objectbox.PropertyString
-	CustomVal_Id                 *objectbox.PropertyUint64
-	JobState_Name                *objectbox.PropertyString
-	JobState_Id                  *objectbox.PropertyUint64
-	WorkspaceID_Name             *objectbox.PropertyString
-	WorkspaceID_Id               *objectbox.PropertyUint64
-	CreatedAt                    *objectbox.PropertyInt64
-	ExpireAt                     *objectbox.PropertyInt64
-	EventCount                   *objectbox.PropertyInt
-	EventPayload                 *objectbox.PropertyByteVector
-	PayloadSize                  *objectbox.PropertyInt64
-	ExecTime                     *objectbox.PropertyInt64
-	RetryTime                    *objectbox.PropertyInt64
-	ErrorResponse                *objectbox.PropertyByteVector
-	SourceID_Name                *objectbox.PropertyString
-	SourceID_Id                  *objectbox.PropertyUint64
-	DestinationID_Name           *objectbox.PropertyString
-	DestinationID_Id             *objectbox.PropertyUint64
-	SourceBatchID_Name           *objectbox.PropertyString
-	SourceBatchID_Id             *objectbox.PropertyUint64
-	SourceTaskID_Name            *objectbox.PropertyString
-	SourceTaskID_Id              *objectbox.PropertyUint64
-	SourceTaskRunID_Name         *objectbox.PropertyString
-	SourceTaskRunID_Id           *objectbox.PropertyUint64
-	SourceJobID_Name             *objectbox.PropertyString
-	SourceJobID_Id               *objectbox.PropertyUint64
-	SourceJobRunID_Name          *objectbox.PropertyString
-	SourceJobRunID_Id            *objectbox.PropertyUint64
-	SourceDefinitionID_Name      *objectbox.PropertyString
-	SourceDefinitionID_Id        *objectbox.PropertyUint64
-	DestinationDefinitionID_Name *objectbox.PropertyString
-	DestinationDefinitionID_Id   *objectbox.PropertyUint64
-	SourceCategory_Name          *objectbox.PropertyString
-	SourceCategory_Id            *objectbox.PropertyUint64
+	JobID                   *objectbox.PropertyUint64
+	CreatedAt               *objectbox.PropertyInt64
+	ExpireAt                *objectbox.PropertyInt64
+	EventCount              *objectbox.PropertyInt
+	EventPayload            *objectbox.PropertyByteVector
+	PayloadSize             *objectbox.PropertyInt64
+	ExecTime                *objectbox.PropertyInt64
+	RetryTime               *objectbox.PropertyInt64
+	ErrorResponse           *objectbox.PropertyByteVector
+	UserID                  *objectbox.RelationToOne
+	CustomVal               *objectbox.RelationToOne
+	JobState                *objectbox.RelationToOne
+	WorkspaceID             *objectbox.RelationToOne
+	SourceID                *objectbox.RelationToOne
+	DestinationID           *objectbox.RelationToOne
+	SourceBatchID           *objectbox.RelationToOne
+	SourceTaskID            *objectbox.RelationToOne
+	SourceTaskRunID         *objectbox.RelationToOne
+	SourceJobID             *objectbox.RelationToOne
+	SourceJobRunID          *objectbox.RelationToOne
+	SourceDefinitionID      *objectbox.RelationToOne
+	DestinationDefinitionID *objectbox.RelationToOne
+	SourceCategory          *objectbox.RelationToOne
 }{
 	JobID: &objectbox.PropertyUint64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     1,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	UserID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     2,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	UserID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     3,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	CustomVal_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     4,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	CustomVal_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     5,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	JobState_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     6,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	JobState_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     7,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	WorkspaceID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     8,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	WorkspaceID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     9,
 			Entity: &JobBinding.Entity,
 		},
 	},
@@ -165,125 +103,103 @@ var Job_ = struct {
 			Entity: &JobBinding.Entity,
 		},
 	},
-	SourceID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     18,
+	UserID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     40,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &UserIDBinding.Entity,
 	},
-	SourceID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     19,
+	CustomVal: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     41,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &CustomValBinding.Entity,
 	},
-	DestinationID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     20,
+	JobState: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     42,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &JobStateBinding.Entity,
 	},
-	DestinationID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     21,
+	WorkspaceID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     43,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &WorkspaceIDBinding.Entity,
 	},
-	SourceBatchID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     22,
+	SourceID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     44,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceIDBinding.Entity,
 	},
-	SourceBatchID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     23,
+	DestinationID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     45,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &DestinationIDBinding.Entity,
 	},
-	SourceTaskID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     24,
+	SourceBatchID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     46,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceBatchIDBinding.Entity,
 	},
-	SourceTaskID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     25,
+	SourceTaskID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     47,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceTaskIDBinding.Entity,
 	},
-	SourceTaskRunID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     26,
+	SourceTaskRunID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     48,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceTaskRunIDBinding.Entity,
 	},
-	SourceTaskRunID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     27,
+	SourceJobID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     49,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceJobIDBinding.Entity,
 	},
-	SourceJobID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     28,
+	SourceJobRunID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     50,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceJobRunIDBinding.Entity,
 	},
-	SourceJobID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     29,
+	SourceDefinitionID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     51,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &SourceDefinitionIDBinding.Entity,
 	},
-	SourceJobRunID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     30,
+	DestinationDefinitionID: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     52,
 			Entity: &JobBinding.Entity,
 		},
+		Target: &DestinationDefinitionIDBinding.Entity,
 	},
-	SourceJobRunID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     31,
+	SourceCategory: &objectbox.RelationToOne{
+		Property: &objectbox.BaseProperty{
+			Id:     53,
 			Entity: &JobBinding.Entity,
 		},
-	},
-	SourceDefinitionID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     32,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	SourceDefinitionID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     33,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	DestinationDefinitionID_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     34,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	DestinationDefinitionID_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     35,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	SourceCategory_Name: &objectbox.PropertyString{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     36,
-			Entity: &JobBinding.Entity,
-		},
-	},
-	SourceCategory_Id: &objectbox.PropertyUint64{
-		BaseProperty: &objectbox.BaseProperty{
-			Id:     37,
-			Entity: &JobBinding.Entity,
-		},
+		Target: &SourceCategoryBinding.Entity,
 	},
 }
 
@@ -297,26 +213,6 @@ func (job_EntityInfo) AddToModel(model *objectbox.Model) {
 	model.Entity("Job", 16, 5832772456384049602)
 	model.Property("JobID", 6, 1, 1155090551674869841)
 	model.PropertyFlags(1)
-	model.Property("UserID_Name", 9, 2, 7099285379978433904)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(15, 1088552936429905895)
-	model.Property("UserID_Id", 6, 3, 710197340335372228)
-	model.PropertyFlags(8192)
-	model.Property("CustomVal_Name", 9, 4, 4790478674350552580)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(16, 4778146743233483799)
-	model.Property("CustomVal_Id", 6, 5, 5142322196797001815)
-	model.PropertyFlags(8192)
-	model.Property("JobState_Name", 9, 6, 2014740645906731359)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(17, 5803846118189756607)
-	model.Property("JobState_Id", 6, 7, 8690923483671989547)
-	model.PropertyFlags(8192)
-	model.Property("WorkspaceID_Name", 9, 8, 7005368517087895505)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(18, 7856539576289346480)
-	model.Property("WorkspaceID_Id", 6, 9, 560330897020134006)
-	model.PropertyFlags(8192)
 	model.Property("CreatedAt", 10, 10, 7106951967886408155)
 	model.Property("ExpireAt", 10, 11, 2662406594162733085)
 	model.Property("EventCount", 6, 12, 7907022427670290827)
@@ -325,57 +221,49 @@ func (job_EntityInfo) AddToModel(model *objectbox.Model) {
 	model.Property("ExecTime", 10, 15, 2901924393599502444)
 	model.Property("RetryTime", 10, 16, 3986349892723070769)
 	model.Property("ErrorResponse", 23, 17, 7698557647163241468)
-	model.Property("SourceID_Name", 9, 18, 1036413255105589974)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(19, 8693586707121841945)
-	model.Property("SourceID_Id", 6, 19, 4442547919345481303)
-	model.PropertyFlags(8192)
-	model.Property("DestinationID_Name", 9, 20, 7870494279688839896)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(20, 2719255913803474029)
-	model.Property("DestinationID_Id", 6, 21, 7900396756164807634)
-	model.PropertyFlags(8192)
-	model.Property("SourceBatchID_Name", 9, 22, 6359132790664622615)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(21, 762658924468973223)
-	model.Property("SourceBatchID_Id", 6, 23, 4068302751621631703)
-	model.PropertyFlags(8192)
-	model.Property("SourceTaskID_Name", 9, 24, 3457207826898017398)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(22, 817520939057098261)
-	model.Property("SourceTaskID_Id", 6, 25, 2434623127428887024)
-	model.PropertyFlags(8192)
-	model.Property("SourceTaskRunID_Name", 9, 26, 4868938027604613756)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(23, 1782014146488391713)
-	model.Property("SourceTaskRunID_Id", 6, 27, 2664011058148494637)
-	model.PropertyFlags(8192)
-	model.Property("SourceJobID_Name", 9, 28, 2933472893315614163)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(24, 4198834430812501915)
-	model.Property("SourceJobID_Id", 6, 29, 630615508811927491)
-	model.PropertyFlags(8192)
-	model.Property("SourceJobRunID_Name", 9, 30, 978832687571356313)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(25, 4135416111576494273)
-	model.Property("SourceJobRunID_Id", 6, 31, 1171386810879964138)
-	model.PropertyFlags(8192)
-	model.Property("SourceDefinitionID_Name", 9, 32, 7141420158795663912)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(26, 7653539556594406310)
-	model.Property("SourceDefinitionID_Id", 6, 33, 5468349371132374023)
-	model.PropertyFlags(8192)
-	model.Property("DestinationDefinitionID_Name", 9, 34, 7423375865888233353)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(27, 1017625041415179128)
-	model.Property("DestinationDefinitionID_Id", 6, 35, 387071259876002936)
-	model.PropertyFlags(8192)
-	model.Property("SourceCategory_Name", 9, 36, 1078124556180274539)
-	model.PropertyFlags(2080)
-	model.PropertyIndex(28, 4193512282878406178)
-	model.Property("SourceCategory_Id", 6, 37, 5594534062280191769)
-	model.PropertyFlags(8192)
-	model.EntityLastPropertyId(37, 5594534062280191769)
+	model.Property("UserID", 11, 40, 3042348783157172492)
+	model.PropertyFlags(520)
+	model.PropertyRelation("UserID", 33, 4877169249664958698)
+	model.Property("CustomVal", 11, 41, 2071120973776802755)
+	model.PropertyFlags(520)
+	model.PropertyRelation("CustomVal", 34, 5037101523527118098)
+	model.Property("JobState", 11, 42, 5122653054431000007)
+	model.PropertyFlags(520)
+	model.PropertyRelation("JobState", 35, 1366186124628883454)
+	model.Property("WorkspaceID", 11, 43, 8144272903735204058)
+	model.PropertyFlags(520)
+	model.PropertyRelation("WorkspaceID", 36, 2357027698069627474)
+	model.Property("SourceID", 11, 44, 8610878198325866345)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceID", 37, 3089018102894541440)
+	model.Property("DestinationID", 11, 45, 1057960152962549689)
+	model.PropertyFlags(520)
+	model.PropertyRelation("DestinationID", 38, 4519515515875662665)
+	model.Property("SourceBatchID", 11, 46, 8569631397197285140)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceBatchID", 39, 3518950310168793848)
+	model.Property("SourceTaskID", 11, 47, 6424778231630426226)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceTaskID", 40, 8473818058248742039)
+	model.Property("SourceTaskRunID", 11, 48, 7635458947838938119)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceTaskRunID", 41, 3229491963333007707)
+	model.Property("SourceJobID", 11, 49, 701077357602919545)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceJobID", 42, 3390164061571661995)
+	model.Property("SourceJobRunID", 11, 50, 5265816004363620398)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceJobRunID", 43, 1945346861651276869)
+	model.Property("SourceDefinitionID", 11, 51, 1680458030143719343)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceDefinitionID", 44, 5457944158408500393)
+	model.Property("DestinationDefinitionID", 11, 52, 5461107612318027280)
+	model.PropertyFlags(520)
+	model.PropertyRelation("DestinationDefinitionID", 45, 3200365787560679796)
+	model.Property("SourceCategory", 11, 53, 7668437685278783062)
+	model.PropertyFlags(520)
+	model.PropertyRelation("SourceCategory", 46, 1105806168230230020)
+	model.EntityLastPropertyId(53, 7668437685278783062)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -391,6 +279,146 @@ func (job_EntityInfo) SetId(object interface{}, id uint64) error {
 
 // PutRelated is called by ObjectBox to put related entities before the object itself is flattened and put
 func (job_EntityInfo) PutRelated(ob *objectbox.ObjectBox, object interface{}, id uint64) error {
+	if rel := object.(*Job).UserID; rel != nil {
+		if rId, err := UserIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForUserID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).CustomVal; rel != nil {
+		if rId, err := CustomValBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForCustomVal(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).JobState; rel != nil {
+		if rId, err := JobStateBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForJobState(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).WorkspaceID; rel != nil {
+		if rId, err := WorkspaceIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForWorkspaceID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceID; rel != nil {
+		if rId, err := SourceIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).DestinationID; rel != nil {
+		if rId, err := DestinationIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForDestinationID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceBatchID; rel != nil {
+		if rId, err := SourceBatchIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceBatchID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceTaskID; rel != nil {
+		if rId, err := SourceTaskIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceTaskID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceTaskRunID; rel != nil {
+		if rId, err := SourceTaskRunIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceTaskRunID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceJobID; rel != nil {
+		if rId, err := SourceJobIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceJobID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceJobRunID; rel != nil {
+		if rId, err := SourceJobRunIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceJobRunID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceDefinitionID; rel != nil {
+		if rId, err := SourceDefinitionIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceDefinitionID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).DestinationDefinitionID; rel != nil {
+		if rId, err := DestinationDefinitionIDBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForDestinationDefinitionID(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
+	if rel := object.(*Job).SourceCategory; rel != nil {
+		if rId, err := SourceCategoryBinding.GetId(rel); err != nil {
+			return err
+		} else if rId == 0 {
+			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
+			if _, err := BoxForSourceCategory(ob).Put(rel); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -433,41 +461,149 @@ func (job_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builder, id u
 		}
 	}
 
-	var offsetUserID_Name = fbutils.CreateStringOffset(fbb, obj.UserID.Name)
-	var offsetCustomVal_Name = fbutils.CreateStringOffset(fbb, obj.CustomVal.Name)
-	var offsetJobState_Name = fbutils.CreateStringOffset(fbb, obj.JobState.Name)
-	var offsetWorkspaceID_Name = fbutils.CreateStringOffset(fbb, obj.WorkspaceID.Name)
 	var offsetEventPayload = fbutils.CreateByteVectorOffset(fbb, []byte(obj.EventPayload))
 	var offsetErrorResponse = fbutils.CreateByteVectorOffset(fbb, []byte(obj.ErrorResponse))
-	var offsetSourceID_Name = fbutils.CreateStringOffset(fbb, obj.SourceID.Name)
-	var offsetDestinationID_Name = fbutils.CreateStringOffset(fbb, obj.DestinationID.Name)
-	var offsetSourceBatchID_Name = fbutils.CreateStringOffset(fbb, obj.SourceBatchID.Name)
-	var offsetSourceTaskID_Name = fbutils.CreateStringOffset(fbb, obj.SourceTaskID.Name)
-	var offsetSourceTaskRunID_Name = fbutils.CreateStringOffset(fbb, obj.SourceTaskRunID.Name)
-	var offsetSourceJobID_Name = fbutils.CreateStringOffset(fbb, obj.SourceJobID.Name)
-	var offsetSourceJobRunID_Name = fbutils.CreateStringOffset(fbb, obj.SourceJobRunID.Name)
-	var offsetSourceDefinitionID_Name = fbutils.CreateStringOffset(fbb, obj.SourceDefinitionID.Name)
-	var offsetDestinationDefinitionID_Name = fbutils.CreateStringOffset(fbb, obj.DestinationDefinitionID.Name)
-	var offsetSourceCategory_Name = fbutils.CreateStringOffset(fbb, obj.SourceCategory.Name)
+
+	var rIdUserID uint64
+	if rel := obj.UserID; rel != nil {
+		if rId, err := UserIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdUserID = rId
+		}
+	}
+
+	var rIdCustomVal uint64
+	if rel := obj.CustomVal; rel != nil {
+		if rId, err := CustomValBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdCustomVal = rId
+		}
+	}
+
+	var rIdJobState uint64
+	if rel := obj.JobState; rel != nil {
+		if rId, err := JobStateBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdJobState = rId
+		}
+	}
+
+	var rIdWorkspaceID uint64
+	if rel := obj.WorkspaceID; rel != nil {
+		if rId, err := WorkspaceIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdWorkspaceID = rId
+		}
+	}
+
+	var rIdSourceID uint64
+	if rel := obj.SourceID; rel != nil {
+		if rId, err := SourceIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceID = rId
+		}
+	}
+
+	var rIdDestinationID uint64
+	if rel := obj.DestinationID; rel != nil {
+		if rId, err := DestinationIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdDestinationID = rId
+		}
+	}
+
+	var rIdSourceBatchID uint64
+	if rel := obj.SourceBatchID; rel != nil {
+		if rId, err := SourceBatchIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceBatchID = rId
+		}
+	}
+
+	var rIdSourceTaskID uint64
+	if rel := obj.SourceTaskID; rel != nil {
+		if rId, err := SourceTaskIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceTaskID = rId
+		}
+	}
+
+	var rIdSourceTaskRunID uint64
+	if rel := obj.SourceTaskRunID; rel != nil {
+		if rId, err := SourceTaskRunIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceTaskRunID = rId
+		}
+	}
+
+	var rIdSourceJobID uint64
+	if rel := obj.SourceJobID; rel != nil {
+		if rId, err := SourceJobIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceJobID = rId
+		}
+	}
+
+	var rIdSourceJobRunID uint64
+	if rel := obj.SourceJobRunID; rel != nil {
+		if rId, err := SourceJobRunIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceJobRunID = rId
+		}
+	}
+
+	var rIdSourceDefinitionID uint64
+	if rel := obj.SourceDefinitionID; rel != nil {
+		if rId, err := SourceDefinitionIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceDefinitionID = rId
+		}
+	}
+
+	var rIdDestinationDefinitionID uint64
+	if rel := obj.DestinationDefinitionID; rel != nil {
+		if rId, err := DestinationDefinitionIDBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdDestinationDefinitionID = rId
+		}
+	}
+
+	var rIdSourceCategory uint64
+	if rel := obj.SourceCategory; rel != nil {
+		if rId, err := SourceCategoryBinding.GetId(rel); err != nil {
+			return err
+		} else {
+			rIdSourceCategory = rId
+		}
+	}
 
 	// build the FlatBuffers object
-	fbb.StartObject(37)
+	fbb.StartObject(53)
 	fbutils.SetUint64Slot(fbb, 0, id)
 	if obj.UserID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 1, offsetUserID_Name)
-		fbutils.SetUint64Slot(fbb, 2, obj.UserID.Id)
+		fbutils.SetUint64Slot(fbb, 39, rIdUserID)
 	}
 	if obj.CustomVal != nil {
-		fbutils.SetUOffsetTSlot(fbb, 3, offsetCustomVal_Name)
-		fbutils.SetUint64Slot(fbb, 4, obj.CustomVal.Id)
+		fbutils.SetUint64Slot(fbb, 40, rIdCustomVal)
 	}
 	if obj.JobState != nil {
-		fbutils.SetUOffsetTSlot(fbb, 5, offsetJobState_Name)
-		fbutils.SetUint64Slot(fbb, 6, obj.JobState.Id)
+		fbutils.SetUint64Slot(fbb, 41, rIdJobState)
 	}
 	if obj.WorkspaceID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 7, offsetWorkspaceID_Name)
-		fbutils.SetUint64Slot(fbb, 8, obj.WorkspaceID.Id)
+		fbutils.SetUint64Slot(fbb, 42, rIdWorkspaceID)
 	}
 	fbutils.SetInt64Slot(fbb, 9, propCreatedAt)
 	fbutils.SetInt64Slot(fbb, 10, propExpireAt)
@@ -478,44 +614,34 @@ func (job_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builder, id u
 	fbutils.SetInt64Slot(fbb, 15, propRetryTime)
 	fbutils.SetUOffsetTSlot(fbb, 16, offsetErrorResponse)
 	if obj.SourceID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 17, offsetSourceID_Name)
-		fbutils.SetUint64Slot(fbb, 18, obj.SourceID.Id)
+		fbutils.SetUint64Slot(fbb, 43, rIdSourceID)
 	}
 	if obj.DestinationID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 19, offsetDestinationID_Name)
-		fbutils.SetUint64Slot(fbb, 20, obj.DestinationID.Id)
+		fbutils.SetUint64Slot(fbb, 44, rIdDestinationID)
 	}
 	if obj.SourceBatchID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 21, offsetSourceBatchID_Name)
-		fbutils.SetUint64Slot(fbb, 22, obj.SourceBatchID.Id)
+		fbutils.SetUint64Slot(fbb, 45, rIdSourceBatchID)
 	}
 	if obj.SourceTaskID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 23, offsetSourceTaskID_Name)
-		fbutils.SetUint64Slot(fbb, 24, obj.SourceTaskID.Id)
+		fbutils.SetUint64Slot(fbb, 46, rIdSourceTaskID)
 	}
 	if obj.SourceTaskRunID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 25, offsetSourceTaskRunID_Name)
-		fbutils.SetUint64Slot(fbb, 26, obj.SourceTaskRunID.Id)
+		fbutils.SetUint64Slot(fbb, 47, rIdSourceTaskRunID)
 	}
 	if obj.SourceJobID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 27, offsetSourceJobID_Name)
-		fbutils.SetUint64Slot(fbb, 28, obj.SourceJobID.Id)
+		fbutils.SetUint64Slot(fbb, 48, rIdSourceJobID)
 	}
 	if obj.SourceJobRunID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 29, offsetSourceJobRunID_Name)
-		fbutils.SetUint64Slot(fbb, 30, obj.SourceJobRunID.Id)
+		fbutils.SetUint64Slot(fbb, 49, rIdSourceJobRunID)
 	}
 	if obj.SourceDefinitionID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 31, offsetSourceDefinitionID_Name)
-		fbutils.SetUint64Slot(fbb, 32, obj.SourceDefinitionID.Id)
+		fbutils.SetUint64Slot(fbb, 50, rIdSourceDefinitionID)
 	}
 	if obj.DestinationDefinitionID != nil {
-		fbutils.SetUOffsetTSlot(fbb, 33, offsetDestinationDefinitionID_Name)
-		fbutils.SetUint64Slot(fbb, 34, obj.DestinationDefinitionID.Id)
+		fbutils.SetUint64Slot(fbb, 51, rIdDestinationDefinitionID)
 	}
 	if obj.SourceCategory != nil {
-		fbutils.SetUOffsetTSlot(fbb, 35, offsetSourceCategory_Name)
-		fbutils.SetUint64Slot(fbb, 36, obj.SourceCategory.Id)
+		fbutils.SetUint64Slot(fbb, 52, rIdSourceCategory)
 	}
 	return nil
 }
@@ -553,72 +679,156 @@ func (job_EntityInfo) Load(ob *objectbox.ObjectBox, bytes []byte) (interface{}, 
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on Job.RetryTime: " + err.Error())
 	}
 
+	var relUserID *UserID
+	if rId := fbutils.GetUint64PtrSlot(table, 82); rId != nil && *rId > 0 {
+		if rObject, err := BoxForUserID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relUserID = rObject
+		}
+	}
+
+	var relCustomVal *CustomVal
+	if rId := fbutils.GetUint64PtrSlot(table, 84); rId != nil && *rId > 0 {
+		if rObject, err := BoxForCustomVal(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relCustomVal = rObject
+		}
+	}
+
+	var relJobState *JobState
+	if rId := fbutils.GetUint64PtrSlot(table, 86); rId != nil && *rId > 0 {
+		if rObject, err := BoxForJobState(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relJobState = rObject
+		}
+	}
+
+	var relWorkspaceID *WorkspaceID
+	if rId := fbutils.GetUint64PtrSlot(table, 88); rId != nil && *rId > 0 {
+		if rObject, err := BoxForWorkspaceID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relWorkspaceID = rObject
+		}
+	}
+
+	var relSourceID *SourceID
+	if rId := fbutils.GetUint64PtrSlot(table, 90); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceID = rObject
+		}
+	}
+
+	var relDestinationID *DestinationID
+	if rId := fbutils.GetUint64PtrSlot(table, 92); rId != nil && *rId > 0 {
+		if rObject, err := BoxForDestinationID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relDestinationID = rObject
+		}
+	}
+
+	var relSourceBatchID *SourceBatchID
+	if rId := fbutils.GetUint64PtrSlot(table, 94); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceBatchID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceBatchID = rObject
+		}
+	}
+
+	var relSourceTaskID *SourceTaskID
+	if rId := fbutils.GetUint64PtrSlot(table, 96); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceTaskID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceTaskID = rObject
+		}
+	}
+
+	var relSourceTaskRunID *SourceTaskRunID
+	if rId := fbutils.GetUint64PtrSlot(table, 98); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceTaskRunID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceTaskRunID = rObject
+		}
+	}
+
+	var relSourceJobID *SourceJobID
+	if rId := fbutils.GetUint64PtrSlot(table, 100); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceJobID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceJobID = rObject
+		}
+	}
+
+	var relSourceJobRunID *SourceJobRunID
+	if rId := fbutils.GetUint64PtrSlot(table, 102); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceJobRunID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceJobRunID = rObject
+		}
+	}
+
+	var relSourceDefinitionID *SourceDefinitionID
+	if rId := fbutils.GetUint64PtrSlot(table, 104); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceDefinitionID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceDefinitionID = rObject
+		}
+	}
+
+	var relDestinationDefinitionID *DestinationDefinitionID
+	if rId := fbutils.GetUint64PtrSlot(table, 106); rId != nil && *rId > 0 {
+		if rObject, err := BoxForDestinationDefinitionID(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relDestinationDefinitionID = rObject
+		}
+	}
+
+	var relSourceCategory *SourceCategory
+	if rId := fbutils.GetUint64PtrSlot(table, 108); rId != nil && *rId > 0 {
+		if rObject, err := BoxForSourceCategory(ob).Get(*rId); err != nil {
+			return nil, err
+		} else {
+			relSourceCategory = rObject
+		}
+	}
+
 	return &Job{
-		JobID: propJobID,
-		UserID: &UserID{
-			Name: fbutils.GetStringSlot(table, 6),
-			Id:   fbutils.GetUint64Slot(table, 8),
-		},
-		CustomVal: &CustomVal{
-			Name: fbutils.GetStringSlot(table, 10),
-			Id:   fbutils.GetUint64Slot(table, 12),
-		},
-		JobState: &JobState{
-			Name: fbutils.GetStringSlot(table, 14),
-			Id:   fbutils.GetUint64Slot(table, 16),
-		},
-		WorkspaceID: &WorkspaceID{
-			Name: fbutils.GetStringSlot(table, 18),
-			Id:   fbutils.GetUint64Slot(table, 20),
-		},
-		CreatedAt:     propCreatedAt,
-		ExpireAt:      propExpireAt,
-		EventCount:    fbutils.GetIntSlot(table, 26),
-		EventPayload:  json.RawMessage(fbutils.GetByteVectorSlot(table, 28)),
-		PayloadSize:   fbutils.GetInt64Slot(table, 30),
-		ExecTime:      propExecTime,
-		RetryTime:     propRetryTime,
-		ErrorResponse: json.RawMessage(fbutils.GetByteVectorSlot(table, 36)),
-		SourceID: &SourceID{
-			Name: fbutils.GetStringSlot(table, 38),
-			Id:   fbutils.GetUint64Slot(table, 40),
-		},
-		DestinationID: &DestinationID{
-			Name: fbutils.GetStringSlot(table, 42),
-			Id:   fbutils.GetUint64Slot(table, 44),
-		},
-		SourceBatchID: &SourceBatchID{
-			Name: fbutils.GetStringSlot(table, 46),
-			Id:   fbutils.GetUint64Slot(table, 48),
-		},
-		SourceTaskID: &SourceTaskID{
-			Name: fbutils.GetStringSlot(table, 50),
-			Id:   fbutils.GetUint64Slot(table, 52),
-		},
-		SourceTaskRunID: &SourceTaskRunID{
-			Name: fbutils.GetStringSlot(table, 54),
-			Id:   fbutils.GetUint64Slot(table, 56),
-		},
-		SourceJobID: &SourceJobID{
-			Name: fbutils.GetStringSlot(table, 58),
-			Id:   fbutils.GetUint64Slot(table, 60),
-		},
-		SourceJobRunID: &SourceJobRunID{
-			Name: fbutils.GetStringSlot(table, 62),
-			Id:   fbutils.GetUint64Slot(table, 64),
-		},
-		SourceDefinitionID: &SourceDefinitionID{
-			Name: fbutils.GetStringSlot(table, 66),
-			Id:   fbutils.GetUint64Slot(table, 68),
-		},
-		DestinationDefinitionID: &DestinationDefinitionID{
-			Name: fbutils.GetStringSlot(table, 70),
-			Id:   fbutils.GetUint64Slot(table, 72),
-		},
-		SourceCategory: &SourceCategory{
-			Name: fbutils.GetStringSlot(table, 74),
-			Id:   fbutils.GetUint64Slot(table, 76),
-		},
+		JobID:                   propJobID,
+		UserID:                  relUserID,
+		CustomVal:               relCustomVal,
+		JobState:                relJobState,
+		WorkspaceID:             relWorkspaceID,
+		CreatedAt:               propCreatedAt,
+		ExpireAt:                propExpireAt,
+		EventCount:              fbutils.GetIntSlot(table, 26),
+		EventPayload:            json.RawMessage(fbutils.GetByteVectorSlot(table, 28)),
+		PayloadSize:             fbutils.GetInt64Slot(table, 30),
+		ExecTime:                propExecTime,
+		RetryTime:               propRetryTime,
+		ErrorResponse:           json.RawMessage(fbutils.GetByteVectorSlot(table, 36)),
+		SourceID:                relSourceID,
+		DestinationID:           relDestinationID,
+		SourceBatchID:           relSourceBatchID,
+		SourceTaskID:            relSourceTaskID,
+		SourceTaskRunID:         relSourceTaskRunID,
+		SourceJobID:             relSourceJobID,
+		SourceJobRunID:          relSourceJobRunID,
+		SourceDefinitionID:      relSourceDefinitionID,
+		DestinationDefinitionID: relDestinationDefinitionID,
+		SourceCategory:          relSourceCategory,
 	}, nil
 }
 
