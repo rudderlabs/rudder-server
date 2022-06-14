@@ -25,10 +25,6 @@ import (
 )
 
 var (
-	runIntegration bool
-)
-
-var (
 	WaitFor2Minute            = 2 * time.Minute
 	WaitFor5Minute            = 5 * time.Minute
 	DefaultQueryFrequency     = 100 * time.Millisecond

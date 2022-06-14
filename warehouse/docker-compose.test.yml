@@ -205,18 +205,20 @@ services:
       - clickhouse04
     build:
       context: ../
-      dockerfile: build/Dockerfile
+      dockerfile: build/Dockerfile-warehouse-integration
     ports:
       - "8080:8080"
     env_file:
       - testhelper/docker.env
     entrypoint: sh -c 'go run warehouse/testhelper/config/workspace.go && go run main.go'
+    volumes:
+      - ..:/app
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:54331/health || exit 1
       interval: 1s
       timeout: 30s
       retries: 25
-  start_dependencies:
+  start_integration:
     image: alpine:latest
     depends_on:
       - backend

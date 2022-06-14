@@ -13,10 +13,10 @@ import (
 	"testing"
 )
 
-type NOOP struct{}
+type CHNOOP struct{}
 
 type ClickHouseTest struct {
-	NOOP
+	CHNOOP
 	Credentials *clickhouse.CredentialsT
 	DB          *sql.DB
 	EventsMap   testhelper.EventsCountMap
@@ -35,7 +35,7 @@ type ClickHouseClusterResource struct {
 type ClickHouseClusterResources []*ClickHouseClusterResource
 
 type ClickHouseClusterTest struct {
-	NOOP
+	CHNOOP
 	Resources ClickHouseClusterResources
 	EventsMap testhelper.EventsCountMap
 	WriteKey  string
@@ -53,7 +53,7 @@ func (resources *ClickHouseClusterTest) GetResource() *ClickHouseClusterResource
 	return resources.Resources[0]
 }
 
-func (*NOOP) SetUpDestination() {
+func (*CHNOOP) SetUpDestination() {
 	SetUpClickHouseDestination()
 	SetUpClickHouseClusterDestination()
 }
@@ -353,6 +353,6 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 func TestMain(m *testing.M) {
 	CHTest = &ClickHouseTest{}
 	CHClusterTest = &ClickHouseClusterTest{}
-	NOOP := &NOOP{}
+	NOOP := &CHNOOP{}
 	os.Exit(testhelper.Run(m, NOOP))
 }

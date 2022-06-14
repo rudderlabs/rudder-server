@@ -80,8 +80,8 @@ cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml rm --stop -v --force
 
 setup-warehouse-integration: cleanup-warehouse-integration
-	docker-compose -f warehouse/docker-compose.test.yml up --build start_dependencies
+	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration
 
 run-warehouse-integration: setup-warehouse-integration
-	go test -v github.com/rudderlabs/rudder-server/warehouse/...
+	go test -v github.com/rudderlabs/rudder-server/warehouse/... -parallel 1 -timeout 30m
 	make cleanup-warehouse-integration
