@@ -1646,14 +1646,16 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		//Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			rt.errorDB.Store(routerAbortedJobs)
+			err := rt.errorDB.Store(routerAbortedJobs)
+			if err != nil {
+				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
+			}
 		}
 		//Update the status
 		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
 			if err != nil {
-				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
-				return err
+				return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
 			}
 
 			// rsources stats
@@ -2117,8 +2119,7 @@ func (rt *HandleT) readAndProcess() int {
 		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
 			if err != nil {
-				rt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %w", rt.destName, err)
-				return err
+				return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
 			}
 			// rsources stats
 			err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
@@ -2488,7 +2489,7 @@ func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Updat
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
 	err := rsourcesStats.Publish(ctx, tx.Tx())
 	if err != nil {
-		rt.logger.Errorf("[Router] Error occurred while publishing rsources stats. Err: %v", err)
+		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
 	return err
 }

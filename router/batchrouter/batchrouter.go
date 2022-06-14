@@ -431,8 +431,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 											err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 											if err != nil {
-												brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-												return err
+												return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 											}
 											// no need to update rsources stats here since no terminal job state is recorded
 											return nil
@@ -478,15 +477,13 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if len(abortedJobs) > 0 {
 									err := brt.errorDB.Store(abortedJobs)
 									if err != nil {
-										brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-										panic(err)
+										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
 								}
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 									err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-										return err
+										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
 
 									// rsources stats
@@ -541,16 +538,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if len(abortedJobs) > 0 {
 									err := brt.errorDB.Store(abortedJobs)
 									if err != nil {
-										brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-										panic(err)
+										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
 								}
 
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 									err = brt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{brt.destType}, parameterFilters)
 									if err != nil {
-										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-										return err
+										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
 
 									// rsources stats
@@ -1462,7 +1457,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		rsourcesStats.JobStatusesUpdated(statusList)
 		err = rsourcesStats.Publish(context.TODO(), tx.Tx())
 		if err != nil {
-			brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
+			brt.logger.Errorf("publishing rsources stats: %w", err)
 		}
 		return err
 	})
@@ -1718,14 +1713,12 @@ func (worker *workerT) workerProcess() {
 			if len(drainList) > 0 {
 				err := brt.errorDB.Store(drainJobList)
 				if err != nil {
-					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
-					panic(err)
+					panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 				}
 				err = brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 					err := brt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{brt.destType}, parameterFilters)
 					if err != nil {
-						brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
-						return err
+						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
 
 					// rsources stats
@@ -2379,7 +2372,7 @@ func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Upda
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
 	err := rsourcesStats.Publish(ctx, tx.Tx())
 	if err != nil {
-		brt.logger.Errorf("[Batch Router] Error occurred while publishing rsources stats. Err: %v", err)
+		return fmt.Errorf("publishing rsources stats: %w", err)
 	}
-	return err
+	return nil
 }

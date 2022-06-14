@@ -125,23 +125,24 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 		remaining := 4
 		jp := gjson.ParseBytes(job.Parameters)
 		jp.ForEach(func(key, value gjson.Result) bool {
-			if key.Str == "source_job_run_id" {
+			switch key.Str {
+			case "source_job_run_id":
 				jobRunId = value.Str
 				remaining--
-			} else if key.Str == "source_task_run_id" {
+			case "source_task_run_id":
 				jobTargetKey.TaskRunID = value.Str
 				remaining--
-			} else if key.Str == "source_id" {
+			case "source_id":
 				jobTargetKey.SourceID = value.Str
 				remaining--
-			} else if key.Str == "destination_id" {
+			case "destination_id":
 				jobTargetKey.DestinationID = value.Str
 				remaining--
 			}
-			if remaining == 0 {
-				return false
+			if remaining != 0 {
+				return true
 			}
-			return true
+			return false
 		})
 		if jobRunId != "" {
 			sk := statKey{

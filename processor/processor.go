@@ -1559,18 +1559,15 @@ func (proc *HandleT) Store(in storeMessage) {
 		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			err := proc.batchRouterDB.StoreInTx(tx, batchDestJobs)
 			if err != nil {
-				proc.logger.Errorf("Store into batch router table failed with error: %v", err)
-				proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
-				return err
+				return fmt.Errorf("storing batch router jobs: %w", err)
 			}
 
 			// rsources stats
 			err = proc.updateRudderSourcesStats(context.TODO(), tx, batchDestJobs)
 			if err != nil {
-				proc.logger.Errorf("Publishing rsources stats for batch router failed with error: %v", err)
-				proc.logger.Errorf("batchDestJobs: %v", destJobs)
+				return fmt.Errorf("publishing rsources stats for batch router: %w", err)
 			}
-			return err
+			return nil
 		})
 
 		if err != nil {
@@ -1599,18 +1596,15 @@ func (proc *HandleT) Store(in storeMessage) {
 		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			err := proc.routerDB.StoreInTx(tx, destJobs)
 			if err != nil {
-				proc.logger.Errorf("Store into router table failed with error: %v", err)
-				proc.logger.Errorf("destJobs: %v", destJobs)
-				return err
+				return fmt.Errorf("storing router jobs: %w", err)
 			}
 
 			// rsources stats
 			err = proc.updateRudderSourcesStats(context.TODO(), tx, destJobs)
 			if err != nil {
-				proc.logger.Errorf("Publishing rsources stats for router failed with error: %v", err)
-				proc.logger.Errorf("destJobs: %v", destJobs)
+				return fmt.Errorf("publishing rsources stats for router: %w", err)
 			}
-			return err
+			return nil
 		})
 		if err != nil {
 			panic(err)
@@ -1651,16 +1645,14 @@ func (proc *HandleT) Store(in storeMessage) {
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
 		if err != nil {
-			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
-			return err
+			return fmt.Errorf("updating gateway jobs statuses: %w", err)
 		}
 
 		// rsources stats
 		in.rsourcesStats.JobStatusesUpdated(statusList)
 		err = in.rsourcesStats.Publish(context.TODO(), tx.Tx())
 		if err != nil {
-			pkgLogger.Errorf("Error occurred while publishing rsources stats. Err: %v", err)
-			return err
+			return fmt.Errorf("publishing rsources stats: %w", err)
 		}
 
 		if proc.isReportingEnabled() {
