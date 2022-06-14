@@ -175,7 +175,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 
 			// payload will be "nil" when params or files is set during destination transformation
-			if payload != nil && (bodyFormat == "JSON" || bodyFormat == "FORM") {
+			if payload != nil && (bodyFormat == "JSON" || bodyFormat == "FORM" || bodyFormat == "XML") {
 				var payloadBytes []byte
 				payloadBytes, err = ioutil.ReadAll(payload)
 				if err != nil {
