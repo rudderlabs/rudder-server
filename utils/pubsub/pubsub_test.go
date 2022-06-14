@@ -31,7 +31,7 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 		// normal consumer should consume 1, 2, 3, 4 & 5
 		v := <-normal
 		if v.Data.(int) != n {
-			t.Errorf("Expected normal consumer to have consumed %n, instead got %d.", n, v.Data.(int))
+			t.Errorf("Expected normal consumer to have consumed %d, instead got %d.", n, v.Data.(int))
 		}
 	}
 
