@@ -193,6 +193,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 							StatusCode:   400,
 							ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to unmarshal payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
 						}
+					} else {
+						rtPayload.Data = string(payloadBytes)
 					}
 				} else {
 					rtPayload.Data = tempJson
