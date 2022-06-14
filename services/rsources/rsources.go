@@ -124,7 +124,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
-		localDB.SetMaxOpenConns(config.MaxPoolSize)
+		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
 	}
 	handler := &sourcesHandler{
 		config:   config,

@@ -2,7 +2,6 @@ package apphandlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -30,7 +29,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -102,12 +100,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
-	localDb, err := sql.Open("postgres", jobsdb.GetConnectionString())
-	if err != nil {
-		return err
-	}
-	localDb.SetMaxOpenConns(config.GetInt("Rsources.PoolSize", 5))
-	rsourcesService, err := rsources.NewJobService(localDb)
+	rsourcesService, err := NewRsourcesService()
 	if err != nil {
 		return err
 	}
