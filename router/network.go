@@ -162,10 +162,10 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		req.URL.RawQuery = queryParams.Encode()
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
-			req.Header.Add(key, val.(string))
+			req.Header[key] = []string{ val.(string) }
 		}
 
-		req.Header.Add("User-Agent", "RudderLabs")
+		req.Header["User-Agent"] = []string { "RudderLabs" }
 
 		// We will change this to `transformerProxy`
 		if transformerProxy {
