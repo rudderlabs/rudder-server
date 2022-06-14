@@ -169,16 +169,26 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 		// We will change this to `transformerProxy`
 		if transformerProxy {
-			// Send to the "proxyTest" endpoint
-			var payloadBytes []byte
+			rtPayload := transformer.RouterDelPayload{
+				Method:   requestMethod,
+				Endpoint: postInfo.URL,
+			}
 
 			// payload will be "nil" when params or files is set during destination transformation
 			if payload != nil {
+				var payloadBytes []byte
 				payloadBytes, err = ioutil.ReadAll(payload)
 				if err != nil {
 					return &utils.SendPostResponse{
 						StatusCode:   400,
 						ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to read payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
+					}
+				}
+				err := json.Unmarshal(payloadBytes, &rtPayload.Data)
+				if err != nil {
+					return &utils.SendPostResponse{
+						StatusCode:   400,
+						ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to unmarshal payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
 					}
 				}
 			}
@@ -188,8 +198,9 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			// But headers is an object in Javascript, hence we need to level the plane for effective comparison
 			headersMap := make(map[string]string)
 			for k, v := range req.Header {
-				headersMap[strings.ToLower(k)] = string(v[0])
+				headersMap[k] = string(v[0])
 			}
+			rtPayload.Headers = headersMap
 
 			// This is being done to facilitate compatible comparison
 			// As map[string][]string is the data-type for url.Values in golang
@@ -198,16 +209,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			for k, v := range req.URL.Query() {
 				queryParamsMap[strings.ToLower(k)] = string(v[0])
 			}
-
-			rtPayload := transformer.RouterDelPayload{
-				Method:   requestMethod,
-				Params:   queryParamsMap,
-				Endpoint: postInfo.URL,
-				Headers:  headersMap,
-			}
-			if payloadBytes != nil {
-				rtPayload.Data = string(payloadBytes)
-			}
+			rtPayload.Params = queryParamsMap
 
 			proxyReqBody := transformer.ProxyTestRequestPayload{
 				RouterDeliveryPayload: rtPayload,
