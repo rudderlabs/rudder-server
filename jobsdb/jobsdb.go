@@ -2257,7 +2257,7 @@ func (jd *HandleT) doStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*JobT) err
 			return err
 		}
 		if len(jobList) > jd.analyzeThreshold {
-			_, err = stmt.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
+			_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
 		}
 
 		return err
@@ -2883,7 +2883,7 @@ func (jd *HandleT) updateJobStatusDSInTx(tx *sql.Tx, ds dataSetT, statusList []*
 		}
 
 		if len(statusList) > jd.analyzeThreshold {
-			_, err = stmt.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
+			_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
 		}
 
 		return err
