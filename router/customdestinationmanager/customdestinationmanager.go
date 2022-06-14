@@ -53,8 +53,6 @@ type CustomManagerT struct {
 	timeout                  time.Duration
 	breakerTimeout           time.Duration
 	backendConfigInitialized chan struct{}
-
-	mapLock sync.RWMutex
 }
 
 //clientHolder keeps the config of a destination and corresponding producer for a stream destination
@@ -317,7 +315,6 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
 	ch := backendconfig.Subscribe(context.TODO(), "backendConfig")
 	for config := range ch {
-		customManager.mapLock.Lock()
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
@@ -326,7 +323,6 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
-		customManager.mapLock.Unlock()
 		once.Do(func() {
 			close(customManager.backendConfigInitialized)
 		})

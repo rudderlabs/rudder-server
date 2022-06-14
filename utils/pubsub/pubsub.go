@@ -83,10 +83,7 @@ func (eb *PublishSubscriber) removePubSub(topic string, r *listener) {
 	eb.lastEventMutex.RLock()
 	defer eb.lastEventMutex.RUnlock()
 
-	listeners, ok := eb.subscriptions[topic]
-	if !ok {
-		return
-	}
+	listeners := eb.subscriptions[topic]
 
 	for i, item := range listeners {
 		if item == r {

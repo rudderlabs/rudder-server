@@ -2331,8 +2331,8 @@ func (rt *HandleT) Shutdown() {
 
 func (rt *HandleT) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
-	for {
-		config := <-ch
+	for config := range ch {
+		//config := <-ch
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
