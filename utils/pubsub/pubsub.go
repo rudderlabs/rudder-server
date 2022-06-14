@@ -116,8 +116,6 @@ type subPublishers []*listener
 
 // listener is responsible to publish events to a single subscription (channel).
 type listener struct {
-	bgCtx context.Context
-
 	// the channel of the subscription where events are published
 	channel chan DataEvent
 

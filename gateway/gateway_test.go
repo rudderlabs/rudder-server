@@ -136,13 +136,12 @@ func (c *testContext) Setup() {
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
-	mockCall := c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1)
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config")
-	mockCall.Do(func(interface{}) { tFunc() })
+	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1).Do(func(interface{}) { tFunc() })
 
 	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
 
-	mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 
