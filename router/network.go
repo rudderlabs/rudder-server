@@ -188,6 +188,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 				tempJson := make(map[string]interface{})
 				err := json.Unmarshal(payloadBytes, &tempJson)
 				if err != nil {
+					// For FORM and JSON body formats, the expected value is JSON type
+					// Hence, declare it an error if we couldn't unmarshal
 					if (bodyFormat == "JSON" || bodyFormat == "FORM") {
 						return &utils.SendPostResponse{
 							StatusCode:   400,
