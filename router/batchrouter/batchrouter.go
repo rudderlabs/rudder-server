@@ -570,7 +570,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
-	if disableEgress {
+	if true {
 		return StorageUploadOutput{Error: rterror.DisabledEgress}
 	}
 
@@ -764,7 +764,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 }
 
 func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
-	if disableEgress {
+	if true {
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
