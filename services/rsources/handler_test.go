@@ -409,6 +409,31 @@ var _ = Describe("Using sources handler", func() {
 			createService(configB)
 		})
 
+		It("shouldn't be able to create a service when wal_level=logical is not set on the local db", func() {
+			pgD := newDBResource(pool, network.ID, "postgres-4")
+			defer purgeResource(pool, pgD.resource)
+			badConfig := JobServiceConfig{
+				LocalHostname:          "postgres-4",
+				MaxPoolSize:            1,
+				LocalConn:              pgD.externalDSN,
+				SharedConn:             pgC.externalDSN,
+				SubscriptionTargetConn: pgD.internalDSN,
+			}
+			_, err := NewJobService(badConfig)
+			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
+		})
+
+		It("shouldn't be able to create a service when an invalid SubscriptionTargetConn is provided", func() {
+			badConfig := JobServiceConfig{
+				LocalHostname:          "postgres-1",
+				MaxPoolSize:            1,
+				LocalConn:              pgA.externalDSN,
+				SharedConn:             pgC.externalDSN,
+				SubscriptionTargetConn: pgA.externalDSN,
+			}
+			_, err := NewJobService(badConfig)
+			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
+		})
 	})
 })
 
