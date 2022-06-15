@@ -77,7 +77,7 @@ install-tools:
 	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
 
 cleanup-warehouse-integration:
-	docker-compose -f warehouse/docker-compose.test.yml rm --stop -v --force
+	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
 setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration
