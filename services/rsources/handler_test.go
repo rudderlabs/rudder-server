@@ -424,12 +424,14 @@ var _ = Describe("Using sources handler", func() {
 		})
 
 		It("shouldn't be able to create a service when an invalid SubscriptionTargetConn is provided", func() {
+			pgD := newDBResource(pool, network.ID, "postgres-4")
+			defer purgeResource(pool, pgD.resource)
 			badConfig := JobServiceConfig{
-				LocalHostname:          "postgres-1",
+				LocalHostname:          "postgres-4",
 				MaxPoolSize:            1,
-				LocalConn:              pgA.externalDSN,
+				LocalConn:              pgD.externalDSN,
 				SharedConn:             pgC.externalDSN,
-				SubscriptionTargetConn: pgA.externalDSN,
+				SubscriptionTargetConn: pgD.externalDSN,
 			}
 			_, err := NewJobService(badConfig)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
