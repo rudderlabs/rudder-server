@@ -26,6 +26,10 @@ import (
 )
 
 var (
+	runSlow bool
+)
+
+var (
 	WaitFor2Minute            = 2 * time.Minute
 	WaitFor5Minute            = 5 * time.Minute
 	DefaultQueryFrequency     = 100 * time.Millisecond
@@ -33,12 +37,12 @@ var (
 )
 
 var (
-	jobsDB *JobsDBResource
+	ConnectBackoffDuration = 1 * time.Second
+	ConnectBackoffRetryMax = 5
 )
 
 var (
-	ConnectBackoffDuration = 1 * time.Second
-	ConnectBackoffRetryMax = 5
+	jobsDB *JobsDBResource
 )
 
 type ISetup interface {
@@ -46,9 +50,11 @@ type ISetup interface {
 }
 
 func Run(m *testing.M, setup ISetup) int {
+	flag.BoolVar(&runSlow, "slow", false, "run slow tests")
 	flag.Parse()
-	if testing.Short() {
-		log.Println("Skipping warehouse integration test. Remove `-short` to run them.")
+
+	if !runSlow {
+		log.Println("Skipping warehouse integration test. Use `-slow` to run them.")
 		return 0
 	}
 
