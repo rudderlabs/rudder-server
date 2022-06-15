@@ -302,7 +302,7 @@ var _ = Describe("Using sources handler", func() {
 				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
 				Expect(err).NotTo(HaveOccurred())
 			}
-			for containerID, _ := range network.Containers { // Remove any containers left from previous runs
+			for containerID := range network.Containers { // Remove any containers left from previous runs
 				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
 			}
 

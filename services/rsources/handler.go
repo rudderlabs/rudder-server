@@ -13,10 +13,18 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
+// In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
+var replSlotDisallowedChars *regexp.Regexp
+
+func init() {
+	replSlotDisallowedChars = regexp.MustCompile(`[^a-z0-9_]`)
+}
+
 type sourcesHandler struct {
-	config   JobServiceConfig
-	localDB  *sql.DB
-	sharedDB *sql.DB
+	config         JobServiceConfig
+	localDB        *sql.DB
+	sharedDB       *sql.DB
+	cleanupTrigger func() <-chan time.Time
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
@@ -133,7 +141,7 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 24, time.Hour)):
+		case <-sh.cleanupTrigger():
 			err := sh.doCleanupTables(ctx)
 			if err != nil {
 				return err
@@ -162,6 +170,11 @@ func (sh *sourcesHandler) readDB() *sql.DB {
 
 func (sh *sourcesHandler) init() error {
 	ctx := context.TODO()
+	if sh.cleanupTrigger == nil {
+		sh.cleanupTrigger = func() <-chan time.Time {
+			return time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 1, time.Hour))
+		}
+	}
 	err := setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
 	if err != nil {
 		return fmt.Errorf("failed to setup local stats table: %w", err)
@@ -221,7 +234,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		}
 	}
 
-	normalizedHostname := regexp.MustCompile(`[^a-z0-9_]`).ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
+	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
 	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionConn := sh.config.SubscriptionTargetConn
