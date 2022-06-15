@@ -12,6 +12,7 @@ enterprise
 *.coverprofile
 junit*.xml
 **/profile.out
+**/*.test
 .idea/*
 build/regulation-worker
 *.out.*
