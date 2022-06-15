@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -51,10 +51,10 @@ func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string)
 // The ResponseT will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsByWriteKey
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*objectdb.GatewayJob, map[SourceIDT]bool) {
 	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var validatedReportMetrics = make([]*types.PUReportedMetric, 0)
-	var validatedErrorJobs = make([]*jobsdb.JobT, 0)
+	var validatedErrorJobs = make([]*objectdb.GatewayJob, 0)
 	var trackingPlanEnabledMap = make(map[SourceIDT]bool)
 
 	for writeKey, eventList := range groupedEventsByWriteKey {

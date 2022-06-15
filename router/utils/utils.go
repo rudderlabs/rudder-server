@@ -7,9 +7,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/objectdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -51,16 +50,16 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 	return JobRetention
 }
 
-func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
+func ToBeDrained(job *objectdb.GatewayJob, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
 	//drain if job is older than a day
-	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
-	if jobReceivedAt.Exists() {
-		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
-		if err == nil {
-			if time.Since(jobReceivedAtTime) > getRetentionTimeForDestination(destID) {
-				return true, "job expired"
-			}
-		}
+	jobReceivedAt := job.ReceivedAt
+	// if jobReceivedAt.Exists() {
+	// 	jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
+	// 	if err == nil {
+	if time.Since(jobReceivedAt) > getRetentionTimeForDestination(destID) {
+		return true, "job expired"
+		// 	}
+		// }
 	}
 
 	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {

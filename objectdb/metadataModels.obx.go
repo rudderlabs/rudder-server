@@ -19,7 +19,7 @@ var EventTypeBinding = eventType_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 17,
 	},
-	Uid: 6231449756449352834,
+	Uid: 1616492230962622733,
 }
 
 // EventType_ contains type-based Property helpers to facilitate some common operations such as Queries.
@@ -48,11 +48,11 @@ func (eventType_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (eventType_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("EventType", 17, 6231449756449352834)
-	model.Property("Name", 9, 1, 2244601902503634680)
-	model.Property("Id", 6, 2, 787784671483058604)
+	model.Entity("EventType", 17, 1616492230962622733)
+	model.Property("Name", 9, 1, 3992395205939043764)
+	model.Property("Id", 6, 2, 7643880343485399074)
 	model.PropertyFlags(1)
-	model.EntityLastPropertyId(2, 787784671483058604)
+	model.EntityLastPropertyId(2, 7643880343485399074)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object

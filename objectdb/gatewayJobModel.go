@@ -7,11 +7,14 @@ import (
 )
 
 type GatewayJob struct {
+	// Fundamental Job Attributes
 	JobID       uint64 `objectbox:"id"`
 	UserID      string
-	JobState    *JobState `objectbox:"link"`
-	WorkspaceID string
+	CustomVal   string `objectbox:"index"`
+	WorkspaceID string `objectbox:"index"`
 
+	// job statistics
+	ReceivedAt   time.Time `objectbox:"date"`
 	CreatedAt    time.Time `objectbox:"date"`
 	ExpireAt     time.Time `objectbox:"date"`
 	EventCount   int
@@ -19,16 +22,46 @@ type GatewayJob struct {
 	PayloadSize  int64
 
 	// job state attributes
-	ExecTime      time.Time `objectbox:"date"`
-	RetryTime     time.Time `objectbox:"date"`
-	ErrorResponse json.RawMessage
+	JobState         string `objectbox:"index"`
+	Stage            string `objectbox:"index"`
+	StatusCode       int
+	AttemptNum       int
+	FirstAttemptedAt time.Time `objectbox:"date"`
+	ExecTime         time.Time `objectbox:"date"`
+	RetryTime        time.Time `objectbox:"date"`
+	ErrorResponse    json.RawMessage
 
 	// connection attributes
-	SourceID           string
-	SourceBatchID      string
-	SourceTaskID       string
-	SourceTaskRunID    string
-	SourceJobID        string
-	SourceJobRunID     string
-	SourceDefinitionID string
+	WriteKey                string
+	IPAddress               string
+	SourceID                string
+	DestinationID           string
+	SourceBatchID           string
+	SourceTaskID            string
+	SourceTaskRunID         string
+	SourceJobID             string
+	SourceJobRunID          string
+	SourceDefinitionID      string
+	DestinationDefinitionID string
+	SourceCategory          string
+
+	// generic job data
+	EventName   string
+	EventType   string
+	MessageID   string
+	TransformAt string
+	RecordID    json.RawMessage
 }
+
+// func (box *Box) PutJobsInTxn(jobs []*GatewayJob) error {
+// 	err := box.ObjectBox.RunInWriteTx(func() error {
+// 		for _, job := range jobs {
+// 			_, err := box.gatewayJobBox.Put(job)
+// 			if err != nil {
+// 				return err
+// 			}
+// 		}
+// 		return nil
+// 	})
+// 	return err
+// }

@@ -57,14 +57,14 @@ type MetadataT struct {
 	MessageID           string                            `json:"messageId"`
 	OAuthAccessToken    string                            `json:"oauthAccessToken"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs              []string `json:"messageIds"`
-	RudderID                string   `json:"rudderId"`
-	SessionID               string   `json:"sessionId,omitempty"`
-	ReceivedAt              string   `json:"receivedAt"`
-	EventName               string   `json:"eventName"`
-	EventType               string   `json:"eventType"`
-	SourceDefinitionID      string   `json:"sourceDefinitionId"`
-	DestinationDefinitionID string   `json:"destinationDefinitionId"`
+	MessageIDs              []string  `json:"messageIds"`
+	RudderID                string    `json:"rudderId"`
+	SessionID               string    `json:"sessionId,omitempty"`
+	ReceivedAt              time.Time `json:"receivedAt"`
+	EventName               string    `json:"eventName"`
+	EventType               string    `json:"eventType"`
+	SourceDefinitionID      string    `json:"sourceDefinitionId"`
+	DestinationDefinitionID string    `json:"destinationDefinitionId"`
 }
 
 type TransformerEventT struct {

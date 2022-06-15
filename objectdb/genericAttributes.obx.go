@@ -19,7 +19,7 @@ var UserIDBinding = userID_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 12,
 	},
-	Uid: 1783554444946226019,
+	Uid: 6985865343804806110,
 }
 
 // UserID_ contains type-based Property helpers to facilitate some common operations such as Queries.
@@ -62,18 +62,18 @@ func (userID_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (userID_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("UserID", 12, 1783554444946226019)
-	model.Property("Name", 9, 1, 3409656925649057452)
+	model.Entity("UserID", 12, 6985865343804806110)
+	model.Property("Name", 9, 1, 7460596151078387211)
 	model.PropertyFlags(2080)
-	model.PropertyIndex(11, 418488054825019415)
-	model.Property("Id", 6, 2, 550566190863348300)
+	model.PropertyIndex(15, 5073285257420525878)
+	model.Property("Id", 6, 2, 5138211716228716342)
 	model.PropertyFlags(1)
-	model.Property("WorkspaceID_Name", 9, 3, 4067736146473397357)
+	model.Property("WorkspaceID_Name", 9, 3, 2260303511095608590)
 	model.PropertyFlags(2080)
-	model.PropertyIndex(30, 1675531499413512674)
-	model.Property("WorkspaceID_Id", 6, 4, 4906743161327179062)
+	model.PropertyIndex(16, 1513898322936036820)
+	model.Property("WorkspaceID_Id", 6, 4, 8364717455378417564)
 	model.PropertyFlags(8192)
-	model.EntityLastPropertyId(4, 4906743161327179062)
+	model.EntityLastPropertyId(4, 8364717455378417564)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -376,7 +376,7 @@ var CustomValBinding = customVal_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 13,
 	},
-	Uid: 4018696856788560703,
+	Uid: 7374001581872741036,
 }
 
 // CustomVal_ contains type-based Property helpers to facilitate some common operations such as Queries.
@@ -405,13 +405,13 @@ func (customVal_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (customVal_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("CustomVal", 13, 4018696856788560703)
-	model.Property("Name", 9, 1, 8932878013825149220)
+	model.Entity("CustomVal", 13, 7374001581872741036)
+	model.Property("Name", 9, 1, 5589074994375652697)
 	model.PropertyFlags(2080)
-	model.PropertyIndex(12, 521636762455774019)
-	model.Property("Id", 6, 2, 6458457908965021320)
+	model.PropertyIndex(17, 8787050160095443341)
+	model.Property("Id", 6, 2, 1189637173637526600)
 	model.PropertyFlags(1)
-	model.EntityLastPropertyId(2, 6458457908965021320)
+	model.EntityLastPropertyId(2, 1189637173637526600)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -705,7 +705,7 @@ var JobStateBinding = jobState_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 14,
 	},
-	Uid: 8904682392015878518,
+	Uid: 7817480601305742415,
 }
 
 // JobState_ contains type-based Property helpers to facilitate some common operations such as Queries.
@@ -734,13 +734,13 @@ func (jobState_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (jobState_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("JobState", 14, 8904682392015878518)
-	model.Property("Name", 9, 1, 8958377750289689558)
+	model.Entity("JobState", 14, 7817480601305742415)
+	model.Property("Name", 9, 1, 5294669386065485071)
 	model.PropertyFlags(2080)
-	model.PropertyIndex(13, 4403481685334919276)
-	model.Property("Id", 6, 2, 2402257333602715753)
+	model.PropertyIndex(18, 8548597026760530014)
+	model.Property("Id", 6, 2, 6595558969534672331)
 	model.PropertyFlags(1)
-	model.EntityLastPropertyId(2, 2402257333602715753)
+	model.EntityLastPropertyId(2, 6595558969534672331)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -1034,7 +1034,7 @@ var WorkspaceIDBinding = workspaceID_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 15,
 	},
-	Uid: 4722293844883079192,
+	Uid: 3625977901417815260,
 }
 
 // WorkspaceID_ contains type-based Property helpers to facilitate some common operations such as Queries.
@@ -1063,13 +1063,13 @@ func (workspaceID_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (workspaceID_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("WorkspaceID", 15, 4722293844883079192)
-	model.Property("Name", 9, 1, 4988867052746536817)
+	model.Entity("WorkspaceID", 15, 3625977901417815260)
+	model.Property("Name", 9, 1, 5860178705155352300)
 	model.PropertyFlags(2080)
-	model.PropertyIndex(14, 4671051305818973688)
-	model.Property("Id", 6, 2, 2797576816621904261)
+	model.PropertyIndex(19, 3814709225882759134)
+	model.Property("Id", 6, 2, 7935076294102034986)
 	model.PropertyFlags(1)
-	model.EntityLastPropertyId(2, 2797576816621904261)
+	model.EntityLastPropertyId(2, 7935076294102034986)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object

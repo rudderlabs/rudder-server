@@ -29,6 +29,7 @@ type LifecycleManager struct {
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
+	ObjectBox        *objectdb.Box
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -40,7 +41,7 @@ func (proc *LifecycleManager) Start() {
 	}
 
 	proc.HandleT.Setup(proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
-		proc.errDB, proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources)
+		proc.errDB, proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.ObjectBox)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
@@ -63,12 +64,10 @@ func (proc *LifecycleManager) Stop() {
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, box *objectdb.Box) *LifecycleManager {
-	gwJobBox := objectdb.BoxForGatewayJob(box.ObjectBox)
-	if *clearDb {
-		gwJobBox.RemoveAll()
-	}
 	proc := &LifecycleManager{
-		HandleT:          &HandleT{transformer: transformer.NewTransformer(), GWJobBox: gwJobBox},
+		HandleT: &HandleT{
+			transformer: transformer.NewTransformer(),
+		},
 		mainCtx:          ctx,
 		gatewayDB:        gwDb,
 		routerDB:         rtDb,
@@ -79,6 +78,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
 		transientSources: transientSources,
+		ObjectBox:        box,
 	}
 	return proc
 }

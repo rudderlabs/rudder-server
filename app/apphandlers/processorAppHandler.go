@@ -167,7 +167,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 					if enableProcessor {
 						StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources,
+							reportingI, multitenant.NOOP, transientSources, objectBox,
 						)
 					}
 					return nil

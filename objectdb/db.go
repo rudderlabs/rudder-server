@@ -15,36 +15,38 @@ type jobStateT struct {
 //State definitions
 var (
 	//Not valid, Not terminal
-	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "not_picked_yet"}
+	// NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "not_picked_yet"}
 
 	//Valid, Not terminal
-	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
-	Executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
-	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
-	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
-	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
-	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
+	failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
+	executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
+	waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
+	waitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
+	migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
+	importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
 	//Valid, Terminal
-	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
-	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
-	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
-	WontMigrate = jobStateT{isValid: true, isTerminal: true, State: "wont_migrate"}
+	succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
+	aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
+	migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
+	wontMigrate = jobStateT{isValid: true, isTerminal: true, State: "wont_migrate"}
+
+	Failed, Executing, Waiting, WaitingRetry, Migrating, Importing, Succeeded, Aborted, Migrated, WontMigrate *CustomVal
 )
 
 //Adding a new state to this list, will require an enum change in postgres db.
 var jobStates []jobStateT = []jobStateT{
-	NotProcessed,
-	Failed,
-	Executing,
-	Waiting,
-	WaitingRetry,
-	Migrating,
-	Succeeded,
-	Aborted,
-	Migrated,
-	WontMigrate,
-	Importing,
+	// NotProcessed,
+	failed,
+	executing,
+	waiting,
+	waitingRetry,
+	migrating,
+	succeeded,
+	aborted,
+	migrated,
+	wontMigrate,
+	importing,
 }
 
 var (
@@ -59,8 +61,34 @@ func init() {
 	JobStateMap = make(map[string]*JobState)
 }
 
+func NewObjectBox() (*Box, error) {
+	objectBox, err := objectbox.NewBuilder().Model(ObjectBoxModel()).Build()
+	if err != nil {
+		return nil, err
+	}
+	box := &Box{ObjectBox: objectBox}
+	// box.customValBox = BoxForCustomVal(box.ObjectBox)
+	box.jobStateBox = BoxForJobState(box.ObjectBox)
+	return box, err
+}
+
+func (box *Box) CloseObjectBox() {
+	box.Close()
+}
+
+type Box struct {
+	ObjectBox     *objectbox.ObjectBox
+	customValBox  *CustomValBox
+	jobStateBox   *JobStateBox
+	gatewayJobBox *GatewayJobBox
+}
+
+func (box *Box) Close() {
+	box.ObjectBox.Close()
+}
+
 func (box *Box) setupJobStates(jobStateMap map[string]*JobState) error {
-	jobStateBox := BoxForJobState(box.ObjectBox)
+	jobStateBox := box.jobStateBox
 	noStates, err := jobStateBox.IsEmpty()
 	if err != nil {
 		return err
@@ -79,26 +107,4 @@ func (box *Box) setupJobStates(jobStateMap map[string]*JobState) error {
 		})
 	}
 	return err
-}
-
-func NewObjectBox() (*Box, error) {
-	objectBox, err := objectbox.NewBuilder().Model(ObjectBoxModel()).Build()
-	if err != nil {
-		return nil, err
-	}
-	box := &Box{ObjectBox: objectBox}
-	err = box.setupJobStates(JobStateMap)
-	return box, err
-}
-
-func (box *Box) CloseObjectBox() {
-	box.Close()
-}
-
-type Box struct {
-	ObjectBox *objectbox.ObjectBox
-}
-
-func (box *Box) Close() {
-	box.ObjectBox.Close()
 }

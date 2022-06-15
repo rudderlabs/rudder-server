@@ -146,7 +146,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 					g.Go(misc.WithBugsnag(func() error {
 						StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources,
+							reportingI, multitenant.NOOP, transientSources, objectBox,
 						)
 						return nil
 					}))
@@ -190,6 +190,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		RouterDB:         tenantRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		ObjectBox:        objectBox,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -198,6 +199,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		ObjectBox:        objectBox,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 

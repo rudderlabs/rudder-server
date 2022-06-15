@@ -22,3 +22,23 @@ type (
 	}
 	// ErrorCode string
 )
+
+func (box *Box) GetOrCreateCustomVal(customVal string) (*CustomVal, error) {
+	customValBox := box.customValBox
+	customValObj, err := customValBox.Query(CustomVal_.Name.Equals(customVal, true)).Find()
+	if err != nil {
+		return nil, err
+	}
+	if len(customValObj) > 0 {
+		return customValObj[0], nil
+	}
+	newCustomVal := &CustomVal{
+		Name: customVal,
+	}
+	_, putError := customValBox.Put(newCustomVal)
+	if putError != nil {
+		return nil, putError
+	}
+	CustomValMap[customVal] = newCustomVal
+	return newCustomVal, nil
+}

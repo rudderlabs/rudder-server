@@ -20,30 +20,46 @@ var GatewayJobBinding = gatewayJob_EntityInfo{
 	Entity: objectbox.Entity{
 		Id: 11,
 	},
-	Uid: 7535172036551034281,
+	Uid: 8983575162441289249,
 }
 
 // GatewayJob_ contains type-based Property helpers to facilitate some common operations such as Queries.
 var GatewayJob_ = struct {
-	JobID              *objectbox.PropertyUint64
-	UserID             *objectbox.PropertyString
-	WorkspaceID        *objectbox.PropertyString
-	CreatedAt          *objectbox.PropertyInt64
-	ExpireAt           *objectbox.PropertyInt64
-	EventCount         *objectbox.PropertyInt
-	EventPayload       *objectbox.PropertyByteVector
-	PayloadSize        *objectbox.PropertyInt64
-	ExecTime           *objectbox.PropertyInt64
-	RetryTime          *objectbox.PropertyInt64
-	ErrorResponse      *objectbox.PropertyByteVector
-	SourceID           *objectbox.PropertyString
-	SourceBatchID      *objectbox.PropertyString
-	SourceTaskID       *objectbox.PropertyString
-	SourceTaskRunID    *objectbox.PropertyString
-	SourceJobID        *objectbox.PropertyString
-	SourceJobRunID     *objectbox.PropertyString
-	SourceDefinitionID *objectbox.PropertyString
-	JobState           *objectbox.RelationToOne
+	JobID                   *objectbox.PropertyUint64
+	UserID                  *objectbox.PropertyString
+	CustomVal               *objectbox.PropertyString
+	WorkspaceID             *objectbox.PropertyString
+	ReceivedAt              *objectbox.PropertyInt64
+	CreatedAt               *objectbox.PropertyInt64
+	ExpireAt                *objectbox.PropertyInt64
+	EventCount              *objectbox.PropertyInt
+	EventPayload            *objectbox.PropertyByteVector
+	PayloadSize             *objectbox.PropertyInt64
+	JobState                *objectbox.PropertyString
+	Stage                   *objectbox.PropertyString
+	StatusCode              *objectbox.PropertyInt
+	AttemptNum              *objectbox.PropertyInt
+	FirstAttemptedAt        *objectbox.PropertyInt64
+	ExecTime                *objectbox.PropertyInt64
+	RetryTime               *objectbox.PropertyInt64
+	ErrorResponse           *objectbox.PropertyByteVector
+	WriteKey                *objectbox.PropertyString
+	IPAddress               *objectbox.PropertyString
+	SourceID                *objectbox.PropertyString
+	DestinationID           *objectbox.PropertyString
+	SourceBatchID           *objectbox.PropertyString
+	SourceTaskID            *objectbox.PropertyString
+	SourceTaskRunID         *objectbox.PropertyString
+	SourceJobID             *objectbox.PropertyString
+	SourceJobRunID          *objectbox.PropertyString
+	SourceDefinitionID      *objectbox.PropertyString
+	DestinationDefinitionID *objectbox.PropertyString
+	SourceCategory          *objectbox.PropertyString
+	EventName               *objectbox.PropertyString
+	EventType               *objectbox.PropertyString
+	MessageID               *objectbox.PropertyString
+	TransformAt             *objectbox.PropertyString
+	RecordID                *objectbox.PropertyByteVector
 }{
 	JobID: &objectbox.PropertyUint64{
 		BaseProperty: &objectbox.BaseProperty{
@@ -57,108 +73,203 @@ var GatewayJob_ = struct {
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
+	CustomVal: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     3,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
 	WorkspaceID: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     4,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	CreatedAt: &objectbox.PropertyInt64{
+	ReceivedAt: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     5,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	ExpireAt: &objectbox.PropertyInt64{
+	CreatedAt: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     6,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	EventCount: &objectbox.PropertyInt{
+	ExpireAt: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     7,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	EventPayload: &objectbox.PropertyByteVector{
+	EventCount: &objectbox.PropertyInt{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     8,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	PayloadSize: &objectbox.PropertyInt64{
+	EventPayload: &objectbox.PropertyByteVector{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     9,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	ExecTime: &objectbox.PropertyInt64{
+	PayloadSize: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     10,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	RetryTime: &objectbox.PropertyInt64{
+	JobState: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     11,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	ErrorResponse: &objectbox.PropertyByteVector{
+	Stage: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     12,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceID: &objectbox.PropertyString{
+	StatusCode: &objectbox.PropertyInt{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     13,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceBatchID: &objectbox.PropertyString{
+	AttemptNum: &objectbox.PropertyInt{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     14,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceTaskID: &objectbox.PropertyString{
+	FirstAttemptedAt: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     15,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceTaskRunID: &objectbox.PropertyString{
+	ExecTime: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     16,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceJobID: &objectbox.PropertyString{
+	RetryTime: &objectbox.PropertyInt64{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     17,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceJobRunID: &objectbox.PropertyString{
+	ErrorResponse: &objectbox.PropertyByteVector{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     18,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	SourceDefinitionID: &objectbox.PropertyString{
+	WriteKey: &objectbox.PropertyString{
 		BaseProperty: &objectbox.BaseProperty{
 			Id:     19,
 			Entity: &GatewayJobBinding.Entity,
 		},
 	},
-	JobState: &objectbox.RelationToOne{
-		Property: &objectbox.BaseProperty{
+	IPAddress: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     20,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     21,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	DestinationID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
 			Id:     22,
 			Entity: &GatewayJobBinding.Entity,
 		},
-		Target: &JobStateBinding.Entity,
+	},
+	SourceBatchID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     23,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceTaskID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     24,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceTaskRunID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     25,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceJobID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     26,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceJobRunID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     27,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceDefinitionID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     28,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	DestinationDefinitionID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     29,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	SourceCategory: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     30,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	EventName: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     31,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	EventType: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     32,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	MessageID: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     33,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	TransformAt: &objectbox.PropertyString{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     34,
+			Entity: &GatewayJobBinding.Entity,
+		},
+	},
+	RecordID: &objectbox.PropertyByteVector{
+		BaseProperty: &objectbox.BaseProperty{
+			Id:     35,
+			Entity: &GatewayJobBinding.Entity,
+		},
 	},
 }
 
@@ -169,30 +280,52 @@ func (gatewayJob_EntityInfo) GeneratorVersion() int {
 
 // AddToModel is called by ObjectBox during model build
 func (gatewayJob_EntityInfo) AddToModel(model *objectbox.Model) {
-	model.Entity("GatewayJob", 11, 7535172036551034281)
-	model.Property("JobID", 6, 1, 5143458760441539061)
+	model.Entity("GatewayJob", 11, 8983575162441289249)
+	model.Property("JobID", 6, 1, 789043973494019919)
 	model.PropertyFlags(1)
-	model.Property("UserID", 9, 2, 8998124193677116215)
-	model.Property("WorkspaceID", 9, 4, 4207858374913391455)
-	model.Property("CreatedAt", 10, 5, 655876097213894740)
-	model.Property("ExpireAt", 10, 6, 257177343896885499)
-	model.Property("EventCount", 6, 7, 7524534071422409018)
-	model.Property("EventPayload", 23, 8, 2323166441397103419)
-	model.Property("PayloadSize", 6, 9, 5387083218644166782)
-	model.Property("ExecTime", 10, 10, 4035491400602821353)
-	model.Property("RetryTime", 10, 11, 8234322648838789589)
-	model.Property("ErrorResponse", 23, 12, 2201414932138568655)
-	model.Property("SourceID", 9, 13, 615597211562445870)
-	model.Property("SourceBatchID", 9, 14, 1826099015080728190)
-	model.Property("SourceTaskID", 9, 15, 6993815264733201885)
-	model.Property("SourceTaskRunID", 9, 16, 7075223750815829428)
-	model.Property("SourceJobID", 9, 17, 99980625877429802)
-	model.Property("SourceJobRunID", 9, 18, 2497701676685710269)
-	model.Property("SourceDefinitionID", 9, 19, 1472550507374473002)
-	model.Property("JobState", 11, 22, 8762647828934847572)
-	model.PropertyFlags(520)
-	model.PropertyRelation("JobState", 32, 1840706778753093380)
-	model.EntityLastPropertyId(22, 8762647828934847572)
+	model.Property("UserID", 9, 2, 6351250238791673515)
+	model.Property("CustomVal", 9, 3, 674180012179557301)
+	model.PropertyFlags(2048)
+	model.PropertyIndex(11, 6899325090046731766)
+	model.Property("WorkspaceID", 9, 4, 9020652261408667992)
+	model.PropertyFlags(2048)
+	model.PropertyIndex(12, 2214883167717205299)
+	model.Property("ReceivedAt", 10, 5, 4332330838421034489)
+	model.Property("CreatedAt", 10, 6, 7921584148077040753)
+	model.Property("ExpireAt", 10, 7, 5965725136339787544)
+	model.Property("EventCount", 6, 8, 4791002015619641454)
+	model.Property("EventPayload", 23, 9, 253995693023954894)
+	model.Property("PayloadSize", 6, 10, 8147715355735398686)
+	model.Property("JobState", 9, 11, 1085896188999012878)
+	model.PropertyFlags(2048)
+	model.PropertyIndex(13, 7230476407062915113)
+	model.Property("Stage", 9, 12, 7336034814067846227)
+	model.PropertyFlags(2048)
+	model.PropertyIndex(14, 8888043941572274648)
+	model.Property("StatusCode", 6, 13, 8147725470459656638)
+	model.Property("AttemptNum", 6, 14, 3793112977013362345)
+	model.Property("FirstAttemptedAt", 10, 15, 6932036748442026711)
+	model.Property("ExecTime", 10, 16, 1232474605583436666)
+	model.Property("RetryTime", 10, 17, 5302169635131451762)
+	model.Property("ErrorResponse", 23, 18, 7095034305667563474)
+	model.Property("WriteKey", 9, 19, 8130298215864939603)
+	model.Property("IPAddress", 9, 20, 6226892702387744321)
+	model.Property("SourceID", 9, 21, 2907563310946296642)
+	model.Property("DestinationID", 9, 22, 2995053329389291345)
+	model.Property("SourceBatchID", 9, 23, 4064819716290424031)
+	model.Property("SourceTaskID", 9, 24, 2069755460011421807)
+	model.Property("SourceTaskRunID", 9, 25, 4869202125740458753)
+	model.Property("SourceJobID", 9, 26, 5077694453945093341)
+	model.Property("SourceJobRunID", 9, 27, 4518365308404908831)
+	model.Property("SourceDefinitionID", 9, 28, 285913776182025651)
+	model.Property("DestinationDefinitionID", 9, 29, 6812529101841799629)
+	model.Property("SourceCategory", 9, 30, 1144522436567163255)
+	model.Property("EventName", 9, 31, 3430988829732338860)
+	model.Property("EventType", 9, 32, 3356101081643654202)
+	model.Property("MessageID", 9, 33, 1257250103980808641)
+	model.Property("TransformAt", 9, 34, 2543207056438922206)
+	model.Property("RecordID", 23, 35, 37061741945093667)
+	model.EntityLastPropertyId(35, 37061741945093667)
 }
 
 // GetId is called by ObjectBox during Put operations to check for existing ID on an object
@@ -208,22 +341,21 @@ func (gatewayJob_EntityInfo) SetId(object interface{}, id uint64) error {
 
 // PutRelated is called by ObjectBox to put related entities before the object itself is flattened and put
 func (gatewayJob_EntityInfo) PutRelated(ob *objectbox.ObjectBox, object interface{}, id uint64) error {
-	if rel := object.(*GatewayJob).JobState; rel != nil {
-		if rId, err := JobStateBinding.GetId(rel); err != nil {
-			return err
-		} else if rId == 0 {
-			// NOTE Put/PutAsync() has a side-effect of setting the rel.ID
-			if _, err := BoxForJobState(ob).Put(rel); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
 // Flatten is called by ObjectBox to transform an object to a FlatBuffer
 func (gatewayJob_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builder, id uint64) error {
 	obj := object.(*GatewayJob)
+	var propReceivedAt int64
+	{
+		var err error
+		propReceivedAt, err = objectbox.TimeInt64ConvertToDatabaseValue(obj.ReceivedAt)
+		if err != nil {
+			return errors.New("converter objectbox.TimeInt64ConvertToDatabaseValue() failed on GatewayJob.ReceivedAt: " + err.Error())
+		}
+	}
+
 	var propCreatedAt int64
 	{
 		var err error
@@ -239,6 +371,15 @@ func (gatewayJob_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builde
 		propExpireAt, err = objectbox.TimeInt64ConvertToDatabaseValue(obj.ExpireAt)
 		if err != nil {
 			return errors.New("converter objectbox.TimeInt64ConvertToDatabaseValue() failed on GatewayJob.ExpireAt: " + err.Error())
+		}
+	}
+
+	var propFirstAttemptedAt int64
+	{
+		var err error
+		propFirstAttemptedAt, err = objectbox.TimeInt64ConvertToDatabaseValue(obj.FirstAttemptedAt)
+		if err != nil {
+			return errors.New("converter objectbox.TimeInt64ConvertToDatabaseValue() failed on GatewayJob.FirstAttemptedAt: " + err.Error())
 		}
 	}
 
@@ -261,49 +402,67 @@ func (gatewayJob_EntityInfo) Flatten(object interface{}, fbb *flatbuffers.Builde
 	}
 
 	var offsetUserID = fbutils.CreateStringOffset(fbb, obj.UserID)
+	var offsetCustomVal = fbutils.CreateStringOffset(fbb, obj.CustomVal)
 	var offsetWorkspaceID = fbutils.CreateStringOffset(fbb, obj.WorkspaceID)
 	var offsetEventPayload = fbutils.CreateByteVectorOffset(fbb, []byte(obj.EventPayload))
+	var offsetJobState = fbutils.CreateStringOffset(fbb, obj.JobState)
+	var offsetStage = fbutils.CreateStringOffset(fbb, obj.Stage)
 	var offsetErrorResponse = fbutils.CreateByteVectorOffset(fbb, []byte(obj.ErrorResponse))
+	var offsetWriteKey = fbutils.CreateStringOffset(fbb, obj.WriteKey)
+	var offsetIPAddress = fbutils.CreateStringOffset(fbb, obj.IPAddress)
 	var offsetSourceID = fbutils.CreateStringOffset(fbb, obj.SourceID)
+	var offsetDestinationID = fbutils.CreateStringOffset(fbb, obj.DestinationID)
 	var offsetSourceBatchID = fbutils.CreateStringOffset(fbb, obj.SourceBatchID)
 	var offsetSourceTaskID = fbutils.CreateStringOffset(fbb, obj.SourceTaskID)
 	var offsetSourceTaskRunID = fbutils.CreateStringOffset(fbb, obj.SourceTaskRunID)
 	var offsetSourceJobID = fbutils.CreateStringOffset(fbb, obj.SourceJobID)
 	var offsetSourceJobRunID = fbutils.CreateStringOffset(fbb, obj.SourceJobRunID)
 	var offsetSourceDefinitionID = fbutils.CreateStringOffset(fbb, obj.SourceDefinitionID)
-
-	var rIdJobState uint64
-	if rel := obj.JobState; rel != nil {
-		if rId, err := JobStateBinding.GetId(rel); err != nil {
-			return err
-		} else {
-			rIdJobState = rId
-		}
-	}
+	var offsetDestinationDefinitionID = fbutils.CreateStringOffset(fbb, obj.DestinationDefinitionID)
+	var offsetSourceCategory = fbutils.CreateStringOffset(fbb, obj.SourceCategory)
+	var offsetEventName = fbutils.CreateStringOffset(fbb, obj.EventName)
+	var offsetEventType = fbutils.CreateStringOffset(fbb, obj.EventType)
+	var offsetMessageID = fbutils.CreateStringOffset(fbb, obj.MessageID)
+	var offsetTransformAt = fbutils.CreateStringOffset(fbb, obj.TransformAt)
+	var offsetRecordID = fbutils.CreateByteVectorOffset(fbb, []byte(obj.RecordID))
 
 	// build the FlatBuffers object
-	fbb.StartObject(22)
+	fbb.StartObject(35)
 	fbutils.SetUint64Slot(fbb, 0, id)
 	fbutils.SetUOffsetTSlot(fbb, 1, offsetUserID)
-	if obj.JobState != nil {
-		fbutils.SetUint64Slot(fbb, 21, rIdJobState)
-	}
+	fbutils.SetUOffsetTSlot(fbb, 2, offsetCustomVal)
 	fbutils.SetUOffsetTSlot(fbb, 3, offsetWorkspaceID)
-	fbutils.SetInt64Slot(fbb, 4, propCreatedAt)
-	fbutils.SetInt64Slot(fbb, 5, propExpireAt)
-	fbutils.SetInt64Slot(fbb, 6, int64(obj.EventCount))
-	fbutils.SetUOffsetTSlot(fbb, 7, offsetEventPayload)
-	fbutils.SetInt64Slot(fbb, 8, obj.PayloadSize)
-	fbutils.SetInt64Slot(fbb, 9, propExecTime)
-	fbutils.SetInt64Slot(fbb, 10, propRetryTime)
-	fbutils.SetUOffsetTSlot(fbb, 11, offsetErrorResponse)
-	fbutils.SetUOffsetTSlot(fbb, 12, offsetSourceID)
-	fbutils.SetUOffsetTSlot(fbb, 13, offsetSourceBatchID)
-	fbutils.SetUOffsetTSlot(fbb, 14, offsetSourceTaskID)
-	fbutils.SetUOffsetTSlot(fbb, 15, offsetSourceTaskRunID)
-	fbutils.SetUOffsetTSlot(fbb, 16, offsetSourceJobID)
-	fbutils.SetUOffsetTSlot(fbb, 17, offsetSourceJobRunID)
-	fbutils.SetUOffsetTSlot(fbb, 18, offsetSourceDefinitionID)
+	fbutils.SetInt64Slot(fbb, 4, propReceivedAt)
+	fbutils.SetInt64Slot(fbb, 5, propCreatedAt)
+	fbutils.SetInt64Slot(fbb, 6, propExpireAt)
+	fbutils.SetInt64Slot(fbb, 7, int64(obj.EventCount))
+	fbutils.SetUOffsetTSlot(fbb, 8, offsetEventPayload)
+	fbutils.SetInt64Slot(fbb, 9, obj.PayloadSize)
+	fbutils.SetUOffsetTSlot(fbb, 10, offsetJobState)
+	fbutils.SetUOffsetTSlot(fbb, 11, offsetStage)
+	fbutils.SetInt64Slot(fbb, 12, int64(obj.StatusCode))
+	fbutils.SetInt64Slot(fbb, 13, int64(obj.AttemptNum))
+	fbutils.SetInt64Slot(fbb, 14, propFirstAttemptedAt)
+	fbutils.SetInt64Slot(fbb, 15, propExecTime)
+	fbutils.SetInt64Slot(fbb, 16, propRetryTime)
+	fbutils.SetUOffsetTSlot(fbb, 17, offsetErrorResponse)
+	fbutils.SetUOffsetTSlot(fbb, 18, offsetWriteKey)
+	fbutils.SetUOffsetTSlot(fbb, 19, offsetIPAddress)
+	fbutils.SetUOffsetTSlot(fbb, 20, offsetSourceID)
+	fbutils.SetUOffsetTSlot(fbb, 21, offsetDestinationID)
+	fbutils.SetUOffsetTSlot(fbb, 22, offsetSourceBatchID)
+	fbutils.SetUOffsetTSlot(fbb, 23, offsetSourceTaskID)
+	fbutils.SetUOffsetTSlot(fbb, 24, offsetSourceTaskRunID)
+	fbutils.SetUOffsetTSlot(fbb, 25, offsetSourceJobID)
+	fbutils.SetUOffsetTSlot(fbb, 26, offsetSourceJobRunID)
+	fbutils.SetUOffsetTSlot(fbb, 27, offsetSourceDefinitionID)
+	fbutils.SetUOffsetTSlot(fbb, 28, offsetDestinationDefinitionID)
+	fbutils.SetUOffsetTSlot(fbb, 29, offsetSourceCategory)
+	fbutils.SetUOffsetTSlot(fbb, 30, offsetEventName)
+	fbutils.SetUOffsetTSlot(fbb, 31, offsetEventType)
+	fbutils.SetUOffsetTSlot(fbb, 32, offsetMessageID)
+	fbutils.SetUOffsetTSlot(fbb, 33, offsetTransformAt)
+	fbutils.SetUOffsetTSlot(fbb, 34, offsetRecordID)
 	return nil
 }
 
@@ -320,55 +479,72 @@ func (gatewayJob_EntityInfo) Load(ob *objectbox.ObjectBox, bytes []byte) (interf
 
 	var propJobID = table.GetUint64Slot(4, 0)
 
-	propCreatedAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 12))
+	propReceivedAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 12))
+	if err != nil {
+		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.ReceivedAt: " + err.Error())
+	}
+
+	propCreatedAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 14))
 	if err != nil {
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.CreatedAt: " + err.Error())
 	}
 
-	propExpireAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 14))
+	propExpireAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 16))
 	if err != nil {
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.ExpireAt: " + err.Error())
 	}
 
-	propExecTime, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 22))
+	propFirstAttemptedAt, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 32))
+	if err != nil {
+		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.FirstAttemptedAt: " + err.Error())
+	}
+
+	propExecTime, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 34))
 	if err != nil {
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.ExecTime: " + err.Error())
 	}
 
-	propRetryTime, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 24))
+	propRetryTime, err := objectbox.TimeInt64ConvertToEntityProperty(fbutils.GetInt64Slot(table, 36))
 	if err != nil {
 		return nil, errors.New("converter objectbox.TimeInt64ConvertToEntityProperty() failed on GatewayJob.RetryTime: " + err.Error())
 	}
 
-	var relJobState *JobState
-	if rId := fbutils.GetUint64PtrSlot(table, 46); rId != nil && *rId > 0 {
-		if rObject, err := BoxForJobState(ob).Get(*rId); err != nil {
-			return nil, err
-		} else {
-			relJobState = rObject
-		}
-	}
-
 	return &GatewayJob{
-		JobID:              propJobID,
-		UserID:             fbutils.GetStringSlot(table, 6),
-		JobState:           relJobState,
-		WorkspaceID:        fbutils.GetStringSlot(table, 10),
-		CreatedAt:          propCreatedAt,
-		ExpireAt:           propExpireAt,
-		EventCount:         fbutils.GetIntSlot(table, 16),
-		EventPayload:       json.RawMessage(fbutils.GetByteVectorSlot(table, 18)),
-		PayloadSize:        fbutils.GetInt64Slot(table, 20),
-		ExecTime:           propExecTime,
-		RetryTime:          propRetryTime,
-		ErrorResponse:      json.RawMessage(fbutils.GetByteVectorSlot(table, 26)),
-		SourceID:           fbutils.GetStringSlot(table, 28),
-		SourceBatchID:      fbutils.GetStringSlot(table, 30),
-		SourceTaskID:       fbutils.GetStringSlot(table, 32),
-		SourceTaskRunID:    fbutils.GetStringSlot(table, 34),
-		SourceJobID:        fbutils.GetStringSlot(table, 36),
-		SourceJobRunID:     fbutils.GetStringSlot(table, 38),
-		SourceDefinitionID: fbutils.GetStringSlot(table, 40),
+		JobID:                   propJobID,
+		UserID:                  fbutils.GetStringSlot(table, 6),
+		CustomVal:               fbutils.GetStringSlot(table, 8),
+		WorkspaceID:             fbutils.GetStringSlot(table, 10),
+		ReceivedAt:              propReceivedAt,
+		CreatedAt:               propCreatedAt,
+		ExpireAt:                propExpireAt,
+		EventCount:              fbutils.GetIntSlot(table, 18),
+		EventPayload:            json.RawMessage(fbutils.GetByteVectorSlot(table, 20)),
+		PayloadSize:             fbutils.GetInt64Slot(table, 22),
+		JobState:                fbutils.GetStringSlot(table, 24),
+		Stage:                   fbutils.GetStringSlot(table, 26),
+		StatusCode:              fbutils.GetIntSlot(table, 28),
+		AttemptNum:              fbutils.GetIntSlot(table, 30),
+		FirstAttemptedAt:        propFirstAttemptedAt,
+		ExecTime:                propExecTime,
+		RetryTime:               propRetryTime,
+		ErrorResponse:           json.RawMessage(fbutils.GetByteVectorSlot(table, 38)),
+		WriteKey:                fbutils.GetStringSlot(table, 40),
+		IPAddress:               fbutils.GetStringSlot(table, 42),
+		SourceID:                fbutils.GetStringSlot(table, 44),
+		DestinationID:           fbutils.GetStringSlot(table, 46),
+		SourceBatchID:           fbutils.GetStringSlot(table, 48),
+		SourceTaskID:            fbutils.GetStringSlot(table, 50),
+		SourceTaskRunID:         fbutils.GetStringSlot(table, 52),
+		SourceJobID:             fbutils.GetStringSlot(table, 54),
+		SourceJobRunID:          fbutils.GetStringSlot(table, 56),
+		SourceDefinitionID:      fbutils.GetStringSlot(table, 58),
+		DestinationDefinitionID: fbutils.GetStringSlot(table, 60),
+		SourceCategory:          fbutils.GetStringSlot(table, 62),
+		EventName:               fbutils.GetStringSlot(table, 64),
+		EventType:               fbutils.GetStringSlot(table, 66),
+		MessageID:               fbutils.GetStringSlot(table, 68),
+		TransformAt:             fbutils.GetStringSlot(table, 70),
+		RecordID:                json.RawMessage(fbutils.GetByteVectorSlot(table, 72)),
 	}, nil
 }
 

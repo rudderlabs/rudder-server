@@ -29,8 +29,8 @@ func ObjectBoxModel() *objectbox.Model {
 	model.RegisterBinding(WorkspaceIDBinding)
 	model.RegisterBinding(JobBinding)
 	model.RegisterBinding(EventTypeBinding)
-	model.LastEntityId(17, 6231449756449352834)
-	model.LastIndexId(46, 1105806168230230020)
+	model.LastEntityId(17, 1616492230962622733)
+	model.LastIndexId(33, 4540676276401439000)
 
 	return model
 }

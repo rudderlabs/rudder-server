@@ -116,7 +116,7 @@ func rudderCoreBaseSetup() {
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
-	transientSources transientsource.Service,
+	transientSources transientsource.Service, box *objectdb.Box,
 ) {
 	if !processorLoaded.First() {
 		pkgLogger.Debug("processor started by an other go routine")
@@ -124,7 +124,7 @@ func StartProcessor(
 	}
 
 	var processorInstance = processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, box)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
