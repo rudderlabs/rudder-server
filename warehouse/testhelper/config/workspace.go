@@ -9,24 +9,8 @@ import (
 )
 
 func main() {
-	createWorkspaceConfig()
-}
+	log.Println("Started populating workspace config for warehouse integration tests")
 
-func credentialsFromEnv(env string) (credentials map[string]string) {
-	cred := os.Getenv(env)
-	if cred == "" {
-		log.Panicf("Error occurred while getting env variable %s", env)
-	}
-
-	var err error
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		log.Panicf("Error occurred while unmarshalling env variable %s test credentials with error: %s", env, err.Error())
-	}
-	return
-}
-
-func createWorkspaceConfig() {
 	values := map[string]string{}
 
 	log.Println("Populating snowflake credentials")
@@ -67,4 +51,20 @@ func createWorkspaceConfig() {
 	if err != nil {
 		log.Panicf("Error occurred while setting env for config json path with error: %s", err.Error())
 	}
+
+	log.Println("Completed populating workspace config for warehouse integration tests")
+}
+
+func credentialsFromEnv(env string) (credentials map[string]string) {
+	cred := os.Getenv(env)
+	if cred == "" {
+		log.Panicf("Error occurred while getting env variable %s", env)
+	}
+
+	var err error
+	err = json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		log.Panicf("Error occurred while unmarshalling env variable %s test credentials with error: %s", env, err.Error())
+	}
+	return
 }
