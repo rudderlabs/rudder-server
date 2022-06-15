@@ -83,5 +83,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration
 
 run-warehouse-integration: setup-warehouse-integration
+	go clean -testcache
 	go test -v github.com/rudderlabs/rudder-server/warehouse/... -p 1 -timeout 30m
+	docker-compose -f warehouse/docker-compose.test.yml logs
 	make cleanup-warehouse-integration
