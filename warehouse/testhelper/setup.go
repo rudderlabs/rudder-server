@@ -52,18 +52,58 @@ func Run(m *testing.M, setup ISetup) int {
 		return 0
 	}
 
-	if err := godotenv.Load("../testhelper/docker.env"); err != nil {
-		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
-	}
+	loadEnv()
 
 	initialize()
 
-	jobsDB = SetUpJobsDB()
+	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 
 	setup.SetUpDestination()
 
 	return m.Run()
+}
+
+func loadEnv() {
+	if err := godotenv.Load("../testhelper/.env"); err != nil {
+		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
+	}
+}
+
+func initialize() {
+	config.Load()
+	logger.Init()
+	stats.Init()
+	stats.Setup()
+	postgres.Init()
+	clickhouse.Init()
+	mssql.Init()
+	bigquery.Init()
+	snowflake.Init()
+	redshift.Init()
+	deltalake.Init()
+}
+
+func setUpJobsDB() (jobsDB *JobsDBResource) {
+	pgCredentials := &postgres.CredentialsT{
+		DBName:   "jobsdb",
+		Password: "password",
+		User:     "rudder",
+		Host:     "localhost",
+		SSLMode:  "disable",
+		Port:     "54328",
+	}
+	jobsDB = &JobsDBResource{}
+	jobsDB.Credentials = pgCredentials
+
+	var err error
+	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
+		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
+	}
+	if err = jobsDB.DB.Ping(); err != nil {
+		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
+	}
+	return
 }
 
 func enhanceJobsDBWithSQLFunctions() {
@@ -217,40 +257,4 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
-}
-
-func SetUpJobsDB() (jobsDB *JobsDBResource) {
-	pgCredentials := &postgres.CredentialsT{
-		DBName:   "jobsdb",
-		Password: "password",
-		User:     "rudder",
-		Host:     "localhost",
-		SSLMode:  "disable",
-		Port:     "54328",
-	}
-	jobsDB = &JobsDBResource{}
-	jobsDB.Credentials = pgCredentials
-
-	var err error
-	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
-		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
-	}
-	if err = jobsDB.DB.Ping(); err != nil {
-		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
-	}
-	return
-}
-
-func initialize() {
-	config.Load()
-	logger.Init()
-	stats.Init()
-	stats.Setup()
-	postgres.Init()
-	clickhouse.Init()
-	mssql.Init()
-	bigquery.Init()
-	snowflake.Init()
-	redshift.Init()
-	deltalake.Init()
 }
