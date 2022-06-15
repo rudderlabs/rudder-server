@@ -1,12 +1,12 @@
+//go:build integration
+
 package jobsdb
 
 import (
-	"fmt"
-
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo/v2"
-
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -87,16 +87,4 @@ var userJobs = []*JobT{
 		UUID:         uuid.Must(uuid.NewV4()),
 		CustomVal:    "MOCKDS",
 	},
-}
-
-var jobsForUser = func() string {
-	var userJobList string
-	for _, userjob := range userJobs {
-		userJobList += fmt.Sprint(userjob.JobID) + "\n"
-	}
-	return userJobList
-}
-
-var jobsForUser2 = func() string {
-	return fmt.Sprint(userJobs[len(userJobs)-1].JobID) + "\n"
 }

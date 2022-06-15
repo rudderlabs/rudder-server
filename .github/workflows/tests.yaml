@@ -26,7 +26,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - name: Integration test
-      run: go test -v ./docker_test.go -integration -count 1 -short
+      run: go test -v ./docker_test.go -slow -tags=integration -count 1 -short
       env:
         RSERVER_ENABLE_MULTITENANCY: false
 
@@ -61,7 +61,7 @@ jobs:
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: make enterprise-init
     - name: Integration test
-      run: go test -v ./docker_test.go -integration -count 1 -short
+      run: go test -v ./docker_test.go -slow -tags=integration -count 1 -short
       env:
         RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
 
