@@ -295,8 +295,9 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	}
 	convertToAvro := destConfig.ConvertToAvro
 	avroSchema := destConfig.avroSchema
-	codecs := make([]goavro.Codec, len(avroSchema))
+	var codecs []goavro.Codec
 	if convertToAvro {
+		codecs = make([]goavro.Codec, len(avroSchema))
 		for i, avroSchema := range avroSchema {
 			tempCodec, err := goavro.NewCodec(avroSchema.avroSchema)
 			if err != nil {
@@ -474,7 +475,7 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 			return nil, err
 		}
 		codec := p.getCodecs()
-		if codec != nil {
+		if len(codec) > 0 {
 			marshalledMsg, err = serialize(marshalledMsg, codec)
 			if err != nil {
 				return messages, err
@@ -573,7 +574,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
 	codec := p.getCodecs()
-	if codec != nil {
+	if len(codec) > 0 {
 		value, err = serialize(value, codec)
 		if err != nil {
 			return makeErrorResponse(err)
