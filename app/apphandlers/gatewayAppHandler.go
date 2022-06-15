@@ -41,6 +41,12 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %w", deploymentType)
+
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
@@ -72,12 +78,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	var modeProvider cluster.ChangeEventProvider
 
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
-
 	switch deploymentType {
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
@@ -107,7 +107,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		rsourcesService, err := NewRsourcesService()
+		rsourcesService, err := NewRsourcesService(deploymentType)
 		if err != nil {
 			return err
 		}

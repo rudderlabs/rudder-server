@@ -227,7 +227,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
-func NewRsourcesService() (rsources.JobService, error) {
+func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
 	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
@@ -244,10 +244,6 @@ func NewRsourcesService() (rsources.JobService, error) {
 		rsourcesConfig.SharedConn = sharedConn
 	}
 
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get deployment type: %w", err)
-	}
 	switch deploymentType {
 	case deployment.HostedType, deployment.MultiTenantType:
 		// For specific deployment types we shall require the existence of a SHARED_DB

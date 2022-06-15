@@ -79,6 +79,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %w", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
 	//Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
@@ -100,7 +106,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
-	rsourcesService, err := NewRsourcesService()
+	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
 		return err
 	}
@@ -195,12 +201,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}
 	}
 	var modeProvider cluster.ChangeEventProvider
-
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
 	switch deploymentType {
 	case deployment.MultiTenantType:
