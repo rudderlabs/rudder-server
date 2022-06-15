@@ -1,9 +1,12 @@
 package warehouseutils_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -128,6 +131,29 @@ var _ = Describe("Utils", func() {
 		It("should correctly apply double quotes and join by Commna ", func() {
 			values := []string{"column1", "column2", "column3", "column4", "column5", "column6", "column7"}
 			Expect(DoubleQuoteAndJoinByComma(values)).To(Equal(`"column1","column2","column3","column4","column5","column6","column7"`))
+		})
+	})
+
+	Describe("Time window warehouse destinations", func() {
+		It("should give time window format based on warehouse destination type", func() {
+			var warehouse = WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: make(map[string]interface{}),
+				},
+			}
+			warehouse.Destination.Config["tableSuffix"] = "key=val"
+			timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
+
+			warehouse.Type = S3_DATALAKE
+			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("2022/08/06/14"))
+
+			warehouse.Type = AZURE_DATALAKE
+			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("2022/08/06/14"))
+
+			warehouse.Type = GCS_DATALAKE
+			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("key=val/2022/08/06/14"))
+			warehouse.Destination.Config["timeWindowLayout"] = "year=2006/month=01/day=02/hour=15"
+			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("key=val/year=2022/month=08/day=06/hour=14"))
 		})
 	})
 

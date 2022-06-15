@@ -15,6 +15,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
@@ -179,6 +180,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
 	defer gwDB.Close()
@@ -199,7 +201,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -214,6 +216,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         tDb,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reportingNOOP{},
@@ -222,13 +225,22 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         brtDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
-		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(
+		ctx context.Context, topic backendConfig.Topic) pubsub.DataChannel {
+
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+
+		go func() {
+			<-ctx.Done()
+			close(ch)
+		}()
+
+		return ch
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),

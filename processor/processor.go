@@ -36,12 +36,12 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -76,6 +76,7 @@ type HandleT struct {
 	stats               processorStats
 	payloadLimit        int64
 	transientSources    transientsource.Service
+	rsourcesService     rsources.JobService
 }
 
 type processorStats struct {
@@ -302,6 +303,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB,
 	batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
+	rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -320,6 +322,7 @@ func (proc *HandleT) Setup(
 	proc.errorDB = errorDB
 
 	proc.transientSources = transientSources
+	proc.rsourcesService = rsourcesService
 
 	// Stats
 	proc.statsFactory = stats.DefaultStats
@@ -581,10 +584,8 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
-	for {
-		config := <-ch
+	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
@@ -1419,6 +1420,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 		start,
 
 		subJobs.hasMore,
+		subJobs.rsourcesStats,
 	}
 }
 
@@ -1437,7 +1439,8 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	hasMore bool
+	hasMore       bool
+	rsourcesStats rsources.StatsCollector
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1507,6 +1510,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		in.totalEvents,
 		in.start,
 		in.hasMore,
+		in.rsourcesStats,
 	}
 }
 
@@ -1525,7 +1529,8 @@ type storeMessage struct {
 	totalEvents int
 	start       time.Time
 
-	hasMore bool
+	hasMore       bool
+	rsourcesStats rsources.StatsCollector
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -1547,12 +1552,25 @@ func (proc *HandleT) Store(in storeMessage) {
 	//XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		err := proc.batchRouterDB.Store(batchDestJobs)
+
+		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			err := proc.batchRouterDB.StoreInTx(tx, batchDestJobs)
+			if err != nil {
+				return fmt.Errorf("storing batch router jobs: %w", err)
+			}
+
+			// rsources stats
+			err = proc.updateRudderSourcesStats(context.TODO(), tx, batchDestJobs)
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+			}
+			return nil
+		})
+
 		if err != nil {
-			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
-			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
 			panic(err)
 		}
+
 		totalPayloadBatchBytes := 0
 		processorLoopStats["batch_router"] = make(map[string]map[string]int)
 		for i := range batchDestJobs {
@@ -1572,11 +1590,20 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			err := proc.routerDB.StoreInTx(tx, destJobs)
+			if err != nil {
+				return fmt.Errorf("storing router jobs: %w", err)
+			}
 
-		err := proc.routerDB.Store(destJobs)
+			// rsources stats
+			err = proc.updateRudderSourcesStats(context.TODO(), tx, destJobs)
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats for router: %w", err)
+			}
+			return nil
+		})
 		if err != nil {
-			proc.logger.Errorf("Store into router table failed with error: %v", err)
-			proc.logger.Errorf("destJobs: %v", destJobs)
 			panic(err)
 		}
 		totalPayloadRouterBytes := 0
@@ -1613,12 +1640,18 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	txnStart := time.Now()
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-
 		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
 		if err != nil {
-			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
-			return err
+			return fmt.Errorf("updating gateway jobs statuses: %w", err)
 		}
+
+		// rsources stats
+		in.rsourcesStats.JobStatusesUpdated(statusList)
+		err = in.rsourcesStats.Publish(context.TODO(), tx.Tx())
+		if err != nil {
+			return fmt.Errorf("publishing rsources stats: %w", err)
+		}
+
 		if proc.isReportingEnabled() {
 			proc.reporting.Report(in.reportMetrics, tx.Tx())
 		}
@@ -2202,11 +2235,15 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		return false
 	}
 
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
+
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(subJob{
-				subJobs: unprocessedList.Jobs,
-				hasMore: false,
+				subJobs:       unprocessedList.Jobs,
+				hasMore:       false,
+				rsourcesStats: rsourcesStats,
 			}, nil),
 		),
 	)
@@ -2253,11 +2290,12 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 //So, to keep track of sub-batch we have `hasMore` variable.
 //each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
-	subJobs []*jobsdb.JobT
-	hasMore bool
+	subJobs       []*jobsdb.JobT
+	hasMore       bool
+	rsourcesStats rsources.StatsCollector
 }
 
-func jobSplitter(jobs []*jobsdb.JobT) []subJob {
+func jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
 	subJobCount := 1
 	if len(jobs)/subJobSize > 1 {
 		subJobCount = len(jobs) / subJobSize
@@ -2270,14 +2308,16 @@ func jobSplitter(jobs []*jobsdb.JobT) []subJob {
 		if i == subJobCount-1 {
 			//all the remaining jobs are sent in last sub-job batch.
 			subJobs = append(subJobs, subJob{
-				subJobs: jobs,
-				hasMore: false,
+				subJobs:       jobs,
+				hasMore:       false,
+				rsourcesStats: rsourcesStats,
 			})
 			continue
 		}
 		subJobs = append(subJobs, subJob{
-			subJobs: jobs[:subJobSize],
-			hasMore: true,
+			subJobs:       jobs[:subJobSize],
+			hasMore:       true,
+			rsourcesStats: rsourcesStats,
 		})
 		jobs = jobs[subJobSize:]
 	}
@@ -2317,6 +2357,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 				dbReadStart := time.Now()
 				jobs := proc.getJobs()
+				rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+				rsourcesStats.BeginProcessing(jobs.Jobs)
 				if len(jobs.Jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
@@ -2343,7 +2385,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
 				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
-				subJobs := jobSplitter(jobs.Jobs)
+				subJobs := jobSplitter(jobs.Jobs, rsourcesStats)
 				for _, subJob := range subJobs {
 					chProc <- subJob
 				}
@@ -2386,6 +2428,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 			if firstSubJob {
 				mergedJob = storeMessage{}
+				mergedJob.rsourcesStats = subJob.rsourcesStats
 				mergedJob.uniqueMessageIds = make(map[string]struct{})
 				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 				mergedJob.sourceDupStats = make(map[string]int)
@@ -2449,4 +2492,11 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 
 func (proc *HandleT) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
+}
+
+func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats.JobsStored(jobs)
+	err := rsourcesStats.Publish(ctx, tx.Tx())
+	return err
 }

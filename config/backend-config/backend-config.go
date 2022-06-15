@@ -207,24 +207,17 @@ type BackendConfig interface {
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
-	Subscribe(channel chan pubsub.DataEvent, topic Topic)
+	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(workspaces string)
 	IsConfigured() bool
 }
 type CommonBackendConfig struct {
-	eb               pubsub.PublishSubscriber
+	eb               *pubsub.PublishSubscriber
 	configEnvHandler types.ConfigEnvI
 	ctx              context.Context
 	cancel           context.CancelFunc
 	blockChan        chan struct{}
-	once             sync.Once
-}
-
-func (bc *CommonBackendConfig) init() {
-	bc.once.Do(func() {
-		bc.eb = pubsub.NewPublishSubscriber(context.TODO())
-	})
 }
 
 func loadConfig() {
@@ -284,7 +277,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func configUpdate(eb pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
+func configUpdate(eb *pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
 
 	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
@@ -313,7 +306,7 @@ func configUpdate(eb pubsub.PublishSubscriber, statConfigBackendError stats.Rudd
 	}
 }
 
-func pollConfigUpdate(ctx context.Context, eb pubsub.PublishSubscriber, workspaces string) {
+func pollConfigUpdate(ctx context.Context, eb *pubsub.PublishSubscriber, workspaces string) {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		configUpdate(eb, statConfigBackendError, workspaces)
@@ -345,8 +338,8 @@ func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func Subscribe(channel chan pubsub.DataEvent, topic Topic) {
-	backendConfig.Subscribe(channel, topic)
+func Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
+	return backendConfig.Subscribe(ctx, topic)
 }
 
 /*
@@ -358,8 +351,8 @@ Available topics are:
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receeive all regulations
 */
-func (bc *CommonBackendConfig) Subscribe(channel chan pubsub.DataEvent, topic Topic) {
-	bc.eb.Subscribe(string(topic), channel)
+func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
+	return bc.eb.Subscribe(ctx, string(topic))
 }
 
 /*
@@ -399,14 +392,20 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		backendConfig = &SingleWorkspaceConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
+				eb:               pubsub.New(),
 			},
 		}
 	case deployment.HostedType:
-		backendConfig = &HostedWorkspacesConfig{}
+		backendConfig = &HostedWorkspacesConfig{
+			CommonBackendConfig: CommonBackendConfig{
+				eb: pubsub.New(),
+			},
+		}
 	case deployment.MultiTenantType:
 		backendConfig = &MultiTenantWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
+				eb:               pubsub.New(),
 			},
 		}
 	// Fallback to dedicated
@@ -441,7 +440,6 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
-	bc.init()
 	ctx, cancel := context.WithCancel(context.Background())
 	bc.ctx = ctx
 	bc.cancel = cancel

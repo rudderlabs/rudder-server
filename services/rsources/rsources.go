@@ -17,9 +17,9 @@ type JobFilter struct {
 }
 
 type JobTargetKey struct {
-	TaskRunID     string
-	SourceID      string
-	DestinationID string
+	TaskRunID     string `json:"source_task_run_id"`
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 type Stats struct {
@@ -73,18 +73,22 @@ type FailedRecords struct{}
 
 var StatusNotFoundError = errors.New("Status not found")
 
+// StatsIncrementer increments stats
+type StatsIncrementer interface {
+	// IncrementStats increments the existing statistic counters
+	// for a specific job measurement.
+	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
+}
+
 // JobService manages information about jobs created by rudder-sources
 type JobService interface {
+	StatsIncrementer
 
 	// Delete deletes all relevant information for a given jobRunId
 	Delete(ctx context.Context, jobRunId string) error
 
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
-
-	// IncrementStats increments the existing statistic counters
-	// for a specific job measurement.
-	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
 
 	// TODO: future extension
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error

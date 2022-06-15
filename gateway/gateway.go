@@ -17,38 +17,36 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/gateway/webhook"
-	"github.com/rudderlabs/rudder-server/middleware"
-	"github.com/rudderlabs/rudder-server/router"
-	recovery "github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bugsnag/bugsnag-go/v2"
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/middleware"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	recovery "github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
-
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 /*
@@ -81,7 +79,7 @@ var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort         int
 	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes, maxConcurrentRequests int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
-	enabledWriteKeysSourceMap                                                         map[string]backendconfig.SourceT
+	writeKeysSourceMap                                                                map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                         map[string]string
 	enabledWriteKeyWorkspaceMap                                                       map[string]string
 	sourceIDToNameMap                                                                 map[string]string
@@ -310,16 +308,25 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
-
-		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		} else {
-			err := gateway.jobsDB.Store(jobList)
-			if err != nil {
-				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
-				gateway.logger.Errorf("JobList: %+v", jobList)
-				panic(err)
+		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			if gwAllowPartialWriteWithErrors {
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(tx, jobList)
+			} else {
+				err := gateway.jobsDB.StoreInTx(tx, jobList)
+				if err != nil {
+					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
+					gateway.logger.Errorf("JobList: %+v", jobList)
+					return err
+				}
 			}
+
+			// rsources stats
+			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
+			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
+			return rsourcesStats.Publish(context.TODO(), tx.Tx())
+		})
+		if err != nil {
+			panic(err)
 		}
 		gateway.dbWritesStat.Count(1)
 
@@ -467,8 +474,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
-			if !gateway.isWriteKeyEnabled(writeKey) {
+
+			if !gateway.isValidWriteKey(writeKey) {
 				req.done <- response.GetStatus(response.InvalidWriteKey)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				continue
+			}
+
+			if !gateway.isWriteKeyEnabled(writeKey) {
+				req.done <- response.GetStatus(response.SourceDisabled)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
@@ -566,13 +582,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, string(body))
-			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
+			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str   // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
+			sourcesTaskRunID := gjson.GetBytes(body, "batch.0.context.sources.task_run_id").Str // pick the task_run_id from the first event of batch. We are assuming task_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.Must(uuid.NewV4())
 
 			params := map[string]interface{}{
-				"source_id":         sourceID,
-				"batch_id":          counter,
-				"source_job_run_id": sourcesJobRunID,
+				"source_id":          sourceID,
+				"batch_id":           counter,
+				"source_job_run_id":  sourcesJobRunID,
+				"source_task_run_id": sourcesTaskRunID,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {
@@ -643,20 +661,27 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 }
 
+func (gateway *HandleT) isValidWriteKey(writeKey string) bool {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	_, ok := writeKeysSourceMap[writeKey]
+	return ok
+}
+
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	_, ok := enabledWriteKeysSourceMap[writeKey]
-	return ok
+	return writeKeysSourceMap[writeKey].Enabled
 }
 
 func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
-		return enabledWriteKeysSourceMap[writeKey].ID
+	if _, ok := writeKeysSourceMap[writeKey]; ok {
+		return writeKeysSourceMap[writeKey].ID
 	}
 
 	return ""
@@ -666,8 +691,8 @@ func (gateway *HandleT) getSourceNameForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
-	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
-		return enabledWriteKeysSourceMap[writeKey].Name
+	if _, ok := writeKeysSourceMap[writeKey]; ok {
+		return writeKeysSourceMap[writeKey].Name
 	}
 
 	return "-notFound-"
@@ -1050,7 +1075,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
-		return []byte{}, writeKey, fmt.Errorf("read payload from request: %w", err)
+		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
 }
@@ -1073,13 +1098,8 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			if strings.Contains(errorMessage, response.GetStatus(response.TooManyRequests)) {
-				gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, http.StatusTooManyRequests, errorMessage)
-				http.Error(w, errorMessage, http.StatusTooManyRequests)
-				return
-			}
-			gateway.logger.Infof("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage)
-			http.Error(w, errorMessage, 400)
+			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatusCode(errorMessage), errorMessage)
+			http.Error(w, errorMessage, response.GetStatusCode(errorMessage))
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1124,7 +1144,6 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
 func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	errorMessage := ""
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
@@ -1135,50 +1154,52 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 		gateway.addToWebRequestQ(w, r, done, "batch", usersPayload[key], writeKey)
 	}
 
-	interimMsgs := []string{}
+	var interimMsgs []string
 	for index := 0; index < count; index++ {
 		interimErrorMessage := <-done
 		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}
-	errorMessage = strings.Join(interimMsgs[:], "")
-
-	return errorMessage
+	return strings.Join(interimMsgs, "")
 }
 
+// for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
-	userMap := make(map[string][][]byte)
-	var index int
-
 	if !gjson.ValidBytes(requestPayload) {
 		return make(map[string][]byte), errors.New(response.InvalidJSON)
 	}
 
 	result := gjson.GetBytes(requestPayload, "batch")
 
-	result.ForEach(func(_, _ gjson.Result) bool {
-		anonIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
-		userIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.userId`, index)).String())
+	var (
+		userCnt = make(map[string]int)
+		userMap = make(map[string][]byte)
+	)
+	result.ForEach(func(_, value gjson.Result) bool {
+		anonIDFromReq := value.Get("anonymousId").String()
+		userIDFromReq := value.Get("userId").String()
 		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			return false
 		}
-		userMap[rudderID.String()] = append(userMap[rudderID.String()], []byte(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v`, index)).String()))
-		index++
+
+		uuidStr := rudderID.String()
+		tempValue, ok := userMap[uuidStr]
+		if !ok {
+			userCnt[uuidStr] = 0
+			userMap[uuidStr] = append([]byte(`{"batch":[`), append([]byte(value.Raw), ']', '}')...)
+		} else {
+			path := "batch." + strconv.Itoa(userCnt[uuidStr]+1)
+			raw, err := sjson.SetRaw(string(tempValue), path, value.Raw)
+			if err != nil {
+				return false
+			}
+			userCnt[uuidStr]++
+			userMap[uuidStr] = []byte(raw)
+		}
+
 		return true
 	})
-	recontructedUserMap := make(map[string][]byte)
-	for key := range userMap {
-		var tempValue string
-		var err error
-		for index = 0; index < len(userMap[key]); index++ {
-			tempValue, err = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
-			if err != nil {
-				return recontructedUserMap, err
-			}
-		}
-		recontructedUserMap[key] = []byte(tempValue)
-	}
-	return recontructedUserMap, nil
+	return userMap, nil
 }
 
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
@@ -1443,24 +1464,23 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
-	for {
-		config := <-ch
+	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		configSubscriberLock.Lock()
-		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
+		writeKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
-		for i := range sources.Sources {
-			sourceIDToNameMap[sources.Sources[i].ID] = sources.Sources[i].Name
-			if sources.Sources[i].Enabled {
-				enabledWriteKeysSourceMap[sources.Sources[i].WriteKey] = sources.Sources[i]
-				enabledWriteKeyWorkspaceMap[sources.Sources[i].WriteKey] = sources.Sources[i].WorkspaceID
-				if sources.Sources[i].SourceDefinition.Category == "webhook" {
-					enabledWriteKeyWebhookMap[sources.Sources[i].WriteKey] = sources.Sources[i].SourceDefinition.Name
-					gateway.webhookHandler.Register(sources.Sources[i].SourceDefinition.Name)
+		for _, source := range sources.Sources {
+			sourceIDToNameMap[source.ID] = source.Name
+			writeKeysSourceMap[source.WriteKey] = source
+
+			if source.Enabled {
+				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
+				if source.SourceDefinition.Category == "webhook" {
+					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+					gateway.webhookHandler.Register(source.SourceDefinition.Name)
 				}
 			}
 		}

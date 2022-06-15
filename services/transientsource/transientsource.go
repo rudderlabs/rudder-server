@@ -7,7 +7,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/tidwall/gjson"
 )
 
@@ -89,26 +88,21 @@ func (r *service) ApplyJob(job *jobsdb.JobT) bool {
 
 // updateLoop uses backend config to retrieve & keep up-to-date the list of transient source ids
 func (r *service) updateLoop(ctx context.Context, config backendconfig.BackendConfig) {
+	ch := config.Subscribe(ctx, backendconfig.TopicBackendConfig)
 
-	ch := make(chan pubsub.DataEvent)
-	config.Subscribe(ch, backendconfig.TopicBackendConfig)
-	for {
-		select {
-		case ev := <-ch:
-			c := ev.Data.(backendconfig.ConfigT)
-			newSourceIds := transientSourceIds(&c)
-			r.sourceIds = newSourceIds
-			r.sourceIdsMap = asMap(newSourceIds)
-			r.onceInit.Do(func() {
-				close(r.init)
-			})
-		case <-ctx.Done():
-			r.onceInit.Do(func() {
-				close(r.init)
-			})
-			return
-		}
+	for ev := range ch {
+		c := ev.Data.(backendconfig.ConfigT)
+		newSourceIds := transientSourceIds(&c)
+		r.sourceIds = newSourceIds
+		r.sourceIdsMap = asMap(newSourceIds)
+		r.onceInit.Do(func() {
+			close(r.init)
+		})
 	}
+
+	r.onceInit.Do(func() {
+		close(r.init)
+	})
 }
 
 // transientSourceIds scans a backend configuration and extracts

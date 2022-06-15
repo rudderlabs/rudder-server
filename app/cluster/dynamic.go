@@ -187,12 +187,12 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
-	if !newMode.Valid() {
-		return fmt.Errorf("unsupported mode: %s", newMode)
-	}
 	if d.GatewayComponent {
 		d.logger.Info("Not transiting the server because this is only Gateway App")
 		return nil
+	}
+	if !newMode.Valid() {
+		return fmt.Errorf("unsupported mode: %s", newMode)
 	}
 
 	if d.currentMode == newMode {
