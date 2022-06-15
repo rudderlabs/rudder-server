@@ -6,7 +6,7 @@ type Cleanup struct {
 	fns []func()
 }
 
-func (c *Cleanup) Log(a ...any) {
+func (c *Cleanup) Log(a ...interface{}) {
 	fmt.Println(a...)
 }
 
