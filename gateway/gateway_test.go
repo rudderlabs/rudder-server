@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -135,18 +136,24 @@ func (c *testContext) Setup() {
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
-	mockCall := c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1)
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config")
-	mockCall.Do(func(interface{}) { tFunc() })
+	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1).Do(func(interface{}) { tFunc() })
 
-	mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
-			// on Subscribe, emulate a backend configuration event
-			go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
-		})
 	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
-	mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) { tFunc() }).
-		Return().Times(1)
+
+	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			tFunc()
+
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			// on Subscribe, emulate a backend configuration event
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		})
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 

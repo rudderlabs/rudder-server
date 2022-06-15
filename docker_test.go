@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"io"
 	"log"
 	"math/rand"
@@ -368,6 +369,7 @@ func run(m *testing.M) (int, error) {
 	_ = os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
 	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
 	_ = os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
+	_ = os.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
