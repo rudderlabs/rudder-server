@@ -28,9 +28,9 @@ func (*MSSQLTest) SetUpDestination() {
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",
-		Host:     "mssql",
+		Host:     "localhost",
 		SSLMode:  "disable",
-		Port:     "1433",
+		Port:     "54322",
 	}
 	MTest.EventsMap = testhelper.DefaultEventMap()
 

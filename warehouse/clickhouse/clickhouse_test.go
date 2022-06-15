@@ -61,14 +61,14 @@ func (*CHNOOP) SetUpDestination() {
 func SetUpClickHouseDestination() {
 	CHTest.WriteKey = "C5AWX39IVUWSP2NcHciWvqZTa2N"
 	CHTest.Credentials = &clickhouse.CredentialsT{
-		Host:          "clickhouse",
+		Host:          "localhost",
 		User:          "rudder",
 		Password:      "rudder-password",
 		DBName:        "rudderdb",
 		Secure:        "false",
 		SkipVerify:    "true",
 		TLSConfigName: "",
-		Port:          "9000",
+		Port:          "54321",
 	}
 	CHTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -92,7 +92,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse01",
 			HostName: "clickhouse01",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "host.docker.internal",
+				Host:          "localhost",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -106,7 +106,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse02",
 			HostName: "clickhouse02",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "host.docker.internal",
+				Host:          "localhost",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -120,7 +120,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse03",
 			HostName: "clickhouse03",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "host.docker.internal",
+				Host:          "localhost",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -134,7 +134,7 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse04",
 			HostName: "clickhouse04",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "host.docker.internal",
+				Host:          "localhost",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",

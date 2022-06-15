@@ -28,9 +28,9 @@ func (*PostgresTest) SetUpDestination() {
 		DBName:   "rudderdb",
 		Password: "rudder-password",
 		User:     "rudder",
-		Host:     "postgres",
+		Host:     "localhost",
 		SSLMode:  "disable",
-		Port:     "5432",
+		Port:     "54320",
 	}
 	PGTest.EventsMap = testhelper.DefaultEventMap()
 

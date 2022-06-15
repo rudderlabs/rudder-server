@@ -3,6 +3,7 @@ package testhelper
 import (
 	"flag"
 	"fmt"
+	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -49,6 +50,10 @@ func Run(m *testing.M, setup ISetup) int {
 	if testing.Short() {
 		log.Println("Skipping warehouse integration test. Remove `-short` to run them.")
 		return 0
+	}
+
+	if err := godotenv.Load("../testhelper/docker.env"); err != nil {
+		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
 	}
 
 	initialize()
@@ -219,9 +224,9 @@ func SetUpJobsDB() (jobsDB *JobsDBResource) {
 		DBName:   "jobsdb",
 		Password: "password",
 		User:     "rudder",
-		Host:     "jobsDb",
+		Host:     "localhost",
 		SSLMode:  "disable",
-		Port:     "5432",
+		Port:     "54328",
 	}
 	jobsDB = &JobsDBResource{}
 	jobsDB.Credentials = pgCredentials

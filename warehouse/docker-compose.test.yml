@@ -214,14 +214,15 @@ services:
     volumes:
       - ..:/app
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:54331/health || exit 1
-      interval: 1s
+      test: wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+      interval: 5s
       timeout: 30s
       retries: 25
   start_integration:
     image: alpine:latest
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 networks:
   clickhouse-network:
     name: clickhouse-network
