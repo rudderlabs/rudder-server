@@ -14,11 +14,7 @@ import (
 )
 
 // In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
-var replSlotDisallowedChars *regexp.Regexp
-
-func init() {
-	replSlotDisallowedChars = regexp.MustCompile(`[^a-z0-9_]`)
-}
+var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
 type sourcesHandler struct {
 	config         JobServiceConfig
