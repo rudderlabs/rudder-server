@@ -239,12 +239,14 @@ func TestMainFlow(t *testing.T) {
 		messages, errors := consume(t, c, topics)
 
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt)
+		signal.Notify(signals, os.Interrupt, os.Kill) // Get signal for finish
 
-		// Count how many message processed
-		msgCount := 0
-		// Get signal for finish
-		expectedCount := 10
+		var (
+			msgCount      = 0 // Count how many message processed
+			expectedCount = 10
+			timeout       = time.After(2 * time.Minute)
+		)
+
 	out:
 		for {
 			select {
@@ -258,9 +260,9 @@ func TestMainFlow(t *testing.T) {
 				}
 			case consumerError := <-errors:
 				msgCount++
-				t.Log("Received consumerError", consumerError)
-			case <-time.After(time.Minute):
-				t.Error("timeout waiting on Kafka message")
+				t.Logf("Received consumerError: %v", consumerError)
+			case <-timeout:
+				t.Fatalf("Timeout waiting on Kafka messages, got %d messages instead of %d", msgCount, expectedCount)
 			}
 		}
 
