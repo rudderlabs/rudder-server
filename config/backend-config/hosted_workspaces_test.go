@@ -20,6 +20,7 @@ var (
 		workspaceId: SampleBackendConfig,
 	}
 )
+
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
 		backendConfig = &HostedWorkspacesConfig{
