@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/rudderlabs/rudder-server/compare/v0.1.10...v0.1.11) (2022-06-16)
+
+
+### Bug Fixes
+
+* dummy hotfix ([1e91b2b](https://github.com/rudderlabs/rudder-server/commit/1e91b2b2c99309ea55550962ea832dc3cece220c))
+
 ## 0.1.10 (2022-06-14)
 
 
