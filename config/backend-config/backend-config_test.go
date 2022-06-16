@@ -87,10 +87,6 @@ var (
 	mockLogger         *mock_logger.MockLoggerI
 	originalMockPubSub = pubsub.PublishSubscriber{}
 	ctrl               *gomock.Controller
-	testRequestData    map[string]interface{} = map[string]interface{}{
-		"instanceName":         "1",
-		"replayConfigDataList": "test",
-	}
 )
 
 func initBackendConfig() {
