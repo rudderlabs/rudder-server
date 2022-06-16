@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -284,7 +283,7 @@ func TestMainFlow(t *testing.T) {
 
 		err := json.Unmarshal(b, &eventSchemas)
 		if err != nil {
-			log.Println(err)
+			t.Log(err)
 		}
 		for k := range eventSchemas {
 			if eventSchemas[k].EventType == "page" {
@@ -306,10 +305,10 @@ func TestMainFlow(t *testing.T) {
 
 		err := json.Unmarshal(b, &eventSchemas)
 		if err != nil {
-			log.Println(err)
+			t.Log(err)
 		}
 		VersionID = eventSchemas[0].VersionID
-		log.Println("Test Schemas Event ID's VersionID: ", VersionID)
+		t.Log("Test Schemas Event ID's VersionID:", VersionID)
 	})
 
 	t.Run("event-model-key-counts", func(t *testing.T) {
@@ -564,7 +563,7 @@ func TestMainFlow(t *testing.T) {
 		whDestinationTest(t, whDestTest)
 	})
 
-	blockOnHold()
+	blockOnHold(t)
 	svcCancel()
 	t.Log("Waiting for service to stop")
 	<-svcDone
@@ -601,7 +600,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	require.NoError(t, err)
 
 	waitUntilReady(
-		context.Background(),
+		context.Background(), t,
 		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
 		time.Minute,
 		time.Second,
@@ -707,7 +706,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
 	waitUntilReady(
-		context.Background(),
+		context.Background(), t,
 		serviceHealthEndpoint,
 		time.Minute,
 		time.Second,
@@ -883,7 +882,8 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	return f.Name()
 }
 
-func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
+func waitUntilReady(ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string) {
+	t.Helper()
 	probe := time.NewTicker(interval)
 	timeout := time.After(atMost)
 	for {
@@ -891,34 +891,36 @@ func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.
 		case <-ctx.Done():
 			return
 		case <-timeout:
-			log.Panicf("application was not ready after %s, for the end point: %s, caller: %s\n", atMost, endpoint,
-				caller)
+			t.Fatalf(
+				"application was not ready after %s, for the end point: %s, caller: %s", atMost, endpoint, caller,
+			)
 		case <-probe.C:
 			resp, err := http.Get(endpoint)
 			if err != nil {
 				continue
 			}
 			if resp.StatusCode == http.StatusOK {
-				log.Println("application ready")
+				t.Log("application ready")
 				return
 			}
 		}
 	}
 }
 
-func blockOnHold() {
+func blockOnHold(t *testing.T) {
+	t.Helper()
 	if !hold {
 		return
 	}
 
-	log.Println("Test on hold, before cleanup")
-	log.Println("Press Ctrl+C to exit")
+	t.Log("Test on hold, before cleanup")
+	t.Log("Press Ctrl+C to exit")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
 	<-c
 }
+
 func getEvent(url string, method string) (string, error) {
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
