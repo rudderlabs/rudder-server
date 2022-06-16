@@ -460,7 +460,7 @@ func TestMainFlow(t *testing.T) {
 			t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
 		}
 		if wht.Test.BQTest == nil {
-			fmt.Println("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
+			t.Log("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
 			t.FailNow()
 		}
 		//Disabling big query dedup
