@@ -8,8 +8,6 @@
 package main_test
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
@@ -19,14 +17,11 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"net/http/httptest"
-	"net/http/httputil"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"text/template"
@@ -46,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
+	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -59,8 +55,8 @@ var (
 	httpPort                     string
 	webhookURL                   string
 	disableDestinationWebhookURL string
-	webhook                      *WebhookRecorder
-	disableDestinationWebhook    *WebhookRecorder
+	webhook                      *whUtil.Recorder
+	disableDestinationWebhook    *whUtil.Recorder
 	runSlow                      bool
 	overrideArm64Check           bool
 	writeKey                     string
@@ -75,62 +71,13 @@ var (
 	runBigQueryTest              bool
 )
 
-type WebhookRecorder struct {
-	Server       *httptest.Server
-	requestsMu   sync.RWMutex
-	requestDumps [][]byte
-}
-
 type eventSchemasObject struct {
 	EventID   string
 	EventType string
 	VersionID string
 }
 
-func NewWebhook() *WebhookRecorder {
-	whr := WebhookRecorder{}
-	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dump, err := httputil.DumpRequest(r, true)
-		if err != nil {
-			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
-			return
-		}
-		whr.requestsMu.Lock()
-		whr.requestDumps = append(whr.requestDumps, dump)
-		whr.requestsMu.Unlock()
-
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	}))
-
-	return &whr
-}
-
-func (whr *WebhookRecorder) Requests() []*http.Request {
-	whr.requestsMu.RLock()
-	defer whr.requestsMu.RUnlock()
-
-	requests := make([]*http.Request, len(whr.requestDumps))
-	for i, d := range whr.requestDumps {
-		requests[i], _ = http.ReadRequest(bufio.NewReader(bytes.NewReader(d)))
-	}
-	return requests
-}
-
-func (whr *WebhookRecorder) Close() {
-	whr.Server.Close()
-}
-func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
-
-type Event struct {
+type event struct {
 	anonymousID       string
 	userID            string
 	count             string
@@ -140,145 +87,6 @@ type Event struct {
 	propKey           string
 	myUniqueID        string
 	ip                string
-}
-
-func createWorkspaceConfig(templatePath string, values map[string]string) string {
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		panic(err)
-	}
-
-	f, err := os.CreateTemp("", "workspaceConfig.*.json")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	err = t.Execute(f, values)
-	if err != nil {
-		panic(err)
-	}
-
-	return f.Name()
-}
-
-func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
-	probe := time.NewTicker(interval)
-	timeout := time.After(atMost)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout:
-			log.Panicf("application was not ready after %s, for the end point: %s, caller: %s\n", atMost, endpoint,
-				caller)
-		case <-probe.C:
-			resp, err := http.Get(endpoint)
-			if err != nil {
-				continue
-			}
-			if resp.StatusCode == http.StatusOK {
-				log.Println("application ready")
-				return
-			}
-		}
-	}
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	log.Println("Test on hold, before cleanup")
-	log.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
-}
-func GetEvent(url string, method string) (string, error) {
-	httpClient := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
-
-	if err != nil {
-		return "", err
-	}
-	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
-	res, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = res.Body.Close() }()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(body), err
-}
-
-func SendPixelEvents(writeKey string) {
-	// Send pixel/v1/page
-	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
-	method := "GET"
-	resBody, err := GetEvent(url, method)
-	if err != nil {
-		log.Println(err)
-		log.Println(resBody)
-		return
-
-	}
-	// Send pixel/v1/track
-	log.Println("Sending pixel/v1/track Event")
-	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
-	method = "GET"
-	resBody, err = GetEvent(url, method)
-	if err != nil {
-		log.Println(err)
-		log.Println(resBody)
-		return
-
-	}
-}
-
-func SendEvent(payload *strings.Reader, callType string, writeKey string) {
-	log.Println(fmt.Sprintf("Sending %s Event", callType))
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
-	method := "POST"
-	httpClient := &http.Client{}
-	req, err := http.NewRequest(method, url, payload)
-
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
-
-	res, err := httpClient.Do(req)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer func() { _ = res.Body.Close() }()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	if res.Status != "200 OK" {
-		return
-	}
-	log.Println(string(body))
-	log.Println("Event Sent Successfully")
 }
 
 func TestMainFlow(t *testing.T) {
@@ -308,7 +116,7 @@ func TestMainFlow(t *testing.T) {
 
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
-			return len(webhook.Requests()) == 10
+			return webhook.RequestsCount() == 10
 		}, time.Minute, 300*time.Millisecond)
 
 		i := -1
@@ -345,7 +153,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("postgres", func(t *testing.T) {
-		var myEvent Event
+		var myEvent event
 		require.Eventually(t, func() bool {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
@@ -464,10 +272,10 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-models
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Eventually(t, func() bool {
 			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = GetEvent(url, method)
+			resBody, _ = getEvent(url, method)
 			return resBody != "[]"
 		}, time.Minute, 10*time.Millisecond)
 		require.NotEqual(t, resBody, "[]")
@@ -490,7 +298,7 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-versions
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Contains(t, resBody, EventID)
 
 		b := []byte(resBody)
@@ -508,7 +316,7 @@ func TestMainFlow(t *testing.T) {
 		// GET schemas/event-model/{EventID}/key-counts
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -516,7 +324,7 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-model/{EventID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -524,7 +332,7 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-version/{VersionID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Contains(t, resBody, "messageId")
 	})
 
@@ -532,7 +340,7 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-version/{VersionID}/metadata
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Contains(t, resBody, "originalTimestamp")
 		require.Contains(t, resBody, "sentAt")
 		require.Contains(t, resBody, "channel")
@@ -543,10 +351,10 @@ func TestMainFlow(t *testing.T) {
 		// GET /schemas/event-models/json-schemas
 		url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
 		method := "GET"
-		resBody, _ := GetEvent(url, method)
+		resBody, _ := getEvent(url, method)
 		require.Eventually(t, func() bool {
 			// Similarly, pole until the Event Schema Tables are updated
-			resBody, _ = GetEvent(url, method)
+			resBody, _ = getEvent(url, method)
 			return resBody != "[]"
 		}, time.Minute, 10*time.Millisecond)
 		require.NotEqual(t, resBody, "[]")
@@ -562,7 +370,7 @@ func TestMainFlow(t *testing.T) {
 				}
 			]
 		}`)
-		SendEvent(payload, "beacon/v1/batch", writeKey)
+		sendEvent(t, payload, "beacon/v1/batch", writeKey)
 	})
 
 	t.Run("warehouse-postgres-destination", func(t *testing.T) {
@@ -579,11 +387,11 @@ func TestMainFlow(t *testing.T) {
 			Schema:             "postgres_wh_integration",
 			TableTestQueryFreq: pgTest.TableTestQueryFreq,
 		}
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 
 		whDestTest.UserId = "userId_postgres_1"
-		sendUpdatedWHEvents(whDestTest)
+		sendUpdatedWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 	})
 
@@ -601,11 +409,11 @@ func TestMainFlow(t *testing.T) {
 			Schema:             "rudderdb",
 			TableTestQueryFreq: chTest.TableTestQueryFreq,
 		}
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 
 		whDestTest.UserId = "userId_clickhouse_1"
-		sendUpdatedWHEvents(whDestTest)
+		sendUpdatedWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 	})
 
@@ -623,13 +431,13 @@ func TestMainFlow(t *testing.T) {
 			Schema:             "rudderdb",
 			TableTestQueryFreq: chClusterTest.TableTestQueryFreq,
 		}
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 
 		initWHClickHouseClusterModeSetup(t)
 
 		whDestTest.UserId = "userId_clickhouse_cluster_1"
-		sendUpdatedWHEvents(whDestTest)
+		sendUpdatedWHEvents(t, whDestTest)
 
 		// Update events count Map
 		// This is required as because of the cluster mode setup and distributed view, events are getting duplicated.
@@ -687,7 +495,7 @@ func TestMainFlow(t *testing.T) {
 			"aliases":    2,
 			"groups":     2,
 		}
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 
 		whDestTest.EventsCountMap = wht.EventsCountMap{
 			"identifies":    2,
@@ -716,7 +524,7 @@ func TestMainFlow(t *testing.T) {
 			"groups":     2,
 		}
 
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 
 		whDestTest.EventsCountMap = wht.EventsCountMap{
 			"identifies":    2,
@@ -748,11 +556,11 @@ func TestMainFlow(t *testing.T) {
 			Schema:             "mssql_wh_integration",
 			TableTestQueryFreq: msSqlTest.TableTestQueryFreq,
 		}
-		sendWHEvents(whDestTest)
+		sendWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 
 		whDestTest.UserId = "userId_mssql_1"
-		sendUpdatedWHEvents(whDestTest)
+		sendUpdatedWHEvents(t, whDestTest)
 		whDestinationTest(t, whDestTest)
 	})
 
@@ -833,11 +641,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	_ = os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
 
-	webhook = NewWebhook()
+	webhook = whUtil.NewRecorder()
 	t.Cleanup(webhook.Close)
 	webhookURL = webhook.Server.URL
 
-	disableDestinationWebhook = NewWebhook()
+	disableDestinationWebhook = whUtil.NewRecorder()
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
@@ -928,7 +736,7 @@ func sendEventsToGateway(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	}`)
-	SendEvent(payload1, "identify", writeKey)
+	sendEvent(t, payload1, "identify", writeKey)
 	payload2 := strings.NewReader(`{
 		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
@@ -946,7 +754,7 @@ func sendEventsToGateway(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	}`)
-	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
+	sendEvent(t, payload2, "identify", writeKey) //sending duplicate event to check dedup
 
 	// Sending Batch event
 	payloadBatch := strings.NewReader(`{
@@ -972,7 +780,7 @@ func sendEventsToGateway(t *testing.T) {
 			}
 		]
 	}`)
-	SendEvent(payloadBatch, "batch", writeKey)
+	sendEvent(t, payloadBatch, "batch", writeKey)
 
 	// Sending track event
 	payloadTrack := strings.NewReader(`{
@@ -988,7 +796,7 @@ func sendEventsToGateway(t *testing.T) {
 		  "review_body" : "Average product, expected much more."
 		}
 	}`)
-	SendEvent(payloadTrack, "track", writeKey)
+	sendEvent(t, payloadTrack, "track", writeKey)
 
 	// Sending page event
 	payloadPage := strings.NewReader(`{
@@ -1002,7 +810,7 @@ func sendEventsToGateway(t *testing.T) {
 		  "url": "http://www.rudderstack.com"
 		}
 	}`)
-	SendEvent(payloadPage, "page", writeKey)
+	sendEvent(t, payloadPage, "page", writeKey)
 
 	// Sending screen event
 	payloadScreen := strings.NewReader(`{
@@ -1015,7 +823,7 @@ func sendEventsToGateway(t *testing.T) {
 		  "prop_key": "prop_value"
 		}
 	}`)
-	SendEvent(payloadScreen, "screen", writeKey)
+	sendEvent(t, payloadScreen, "screen", writeKey)
 
 	// Sending alias event
 	payloadAlias := strings.NewReader(`{
@@ -1026,7 +834,7 @@ func sendEventsToGateway(t *testing.T) {
 		"previousId": "name@surname.com",
 		"userId": "12345"
 	}`)
-	SendEvent(payloadAlias, "alias", writeKey)
+	sendEvent(t, payloadAlias, "alias", writeKey)
 
 	// Sending group event
 	payloadGroup := strings.NewReader(`{
@@ -1042,8 +850,163 @@ func sendEventsToGateway(t *testing.T) {
 		  "plan": "basic"
 		}
 	}`)
-	SendEvent(payloadGroup, "group", writeKey)
-	SendPixelEvents(writeKey)
+	sendEvent(t, payloadGroup, "group", writeKey)
+	sendPixelEvents(t, writeKey)
+}
+
+func randString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
+
+func createWorkspaceConfig(templatePath string, values map[string]string) string {
+	t, err := template.ParseFiles(templatePath)
+	if err != nil {
+		panic(err)
+	}
+
+	f, err := os.CreateTemp("", "workspaceConfig.*.json")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = t.Execute(f, values)
+	if err != nil {
+		panic(err)
+	}
+
+	return f.Name()
+}
+
+func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration, caller string) {
+	probe := time.NewTicker(interval)
+	timeout := time.After(atMost)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timeout:
+			log.Panicf("application was not ready after %s, for the end point: %s, caller: %s\n", atMost, endpoint,
+				caller)
+		case <-probe.C:
+			resp, err := http.Get(endpoint)
+			if err != nil {
+				continue
+			}
+			if resp.StatusCode == http.StatusOK {
+				log.Println("application ready")
+				return
+			}
+		}
+	}
+}
+
+func blockOnHold() {
+	if !hold {
+		return
+	}
+
+	log.Println("Test on hold, before cleanup")
+	log.Println("Press Ctrl+C to exit")
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	<-c
+}
+func getEvent(url string, method string) (string, error) {
+	httpClient := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
+
+	if err != nil {
+		return "", err
+	}
+	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
+	res, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), err
+}
+
+func sendPixelEvents(t *testing.T, writeKey string) {
+	t.Helper()
+
+	// Send pixel/v1/page
+	url := fmt.Sprintf(
+		"http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey,
+	)
+	method := "GET"
+	resBody, err := getEvent(url, method)
+	if err != nil {
+		t.Logf("sendPixelEvents error: %v", err)
+		t.Logf("sendPixelEvents body: %s", resBody)
+		return
+
+	}
+	// Send pixel/v1/track
+	t.Log("Sending pixel/v1/track Event")
+	url = fmt.Sprintf(
+		"http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again",
+		httpPort, writeKey,
+	)
+	method = "GET"
+	resBody, err = getEvent(url, method)
+	if err != nil {
+		t.Logf("sendPixelEvents error: %v", err)
+		t.Logf("sendPixelEvents body: %s", resBody)
+	}
+}
+
+func sendEvent(t *testing.T, payload *strings.Reader, callType string, writeKey string) {
+	t.Helper()
+	t.Logf("Sending %s Event", callType)
+
+	var (
+		httpClient = &http.Client{}
+		method     = "POST"
+		url        = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
+	)
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+		[]byte(fmt.Sprintf("%s:", writeKey)),
+	)))
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Logf("sendEvent error: %v", err)
+		return
+	}
+	if res.Status != "200 OK" {
+		return
+	}
+
+	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
 func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPartition) (<-chan kafkaClient.Message, <-chan error) {
@@ -1095,7 +1058,9 @@ func getMessageId(wdt *wht.WareHouseDestinationTest) string {
 }
 
 // sendWHEvents Sending warehouse events
-func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
+func sendWHEvents(t *testing.T, wdt *wht.WareHouseDestinationTest) {
+	t.Helper()
+
 	// Sending identify event
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		for i := 0; i < identify; i++ {
@@ -1111,7 +1076,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
+			sendEvent(t, payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
 
@@ -1130,7 +1095,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "review_body" : "Average product, expected much more."
 			}
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadTrack, "track", wdt.WriteKey)
+			sendEvent(t, payloadTrack, "track", wdt.WriteKey)
 		}
 	}
 
@@ -1147,7 +1112,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "url": "http://www.rudderstack.com"
 			}
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadPage, "page", wdt.WriteKey)
+			sendEvent(t, payloadPage, "page", wdt.WriteKey)
 		}
 	}
 
@@ -1163,7 +1128,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "prop_key": "prop_value"
 			}
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadScreen, "screen", wdt.WriteKey)
+			sendEvent(t, payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
 
@@ -1176,7 +1141,7 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			"type": "alias",
 			"previousId": "name@surname.com"
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadAlias, "alias", wdt.WriteKey)
+			sendEvent(t, payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
 
@@ -1195,13 +1160,15 @@ func sendWHEvents(wdt *wht.WareHouseDestinationTest) {
 			  "plan": "basic"
 			}
 		  }`, wdt.UserId, getMessageId(wdt)))
-			SendEvent(payloadGroup, "group", wdt.WriteKey)
+			sendEvent(t, payloadGroup, "group", wdt.WriteKey)
 		}
 	}
 }
 
 // sendUpdatedWHEvents Sending updated warehouse events
-func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
+func sendUpdatedWHEvents(t *testing.T, wdt *wht.WareHouseDestinationTest) {
+	t.Helper()
+
 	// Sending identify event
 	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
 		for i := 0; i < identify; i++ {
@@ -1220,7 +1187,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadIdentify, "identify", wdt.WriteKey)
+			sendEvent(t, payloadIdentify, "identify", wdt.WriteKey)
 		}
 	}
 
@@ -1246,7 +1213,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 				}
 			}
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadTrack, "track", wdt.WriteKey)
+			sendEvent(t, payloadTrack, "track", wdt.WriteKey)
 		}
 	}
 
@@ -1269,7 +1236,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 				}
 			  }
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadPage, "page", wdt.WriteKey)
+			sendEvent(t, payloadPage, "page", wdt.WriteKey)
 		}
 	}
 
@@ -1291,7 +1258,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 				}
 			  }
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadScreen, "screen", wdt.WriteKey)
+			sendEvent(t, payloadScreen, "screen", wdt.WriteKey)
 		}
 	}
 
@@ -1310,7 +1277,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 				}
             }
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadAlias, "alias", wdt.WriteKey)
+			sendEvent(t, payloadAlias, "alias", wdt.WriteKey)
 		}
 	}
 
@@ -1335,7 +1302,7 @@ func sendUpdatedWHEvents(wdt *wht.WareHouseDestinationTest) {
 				}
 			}
 		  }`, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			SendEvent(payloadGroup, "group", wdt.WriteKey)
+			sendEvent(t, payloadGroup, "group", wdt.WriteKey)
 		}
 	}
 }
