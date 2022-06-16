@@ -169,17 +169,16 @@ func (d *DedupHandleT) gcBadgerDB() {
 }
 
 func (d *DedupHandleT) writeToBadger(messageIDs []string) {
-	err := d.badgerDB.Update(func(txn *badger.Txn) error {
-		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
-			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-				_ = txn.Commit()
-				txn = d.badgerDB.NewTransaction(true)
-				_ = txn.SetEntry(e)
-			}
+	txn := d.badgerDB.NewTransaction(true)
+	for _, messageID := range messageIDs {
+		e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
+		if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
+			_ = txn.Commit()
+			txn = d.badgerDB.NewTransaction(true)
+			_ = txn.SetEntry(e)
 		}
-		return nil
-	})
+	}
+	err := txn.Commit()
 	if err != nil {
 		panic(err)
 	}
