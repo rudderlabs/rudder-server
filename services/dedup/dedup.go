@@ -18,7 +18,7 @@ import (
 
 type DedupI interface {
 	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
-	MarkProcessed(messageIDs []string)
+	MarkProcessed(messageIDs []string) error
 	PrintHistogram()
 	Close()
 }
@@ -169,26 +169,27 @@ func (d *DedupHandleT) gcBadgerDB() {
 	}
 }
 
-func (d *DedupHandleT) writeToBadger(messageIDs []string) {
+func (d *DedupHandleT) writeToBadger(messageIDs []string) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, messageID := range messageIDs {
 		e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
 		if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-			_ = txn.Commit()
+			if err := txn.Commit(); err != nil {
+				return err
+			}
 			txn = d.badgerDB.NewTransaction(true)
-			_ = txn.SetEntry(e)
+			if err := txn.SetEntry(e); err != nil {
+				return err
+			}
 		}
 	}
-	err := txn.Commit()
-	if err != nil {
-		panic(err)
-	}
+	return txn.Commit()
 }
 
 // MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
 // Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
-func (d *DedupHandleT) MarkProcessed(messageIDs []string) {
-	d.writeToBadger(messageIDs)
+func (d *DedupHandleT) MarkProcessed(messageIDs []string) error {
+	return d.writeToBadger(messageIDs)
 }
 
 func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int) {
