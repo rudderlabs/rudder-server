@@ -358,7 +358,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			err := manager.reloadModel(archivedModel)
 			if err != nil {
-				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 			} else {
 				eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 				if !ok {
@@ -368,13 +368,13 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
 		} else {
-			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 		}
 	}
 	eventModel.LastSeen = timeutil.Now()
 
 	eventMap := map[string]interface{}(event)
-	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
+	flattenedEvent, err := flatten.Flatten(eventMap, "", flatten.DotStyle)
 	if err != nil {
 		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
 		return
@@ -453,24 +453,27 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
-func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
+func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
 	eventModelID := uuid.Must(uuid.NewV4()).String()
-	eventModel = &EventModelT{
+	em := &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
 		EventType:       eventType,
 		EventIdentifier: eventIdentifier,
 		Schema:          []byte("{}"),
+		reservoirSample: NewReservoirSampler(reservoirSampleSize, 0, 0),
 	}
-
-	eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 	if totalEventModels >= eventModelLimit {
 		archiveOldestLastSeenModel()
 	}
-	manager.updateEventModelCache(eventModel, true)
-	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
-	return eventModel
+	manager.updateEventModelCache(em, true)
+	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{
+		"module":          "event_schemas",
+		"writeKey":        em.WriteKey,
+		"eventIdentifier": em.EventIdentifier,
+	}).Increment()
+	return em
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
@@ -678,21 +681,29 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				assertTxnError(err, txn)
 			}
 
-			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata", "private_data", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			// skipcq: SCC-SA9001
-			defer stmt.Close()
-			for eventModelID, eventModel := range updatedEventModels {
-				metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
-				privateDataJSON := getPrivateDataJSON(eventModel.UUID)
-				eventModel.TotalCount = eventModel.reservoirSample.totalCount
-
-				_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType, eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON), string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
+			func() {
+				stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE,
+					"uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata",
+					"private_data", "last_seen", "total_count"))
 				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(eventModelIds))
+				defer func() { _ = stmt.Close() }()
+				for eventModelID, eventModel := range updatedEventModels {
+					metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
+					privateDataJSON := getPrivateDataJSON(eventModel.UUID)
+					eventModel.TotalCount = eventModel.reservoirSample.totalCount
+
+					_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType,
+						eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON),
+						string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
+					assertTxnError(err, txn)
+				}
+				_, err = stmt.Exec()
+				assertTxnError(err, txn)
+			}()
+
+			stats.NewTaggedStat(
+				"update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+			).Gauge(len(eventModelIds))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
@@ -713,28 +724,37 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				assertTxnError(err, txn)
 			}
 
-			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data", "first_seen", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			// skipcq: SCC-SA9001
-			defer stmt.Close()
-			for _, sv := range schemaVersionsInCache {
-				metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
-				privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
-				sv.TotalCount = sv.reservoirSample.totalCount
-
-				_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema), string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
+			func() {
+				stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE,
+					"uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data",
+					"first_seen", "last_seen", "total_count"))
 				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
+				defer func() { _ = stmt.Close() }()
+				for _, sv := range schemaVersionsInCache {
+					metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
+					privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
+					sv.TotalCount = sv.reservoirSample.totalCount
+
+					_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema),
+						string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
+					assertTxnError(err, txn)
+				}
+				_, err = stmt.Exec()
+				assertTxnError(err, txn)
+			}()
+
+			stats.NewTaggedStat(
+				"update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+			).Gauge(len(versionIDs))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
 		}
 
 		err = txn.Commit()
 		assertTxnError(err, txn)
 
-		flushDBHandle.Close()
+		if err := flushDBHandle.Close(); err != nil {
+			pkgLogger.Warnf("Error flushing DB handle: %v", err)
+		}
 
 		updatedEventModels = make(map[string]*EventModelT)
 		updatedSchemaVersions = make(map[string]*SchemaVersionT)
