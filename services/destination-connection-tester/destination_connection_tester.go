@@ -121,8 +121,8 @@ func createTestFileForBatchDestination(destinationID string) string {
 		pkgLogger.Errorf("DCT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
-	gzWriter.WriteGZ(testPayload)
-	gzWriter.CloseGZ()
+	_ = gzWriter.WriteGZ(testPayload)
+	_ = gzWriter.CloseGZ()
 	return gzipFilePath
 }
 
@@ -145,7 +145,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		panic(err)
 	}
 	defer misc.RemoveFilePaths(filename)
-	defer uploadFile.Close()
+	defer func() { _ = uploadFile.Close() }()
 	uploadOutput, err := uploader.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
@@ -157,9 +157,8 @@ func TestBatchDestinationConnection(destination backendconfig.DestinationT) stri
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
-	var error string
 	if err != nil {
-		error = err.Error()
+		return err.Error()
 	}
-	return error
+	return ""
 }
