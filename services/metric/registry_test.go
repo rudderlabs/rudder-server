@@ -20,6 +20,7 @@ func (r testMeasurement) GetName() string {
 func (r testMeasurement) GetTags() map[string]string {
 	return map[string]string{"tag": r.tag}
 }
+
 func TestRegistryGet(t *testing.T) {
 	registry := NewRegistry()
 
@@ -76,7 +77,6 @@ func TestRegistryGet(t *testing.T) {
 	if expected, got := `another moving average with age 12.000000 instead of 20.000000 exists in the registry with the same key [{name:key4 tag:}]: *metric.VariableEWMA`, mustGetVMA(registry, vma10Key, 20).Error(); expected != got {
 		t.Errorf("Expected error %q, got %q.", expected, got)
 	}
-
 }
 
 func TestRegistryNameIndex(t *testing.T) {
@@ -101,7 +101,7 @@ func TestRegistryNameIndex(t *testing.T) {
 func TestRegistryGetConcurrently(t *testing.T) {
 	const concurrency = 1000
 	registry := NewRegistry()
-	var key = testMeasurement{name: "key"}
+	key := testMeasurement{name: "key"}
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -154,7 +154,7 @@ func benchmarkRegistryGetCounterAndInc(b *testing.B, concurrency int) {
 	start.Add(1)
 	n := b.N / concurrency
 	registry := NewRegistry()
-	var key = testMeasurement{name: "key"}
+	key := testMeasurement{name: "key"}
 	end.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		go func() {
@@ -193,9 +193,7 @@ func benchmarkMutexMapGetIntAndInc(b *testing.B, concurrency int) {
 	registry := map[string]int{"key": 0}
 	end.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
-
 		go func() {
-
 			for i := 0; i < n; i++ {
 				mutex.Lock()
 				registry["key"] += 1

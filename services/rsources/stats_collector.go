@@ -13,7 +13,6 @@ import (
 // StatsCollector collects and publishes stats as jobs are
 // being created, processed and their statuses are being updated.
 type StatsCollector interface {
-
 	// JobsStored captures incoming job statistics
 	JobsStored(jobs []*jobsdb.JobT)
 

@@ -10,9 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-var (
-	failedEventsManager FailedEventsManagerI
-)
+var failedEventsManager FailedEventsManagerI
 
 type FailedEventRowT struct {
 	DestinationID string          `json:"destination_id"`
@@ -94,7 +92,7 @@ func (fem *FailedEventsManagerT) DropFailedRecordIDs(taskRunID string) {
 		return
 	}
 
-	//Drop table
+	// Drop table
 	table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, table)
 	_, err := fem.dbHandle.Exec(sqlStatement)

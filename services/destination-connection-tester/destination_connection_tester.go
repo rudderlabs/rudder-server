@@ -27,8 +27,10 @@ var (
 	pkgLogger                     logger.LoggerI
 )
 
-const destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
-const testPayload = "ok"
+const (
+	destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
+	testPayload                         = "ok"
+)
 
 type DestinationConnectionTesterResponse struct {
 	DestinationId string    `json:"destinationId"`
@@ -48,10 +50,9 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(100, &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
 	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-
 }
 
-func UploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {
+func UploadDestinationConnectionTesterResponse(testResponse, destinationId string) {
 	payload := DestinationConnectionTesterResponse{
 		Error:         testResponse,
 		TestedAt:      time.Now(),
@@ -73,7 +74,7 @@ func makePostRequest(url string, payload interface{}) error {
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	retryCount := 0
 	var resp *http.Response
-	//Sending destination connection test response to Config Backend
+	// Sending destination connection test response to Config Backend
 	for {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
@@ -131,7 +132,8 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
 			Config:           destination.Config,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+		}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)

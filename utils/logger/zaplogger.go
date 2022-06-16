@@ -9,7 +9,7 @@ import (
 )
 
 // getZapLevel gives zapcore log level based on the level in config.toml
-//skipcq: SCC-U1000
+// skipcq: SCC-U1000
 func getZapLevel(level int) zapcore.Level {
 	switch level {
 	case levelDebug:

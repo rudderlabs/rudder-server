@@ -45,7 +45,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(wr
 }
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
-	//TODO use another map later
+	// TODO use another map later
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
@@ -56,7 +56,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(so
 	return ""
 }
 
-//GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
 func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -67,7 +67,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWork
 	return LibrariesT{}
 }
 
-//Get returns sources from the workspace
+// Get returns sources from the workspace
 func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (ConfigT, bool) {
 	return workspaceConfig.getFromAPI(workspaces)
 }
@@ -113,7 +113,6 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false

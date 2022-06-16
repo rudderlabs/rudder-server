@@ -23,7 +23,7 @@ const (
 var (
 	DiffStatus = "diff"
 
-	//Module names
+	// Module names
 	GATEWAY                = "gateway"
 	DESTINATION_FILTER     = "destination_filter"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
@@ -102,7 +102,8 @@ type PUReportedMetric struct {
 }
 
 func CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
-	return &ConnectionDetails{SourceID: sid,
+	return &ConnectionDetails{
+		SourceID:                sid,
 		DestinationID:           did,
 		SourceBatchID:           sbid,
 		SourceTaskID:            stid,
@@ -138,11 +139,11 @@ func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 
 func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetail) {
 	if len(m1) != len(m2) {
-		panic("maps length don't match") //TODO improve msg
+		panic("maps length don't match") // TODO improve msg
 	}
 	for k := range m1 {
 		if _, ok := m2[k]; !ok {
-			panic("key in map1 not found in map2") //TODO improve msg
+			panic("key in map1 not found in map2") // TODO improve msg
 		}
 	}
 }

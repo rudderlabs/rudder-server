@@ -7,31 +7,30 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
-	"time"
-
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//NOTE: Module name for logging: jobsdb.readonly-<prefix>
-//To enable this module logging using rudder-cli, do the following
-//rudder-cli logging -m=jobsdb.readonly-<prefix> -l=DEBUG
+// NOTE: Module name for logging: jobsdb.readonly-<prefix>
+// To enable this module logging using rudder-cli, do the following
+// rudder-cli logging -m=jobsdb.readonly-<prefix> -l=DEBUG
 
 /*
 ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
 	HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error)
-	GetJobSummaryCount(arg string, prefix string) (string, error)
-	GetLatestFailedJobs(arg string, prefix string) (string, error)
+	GetJobSummaryCount(arg, prefix string) (string, error)
+	GetLatestFailedJobs(arg, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
 	GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error)
 	GetDSListString() (string, error)
-	GetJobIDStatus(job_id string, prefix string) (string, error)
-	GetJobByID(job_id string, prefix string) (string, error)
+	GetJobIDStatus(job_id, prefix string) (string, error)
+	GetJobByID(job_id, prefix string) (string, error)
 }
 
 type ReadonlyHandleT struct {
@@ -113,7 +112,7 @@ func (jd *ReadonlyHandleT) TearDown() {
 	jd.DbHandle.Close()
 }
 
-//Some helper functions
+// Some helper functions
 func (jd *ReadonlyHandleT) assertError(err error) {
 	if err != nil {
 		panic(err)
@@ -174,7 +173,7 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFil
 		totalCount += count
 	}
 
-	return totalCount > 0, nil //If totalCount is 0, then there are no unprocessed events
+	return totalCount > 0, nil // If totalCount is 0, then there are no unprocessed events
 }
 
 func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
@@ -284,7 +283,7 @@ func (jd *ReadonlyHandleT) haveNonSucceededJobs(ctx context.Context, customValFi
 /*
 haveProcessedJobs returns true if there are events of a given state, else false.
 */
-func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
+func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -307,7 +306,7 @@ func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter []
 		totalCount += count
 	}
 
-	return totalCount > 0, nil //If totalCount is 0, then there are no processed events
+	return totalCount > 0, nil // If totalCount is 0, then there are no processed events
 }
 
 /*
@@ -315,7 +314,8 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
 func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataSetT, stateFilters []string,
-	customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
+	customValFilters []string, parameterFilters []ParameterFilterT,
+) (int64, error) {
 	checkValidJobState(jd, stateFilters)
 
 	var queryStat stats.RudderStats
@@ -459,7 +459,7 @@ func getJobPrefix(prefix string) string {
 	return response
 }
 
-func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobSummaryCount(arg, prefix string) (string, error) {
 	dsListArr := make([]DSPair, 0)
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
@@ -532,7 +532,7 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, error) {
 	var dsList DSPair
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
@@ -582,7 +582,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {
@@ -647,7 +647,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, err
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {

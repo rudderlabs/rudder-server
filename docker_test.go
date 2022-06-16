@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"io"
 	"log"
 	"math/rand"
@@ -33,6 +32,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
@@ -122,8 +123,9 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
+
 func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	s := make([]rune, n)
 	for i := range s {
@@ -200,10 +202,10 @@ func blockOnHold() {
 
 	<-c
 }
-func GetEvent(url string, method string) (string, error) {
+
+func GetEvent(url, method string) (string, error) {
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
-
 	if err != nil {
 		return "", err
 	}
@@ -245,13 +247,12 @@ func SendPixelEvents(writeKey string) {
 	}
 }
 
-func SendEvent(payload *strings.Reader, callType string, writeKey string) {
+func SendEvent(payload *strings.Reader, callType, writeKey string) {
 	log.Println(fmt.Sprintf("Sending %s Event", callType))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
 	method := "POST"
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-
 	if err != nil {
 		log.Println(err)
 		return
@@ -526,7 +527,7 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
+	SendEvent(payload2, "identify", writeKey) // sending duplicate event to check dedup
 
 	// Sending Batch event
 	payloadBatch := strings.NewReader(`{
@@ -662,7 +663,7 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, 0, len(disableDestinationWebhook.Requests()))
 }
 
-//Verify Event in POSTGRES
+// Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
@@ -807,7 +808,7 @@ func consume(t *testing.T, client *kafkaclient.Client, topics []testutil.TopicPa
 	return messages, errors
 }
 
-//Verify Event Models EndPoint
+// Verify Event Models EndPoint
 func TestEventModels(t *testing.T) {
 	// GET /schemas/event-models
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
@@ -934,7 +935,7 @@ func AddWHSpecificSqlFunctionsToJobsDb() {
 	}
 }
 
-//Verify Event in WareHouse Postgres
+// Verify Event in WareHouse Postgres
 func TestWHPostgresDestination(t *testing.T) {
 	pgTest := wht.Test.PGTest
 
@@ -957,7 +958,7 @@ func TestWHPostgresDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-//Verify Event in WareHouse ClickHouse
+// Verify Event in WareHouse ClickHouse
 func TestWHClickHouseDestination(t *testing.T) {
 	chTest := wht.Test.CHTest
 
@@ -980,7 +981,7 @@ func TestWHClickHouseDestination(t *testing.T) {
 	whDestinationTest(t, whDestTest)
 }
 
-//Verify Event in WareHouse ClickHouse Cluster
+// Verify Event in WareHouse ClickHouse Cluster
 func TestWHClickHouseClusterDestination(t *testing.T) {
 	chClusterTest := wht.Test.CHClusterTest
 
@@ -1023,13 +1024,12 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 func TestWHBigQuery(t *testing.T) {
 	if runBigQueryTest == false {
 		t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
-
 	}
 	if wht.Test.BQTest == nil {
 		fmt.Println("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
 		t.FailNow()
 	}
-	//Disabling big query dedup
+	// Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bq.Init()
 	bqTest := wht.Test.BQTest
@@ -1076,7 +1076,7 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	whDestinationTest(t, whDestTest)
-	//Enabling big query dedup
+	// Enabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
 	bq.Init()
 
@@ -1105,10 +1105,9 @@ func TestWHBigQuery(t *testing.T) {
 	}
 
 	whDestinationTest(t, whDestTest)
-
 }
 
-//Verify Event in WareHouse MSSQL
+// Verify Event in WareHouse MSSQL
 func TestWHMssqlDestination(t *testing.T) {
 	MssqlTest := wht.Test.MSSQLTest
 

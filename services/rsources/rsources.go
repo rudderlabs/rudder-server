@@ -138,8 +138,7 @@ func NewNoOpService() JobService {
 	return &noopService{}
 }
 
-type noopService struct {
-}
+type noopService struct{}
 
 func (*noopService) Delete(_ context.Context, _ string) error {
 	return nil

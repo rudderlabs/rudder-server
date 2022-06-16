@@ -37,7 +37,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//ProcessorApp is the type for Processor type implemention
+// ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -85,7 +85,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -111,7 +111,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return err
 	}
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -195,7 +195,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) // TODO
 				return nil
 			})
 		}
@@ -265,8 +265,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
-		//because if this start before that then there might be a case when ReadDB will try to read the owner table
-		//which gets created after either Write or ReadWrite DB is created.
+		// because if this start before that then there might be a case when ReadDB will try to read the owner table
+		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
 	})
 
@@ -278,7 +278,7 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 }
 
 func startHealthWebHandler(ctx context.Context) error {
-	//Port where Processor health handler is running
+	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", healthHandler)

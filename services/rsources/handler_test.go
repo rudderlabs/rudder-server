@@ -33,7 +33,6 @@ var defaultJobTargetKey = JobTargetKey{
 }
 
 var _ = Describe("Using sources handler", func() {
-
 	Context("standard setup with a single local datasource", Ordered, func() {
 		var (
 			pool     *dockertest.Pool
@@ -279,7 +278,6 @@ var _ = Describe("Using sources handler", func() {
 					}
 				}
 			}
-
 		})
 	})
 
@@ -402,7 +400,6 @@ var _ = Describe("Using sources handler", func() {
 				expectedResults := reflect.DeepEqual(expected, totalStatsB)
 				return sameResults && expectedResults
 			}, "20s", "100ms").Should(BeTrue(), "Status from both services should be same and representing the sum")
-
 		})
 		It("should be able to create the same services again and not affect publications and subscriptions", func() {
 			createService(configA)
@@ -461,7 +458,7 @@ func newJobRunId() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
-func newDBResource(pool *dockertest.Pool, networkId string, hostname string, params ...string) postgresResource {
+func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...string) postgresResource {
 	database := "jobsdb"
 	cmd := []string{"postgres"}
 	if len(params) > 0 {

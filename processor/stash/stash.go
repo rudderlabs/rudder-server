@@ -246,7 +246,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
-			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
+			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,

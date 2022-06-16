@@ -27,46 +27,46 @@ import (
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	initJobsDB()
 
-	var _ = DescribeTable("newDSIdx tests",
+	_ = DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
 			Expect(err).To(BeNil())
 		},
-		//dList => 1 2 3 4 5
+		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
 		Entry("Internal Migration for regular tables 1 Test 2 : ", "2", "3", "2_1"),
 
-		//dList => 1_1 2 3 4 5
+		// dList => 1_1 2 3 4 5
 		Entry("Internal Migration for regular tables 2 Test 1 : ", "1_1", "2", "1_2"),
 		Entry("Internal Migration for regular tables 2 Test 2 : ", "2", "3", "2_1"),
 
-		//dList => 1 2_1 3 4 5
+		// dList => 1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 3 Test 1 : ", "1", "2_1", "1_1"),
 		Entry("Internal Migration for regular tables 3 Test 2 : ", "2_1", "3", "2_2"),
 		Entry("Internal Migration for regular tables 3 Test 3 : ", "3", "4", "3_1"),
 
-		//dList => 1_1 2_1 3 4 5
+		// dList => 1_1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
 
-		//dList => 0_1 1 2 3 4 5
+		// dList => 0_1 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_1_1"),
 		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
 
-		//dList => 0_1 0_2 1 2 3 4 5
+		// dList => 0_1 0_2 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 2 Test 1 : ", "0_1", "0_2", "0_1_1"),
 		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_2_1"),
 		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
 
-		//dList => 0_1_1 0_2 1 2 3 4 5
+		// dList => 0_1_1 0_2 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 3 Test 1 : ", "0_1_1", "0_2", "0_1_2"),
 		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_2_1"),
 
-		//dList => 0_1_1 0_2_1 1 2 3 4 5
+		// dList => 0_1_1 0_2_1 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 4 Test 1 : ", "0_2_1", "1", "0_2_2"),
 		Entry("Internal Migration for import tables Case 4 Test 2 : ", "0_1_1", "0_2_1", "0_1_2"),
 
-		//dList => 0_1 0_2_1 1 2 3
+		// dList => 0_1 0_2_1 1 2 3
 		Entry("Internal Migration for import tables Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
 
 		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
@@ -108,7 +108,7 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		})
 	})
 
-	var _ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
+	_ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
 		func(before, after, expected string) {
 			setSkipZeroAssertionForMultitenant(true)
 			computedIdx, err := computeInsertIdx(before, after)
@@ -116,23 +116,23 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 			Expect(err).To(BeNil())
 			setSkipZeroAssertionForMultitenant(false)
 		},
-		//dList => 1 2 3 4 5
+		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
 		Entry("Internal Migration for regular tables 1 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
 
-		//dList => 1_1 2 3 4 5
+		// dList => 1_1 2 3 4 5
 		Entry("Internal Migration for regular tables 2 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2", "1_2"),
 		Entry("Internal Migration for regular tables 2 Test 2 with skipZeroAssertionForMultitenant: ", "2", "3", "2_1"),
 
-		//dList => 1 2_1 3 4 5
+		// dList => 1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 3 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2_1", "1_1"),
 		Entry("Internal Migration for regular tables 3 Test 2 with skipZeroAssertionForMultitenant: ", "2_1", "3", "2_2"),
 		Entry("Internal Migration for regular tables 3 Test 3 with skipZeroAssertionForMultitenant: ", "3", "4", "3_1"),
 
-		//dList => 1_1 2_1 3 4 5
+		// dList => 1_1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 4 Test 1 with skipZeroAssertionForMultitenant: ", "1_1", "2_1", "1_2"),
 
-		//dList => 0_1 1 2 3 4 5
+		// dList => 0_1 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 1 Test 2 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
 
 		Entry("Internal Migration for import tables Case 2 Test 3 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
@@ -193,7 +193,7 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 	initJobsDB()
 
-	var _ = DescribeTable("newDSIdx tests",
+	_ = DescribeTable("newDSIdx tests",
 		func(dList []dataSetT, after dataSetT, expected string) {
 			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(computedIdx).To(Equal(expected))
@@ -239,7 +239,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 			}, "0_2"),
 	)
 
-	var _ = DescribeTable("Error cases",
+	_ = DescribeTable("Error cases",
 		func(dList []dataSetT, after dataSetT) {
 			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(err != nil).Should(BeTrue())
@@ -348,8 +348,10 @@ var _ = Describe("jobsdb", func() {
 	})
 })
 
-var d1 = dataSetT{JobTable: "tt_jobs_1",
-	JobStatusTable: "tt_job_status_1"}
+var d1 = dataSetT{
+	JobTable:       "tt_jobs_1",
+	JobStatusTable: "tt_job_status_1",
+}
 
 var d2 = dataSetT{
 	JobTable:       "tt_jobs_2",
@@ -404,11 +406,10 @@ func BenchmarkSanitizeJson(b *testing.B) {
 			sanitizedJsonUsingRegexp(json.RawMessage(input))
 		}
 	})
-
 }
 
 func randomString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	s := make([]rune, n)
 	for i := range s {
 		s[i] = letters[rand.Intn(len(letters))]
@@ -416,7 +417,7 @@ func randomString(n int) string {
 	return string(s)
 }
 
-func insertStringInString(input string, c string, times int) string {
+func insertStringInString(input, c string, times int) string {
 	if times == 0 {
 		return input
 	}

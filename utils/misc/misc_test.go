@@ -29,7 +29,7 @@ var _ = Describe("Misc", func() {
 	Expect(err).To(BeNil())
 
 	Context("Remove Empty Folder Paths", func() {
-		createFile := func(path string, targetDir string) {
+		createFile := func(path, targetDir string) {
 			dirPath := filepath.Dir(path)
 
 			err := os.MkdirAll(dirPath, os.ModePerm)
@@ -44,7 +44,7 @@ var _ = Describe("Misc", func() {
 
 			defer file.Close()
 		}
-		onPostFileCreation := func(sourceFile string, targetDir string) {
+		onPostFileCreation := func(sourceFile, targetDir string) {
 			RemoveFilePaths(sourceFile)
 
 			empty, err := FolderExists(targetDir)
@@ -489,7 +489,7 @@ var _ = Describe("Misc", func() {
 		})
 	})
 
-	var _ = DescribeTable("Unique tests",
+	_ = DescribeTable("Unique tests",
 		func(input, expected []string) {
 			actual := Unique(input)
 			Expect(actual).To(Equal(expected))

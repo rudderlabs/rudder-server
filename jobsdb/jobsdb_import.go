@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//SetupForImport is used to setup jobsdb for export or for import or for both
+// SetupForImport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForImport() {
 	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
@@ -22,7 +22,7 @@ func (jd *HandleT) getDsForImport(l lock.DSListLockToken) dataSetT {
 	return ds
 }
 
-//GetLastJobIDBeforeImport should return the largest job id stored so far
+// GetLastJobIDBeforeImport should return the largest job id stored so far
 func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	jd.assert(jd.migrationState.dsForNewEvents.Index != "", "dsForNewEvents must be setup before calling this")
 	var lastJobIDBeforeNewImports int64
@@ -39,13 +39,13 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	return lastJobIDBeforeNewImports
 }
 
-//getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
-//In place migration is not supported anymore, so this should suffice.
+// getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
+// In place migration is not supported anymore, so this should suffice.
 func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	return dataSetT{JobTable: fmt.Sprintf("%s_jobs_1", jd.tablePrefix), JobStatusTable: fmt.Sprintf("%s_job_status_1", jd.tablePrefix), Index: "1"}
 }
 
-//StoreJobsAndCheckpoint is used to write the jobs to _tables
+// StoreJobsAndCheckpoint is used to write the jobs to _tables
 func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
 	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -103,7 +103,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
-	_, err = jd.updateJobStatusDSInTx(txn, jd.migrationState.dsForImport, statusList, statTags{}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
+	_, err = jd.updateJobStatusDSInTx(txn, jd.migrationState.dsForImport, statusList, statTags{}) // Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported
@@ -118,7 +118,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	err = txn.Commit()
 	jd.assertError(err)
 
-	//Clear ds from cache
+	// Clear ds from cache
 	jd.dropDSFromCache(jd.migrationState.dsForImport)
 }
 
@@ -141,7 +141,6 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 		return int64(maxID.Int64)
 	}
 	return int64(0)
-
 }
 
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
@@ -150,7 +149,7 @@ func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
 	})
 }
 
-//UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
+// UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
 func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.DSListLockToken, seqNoForNewDS int64) {
 	dsList := jd.getDSList()
 	dsListLen := len(dsList)
@@ -172,5 +171,4 @@ func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.DSListLockToken
 		jd.updateSequenceNumber(ds, seqNoForNewDS)
 		jd.logger.Infof("DataSet(%s)'s sequence number updated to : %d", ds, seqNoForNewDS)
 	}
-
 }

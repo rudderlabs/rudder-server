@@ -1,13 +1,14 @@
 package batchrouter
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
-	"strings"
-	"testing"
 )
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {

@@ -3,12 +3,13 @@ package configuration_testing
 import (
 	"encoding/json"
 	"errors"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"time"
 )
 
 var (
