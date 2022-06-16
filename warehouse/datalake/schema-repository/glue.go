@@ -53,7 +53,7 @@ func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepositor
 }
 
 func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
-	var schema = warehouseutils.SchemaT{}
+	schema := warehouseutils.SchemaT{}
 	var err error
 
 	var getTablesOutput *glue.GetTablesOutput
@@ -134,7 +134,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -165,7 +165,7 @@ func (gl *GlueSchemaRepository) AddColumn(tableName string, columnName string, c
 	return
 }
 
-func (gl *GlueSchemaRepository) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return gl.AddColumn(tableName, columnName, columnType)
 }
 

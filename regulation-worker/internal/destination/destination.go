@@ -39,9 +39,9 @@ func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("workspaceId not found in config")
 }
 
-//make api call to get json and then parse it to get destination related details
-//like: dest_type, auth details,
-//return destination Type enum{file, api}
+// make api call to get json and then parse it to get destination related details
+// like: dest_type, auth details,
+// return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
 	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
 	destConf, err := d.getDestDetails(ctx)
@@ -91,7 +91,6 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 			pkgLogger.Debugf("reached retry limit...")
 			return backendconfig.ConfigT{}, err
 		}
-
 	}
 	return destConf, nil
 }

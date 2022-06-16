@@ -35,7 +35,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//EmbeddedApp is the type for embedded type implemention
+// EmbeddedApp is the type for embedded type implemention
 type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -61,7 +61,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	if embedded.App.Features().Reporting != nil {
 		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -88,9 +88,9 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return err
 	}
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
-	//Processor.
+	// Processor.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -178,7 +178,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 			g.Go(func() error {
 				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
-					startRouterFunc) //TODO
+					startRouterFunc) // TODO
 				return nil
 			})
 		}
@@ -246,8 +246,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		rateLimiter.SetUp()
 		gw := gateway.HandleT{}
 		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
-		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
-		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+		// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+		// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
 		gatewayDB = *jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
@@ -274,8 +274,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
-		//because if this start before that then there might be a case when ReadDB will try to read the owner table
-		//which gets created after either Write or ReadWrite DB is created.
+		// because if this start before that then there might be a case when ReadDB will try to read the owner table
+		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
 	})
 

@@ -20,7 +20,7 @@ func TestJobSvc(t *testing.T) {
 		"accessKey":   "pqr",
 		"enableSSE":   false,
 	}
-	var tests = []struct {
+	tests := []struct {
 		name                        string
 		job                         model.Job
 		getErr                      error
@@ -71,7 +71,6 @@ func TestJobSvc(t *testing.T) {
 	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 

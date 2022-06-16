@@ -62,6 +62,7 @@ func Test_Dedup(t *testing.T) {
 		require.Equal(t, []int{}, dupsAgain)
 	})
 }
+
 func Test_Dedup_Window(t *testing.T) {
 	config.Load()
 	logger.Init()
@@ -122,7 +123,7 @@ func Benchmark_Dedup(b *testing.B) {
 	dbPath := path.Join("./testdata", "tmp", randSeq(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer os.RemoveAll(dbPath)
-	os.MkdirAll(dbPath, 0750)
+	os.MkdirAll(dbPath, 0o750)
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Minute))
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {

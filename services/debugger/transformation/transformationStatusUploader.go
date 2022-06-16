@@ -28,7 +28,7 @@ type TransformationStatusT struct {
 	UniqueMessageIds      map[string]struct{}
 }
 
-//TransformStatusT is a structure to hold transformation status
+// TransformStatusT is a structure to hold transformation status
 type TransformStatusT struct {
 	TransformationID string                `json:"transformationId"`
 	SourceID         string                `json:"sourceId"`
@@ -73,8 +73,10 @@ var (
 	transformationCacheMap       debugger.Cache
 )
 
-var uploadEnabledTransformations map[string]bool
-var configSubscriberLock sync.RWMutex
+var (
+	uploadEnabledTransformations map[string]bool
+	configSubscriberLock         sync.RWMutex
+)
 
 func Init() {
 	loadConfig()
@@ -86,8 +88,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 }
 
-type TransformationStatusUploader struct {
-}
+type TransformationStatusUploader struct{}
 
 func IsUploadEnabled(id string) bool {
 	configSubscriberLock.RLock()
@@ -96,7 +97,7 @@ func IsUploadEnabled(id string) bool {
 	return ok
 }
 
-//Setup initializes this module
+// Setup initializes this module
 func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
@@ -108,10 +109,10 @@ func Setup() {
 	})
 }
 
-//RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
-//which will be processed by handleEvents.
+// RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
+// which will be processed by handleEvents.
 func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
-	//if disableTransformationUploads is true, return;
+	// if disableTransformationUploads is true, return;
 	if disableTransformationUploads {
 		return false
 	}
@@ -167,7 +168,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		}
 	}()
 
-	//if disableTransformationUploads is true, return;
+	// if disableTransformationUploads is true, return;
 	if disableTransformationUploads {
 		return
 	}
@@ -182,7 +183,6 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
 		}
 	}
-
 }
 
 func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventBeforeTransform {
@@ -259,12 +259,14 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 	}
 
 	for k := range eventBeforeMap {
-		RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
-			SourceID:      tStatus.SourceID,
-			DestinationID: tStatus.DestID,
-			EventBefore:   eventBeforeMap[k],
-			EventsAfter:   eventAfterMap[k],
-			IsError:       false})
+		RecordTransformationStatus(&TransformStatusT{
+			TransformationID: tID,
+			SourceID:         tStatus.SourceID,
+			DestinationID:    tStatus.DestID,
+			EventBefore:      eventBeforeMap[k],
+			EventsAfter:      eventAfterMap[k],
+			IsError:          false,
+		})
 	}
 
 	for _, failedEvent := range tStatus.FailedEvents {
@@ -279,12 +281,14 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 					StatusCode: failedEvent.StatusCode,
 				}
 
-				RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
-					SourceID:      tStatus.SourceID,
-					DestinationID: tStatus.DestID,
-					EventBefore:   eventBefore,
-					EventsAfter:   eventAfter,
-					IsError:       true})
+				RecordTransformationStatus(&TransformStatusT{
+					TransformationID: tID,
+					SourceID:         tStatus.SourceID,
+					DestinationID:    tStatus.DestID,
+					EventBefore:      eventBefore,
+					EventsAfter:      eventAfter,
+					IsError:          true,
+				})
 			}
 		} else if failedEvent.Metadata.MessageID != "" {
 			reportedMessageIDs[failedEvent.Metadata.MessageID] = struct{}{}
@@ -296,12 +300,14 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 				StatusCode: failedEvent.StatusCode,
 			}
 
-			RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
-				SourceID:      tStatus.SourceID,
-				DestinationID: tStatus.DestID,
-				EventBefore:   eventBefore,
-				EventsAfter:   eventAfter,
-				IsError:       true})
+			RecordTransformationStatus(&TransformStatusT{
+				TransformationID: tID,
+				SourceID:         tStatus.SourceID,
+				DestinationID:    tStatus.DestID,
+				EventBefore:      eventBefore,
+				EventsAfter:      eventAfter,
+				IsError:          true,
+			})
 		}
 	}
 
@@ -314,12 +320,14 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 				IsDropped:  true,
 			}
 
-			RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
-				SourceID:      tStatus.SourceID,
-				DestinationID: tStatus.DestID,
-				EventBefore:   eventBefore,
-				EventsAfter:   eventAfter,
-				IsError:       false})
+			RecordTransformationStatus(&TransformStatusT{
+				TransformationID: tID,
+				SourceID:         tStatus.SourceID,
+				DestinationID:    tStatus.DestID,
+				EventBefore:      eventBefore,
+				EventsAfter:      eventAfter,
+				IsError:          false,
+			})
 		}
 	}
 }

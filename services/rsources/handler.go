@@ -24,7 +24,6 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
-
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -52,7 +51,6 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 		filters)
 
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
-
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -186,7 +184,6 @@ func (sh *sourcesHandler) init() error {
 		}
 	}
 	return nil
-
 }
 
 func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) error {
@@ -220,7 +217,6 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) erro
 }
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
-
 	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
 	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
 	if err != nil {

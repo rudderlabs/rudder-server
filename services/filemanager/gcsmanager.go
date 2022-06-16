@@ -147,7 +147,7 @@ func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, e
 	return object, nil
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
 	splitStr := strings.Split(location, manager.Config.Bucket)
 	key := strings.TrimLeft(splitStr[len(splitStr)-1], "/")

@@ -34,7 +34,7 @@ func IsArchiverObjectStorageConfigured() bool {
 	return provider != "" && bucket != ""
 }
 
-//ArchiveOldRecords archives records in the table with the name`tableName` and `tsColumn` provided is used as the timestamp column.
+// ArchiveOldRecords archives records in the table with the name`tableName` and `tsColumn` provided is used as the timestamp column.
 func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHandle *sql.DB) {
 	stmt := fmt.Sprintf(`SELECT count(*), COALESCE(MIN(id),0), COALESCE(MAX(id),0) FROM %s WHERE %s < NOW() -INTERVAL '%d DAY'`, tableName, tsColumn, archivalTimeInDays)
 	pkgLogger.Info(stmt)
@@ -96,7 +96,6 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	}
 
 	storedLocation, err := tableJSONArchiver.Do()
-
 	if err != nil {
 		pkgLogger.Errorf(`[Archiver]: Error archiving table %s: %v`, tableName, err)
 		return

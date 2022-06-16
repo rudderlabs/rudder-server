@@ -3,10 +3,11 @@ package state
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/app"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/app"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -19,9 +20,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-var (
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	keepaliveTime    time.Duration

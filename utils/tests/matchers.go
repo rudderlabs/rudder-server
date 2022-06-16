@@ -8,8 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type beValidUUIDMatcher struct {
-}
+type beValidUUIDMatcher struct{}
 
 func (matcher *beValidUUIDMatcher) Match(actual interface{}) (success bool, err error) {
 	s, ok := actual.(string)

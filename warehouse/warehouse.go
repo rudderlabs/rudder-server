@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"math/rand"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
@@ -107,8 +108,10 @@ const (
 	triggerUploadQPName = "triggerUpload"
 )
 
-type WorkerIdentifierT string
-type JobIDT int64
+type (
+	WorkerIdentifierT string
+	JobIDT            int64
+)
 
 type HandleT struct {
 	destType                          string
@@ -144,7 +147,7 @@ func Init4() {
 }
 
 func loadConfig() {
-	//Port where WH is running
+	// Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
@@ -320,7 +323,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	configMap := configI.(map[string]interface{})
 	var namespace string
 	if destType == warehouseutils.CLICKHOUSE {
-		//TODO: Handle if configMap["database"] is nil
+		// TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
 	if configMap["namespace"] != nil {
@@ -341,7 +344,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	return namespace
 }
 
-func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
+func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
@@ -750,9 +753,8 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
-
 	var skipIdentifiersSQL string
-	var partitionIdentifierSQL = `destination_id, namespace`
+	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
 		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
@@ -1022,16 +1024,16 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 	}
 }
 
-func getBucketFolder(batchID string, tableName string) string {
+func getBucketFolder(batchID, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
 
-//Enable enables a router :)
+// Enable enables a router :)
 func (wh *HandleT) Enable() {
 	wh.isEnabled = true
 }
 
-//Disable disables a router:)
+// Disable disables a router:)
 func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
@@ -1057,7 +1059,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType string, whName string) {
+func (wh *HandleT) Setup(whType, whName string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
@@ -1171,7 +1173,6 @@ func monitorDestRouters(ctx context.Context) {
 		})
 	}
 	g.Wait()
-
 }
 
 func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
@@ -1216,7 +1217,6 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 			}
 		}
 	}
-
 }
 
 func setupTables(dbHandle *sql.DB) {
@@ -1500,8 +1500,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func TriggerUploadHandler(sourceID string, destID string) error {
-
+func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
 		err := fmt.Errorf("Empty source and destination id")
@@ -1739,7 +1738,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	// only if standalone or embeded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
 		if application.Features().Reporting != nil {

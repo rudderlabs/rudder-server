@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"google.golang.org/protobuf/types/known/emptypb"

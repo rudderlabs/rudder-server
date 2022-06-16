@@ -10,8 +10,10 @@ import (
 	gluuid "github.com/google/uuid"
 )
 
-var uuidGOOGLE gluuid.UUID
-var uuidGOFRS uuid.UUID
+var (
+	uuidGOOGLE gluuid.UUID
+	uuidGOFRS  uuid.UUID
+)
 
 func init() {
 	gluuid.EnableRandPool()

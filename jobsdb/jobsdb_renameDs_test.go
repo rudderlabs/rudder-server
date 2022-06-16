@@ -49,8 +49,8 @@ func Test_mustRenameDS(t *testing.T) {
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable), 1)
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable), 1)
 	})
-
 }
+
 func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
 		dbHandle := postgresql.DB

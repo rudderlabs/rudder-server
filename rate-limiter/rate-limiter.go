@@ -17,12 +17,12 @@ var (
 	pkgLogger             logger.LoggerI
 )
 
-//RateLimiter is an interface for rate limiting functions
+// RateLimiter is an interface for rate limiting functions
 type RateLimiter interface {
 	LimitReached(key string) bool
 }
 
-//HandleT is a Handle for event limiter
+// HandleT is a Handle for event limiter
 type HandleT struct {
 	restrictor restrictor.Restrictor
 }
@@ -41,7 +41,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(12, &noOfBucketsInWindow, false, 1, "RateLimit.noOfBucketsInWindow")
 }
 
-//SetUp eventLimiter
+// SetUp eventLimiter
 func (rateLimiter *HandleT) SetUp() {
 	store, err := restrictor.NewMemoryStore()
 	if err != nil {
@@ -51,7 +51,7 @@ func (rateLimiter *HandleT) SetUp() {
 	rateLimiter.restrictor = restrictor.NewRestrictor(rateLimitWindowInMins, uint32(eventLimit), uint32(noOfBucketsInWindow), store)
 }
 
-//LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
+// LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
 func (rateLimiter *HandleT) LimitReached(key string) bool {
 	return rateLimiter.restrictor.LimitReached(key)
 }
