@@ -1491,7 +1491,7 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 }
 
 func (rt *HandleT) getWorkerPartition(userID string) int {
-	return int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
+	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
 func (rt *HandleT) shouldThrottle(destID, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
