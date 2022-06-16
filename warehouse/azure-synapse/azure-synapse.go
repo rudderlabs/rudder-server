@@ -391,7 +391,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						if len(strValue) > mssqlStringLengthLimit {
 							strValue = strValue[:mssqlStringLengthLimit]
 						}
-						byteArr := []byte("")
+						var byteArr []byte
 						if hasDiacritics(strValue) {
 							pkgLogger.Debug("diacritics " + strValue)
 							byteArr = str2ucs2(strValue)
