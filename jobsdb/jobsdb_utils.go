@@ -18,12 +18,12 @@ Most callers use the in-memory list of dataset and datasetRanges
 func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataSetT {
 	datasetList := []dataSetT{}
 
-	//Read the table names from PG
+	// Read the table names from PG
 	tableNames := mustGetAllTableNames(jd, dbHandle)
 
-	//Tables are of form jobs_ and job_status_. Iterate
-	//through them and sort them to produce and
-	//ordered list of datasets
+	// Tables are of form jobs_ and job_status_. Iterate
+	// through them and sort them to produce and
+	// ordered list of datasets
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
@@ -45,11 +45,11 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 
 	sortDnumList(jd, dnumList)
 
-	//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
+	// If any service has crashed while creating DS, this may happen. Handling such case gracefully.
 	if len(jobNameMap) != len(jobStatusNameMap) {
 		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) - length of jobStatusNameMap(%d) is more than 1", len(jobNameMap), len(jobStatusNameMap)))
 		deletedDNum := removeExtraKey(jobNameMap, jobStatusNameMap)
-		//remove deletedDNum from dnumList
+		// remove deletedDNum from dnumList
 		var idx int
 		var dnum string
 		var foundDeletedDNum bool
@@ -64,15 +64,17 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 		}
 	}
 
-	//Create the structure
+	// Create the structure
 	for _, dnum := range dnumList {
 		jobName, ok := jobNameMap[dnum]
 		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
 		jobStatusName, ok := jobStatusNameMap[dnum]
 		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
 		datasetList = append(datasetList,
-			dataSetT{JobTable: jobName,
-				JobStatusTable: jobStatusName, Index: dnum})
+			dataSetT{
+				JobTable:       jobName,
+				JobStatusTable: jobStatusName, Index: dnum,
+			})
 	}
 
 	return datasetList
@@ -99,8 +101,8 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 	k := 0
 	for {
 		if k >= len(src) {
-			//src has same prefix but is shorter
-			//For example, src=1.1 while dest=1.1.1
+			// src has same prefix but is shorter
+			// For example, src=1.1 while dest=1.1.1
 			if k >= len(dst) {
 				return false, fmt.Errorf("k:%d >= len(dst):%d", k, len(dst))
 			}
@@ -110,7 +112,7 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 			return true, nil
 		}
 		if k >= len(dst) {
-			//Opposite of case above
+			// Opposite of case above
 			if k <= 0 {
 				return false, fmt.Errorf("k:%d <= 0", k)
 			}
@@ -120,11 +122,11 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 			return false, nil
 		}
 		if src[k] == dst[k] {
-			//Loop
+			// Loop
 			k++
 			continue
 		}
-		//Strictly ordered. Return
+		// Strictly ordered. Return
 		srcInt, err := strconv.Atoi(src[k])
 		if err != nil {
 			return false, fmt.Errorf("string to int conversion failed for source %v. with error %w", src, err)
@@ -137,14 +139,14 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 	}
 }
 
-//mustGetAllTableNames gets all table names from Postgres and panics in case of an error
+// mustGetAllTableNames gets all table names from Postgres and panics in case of an error
 func mustGetAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
 	tableNames, err := getAllTableNames(dbHandle)
 	jd.assertError(err)
 	return tableNames
 }
 
-//getAllTableNames gets all table names from Postgres
+// getAllTableNames gets all table names from Postgres
 func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
 	var tableNames []string
 	rows, err := dbHandle.Query(`SELECT tablename
@@ -166,7 +168,7 @@ func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
 	return tableNames, nil
 }
 
-//checkValidJobState Function to check validity of states
+// checkValidJobState Function to check validity of states
 func checkValidJobState(jd assertInterface, stateFilters []string) {
 	jobStateMap := make(map[string]jobStateT)
 	for _, js := range jobStates {
@@ -179,7 +181,7 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 	}
 }
 
-//constructQuery construct and return query
+// constructQuery construct and return query
 func constructQuery(jd assertInterface, paramKey string, paramList []string, queryType string) string {
 	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
 	var queryList []string
@@ -189,10 +191,10 @@ func constructQuery(jd assertInterface, paramKey string, paramList []string, que
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
 
-//constructStateQuery construct query from provided state filters
+// constructStateQuery construct query from provided state filters
 func constructStateQuery(alias, paramKey string, paramList []string, queryType string) string {
 	var queryList []string
-	//Building state query for non executing states
+	// Building state query for non executing states
 	for _, p := range paramList {
 		if p != NotProcessed.State {
 			queryList = append(queryList, "("+alias+"."+paramKey+"='"+p+"')")
@@ -200,7 +202,7 @@ func constructStateQuery(alias, paramKey string, paramList []string, queryType s
 	}
 	temp := "((" + strings.Join(queryList, " "+queryType+" ") + ")" + " and " + alias + ".retry_time < $1)"
 
-	//Building state query for executing states
+	// Building state query for executing states
 	for _, p := range paramList {
 		if p == NotProcessed.State {
 			temp = temp + " " + queryType + " " + alias + ".job_id is null"
@@ -211,7 +213,7 @@ func constructStateQuery(alias, paramKey string, paramList []string, queryType s
 	return temp
 }
 
-//constructParameterJSONQuery construct and return query
+// constructParameterJSONQuery construct and return query
 func constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
@@ -230,9 +232,8 @@ func constructParameterJSONQuery(table string, parameterFilters []ParameterFilte
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
-//Admin Handlers
-type JobsdbUtilsHandler struct {
-}
+// Admin Handlers
+type JobsdbUtilsHandler struct{}
 
 var jobsdbUtilsHandler *JobsdbUtilsHandler
 

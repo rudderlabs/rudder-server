@@ -12,9 +12,11 @@ const (
 	StickySampler CounterTypeT = "StickySampler"
 )
 
-var defaultCounterType CounterTypeT
-var counterSupport, counterErrorTolerance, counterFailureProb, counterThreshold float64
-var counterTypeStr string
+var (
+	defaultCounterType                                                          CounterTypeT
+	counterSupport, counterErrorTolerance, counterFailureProb, counterThreshold float64
+	counterTypeStr                                                              string
+)
 
 type FrequencyCounter struct {
 	Name        string
@@ -48,7 +50,6 @@ func Init() {
 	} else {
 		defaultCounterType = LossyCount
 	}
-
 }
 
 func NewFrequencyCounter(name string) *FrequencyCounter {
@@ -75,6 +76,7 @@ func (fc *FrequencyCounter) Observe(key *string) {
 func getCounterSupport(key string) float64 {
 	return counterSupport
 }
+
 func (fc *FrequencyCounter) ItemsAboveThreshold() []countish.Entry {
 	return fc.getCounter().ItemsAboveThreshold(counterThreshold)
 }

@@ -49,13 +49,12 @@ func TestMain(m *testing.M) {
 	os.Exit(run(m))
 }
 
-//run minio server & store data in it.
+// run minio server & store data in it.
 func run(m *testing.M) int {
-
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.Parse()
 
-	//docker pool setup
+	// docker pool setup
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		panic(fmt.Errorf("Could not connect to docker: %s", err))
@@ -83,7 +82,7 @@ func run(m *testing.M) int {
 
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 
-	//check if minio server is up & running.
+	// check if minio server is up & running.
 	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
@@ -106,7 +105,7 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("minioClient created successfully")
 
-	//creating bucket inside minio where testing will happen.
+	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(bucket, "us-east-1")
 	if err != nil {
 		panic(err)
@@ -164,7 +163,7 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("bucket created successfully")
 
-	//getting list of files in `testData` directory while will be used to testing filemanager.
+	// getting list of files in `testData` directory while will be used to testing filemanager.
 	searchDir := "./goldenDirectory"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
@@ -186,7 +185,6 @@ func run(m *testing.M) int {
 }
 
 func TestFileManager(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		skip     string
@@ -280,7 +278,7 @@ func TestFileManager(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			//upload all files
+			// upload all files
 			uploadOutputs := make([]filemanager.UploadOutput, 0)
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
@@ -292,28 +290,28 @@ func TestFileManager(t *testing.T) {
 				uploadOutputs = append(uploadOutputs, uploadOutput)
 				filePtr.Close()
 			}
-			//list files using ListFilesWithPrefix
+			// list files using ListFilesWithPrefix
 			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", 1000)
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 			require.NoError(t, err, "expected no error while listing files")
 
-			//based on the obtained location, get object name by calling GetObjectNameFromLocation
+			// based on the obtained location, get object name by calling GetObjectNameFromLocation
 			objectName, err := fm.GetObjectNameFromLocation(uploadOutputs[0].Location)
 			require.NoError(t, err, "no error expected")
 			require.Equal(t, uploadOutputs[0].ObjectName, objectName, "actual object name different than expected")
 
-			//also get download key from file location by calling GetDownloadKeyFromFileLocation
+			// also get download key from file location by calling GetDownloadKeyFromFileLocation
 			expectedKey := uploadOutputs[0].ObjectName
 			key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
 			require.Equal(t, expectedKey, key, "actual object key different than expected")
 
-			//get prefix based on config
+			// get prefix based on config
 			splitString := strings.Split(uploadOutputs[0].ObjectName, "/")
 			expectedPrefix := splitString[0]
 			prefix := fm.GetConfiguredPrefix()
 			require.Equal(t, expectedPrefix, prefix, "actual prefix different than expected")
 
-			//download one of the files & assert if it matches the original one present locally.
+			// download one of the files & assert if it matches the original one present locally.
 			filePtr, err := os.Open(fileList[0])
 			if err != nil {
 				fmt.Printf("error: %s while opening file: %s ", err, fileList[0])
@@ -326,8 +324,8 @@ func TestFileManager(t *testing.T) {
 
 			DownloadedFileName := "TmpDownloadedFile"
 
-			//fail to download the file with cancelled context
-			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+			// fail to download the file with cancelled context
+			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 			if err != nil {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
@@ -337,7 +335,7 @@ func TestFileManager(t *testing.T) {
 			require.Error(t, err, "expected error while downloading file")
 			filePtr.Close()
 
-			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 			if err != nil {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
@@ -347,7 +345,7 @@ func TestFileManager(t *testing.T) {
 			require.NoError(t, err, "expected no error")
 			filePtr.Close()
 
-			filePtr, err = os.OpenFile(DownloadedFileName, os.O_RDWR, 0644)
+			filePtr, err = os.OpenFile(DownloadedFileName, os.O_RDWR, 0o644)
 			if err != nil {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
@@ -360,13 +358,13 @@ func TestFileManager(t *testing.T) {
 			ans := strings.Compare(string(originalFile), string(downloadedFile))
 			require.Equal(t, 0, ans, "downloaded file different than actual file")
 
-			//fail to delete the file with cancelled context
+			// fail to delete the file with cancelled context
 			ctx, cancel = context.WithCancel(context.TODO())
 			cancel()
 			err = fm.DeleteObjects(ctx, []string{key})
 			require.Error(t, err, "expected error while deleting file")
 
-			//delete that file
+			// delete that file
 			err = fm.DeleteObjects(context.TODO(), []string{key})
 			require.NoError(t, err, "expected no error while deleting object")
 			// list files again & assert if that file is still present.
@@ -398,7 +396,7 @@ func TestFileManager(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			//fail to upload file
+			// fail to upload file
 			file := fileList[0]
 			filePtr, err := os.Open(file)
 			require.NoError(t, err, "error while opening testData file to upload")
@@ -408,9 +406,9 @@ func TestFileManager(t *testing.T) {
 			require.Error(t, err, "expected error while uploading file")
 			filePtr.Close()
 
-			//MINIO doesn't support list files with context cancellation
+			// MINIO doesn't support list files with context cancellation
 			if tt.destName != "MINIO" {
-				//fail to fetch file list
+				// fail to fetch file list
 				ctx1, cancel := context.WithTimeout(context.TODO(), time.Second*5)
 				cancel()
 				_, err = fm.ListFilesWithPrefix(ctx1, "", 1000)
@@ -419,7 +417,6 @@ func TestFileManager(t *testing.T) {
 		})
 
 	}
-
 }
 
 func TestGCSManager_unsupported_credentials(t *testing.T) {

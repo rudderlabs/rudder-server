@@ -32,7 +32,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
-
 	})
 
 	When("there are rudder-sources jobs", func() {
@@ -53,7 +52,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 			})
 
 			It("can publish without error all statuses as In stats", func() {
-
 				js.EXPECT().
 					IncrementStats(
 						gomock.Any(),
@@ -94,10 +92,8 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				It("fails during publish", func() {
 					err := statsCollector.Publish(context.TODO(), nil)
 					Expect(err).ToNot(BeNil())
-
 				})
 			})
-
 		})
 
 		Context("half of the jobs have errors", func() {
@@ -113,7 +109,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					statsCollector.JobsStoredWithErrors(jobs, jobErrors)
 				})
 				It("can publish without error all successful jobs as In stats", func() {
-
 					js.EXPECT().
 						IncrementStats(
 							gomock.Any(),
@@ -132,7 +127,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					err := statsCollector.Publish(context.TODO(), nil)
 					Expect(err).To(BeNil())
 				})
-
 			})
 		})
 
@@ -169,7 +163,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 							Times(1)
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
-
 					})
 				})
 			})
@@ -188,7 +181,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					It("can publish without error all statuses but without actually updating stats", func() {
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
-
 					})
 				})
 			})
@@ -209,7 +201,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					})
 
 					It("can publish without error all statuses but with updating half stats as Failed stats", func() {
-
 						js.EXPECT().
 							IncrementStats(
 								gomock.Any(),
@@ -227,7 +218,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
-
 					})
 				})
 			})
@@ -244,7 +234,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				Expect(err).ToNot(BeNil())
 			})
 		})
-
 	})
 
 	When("there are no rudder-sources jobs", func() {
@@ -318,18 +307,21 @@ func newJob(id int64, params jobParams) *jobsdb.JobT {
 		Parameters: p,
 	}
 }
+
 func newSucceededStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
 		JobID:    jobId,
 		JobState: jobsdb.Succeeded.State,
 	}
 }
+
 func newFailedStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
 		JobID:    jobId,
 		JobState: jobsdb.Failed.State,
 	}
 }
+
 func newAbortedStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
 		JobID:    jobId,
@@ -338,7 +330,6 @@ func newAbortedStatus(jobId int64) *jobsdb.JobStatusT {
 }
 
 func BenchmarkParamsParsing(b *testing.B) {
-
 	jsonStr := []byte(`{
 		"prop1": "prop1",
 		"prop2": "prop2",

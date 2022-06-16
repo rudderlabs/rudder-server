@@ -117,7 +117,8 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	blobURL := containerURL.NewBlockBlobURL(fileName)
 	_, err = azblob.UploadFileToBlockBlob(ctx, file, blobURL, azblob.UploadToBlockBlobOptions{
 		BlockSize:   4 * 1024 * 1024,
-		Parallelism: 16})
+		Parallelism: 16,
+	})
 	if err != nil {
 		return UploadOutput{}, err
 	}

@@ -2,12 +2,13 @@ package datalake
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"time"
 )
 
 // TODO: Handle error using error types.
@@ -54,11 +55,11 @@ func (wh *HandleT) DropTable(tableName string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (wh *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	return wh.SchemaRepository.AddColumn(tableName, columnName, columnType)
 }
 
-func (wh *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return wh.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 
@@ -111,7 +112,7 @@ func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) error {
+func (wh *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 

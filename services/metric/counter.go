@@ -8,7 +8,6 @@ import (
 
 // Counter counts monotonically increasing values
 type Counter interface {
-
 	// Inc increments the counter by 1. Use Add to increment it by arbitrary
 	// non-negative values.
 	Inc()

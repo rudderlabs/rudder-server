@@ -76,6 +76,7 @@ func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.De
 	err := manager.onNewDestination(dest)
 	assert.EqualError(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
 }
+
 func newClientAttempt(t *testing.T, manager *CustomManagerT, destId string, attempt int, errorString string) {
 	err := manager.newClient(destId)
 	assert.EqualError(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))

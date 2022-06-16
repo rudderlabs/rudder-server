@@ -255,7 +255,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
 	upload.IsArchivedUpload = isUploadArchived.Bool
-	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+	gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
 	})
@@ -473,7 +473,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
-		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+		gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
 		})

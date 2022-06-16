@@ -96,9 +96,8 @@ func loadPGNotifierConfig() {
 	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
-//New Given default connection info return pg notifiew object from it
-func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
-
+// New Given default connection info return pg notifiew object from it
+func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
 	// by default connection info is fallback connection info
 	connectionInfo := fallbackConnectionInfo
 
@@ -138,7 +137,6 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 }
 
 func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
-
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
@@ -222,7 +220,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 }
 
 func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
-	//rruntime.GoForWarehouse(func() {
+	// rruntime.GoForWarehouse(func() {
 	//	response := <-ch
 	var err error
 	if response.Err != nil {
@@ -326,7 +324,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 
 	ch = make(chan []ResponseT)
 
-	//Using transactions for bulk copying
+	// Using transactions for bulk copying
 	txn, err := notifier.dbHandle.Begin()
 	if err != nil {
 		return
@@ -366,7 +364,6 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 }
 
 func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
-
 	jobs := make(chan ClaimT, jobsBufferSize)
 	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
@@ -408,13 +405,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	return
 }
 
-//GetCurrentSQLTimestamp to get sql complaint current datetime string
+// GetCurrentSQLTimestamp to get sql complaint current datetime string
 func GetCurrentSQLTimestamp() string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return time.Now().Format(SQLTimeFormat)
 }
 
-//GetSQLTimestamp to get sql complaint current datetime string from the given duration
+// GetSQLTimestamp to get sql complaint current datetime string from the given duration
 func GetSQLTimestamp(t time.Time) string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return t.Format(SQLTimeFormat)
@@ -484,5 +481,4 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 		}
 
 	}
-
 }

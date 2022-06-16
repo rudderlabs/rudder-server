@@ -48,7 +48,7 @@ func init() {
 }
 
 func (uploader *Uploader) Setup() {
-	//Number of events that are batched before sending events to control plane
+	// Number of events that are batched before sending events to control plane
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")
 	config.RegisterIntConfigVariable(1024, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
@@ -86,8 +86,8 @@ func (upload *Uploader) Stop() {
 	upload.bgWaitGroup.Wait()
 }
 
-//RecordEvent is used to put the event batch in the eventBatchChannel,
-//which will be processed by handleEvents.
+// RecordEvent is used to put the event batch in the eventBatchChannel,
+// which will be processed by handleEvents.
 func (uploader *Uploader) RecordEvent(data interface{}) {
 	uploader.eventBatchChannel <- data
 }
@@ -103,7 +103,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 
 	retryCount := 1
 	var resp *http.Response
-	//Sending event schema to Config Backend
+	// Sending event schema to Config Backend
 	for {
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
 		if err != nil {
@@ -122,7 +122,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 			}
 			retryCount++
 			time.Sleep(uploader.retrySleep)
-			//Refresh the connection
+			// Refresh the connection
 			continue
 		}
 		defer resp.Body.Close()
@@ -138,13 +138,13 @@ func (uploader *Uploader) handleEvents() {
 	for eventSchema := range uploader.eventBatchChannel {
 		uploader.eventBufferLock.Lock()
 
-		//If eventBuffer size is more than maxESQueueSize, Delete oldest.
+		// If eventBuffer size is more than maxESQueueSize, Delete oldest.
 		if len(uploader.eventBuffer) >= uploader.maxESQueueSize {
 			uploader.eventBuffer[0] = nil
 			uploader.eventBuffer = uploader.eventBuffer[1:]
 		}
 
-		//Append to request buffer
+		// Append to request buffer
 		uploader.eventBuffer = append(uploader.eventBuffer, eventSchema)
 
 		uploader.eventBufferLock.Unlock()

@@ -4,7 +4,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-func getRouterConfigBool(key string, destType string, defaultValue bool) bool {
+func getRouterConfigBool(key, destType string, defaultValue bool) bool {
 	destOverrideFound := config.IsSet("Router." + destType + "." + key)
 	if destOverrideFound {
 		return config.GetBool("Router."+destType+"."+key, defaultValue)
@@ -13,8 +13,7 @@ func getRouterConfigBool(key string, destType string, defaultValue bool) bool {
 	}
 }
 
-func getRouterConfigInt(key string, destType string, defaultValue int) int {
-
+func getRouterConfigInt(key, destType string, defaultValue int) int {
 	destOverrideFound := config.IsSet("Router." + destType + "." + key)
 	if destOverrideFound {
 		return config.GetInt("Router."+destType+"."+key, defaultValue)

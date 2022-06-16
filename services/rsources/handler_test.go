@@ -150,7 +150,6 @@ func TestSourcesHandler(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(t, status, JobStatus{})
 		require.True(t, errors.Is(err, StatusNotFoundError), "it should return a StatusNotFoundError")
-
 	})
 
 	t.Run("GetStatus with filtering", func(t *testing.T) {
@@ -314,7 +313,6 @@ func TestSourcesHandler(t *testing.T) {
 				}
 			}
 		}
-
 	})
 }
 

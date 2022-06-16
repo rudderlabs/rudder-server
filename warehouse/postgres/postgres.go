@@ -109,6 +109,7 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id",
 }
+
 var partitionKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
@@ -227,7 +228,6 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		fileNames = append(fileNames, fileName)
 	}
 	return fileNames, nil
-
 }
 
 func handleRollbackTimeout(tags map[string]string) {
@@ -594,7 +594,7 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -620,7 +620,7 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (pg *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -632,7 +632,7 @@ func (pg *HandleT) AddColumn(tableName string, columnName string, columnType str
 	return err
 }
 
-func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -663,7 +663,6 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	}
 
 	return nil
-
 }
 
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
@@ -689,7 +688,6 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (pg *HandleT) dropDanglingStagingTables() bool {
-
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, pg.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
@@ -822,7 +820,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

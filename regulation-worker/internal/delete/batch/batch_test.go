@@ -28,7 +28,6 @@ var (
 const mockBucket = "mockBucket"
 
 func TestBatchDelete(t *testing.T) {
-
 	initialize.Init()
 
 	ctx := context.Background()
@@ -136,7 +135,6 @@ func TestBatchDelete(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-
 	}
 }
 
@@ -144,25 +142,24 @@ func strPtr(str string) *string {
 	return &(str)
 }
 
-type mockFileManagerFactory struct {
-}
+type mockFileManagerFactory struct{}
 
-//creates a tmp directory & copy all the content of testData in it, to use it as mockBucket & store it in mockFileManager struct.
+// creates a tmp directory & copy all the content of testData in it, to use it as mockBucket & store it in mockFileManager struct.
 func (ff mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanager.FileManager, error) {
-	//create tmp directory
-	//parent directory of all the temporary files created/downloaded in the process of deletion.
+	// create tmp directory
+	// parent directory of all the temporary files created/downloaded in the process of deletion.
 	tmpDirPath, err := os.MkdirTemp("", "")
 	if err != nil {
 		panic(err)
 	}
-	//copy all content of testData in the tmp directory
+	// copy all content of testData in the tmp directory
 	_, err = exec.Command("cp", "-r", mockBucket, tmpDirPath).Output()
 	if err != nil {
 		return nil, fmt.Errorf("error while running cp command: %s", err)
 	}
 	// mockBucketLocation = fmt.Sprintf("%s%s", tmpDirPath, "/mockBucket")
 	mockBucketLocation = fmt.Sprintf("%s/%s", tmpDirPath, mockBucket)
-	//store the location in mockBucketLocation.
+	// store the location in mockBucketLocation.
 	return &mockFileManager{
 		mockBucketLocation: mockBucketLocation,
 	}, nil
@@ -177,7 +174,7 @@ func (fm *mockFileManager) SetTimeout(timeout *time.Duration) {
 	return
 }
 
-//Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
+// Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
 func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
@@ -185,9 +182,9 @@ func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes .
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	//copy the content of file to mockBucektLocation+fileName
+	// copy the content of file to mockBucektLocation+fileName
 	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
-	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return filemanager.UploadOutput{}, err
 	}
@@ -203,10 +200,10 @@ func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes .
 	}, nil
 }
 
-//Given a file name download & simply save it in the given file pointer.
+// Given a file name download & simply save it in the given file pointer.
 func (fm *mockFileManager) Download(ctx context.Context, outputFilePtr *os.File, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
-	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0644)
+	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0o644)
 	if err != nil {
 		if strings.Contains(finalFileName, batch.StatusTrackerFileName) {
 			return nil
@@ -221,7 +218,7 @@ func (fm *mockFileManager) Download(ctx context.Context, outputFilePtr *os.File,
 	return nil
 }
 
-//Given a file name as key, delete if it is present in the bucket.
+// Given a file name as key, delete if it is present in the bucket.
 func (fm *mockFileManager) DeleteObjects(ctx context.Context, keys []string) error {
 	for _, key := range keys {
 		fileLocation := fmt.Sprint(fm.mockBucketLocation, "/", key)
@@ -233,7 +230,7 @@ func (fm *mockFileManager) DeleteObjects(ctx context.Context, keys []string) err
 	return nil
 }
 
-//given prefix & maxItems, return with list of Fileobject in the bucket.
+// given prefix & maxItems, return with list of Fileobject in the bucket.
 func (fm *mockFileManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*filemanager.FileObject, err error) {
 	if fm.listCalled {
 		return []*filemanager.FileObject{}, nil

@@ -4,20 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime/pprof"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"strings"
-
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
@@ -100,8 +98,10 @@ var (
 	MaxHeaderBytes            int
 )
 
-var version = "Not an official release. Get the latest release from the github repo."
-var major, minor, commit, buildDate, builtBy, gitURL, patch string
+var (
+	version                                                 = "Not an official release. Get the latest release from the github repo."
+	major, minor, commit, buildDate, builtBy, gitURL, patch string
+)
 
 func loadConfig() {
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -124,7 +124,7 @@ func versionInfo() map[string]interface{} {
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
-	var version = versionInfo()
+	version := versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
 	_, _ = w.Write(versionFormatted)
 }
@@ -210,7 +210,6 @@ func runAllInit() {
 	multitenant.Init()
 	oauth.Init()
 	Init()
-
 }
 
 func main() {
@@ -236,7 +235,7 @@ func Run(ctx context.Context) {
 
 	application = app.New(options)
 
-	//application & backend setup should be done before starting any new goroutines.
+	// application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))

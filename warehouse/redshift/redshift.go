@@ -117,6 +117,7 @@ var partitionKeyMap = map[string]string{
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
+
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	// TODO: do we need sorted order here?
 	keys := []string{}
@@ -164,7 +165,7 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
+func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Debugf("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
@@ -173,7 +174,7 @@ func (rs *HandleT) AddColumn(name string, columnName string, columnType string) 
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
-func (rs *HandleT) alterStringToText(tableName string, columnName string) (err error) {
+func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
 	pkgLogger.Debugf("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
@@ -229,7 +230,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer misc.RemoveFilePaths(localManifestPath)
-	_ = os.WriteFile(localManifestPath, manifestJSON, 0644)
+	_ = os.WriteFile(localManifestPath, manifestJSON, 0o644)
 
 	file, err := os.Open(localManifestPath)
 	if err != nil {
@@ -246,7 +247,6 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	})
 
 	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
-
 	if err != nil {
 		return "", err
 	}
@@ -264,7 +264,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
 	if err != nil {
 		return
@@ -279,7 +279,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sort.Strings(strkeys)
 	var sortedColumnNames string
-	//TODO: use strings.Join() instead
+	// TODO: use strings.Join() instead
 	for index, key := range strkeys {
 		if index > 0 {
 			sortedColumnNames += `, `
@@ -488,7 +488,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
-
 	var accessKey, accessKeyID string
 	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
 		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
@@ -501,7 +500,7 @@ func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 	// Create a STS client from just a session.
 	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
 
-	//sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
+	// sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
 	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
 	if err != nil {
 		return "", "", "", err
@@ -545,7 +544,6 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
@@ -595,7 +593,7 @@ func (rs *HandleT) CreateSchema() (err error) {
 	return rs.createSchema()
 }
 
-func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	if setVarCharMax && columnType == "text" {
 		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
 	}
@@ -748,7 +746,6 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := connect(rs.getConnectionCredentials())
-
 	if err != nil {
 		return client.Client{}, err
 	}
@@ -756,7 +753,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)

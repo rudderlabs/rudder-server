@@ -75,7 +75,7 @@ type TransformerEventT struct {
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
-//HandleT is the handle for this class
+// HandleT is the handle for this class
 type HandleT struct {
 	perfStats          *misc.PerfStats
 	sentStat           stats.RudderStats
@@ -90,14 +90,14 @@ type HandleT struct {
 	guardConcurrency chan struct{}
 }
 
-//Transformer provides methods to transform events
+// Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(ctx context.Context, clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
-//NewTransformer creates a new transformer
+// NewTransformer creates a new transformer
 func NewTransformer() *HandleT {
 	return &HandleT{}
 }
@@ -139,7 +139,7 @@ type ValidationErrorT struct {
 	Meta    map[string]string `json:"meta"`
 }
 
-//Setup initializes this class
+// Setup initializes this class
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
@@ -163,13 +163,13 @@ func (trans *HandleT) Setup() {
 	}
 }
 
-//ResponseT represents a Transformer response
+// ResponseT represents a Transformer response
 type ResponseT struct {
 	Events       []TransformerResponseT
 	FailedEvents []TransformerResponseT
 }
 
-//GetVersion gets the transformer version by asking it on /transfomerBuildVersion. if there is any error it returns empty string
+// GetVersion gets the transformer version by asking it on /transfomerBuildVersion. if there is any error it returns empty string
 func GetVersion() (transformerBuildVersion string) {
 	transformerBuildVersion = "Not an official release. Get the latest release from dockerhub."
 	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
@@ -196,10 +196,10 @@ func GetVersion() (transformerBuildVersion string) {
 	return
 }
 
-//Transform function is used to invoke transformer API
+// Transform function is used to invoke transformer API
 func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerEventT,
-	url string, batchSize int) ResponseT {
-
+	url string, batchSize int,
+) ResponseT {
 	if len(clientEvents) == 0 {
 		return ResponseT{}
 	}
@@ -250,8 +250,8 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 			continue
 		}
 
-		//Transform is one to many mapping so returned
-		//response for each is an array. We flatten it out
+		// Transform is one to many mapping so returned
+		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
 			if transformerResponse.StatusCode != 200 {
 				failedEvents = append(failedEvents, transformerResponse)
@@ -272,7 +272,8 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 }
 
 func (trans *HandleT) Validate(clientEvents []TransformerEventT,
-	url string, batchSize int) ResponseT {
+	url string, batchSize int,
+) ResponseT {
 	return trans.Transform(context.TODO(), clientEvents, url, batchSize)
 }
 
@@ -289,7 +290,7 @@ func statsTags(event TransformerEventT) stats.Tags {
 }
 
 func (trans *HandleT) request(ctx context.Context, url string, data []TransformerEventT) []TransformerResponseT {
-	//Call remote transformation
+	// Call remote transformation
 	var (
 		rawJSON []byte
 		err     error
@@ -305,7 +306,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	retryCount := 0
 	var resp *http.Response
 	var respData []byte
-	//We should rarely have error communicating with our JS
+	// We should rarely have error communicating with our JS
 	reqFailed := false
 
 	if len(data) == 0 {
@@ -320,8 +321,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 			resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 		})
 		if err == nil {
-			//If no err returned by client.Post, reading body.
-			//If reading body fails, retrying.
+			// If no err returned by client.Post, reading body.
+			// If reading body fails, retrying.
 			respData, err = io.ReadAll(resp.Body)
 			resp.Body.Close()
 		}
@@ -335,7 +336,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 			}
 			retryCount++
 			time.Sleep(retrySleep)
-			//Refresh the connection
+			// Refresh the connection
 			continue
 		}
 		if reqFailed {
@@ -374,8 +375,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		trace.WithRegion(ctx, "Unmarshal", func() {
 			err = jsonfast.Unmarshal(respData, &transformerResponses)
 		})
-		//This is returned by our JS engine so should  be parsable
-		//but still handling it
+		// This is returned by our JS engine so should  be parsable
+		// but still handling it
 		if err != nil {
 			trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
 			trans.logger.Errorf("Transformer returned : %v", string(respData))

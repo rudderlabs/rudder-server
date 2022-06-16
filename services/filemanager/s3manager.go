@@ -105,7 +105,6 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
 	return trimedUrl, nil
-
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -215,8 +214,8 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	return sess, nil
 }
 
-//IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
-//then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
+// IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
+// then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
 func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		return
@@ -235,7 +234,7 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
 	}
-	//startAfter is to resume a paused task.
+	// startAfter is to resume a paused task.
 	if manager.Config.StartAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}

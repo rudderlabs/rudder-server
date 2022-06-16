@@ -113,12 +113,14 @@ func (p *producerImpl) getTimeout() time.Duration {
 	}
 	return p.timeout
 }
+
 func (p *producerImpl) Close(ctx context.Context) error {
 	if p == nil || p.p == nil {
 		return nil
 	}
 	return p.p.Close(ctx)
 }
+
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
@@ -212,7 +214,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
-	var destConfig = configuration{}
+	destConfig := configuration{}
 	jsonConfig, err := json.Marshal(destConfigJSON)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -289,7 +291,7 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
-	var destConfig = azureEventHubConfig{}
+	destConfig := azureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -339,7 +341,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
-	var destConfig = confluentCloudConfig{}
+	destConfig := confluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -444,7 +446,7 @@ func CloseProducer(ctx context.Context, pi interface{}) error {
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string, string) {
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
 
@@ -453,14 +455,14 @@ func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	var conf = configuration{}
+	conf := configuration{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
 	err = json.Unmarshal(jsonConfig, &conf)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
 
 	if conf.Topic == "" {

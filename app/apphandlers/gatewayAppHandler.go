@@ -27,7 +27,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//GatewayApp is the type for Gateway type implemention
+// GatewayApp is the type for Gateway type implemention
 type GatewayApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -129,7 +129,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 			return gw.StartWebHandler(ctx)
 		})
 	}
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 	return g.Wait()
 }
 
