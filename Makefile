@@ -86,5 +86,5 @@ lint: fmt
 		'golangci-lint run -v --timeout 5m'
 
 .PHONY: fmt
-lint: install-tools
+fmt: install-tools
 	gofumpt -l -w -extra  .
