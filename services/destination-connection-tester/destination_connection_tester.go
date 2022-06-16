@@ -127,7 +127,7 @@ func createTestFileForBatchDestination(destinationID string) string {
 }
 
 func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (objectName string, err error) {
-	uploader, err := filemanager.New(&filemanager.SettingsT{
+	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
