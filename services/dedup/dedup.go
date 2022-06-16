@@ -154,7 +154,7 @@ func (d *DedupHandleT) gcBadgerDB() {
 	for {
 		select {
 		case <-d.close:
-			d.badgerDB.RunValueLogGC(0.5)
+			_ = d.badgerDB.RunValueLogGC(0.5)
 			return
 		case <-time.After(5 * time.Minute):
 		}

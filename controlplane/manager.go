@@ -47,7 +47,7 @@ func (cm *ConnectionManager) Apply(url string, active bool) {
 	} else if active == false && cm.active {
 		cm.active = false
 		cm.Logger.Infof(`Closing connection to CP Router`)
-		cm.closeConnection()
+		_ = cm.closeConnection()
 	}
 }
 
