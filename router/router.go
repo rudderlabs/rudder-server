@@ -152,11 +152,10 @@ type HandleT struct {
 }
 
 type jobResponseT struct {
-	status  *jobsdb.JobStatusT
-	worker  *workerT
-	userID  string
-	JobT    *jobsdb.JobT
-	drained bool
+	status *jobsdb.JobStatusT
+	worker *workerT
+	userID string
+	JobT   *jobsdb.JobT
 }
 
 // JobParametersT struct holds source id and destination id of a job
@@ -184,7 +183,6 @@ type workerMessageT struct {
 	throttledAtTime    time.Time
 	workerAssignedTime time.Time
 	resultSetID        int64
-	drained            bool
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -453,12 +451,6 @@ func (worker *workerT) workerProcess() {
 			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
 			userID := job.UserID
-
-			if message.drained {
-				worker.rt.responseQ <- jobResponseT{status: &job.LastJobStatus, worker: worker, userID: userID, JobT: job, drained: true}
-				// no further processing for drained jobs
-				continue
-			}
 
 			var parameters JobParametersT
 			err := json.Unmarshal(job.Parameters, &parameters)
@@ -1434,7 +1426,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		return rt.workers[rand.Intn(rt.noOfWorkers)]
 	}
 
-	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
+	index := rt.getWorkerPartition(userID)
 
 	worker := rt.workers[index]
 
@@ -1498,6 +1490,10 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	return false
 }
 
+func (rt *HandleT) getWorkerPartition(userID string) int {
+	return int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
+}
+
 func (rt *HandleT) shouldThrottle(destID, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
@@ -1529,12 +1525,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
-		if resp.drained {
-			// we have already commited drained job statuses and updated reporting
-			// only reason a drained response has arrived that far is in order to add
-			// its ID in the toClearFailJobIDMap
-			continue
-		}
+
 		var parameters JobParametersT
 		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
 		if err != nil {
@@ -1681,7 +1672,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			status := resp.status.JobState
 			userID := resp.userID
 			worker := resp.worker
-			if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State || resp.drained {
+			if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
 				worker.failedJobIDMutex.RLock()
 				lastJobID, ok := worker.failedJobIDMap[userID]
 				worker.failedJobIDMutex.RUnlock()
@@ -1970,9 +1961,8 @@ func (rt *HandleT) readAndProcess() int {
 
 	// List of jobs which can be processed mapped per channel
 	type workerJobT struct {
-		worker  *workerT
-		job     *jobsdb.JobT
-		drained bool
+		worker *workerT
+		job    *jobsdb.JobT
 	}
 
 	var statusList []*jobsdb.JobStatusT
@@ -2143,14 +2133,21 @@ func (rt *HandleT) readAndProcess() int {
 
 		if rt.guaranteeUserEventOrder {
 			for _, drainedJob := range drainJobList {
-				// only add drained jobs that exist in the failedJobsMap
-				index := int(math.Abs(float64(misc.GetHash(drainedJob.UserID) % rt.noOfWorkers)))
-				drainWorker := rt.workers[index]
+				// cleanup failedJobIDMap for drained jobs
+				drainedUserID := drainedJob.UserID
+				partition := rt.getWorkerPartition(drainedUserID)
+				drainWorker := rt.workers[partition]
+
 				drainWorker.failedJobIDMutex.RLock()
-				lastJobID, ok := drainWorker.failedJobIDMap[drainedJob.UserID]
+				lastJobID, ok := drainWorker.failedJobIDMap[drainedUserID]
 				drainWorker.failedJobIDMutex.RUnlock()
+
 				if ok && lastJobID == drainedJob.JobID {
-					toProcess = append(toProcess, workerJobT{worker: drainWorker, job: drainedJob, drained: true})
+
+					drainWorker.failedJobIDMutex.Lock()
+					delete(drainWorker.failedJobIDMap, drainedUserID)
+					drainWorker.failedJobIDMutex.Unlock()
+
 				}
 			}
 		}
@@ -2169,7 +2166,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	// Send the jobs to the jobQ
 	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now(), resultSetID: rt.getLastResultSetID(), drained: wrkJob.drained}
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now(), resultSetID: rt.getLastResultSetID()}
 	}
 
 	return len(toProcess)
