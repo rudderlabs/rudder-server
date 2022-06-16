@@ -253,7 +253,6 @@ func SendEvent(payload *strings.Reader, callType string, writeKey string) {
 	if err != nil {
 		log.Println(err)
 		return
-
 	}
 
 	req.Header.Add("Content-Type", "application/json")
@@ -305,147 +304,12 @@ func TestMainFlow(t *testing.T) {
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := setupMainFlow(svcCtx, t)
+	sendEventsToGateway(t)
 
 	t.Run("webhook", func(t *testing.T) {
-		var err error
-		require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-		payload1 := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "identify",
-			"eventOrderNo":"1",
-			"context": {
-			  "traits": {
-				 "trait1": "new-val"
-			  },
-			  "ip": "14.5.67.21",
-			  "library": {
-				  "name": "http"
-			  }
-			},
-			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`)
-		SendEvent(payload1, "identify", writeKey)
-		payload2 := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "identify",
-			"eventOrderNo":"2",
-			"context": {
-			  "traits": {
-				 "trait1": "new-val"
-			  },
-			  "ip": "14.5.67.21",
-			  "library": {
-				  "name": "http"
-			  }
-			},
-			"timestamp": "2020-02-02T00:23:09.544Z"
-		  }`)
-		SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
-
-		// Sending Batch event
-		payloadBatch := strings.NewReader(`{
-			"batch":
-			[
-				{
-					"userId": "identified_user_id",
-					"anonymousId": "anonymousId_1",
-					"type": "identify",
-					"context":
-					{
-						"traits":
-						{
-							"trait1": "new-val"
-						},
-						"ip": "14.5.67.21",
-						"library":
-						{
-							"name": "http"
-						}
-					},
-					"timestamp": "2020-02-02T00:23:09.544Z"
-				}
-			]
-		}`)
-		SendEvent(payloadBatch, "batch", writeKey)
-
-		// Sending track event
-		payloadTrack := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "track",
-			"event": "Product Reviewed",
-			"properties": {
-			  "review_id": "12345",
-			  "product_id" : "123",
-			  "rating" : 3.0,
-			  "review_body" : "Average product, expected much more."
-			}
-		  }`)
-		SendEvent(payloadTrack, "track", writeKey)
-
-		// Sending page event
-		payloadPage := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "page",
-			"name": "Home",
-			"properties": {
-			  "title": "Home | RudderStack",
-			  "url": "http://www.rudderstack.com"
-			}
-		  }`)
-		SendEvent(payloadPage, "page", writeKey)
-
-		// Sending screen event
-		payloadScreen := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "screen",
-			"name": "Main",
-			"properties": {
-			  "prop_key": "prop_value"
-			}
-		  }`)
-		SendEvent(payloadScreen, "screen", writeKey)
-
-		// Sending alias event
-		payloadAlias := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "alias",
-			"previousId": "name@surname.com",
-			"userId": "12345"
-		  }`)
-		SendEvent(payloadAlias, "alias", writeKey)
-
-		// Sending group event
-		payloadGroup := strings.NewReader(`{
-			"userId": "identified_user_id",
-			"anonymousId":"anonymousId_1",
-			"messageId":"messageId_1",
-			"type": "group",
-			"groupId": "12345",
-			"traits": {
-			  "name": "MyGroup",
-			  "industry": "IT",
-			  "employees": 450,
-			  "plan": "basic"
-			}
-		  }`)
-		SendEvent(payloadGroup, "group", writeKey)
-		SendPixelEvents(writeKey)
-
 		require.Eventually(t, func() bool {
 			return len(webhook.Requests()) == 10
-		}, time.Minute, 30*time.Millisecond)
+		}, time.Minute, 300*time.Millisecond)
 
 		i := -1
 		require.Eventually(t, func() bool {
@@ -787,7 +651,6 @@ func TestMainFlow(t *testing.T) {
 	t.Run("warehouse-bigquery", func(t *testing.T) {
 		if runBigQueryTest == false {
 			t.Skip("Big query integration skipped. use -bigqueryintegration to add this test ")
-
 		}
 		if wht.Test.BQTest == nil {
 			fmt.Println("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
@@ -951,11 +814,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	wht.InitWHConfig()
 
-	defer wht.SetWHPostgresDestination(pool)()
-	defer wht.SetWHClickHouseDestination(pool)()
-	defer wht.SetWHClickHouseClusterDestination(pool)()
-	defer wht.SetWHMssqlDestination(pool)()
-	defer wht.SetWHBigQueryDestination()()
+	t.Cleanup(wht.SetWHPostgresDestination(pool))
+	t.Cleanup(wht.SetWHClickHouseDestination(pool))
+	t.Cleanup(wht.SetWHClickHouseClusterDestination(pool))
+	t.Cleanup(wht.SetWHMssqlDestination(pool))
+	t.Cleanup(wht.SetWHBigQueryDestination())
 
 	addWHSpecificSqlFunctionsToJobsDb()
 
@@ -971,11 +834,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = NewWebhook()
-	defer webhook.Close()
+	t.Cleanup(webhook.Close)
 	webhookURL = webhook.Server.URL
 
 	disableDestinationWebhook = NewWebhook()
-	defer disableDestinationWebhook.Close()
+	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
 	writeKey = randString(27)
@@ -1034,7 +897,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	}()
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
-	log.Println("serviceHealthEndpoint", serviceHealthEndpoint)
+	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
 	waitUntilReady(
 		context.Background(),
 		serviceHealthEndpoint,
@@ -1044,6 +907,143 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	)
 
 	return svcDone
+}
+
+func sendEventsToGateway(t *testing.T) {
+	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
+	payload1 := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "identify",
+		"eventOrderNo":"1",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	}`)
+	SendEvent(payload1, "identify", writeKey)
+	payload2 := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "identify",
+		"eventOrderNo":"2",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	}`)
+	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
+
+	// Sending Batch event
+	payloadBatch := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	SendEvent(payloadBatch, "batch", writeKey)
+
+	// Sending track event
+	payloadTrack := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "track",
+		"event": "Product Reviewed",
+		"properties": {
+		  "review_id": "12345",
+		  "product_id" : "123",
+		  "rating" : 3.0,
+		  "review_body" : "Average product, expected much more."
+		}
+	}`)
+	SendEvent(payloadTrack, "track", writeKey)
+
+	// Sending page event
+	payloadPage := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "page",
+		"name": "Home",
+		"properties": {
+		  "title": "Home | RudderStack",
+		  "url": "http://www.rudderstack.com"
+		}
+	}`)
+	SendEvent(payloadPage, "page", writeKey)
+
+	// Sending screen event
+	payloadScreen := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "screen",
+		"name": "Main",
+		"properties": {
+		  "prop_key": "prop_value"
+		}
+	}`)
+	SendEvent(payloadScreen, "screen", writeKey)
+
+	// Sending alias event
+	payloadAlias := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "alias",
+		"previousId": "name@surname.com",
+		"userId": "12345"
+	}`)
+	SendEvent(payloadAlias, "alias", writeKey)
+
+	// Sending group event
+	payloadGroup := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "group",
+		"groupId": "12345",
+		"traits": {
+		  "name": "MyGroup",
+		  "industry": "IT",
+		  "employees": 450,
+		  "plan": "basic"
+		}
+	}`)
+	SendEvent(payloadGroup, "group", writeKey)
+	SendPixelEvents(writeKey)
 }
 
 func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPartition) (<-chan kafkaClient.Message, <-chan error) {
