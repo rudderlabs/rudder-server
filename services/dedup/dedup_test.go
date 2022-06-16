@@ -1,7 +1,6 @@
 package dedup_test
 
 import (
-	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -31,8 +30,8 @@ func Test_Dedup(t *testing.T) {
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
-	defer os.RemoveAll(dbPath)
-	os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
+	_ = os.RemoveAll(dbPath)
 
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
 	defer d.Close()
@@ -68,8 +67,8 @@ func Test_Dedup_Window(t *testing.T) {
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
-	defer os.RemoveAll(dbPath)
-	os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
+	_ = os.RemoveAll(dbPath)
 
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
 	defer d.Close()
@@ -92,8 +91,8 @@ func Test_Dedup_ClearDB(t *testing.T) {
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
-	defer os.RemoveAll(dbPath)
-	os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
+	_ = os.RemoveAll(dbPath)
 
 	{
 		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
@@ -114,16 +113,14 @@ func Test_Dedup_ClearDB(t *testing.T) {
 	}
 }
 
-var duplicateIndexes []int
-
 func Benchmark_Dedup(b *testing.B) {
 	config.Load()
 	logger.Init()
 	rand.Seed(time.Now().UnixNano())
 	dbPath := path.Join("./testdata", "tmp", randSeq(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
-	defer os.RemoveAll(dbPath)
-	os.MkdirAll(dbPath, 0o750)
+	defer func() { _ = os.RemoveAll(dbPath) }()
+	_ = os.MkdirAll(dbPath, 0o750)
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Minute))
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
@@ -135,7 +132,7 @@ func Benchmark_Dedup(b *testing.B) {
 			msgIDs[i%batchSize] = uuid.New().String()
 
 			if i%batchSize == batchSize-1 || i == b.N-1 {
-				duplicateIndexes = d.FindDuplicates(msgIDs[:i%batchSize], nil)
+				_ = d.FindDuplicates(msgIDs[:i%batchSize], nil)
 				d.MarkProcessed(msgIDs[:i%batchSize])
 			}
 		}
@@ -147,8 +144,8 @@ func Benchmark_Dedup(b *testing.B) {
 	cmd := exec.Command("du", "-sh", dbPath)
 	out, err := cmd.Output()
 	if err != nil {
-		fmt.Println(err)
+		b.Log(err)
 	}
 
-	fmt.Println("db size:", string(out))
+	b.Log("db size:", string(out))
 }
