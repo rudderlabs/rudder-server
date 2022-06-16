@@ -31,16 +31,13 @@ var (
 )
 
 const (
-	host          = "host"
-	dbName        = "database"
-	user          = "user"
-	password      = "password"
-	port          = "port"
-	sslMode       = "sslMode"
-	serverCAPem   = "serverCA"
-	clientSSLCert = "clientCert"
-	clientSSLKey  = "clientKey"
-	verifyCA      = "verify-ca"
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
+	verifyCA = "verify-ca"
 )
 
 // load table transaction stages
