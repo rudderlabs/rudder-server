@@ -118,15 +118,12 @@ func TestMainFlow(t *testing.T) {
 			return webhook.RequestsCount() == 10
 		}, time.Minute, 300*time.Millisecond)
 
-		i := 0
+		i := -1
 		require.Eventually(t, func() bool {
+			i = i + 1
 			req := webhook.Requests()[i]
 			body, _ := io.ReadAll(req.Body)
-			result := gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
-			if result {
-				i++
-			}
-			return result
+			return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
 		}, time.Minute, 100*time.Millisecond)
 
 		req := webhook.Requests()[i]
