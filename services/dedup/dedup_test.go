@@ -46,7 +46,8 @@ func Test_Dedup(t *testing.T) {
 	})
 
 	t.Run("duplicate after marked as processed", func(t *testing.T) {
-		d.MarkProcessed([]string{"a", "b", "c"})
+		err := d.MarkProcessed([]string{"a", "b", "c"})
+		require.NoError(t, err)
 		dups := d.FindDuplicates([]string{"a", "b", "c"}, nil)
 		require.Equal(t, []int{0, 1, 2}, dups)
 
@@ -74,7 +75,8 @@ func Test_Dedup_Window(t *testing.T) {
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
 	defer d.Close()
 
-	d.MarkProcessed([]string{"to be deleted"})
+	err := d.MarkProcessed([]string{"to be deleted"})
+	require.NoError(t, err)
 
 	dups := d.FindDuplicates([]string{"to be deleted"}, nil)
 	require.Equal(t, []int{0}, dups)
@@ -97,7 +99,8 @@ func Test_Dedup_ClearDB(t *testing.T) {
 
 	{
 		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
-		d.MarkProcessed([]string{"a"})
+		err := d.MarkProcessed([]string{"a"})
+		require.NoError(t, err)
 		d.Close()
 	}
 	{
@@ -112,6 +115,25 @@ func Test_Dedup_ClearDB(t *testing.T) {
 		require.Equal(t, []int{}, dupsAgain)
 		dWithClear.Close()
 	}
+}
+
+func Test_Dedup_ErrTxnTooBig(t *testing.T) {
+	config.Load()
+	logger.Init()
+
+	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
+	defer os.RemoveAll(dbPath)
+	os.RemoveAll(dbPath)
+	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
+	defer d.Close()
+
+	size := 105_000
+	messageIDs := make([]string, size)
+	for i := 0; i < size; i++ {
+		messageIDs[i] = uuid.New().String()
+	}
+	err := d.MarkProcessed(messageIDs)
+	require.NoError(t, err)
 }
 
 var duplicateIndexes []int
@@ -136,7 +158,8 @@ func Benchmark_Dedup(b *testing.B) {
 
 			if i%batchSize == batchSize-1 || i == b.N-1 {
 				duplicateIndexes = d.FindDuplicates(msgIDs[:i%batchSize], nil)
-				d.MarkProcessed(msgIDs[:i%batchSize])
+				err := d.MarkProcessed(msgIDs[:i%batchSize])
+				require.NoError(b, err)
 			}
 		}
 		b.ReportMetric(float64(b.N), "events")
