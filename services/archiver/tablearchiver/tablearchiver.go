@@ -95,7 +95,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                 // stripping starting '[' and ending ']'
 		jsonBytes = append(jsonBytes, '\n')                                         // appending '\n'
 
-		gzWriter.Write(jsonBytes)
+		_, _ = gzWriter.Write(jsonBytes)
 
 		if !hasPagination {
 			break
@@ -104,14 +104,14 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		offset += jsonArchiver.Pagination
 	}
 
-	gzWriter.CloseGZ()
+	_ = gzWriter.CloseGZ()
 
 	file, err := os.Open(jsonArchiver.OutputPath)
 	if err != nil {
 		pkgLogger.Errorf(`[TableJSONArchiver]: Error opening local file dump: %v`, err)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	output, err := jsonArchiver.FileManager.Upload(context.TODO(), file)
 	if err != nil {
