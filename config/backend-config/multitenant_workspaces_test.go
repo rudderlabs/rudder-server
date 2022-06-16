@@ -84,7 +84,7 @@ var _ = Describe("workspace-config", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")
-				rw.Write([]byte(`""`))
+				_, _ = rw.Write([]byte(`""`))
 			}))
 			defer server.Close()
 

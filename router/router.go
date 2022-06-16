@@ -2345,7 +2345,7 @@ func (rt *HandleT) Shutdown() {
 	rt.backgroundCancel()
 	rt.stopWorkers()
 
-	rt.backgroundWait()
+	_ = rt.backgroundWait()
 }
 
 func (rt *HandleT) backendConfigSubscriber() {

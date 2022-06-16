@@ -46,7 +46,7 @@ var (
 					rw.WriteHeader(http.StatusAccepted)
 					js, _ := json.Marshal(SampleBackendConfig)
 					rw.Header().Set("Content-Type", "application/json")
-					rw.Write(js)
+					_, _ = rw.Write(js)
 				}))
 				defer server.Close()
 

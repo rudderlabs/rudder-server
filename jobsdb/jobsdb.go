@@ -486,7 +486,10 @@ func (jd *HandleT) assertError(err error) {
 
 func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
-		tx.Rollback()
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil {
+			jd.logger.Errorf("Failed to rollback transaction: %v", rollbackErr)
+		}
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
@@ -987,7 +990,7 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.DSListLockToken
 // Only Start and Close can be called after Stop.
 func (jd *HandleT) Stop() {
 	jd.backgroundCancel()
-	jd.backgroundGroup.Wait()
+	_ = jd.backgroundGroup.Wait()
 }
 
 // TearDown stops the background goroutines,
@@ -3210,7 +3213,7 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 	if jd.jobsFileUploader != nil {
 		return jd.jobsFileUploader, nil
 	}
-	return filemanager.New(&filemanager.SettingsT{
+	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
@@ -3303,6 +3306,9 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	}
 
 	gzWriter, err := misc.CreateGZ(path)
+	if err != nil {
+		return false, fmt.Errorf("creating gz file %q: %w", path, err)
+	}
 	defer os.Remove(path)
 
 	var offset, batchCount int64
@@ -3324,14 +3330,18 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] // stripping starting '[' and ending ']'
 		rawJSONRows = append(rawJSONRows, '\n')           // appending '\n'
 
-		gzWriter.Write(rawJSONRows)
+		if _, err := gzWriter.Write(rawJSONRows); err != nil {
+			return false, fmt.Errorf("writing to gz file %q: %w", path, err)
+		}
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
 			break
 		}
 	}
 
-	gzWriter.CloseGZ()
+	if err := gzWriter.CloseGZ(); err != nil {
+		return false, fmt.Errorf("closing gz file %q: %w", path, err)
+	}
 	tableFileDumpTimeStat.End()
 
 	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
@@ -3616,7 +3626,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case migrateImportOperation:
 		jd.assert(db.IsValidMigrationMode(jd.migrationState.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
 		var importDest dataSetT
-		json.Unmarshal(opPayload, &importDest)
+		jd.assertError(json.Unmarshal(opPayload, &importDest))
 		jd.dropDSForRecovery(importDest)
 		jd.deleteSetupCheckpoint(ImportOp)
 		undoOp = true
@@ -3639,7 +3649,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case dropDSOperation, backupDropDSOperation:
 		// Some of the source datasets would have been
 		var dataset dataSetT
-		json.Unmarshal(opPayload, &dataset)
+		jd.assertError(json.Unmarshal(opPayload, &dataset))
 		jd.dropDSForRecovery(dataset)
 		jd.logger.Info("Recovering dropDS operation", dataset)
 		undoOp = false

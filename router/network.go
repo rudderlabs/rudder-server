@@ -182,7 +182,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
-		if resp != nil && resp.Header != nil {
+		if resp.Header != nil {
 			contentTypeHeader = resp.Header.Get("Content-Type")
 		}
 		if contentTypeHeader == "" {
