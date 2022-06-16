@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -18,11 +19,13 @@ var output = flag.String("output", "", "The output file name, or empty to use st
 func main() {
 	flag.Parse()
 
-	its := []struct {
+	its := []struct{
 		sym string
 		typ reflect.Type
 	}{
-		{"NetHandleI", reflect.TypeOf((*pkg_.NetHandleI)(nil)).Elem()},
+		
+		{ "NetHandleI", reflect.TypeOf((*pkg_.NetHandleI)(nil)).Elem()},
+		
 	}
 	pkg := &model.Package{
 		// NOTE: This behaves contrary to documented behaviour if the

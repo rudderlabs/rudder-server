@@ -91,7 +91,8 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	return &Client{bqClient: bqClient, opts: o}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
+
 	client := producer.(*Client)
 	bqClient := client.bqClient
 	o := client.opts

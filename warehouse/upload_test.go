@@ -6,6 +6,7 @@ import (
 )
 
 func TestExtractUploadErrorsByState(t *testing.T) {
+
 	input := []struct {
 		InitialErrorState []byte
 		CurrentErrorState string
@@ -59,4 +60,5 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 			t.Errorf("expected attempts to be: %d, got: %d", ip.ErrorCount, stateErrors["attempt"].(int))
 		}
 	}
+
 }

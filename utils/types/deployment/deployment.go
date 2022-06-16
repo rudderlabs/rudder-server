@@ -2,7 +2,6 @@ package deployment
 
 import (
 	"fmt"
-
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -30,6 +29,7 @@ func GetFromEnv() (Type, error) {
 	}
 
 	return t, nil
+
 }
 
 func (t Type) Valid() bool {

@@ -30,7 +30,8 @@ func (r *DSListLocker) WithLock(f func(l DSListLockToken)) {
 	f(&listLockToken{})
 }
 
-type listLockToken struct{}
+type listLockToken struct {
+}
 
 func (*listLockToken) listLockToken() {
 	// no-op

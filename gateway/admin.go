@@ -30,6 +30,7 @@ func (g *GatewayAdmin) Status() interface{} {
 		"enabled-write-keys": writeKeys,
 		"jobsdb":             g.handle.jobsDB.Status(),
 	}
+
 }
 
 type GatewayRPCHandler struct {

@@ -25,10 +25,11 @@ type JobAPI struct {
 	WorkspaceToken string
 }
 
-// Get sends http request with workspaceID in the url and receives a json payload
-// which is decoded using schema and then mapped from schema to internal model.Job struct,
-// which is actually returned.
+//Get sends http request with workspaceID in the url and receives a json payload
+//which is decoded using schema and then mapped from schema to internal model.Job struct,
+//which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
+
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
@@ -61,7 +62,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}()
 	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
-	// if successful
+	//if successful
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
@@ -96,10 +97,11 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
+
 }
 
-// marshals status into appropriate status schema, and sent as payload
-// checked for returned status code.
+//marshals status into appropriate status schema, and sent as payload
+//checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
@@ -144,11 +146,12 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 }
 
 func prepURL(url string, params ...string) string {
-	re := regexp.MustCompile(`{.*?}`)
+	var re = regexp.MustCompile(`{.*?}`)
 	i := 0
 	return string(re.ReplaceAllFunc([]byte(url), func(matched []byte) []byte {
 		if i >= len(params) {
 			pkgLogger.Errorf("value for %v not provided", matched)
+
 		}
 		v := params[i]
 		i++

@@ -101,7 +101,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 }
 
 func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
-	writeKeyFailStats := make(map[string]int)
+	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat, "reqType": "webhook"})
 	statusCode := 400
@@ -183,7 +183,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	req := webhookT{request: r, writer: &w, done: done, sourceType: sourceDefName, writeKey: writeKey}
 	webhook.requestQ[sourceDefName] <- &req
 
-	// Wait for batcher process to be done
+	//Wait for batcher process to be done
 	resp := <-done
 	webhook.gwHandle.IncrementAckCount(1)
 	atomic.AddUint64(&webhook.ackCount, 1)
@@ -202,21 +202,21 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string) {
-	reqBuffer := make([]*webhookT, 0)
+	var reqBuffer = make([]*webhookT, 0)
 	timeout := time.After(webhookBatchTimeout)
 	for {
 		select {
 		case req, hasMore := <-webhook.requestQ[sourceDef]:
 			if !hasMore {
 				if len(reqBuffer) > 0 {
-					// If there are requests in the buffer, send them to the batcher
+					//If there are requests in the buffer, send them to the batcher
 					breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
 					webhook.batchRequestQ <- &breq
 				}
 				return
 			}
 
-			// Append to request buffer
+			//Append to request buffer
 			reqBuffer = append(reqBuffer, req)
 			if len(reqBuffer) == maxWebhookBatchSize {
 				breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
@@ -251,6 +251,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
+
 				if err != nil {
 					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
 					continue
@@ -325,7 +326,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	req.request.Body = io.NopCloser(bytes.NewReader(payload))
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
-	errorMessage := ""
+	var errorMessage = ""
 	payload, err := io.ReadAll(req.request.Body)
 	req.request.Body.Close()
 	if err == nil {
@@ -334,7 +335,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 		errorMessage = err.Error()
 	}
 
-	// Wait for batcher process to be done
+	//Wait for batcher process to be done
 	req.done <- webhookErrorRespT{err: errorMessage}
 }
 
@@ -361,7 +362,7 @@ func (webhook *HandleT) Shutdown() {
 	webhook.backgroundWait()
 }
 
-// TODO: Check if correct
+//TODO: Check if correct
 func newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
 		"sourceType": sourceType,

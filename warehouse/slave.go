@@ -44,6 +44,7 @@ type JobRunT struct {
 }
 
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
+
 	job := jobRun.job
 	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
 	rawf, err := os.Open(jobRun.stagingFilePath)
@@ -176,7 +177,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 
 	// take the first staging file id in upload
 	// TODO: support multiple staging files in one upload
-	stagingFileId := jobRun.job.StagingFileID
+	var stagingFileId = jobRun.job.StagingFileID
 
 	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
 	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
@@ -215,6 +216,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						StagingFileID: stagingFileId,
 					}
 				}
+
 			}
 		}(ctx)
 	}
@@ -733,7 +735,7 @@ func setupSlave(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]

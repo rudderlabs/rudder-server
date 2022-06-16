@@ -12,6 +12,7 @@ var duration, maxCrashes int
 func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.StartTimes = append(handler.recoveryData.StartTimes, currTime)
 	handler.recoveryData.ReadableStartTimes = append(handler.recoveryData.ReadableStartTimes, fmt.Sprint(time.Unix(currTime, 0)))
+
 }
 
 func (handler *NormalModeHandler) HasThresholdReached() bool {

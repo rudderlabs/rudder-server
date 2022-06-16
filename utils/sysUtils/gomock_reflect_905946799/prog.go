@@ -22,6 +22,7 @@ func main() {
 		sym string
 		typ reflect.Type
 	}{
+
 		{"ZipI", reflect.TypeOf((*pkg_.ZipI)(nil)).Elem()},
 	}
 	pkg := &model.Package{

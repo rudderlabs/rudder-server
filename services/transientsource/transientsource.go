@@ -12,6 +12,7 @@ import (
 
 // Service provides services related to transient source ids
 type Service interface {
+
 	// SourceIdsSupplier provides an up-to-date supplier of transient source ids
 	SourceIdsSupplier() func() []string
 

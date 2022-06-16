@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app"
 	"log"
 	"os"
 	"os/signal"
@@ -11,8 +12,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/app"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -150,6 +149,7 @@ func Test_ServerMode(t *testing.T) {
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
 		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
+
 	})
 
 	t.Run("ack timeout", func(t *testing.T) {
@@ -237,6 +237,7 @@ func Test_ServerMode(t *testing.T) {
 		require.False(t, ok)
 	}
 	cancel()
+
 }
 
 func Test_Workspaces(t *testing.T) {
@@ -361,4 +362,5 @@ func Test_Workspaces(t *testing.T) {
 		require.Error(t, m.Err())
 		cancel()
 	}
+
 }

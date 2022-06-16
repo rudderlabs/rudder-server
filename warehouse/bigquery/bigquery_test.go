@@ -18,4 +18,5 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+
 }

@@ -74,7 +74,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	} else { // No configuration
 		return nil, fmt.Errorf("invalid configuration provided, missing credentials")
 	}
-	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
+	var topicMap = make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = 0
@@ -84,7 +84,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	return pbsClient, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer interface{}, _ interface{}) (statusCode int, respStatus string, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs, ok := producer.(*PubsubClient)
 	ctx, cancel := context.WithTimeout(context.Background(), pbs.opts.Timeout)
@@ -103,6 +103,7 @@ func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int,
 		return 400, respStatus, responseMessage
 	}
 	value, err := json.Marshal(data)
+
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error  :: " + err.Error()
@@ -179,7 +180,7 @@ func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int,
 	return 200, respStatus, responseMessage
 }
 
-// CloseProducer closes a given producer
+//CloseProducer closes a given producer
 func CloseProducer(producer interface{}) error {
 	client, ok := producer.(*PubsubClient)
 	if ok {
@@ -196,8 +197,8 @@ func CloseProducer(producer interface{}) error {
 		return err
 	}
 	return fmt.Errorf("error while closing producer")
-}
 
+}
 func getError(err error) (statusCode int) {
 	switch status.Code(err) {
 	case codes.Canceled:

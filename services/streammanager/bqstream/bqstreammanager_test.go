@@ -67,6 +67,7 @@ func TestTimeout(t *testing.T) {
 	if responseMessage != expectedResponseMessage {
 		t.Errorf("Expected response message %s, got %s.", expectedResponseMessage, responseMessage)
 	}
+
 }
 
 func TestUnsupportedCredentials(t *testing.T) {

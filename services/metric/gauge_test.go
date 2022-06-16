@@ -31,6 +31,7 @@ func TestGaugeAddSub(t *testing.T) {
 	if expected, got := 42.0, gauge.Value(); expected != got {
 		t.Errorf("Expected error %f, got %f.", expected, got)
 	}
+
 }
 
 func TestGaugeSetGetTime(t *testing.T) {
@@ -43,6 +44,7 @@ func TestGaugeSetGetTime(t *testing.T) {
 	if expected, got := now.Round(1*time.Millisecond), gauge.ValueAsTime().Round(1*time.Millisecond); expected != got {
 		t.Errorf("Expected error %s, got %s.", expected, got)
 	}
+
 }
 
 func TestGaugeAddSubConcurrently(t *testing.T) {

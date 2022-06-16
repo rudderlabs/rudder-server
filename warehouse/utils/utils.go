@@ -174,10 +174,8 @@ type DestinationT struct {
 	Destination backendconfig.DestinationT
 }
 
-type (
-	SchemaT      map[string]map[string]string
-	TableSchemaT map[string]string
-)
+type SchemaT map[string]map[string]string
+type TableSchemaT map[string]string
 
 type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
@@ -329,7 +327,7 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 	return namespace, len(namespace) > 0
 }
 
-func GetTableFirstEventAt(dbHandle *sql.DB, sourceId, destinationId, tableName string, start, end int64) (firstEventAt string) {
+func GetTableFirstEventAt(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (firstEventAt string) {
 	sqlStatement := fmt.Sprintf(`SELECT first_event_at FROM %[7]s where id = ( SELECT staging_file_id FROM %[1]s WHERE ( source_id='%[2]s'
 			AND destination_id='%[3]s'
 			AND table_name='%[4]s'
@@ -351,7 +349,7 @@ func GetTableFirstEventAt(dbHandle *sql.DB, sourceId, destinationId, tableName s
 
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
-func GetObjectFolder(provider, location string) (folder string) {
+func GetObjectFolder(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder = GetS3LocationFolder(location)
@@ -367,7 +365,7 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as S3: https://<bucket-name>.s3.amazonaws.com/<directory-name> --> s3://<bucket-name>/<directory-name>
 // eg. For provider as GCS: https://storage.cloud.google.com/<bucket-name>/<directory-name> --> gs://<bucket-name>/<directory-name>
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
-func GetObjectFolderForDeltalake(provider, location string) (folder string) {
+func GetObjectFolderForDeltalake(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder = GetS3LocationFolder(location)
@@ -386,7 +384,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
-func GetObjectLocation(provider, location string) (folder string) {
+func GetObjectLocation(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder, _ = GetS3Location(location)
@@ -418,7 +416,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 
 // GetS3Location parses path-style location http url to return in s3:// format
 // https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
-func GetS3Location(location string) (s3Location, region string) {
+func GetS3Location(location string) (s3Location string, region string) {
 	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
@@ -500,7 +498,6 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	}
 	return schema
 }
-
 func JSONTimingsToMap(rawMsg json.RawMessage) []map[string]string {
 	timings := make([]map[string]string, 0)
 	err := json.Unmarshal(rawMsg, &timings)
@@ -510,7 +507,7 @@ func JSONTimingsToMap(rawMsg json.RawMessage) []map[string]string {
 	return timings
 }
 
-func DestStat(statType, statName, id string) stats.RudderStats {
+func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})
 }
 
@@ -555,7 +552,7 @@ ome_ ga   to ome_ga
 9mega________-________90 to _9mega_90
 Cízǔ to C_z
 */
-func ToSafeNamespace(provider, name string) string {
+func ToSafeNamespace(provider string, name string) string {
 	var extractedValues []string
 	var extractedValue string
 	for _, c := range name {
@@ -591,7 +588,7 @@ func ToSafeNamespace(provider, name string) string {
 ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
 eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
 */
-func ToProviderCase(provider, str string) string {
+func ToProviderCase(provider string, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
 		str = strings.ToUpper(str)
 	}
@@ -689,7 +686,6 @@ func IdentityMergeRulesTableName(warehouse WarehouseT) string {
 func IdentityMergeRulesWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMergeRulesTable)
 }
-
 func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
@@ -702,7 +698,7 @@ func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
+func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
 
@@ -713,7 +709,6 @@ func DoubleQuoteAndJoinByComma(strs []string) string {
 	}
 	return strings.Join(quotedSlice, ",")
 }
-
 func GetTempFileExtension(destType string) string {
 	if destType == BQ {
 		return "json.gz"
@@ -736,7 +731,7 @@ func GetTimeWindow(ts time.Time) time.Time {
 
 // GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
 // for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
-func GetTablePathInObjectStorage(namespace, tableName string) string {
+func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }
 
@@ -835,7 +830,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	clientCert := formatSSLFile(clientCertConfig.(string))
 	serverCert := formatSSLFile(serverCAConfig.(string))
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destination.ID)
-	if err = os.MkdirAll(sslDirPath, 0o700); err != nil {
+	if err = os.MkdirAll(sslDirPath, 0700); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}
 	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
@@ -853,16 +848,16 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		// Pems files already written to FS
 		return WriteSSLKeyError{}
 	}
-	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0o600); err != nil {
+	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientCertPemFile, err), "client_cert_create_err"}
 	}
-	if err = os.WriteFile(clientKeyPemFile, []byte(clientKey), 0o600); err != nil {
+	if err = os.WriteFile(clientKeyPemFile, []byte(clientKey), 0600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", clientKeyPemFile, err), "client_key_create_err"}
 	}
-	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0o600); err != nil {
+	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
 	}
-	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o700); err != nil {
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0700); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
 	}
 	return WriteSSLKeyError{}

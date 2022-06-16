@@ -21,4 +21,5 @@ func Test_GetInstance(t *testing.T) {
 	i2 := dedup.GetInstance(nil)
 
 	require.Equal(t, i, i2)
+
 }

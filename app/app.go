@@ -67,6 +67,7 @@ func (a *App) initCPUProfiling() {
 	if err != nil {
 		panic(err)
 	}
+
 }
 
 func (a *App) initEnterpriseFeatures() {
@@ -132,7 +133,7 @@ func New(options *Options) Interface {
 	}
 }
 
-// HealthHandler is the http handler for health endpoint
+//HealthHandler is the http handler for health endpoint
 func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"

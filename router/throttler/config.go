@@ -1,6 +1,8 @@
 package throttler
 
-var destSettingsMap map[string]Settings
+var (
+	destSettingsMap map[string]Settings
+)
 
 func init() {
 	destSettingsMap = map[string]Settings{

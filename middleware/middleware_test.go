@@ -13,13 +13,14 @@ import (
 )
 
 func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
+
 	// create a handler to use as "next" which will verify the request
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Second * 1)
 		w.WriteHeader(http.StatusOK)
 	})
 
-	tests := []struct {
+	var tests = []struct {
 		name                  string
 		maxConcurrentRequests int
 		totalReq              int
@@ -42,6 +43,7 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+
 			maxConMiddleware := middleware.LimitConcurrentRequests(tt.maxConcurrentRequests)
 			handlerToTest := maxConMiddleware(nextHandler)
 			var wg sync.WaitGroup
@@ -70,6 +72,7 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 			require.Equal(t, tt.maxConcurrentRequests, int(resp200), "actual 200 resp different than expected.")
 			require.Equal(t, tt.totalReq-tt.maxConcurrentRequests, int(resp503), "actual 503 resp different than expected.")
 			require.Equal(t, 0, int(randomResp), "received unexpected response")
+
 		})
 	}
 }

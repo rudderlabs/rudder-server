@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"fmt"
-
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
@@ -33,7 +32,7 @@ type IndexConstraintT struct {
 func Init6() {
 	config.RegisterBoolConfigVariable(true, &enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
 	constraintsMap = map[string][]ConstraintsI{
-		warehouseutils.BQ: {
+		warehouseutils.BQ: []ConstraintsI{
 			&IndexConstraintT{
 				TableName:    "rudder_identity_merge_rules",
 				ColumnName:   "merge_property_1_value",
@@ -47,7 +46,7 @@ func Init6() {
 				Limit:        512,
 			},
 		},
-		warehouseutils.SNOWFLAKE: {
+		warehouseutils.SNOWFLAKE: []ConstraintsI{
 			&IndexConstraintT{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "MERGE_PROPERTY_1_VALUE",
@@ -86,7 +85,7 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 	if brEvent.Metadata.Table != ic.TableName || columnName != ic.ColumnName {
 		return &ConstraintsViolationT{}
 	}
-	concatenatedLength := 0
+	var concatenatedLength = 0
 	for _, column := range ic.IndexColumns {
 		columnInfo, ok := brEvent.GetColumnInfo(column)
 		if !ok {

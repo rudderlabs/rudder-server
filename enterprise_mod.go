@@ -1,4 +1,3 @@
-//go:build enterprisemod
 // +build enterprisemod
 
 // This file contains enterprise exclusive dependencies.

@@ -26,10 +26,8 @@ type RecoveryHandler interface {
 	Handle()
 }
 
-var (
-	CurrentMode string = normalMode // default mode
-	storagePath string
-)
+var CurrentMode string = normalMode // default mode
+var storagePath string
 
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
@@ -76,7 +74,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	if err != nil {
 		panic(err)
 	}
-	err = os.WriteFile(storagePath, recoveryDataJSON, 0o644)
+	err = os.WriteFile(storagePath, recoveryDataJSON, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -90,7 +88,8 @@ func IsNormalMode() bool {
 /*
 CheckOccurences : check if this occurred numTimes times in numSecs seconds
 */
-func CheckOccurences(occurences []int64, numTimes, numSecs int) (occurred bool) {
+func CheckOccurences(occurences []int64, numTimes int, numSecs int) (occurred bool) {
+
 	sort.Slice(occurences, func(i, j int) bool {
 		return occurences[i] < occurences[j]
 	})
@@ -110,7 +109,7 @@ func CheckOccurences(occurences []int64, numTimes, numSecs int) (occurred bool) 
 	return
 }
 
-func getForceRecoveryMode(forceNormal, forceDegraded bool) string {
+func getForceRecoveryMode(forceNormal bool, forceDegraded bool) string {
 	switch {
 	case forceNormal:
 		return normalMode
@@ -118,6 +117,7 @@ func getForceRecoveryMode(forceNormal, forceDegraded bool) string {
 		return degradedMode
 	}
 	return ""
+
 }
 
 func getNextMode(currentMode string) string {
@@ -126,7 +126,7 @@ func getNextMode(currentMode string) string {
 		return degradedMode
 	case degradedMode:
 		return degradedMode
-	case migrationMode: // Staying in the migrationMode forever on repeated restarts.
+	case migrationMode: //Staying in the migrationMode forever on repeated restarts.
 		return migrationMode
 	}
 
@@ -143,7 +143,7 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 	case migrationMode:
 		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
-		// If the recovery mode is not one of the above modes, defaulting to degraded mode.
+		//If the recovery mode is not one of the above modes, defaulting to degraded mode.
 		pkgLogger.Info("DB Recovery: Invalid recovery mode. Defaulting to degraded mode.")
 		recoveryData.Mode = degradedMode
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}

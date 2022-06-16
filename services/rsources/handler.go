@@ -15,6 +15,7 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
+
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -42,6 +43,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 		filters)
 
 	rows, err := sh.Extension.GetReadDB().QueryContext(ctx, sqlStatement, filterParams...)
+
 	if err != nil {
 		return JobStatus{}, err
 	}

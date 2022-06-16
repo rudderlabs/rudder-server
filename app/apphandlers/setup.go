@@ -40,7 +40,7 @@ var (
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
 
-// AppHandler to be implemented by different app type objects.
+//AppHandler to be implemented by different app type objects.
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
@@ -99,7 +99,7 @@ func rudderCoreBaseSetup() {
 		})
 	}
 
-	// Reload Config
+	//Reload Config
 	loadConfig()
 
 	readonlyGatewayDB.Setup("gw")
@@ -111,7 +111,7 @@ func rudderCoreBaseSetup() {
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 }
 
-// StartProcessor atomically starts processor process if not already started
+//StartProcessor atomically starts processor process if not already started
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
@@ -122,13 +122,13 @@ func StartProcessor(
 		return
 	}
 
-	processorInstance := processor.NewProcessor()
+	var processorInstance = processor.NewProcessor()
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 
-// StartRouter atomically starts router process if not already started
+//StartRouter atomically starts router process if not already started
 func StartRouter(
 	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
@@ -169,11 +169,11 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
 
-	// Crash recover routerDB, batchRouterDB
-	// Note: The following cleanups can take time if there are too many
-	// rt / batch_rt tables and there would be a delay reading from channel `ch`
-	// However, this shouldn't be the problem since backend config pushes config
-	// to its subscribers in separate goroutines to prevent blocking.
+	//Crash recover routerDB, batchRouterDB
+	//Note: The following cleanups can take time if there are too many
+	//rt / batch_rt tables and there would be a delay reading from channel `ch`
+	//However, this shouldn't be the problem since backend config pushes config
+	//to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.DeleteExecuting()
 	batchRouterFactory.RouterDB.DeleteExecuting()
 
@@ -185,7 +185,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 			for k := range source.Destinations {
 				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				// For batch router destinations
+				//For batch router destinations
 				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
 					misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
 					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {

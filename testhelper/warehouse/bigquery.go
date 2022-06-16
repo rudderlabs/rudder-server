@@ -43,6 +43,7 @@ func jsonEscape(i string) (string, error) {
 
 // SetWHBigQueryDestination setup warehouse Big query destination
 func SetWHBigQueryDestination() (cleanup func()) {
+
 	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
 	cleanup = func() {
 	}
@@ -81,7 +82,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 
 	bqTest := Test.BQTest
 
-	// Convert Map to Bytes(which can  easily be converted to JSON string)
+	//Convert Map to Bytes(which can  easily be converted to JSON string)
 	credentials, _ := json.Marshal(bqTest.Credentials.Credentials)
 	operation := func() error {
 		var err error

@@ -75,12 +75,10 @@ type ReportingFeature interface {
 // ReportingFeatureSetup is a function that initializes a Reporting feature
 type ReportingFeatureSetup func(Interface) ReportingFeature
 
-var (
-	reportingFallback                           = &reportingFactoryFallback{}
-	reportingFeatureSetup ReportingFeatureSetup = func(a Interface) ReportingFeature {
-		return reportingFallback
-	}
-)
+var reportingFallback = &reportingFactoryFallback{}
+var reportingFeatureSetup ReportingFeatureSetup = func(a Interface) ReportingFeature {
+	return reportingFallback
+}
 
 // RegisterReportingFeature registers a config env feature implementation
 func RegisterReportingFeature(f ReportingFeatureSetup) {
@@ -98,12 +96,12 @@ func (f *reportingFactoryFallback) Setup(backendConfig backendconfig.BackendConf
 	})
 	return f.instance
 }
-
 func (f *reportingFactoryFallback) GetReportingInstance() types.ReportingI {
 	return f.instance
 }
 
-type reportingNOOP struct{}
+type reportingNOOP struct {
+}
 
 func (n *reportingNOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {}
 func (n *reportingNOOP) WaitForSetup(ctx context.Context, clientName string)   {}
@@ -111,7 +109,6 @@ func (n *reportingNOOP) AddClient(ctx context.Context, c types.Config)         {
 func (n *reportingNOOP) GetClient(clientName string) *types.Client {
 	return nil
 }
-
 func (n *reportingNOOP) Enabled() bool {
 	return false
 }

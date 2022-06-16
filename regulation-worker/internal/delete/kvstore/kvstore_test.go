@@ -88,6 +88,7 @@ func blockOnHold() {
 }
 
 func TestRedisDeletion(t *testing.T) {
+
 	inputTestData := []struct {
 		key    string
 		fields map[string]interface{}
@@ -121,7 +122,7 @@ func TestRedisDeletion(t *testing.T) {
 
 	manager := kvstoremanager.New(destName, destConfig)
 
-	// inserting test data in Redis
+	//inserting test data in Redis
 	for _, test := range inputTestData {
 		err := manager.HMSet(test.key, test.fields)
 		if err != nil {
@@ -152,7 +153,7 @@ func TestRedisDeletion(t *testing.T) {
 		},
 	}
 
-	// deleting the last key inserted
+	//deleting the last key inserted
 	status := kvstore.Delete(ctx, deleteJob, destConfig, destName)
 	require.Equal(t, model.JobStatusComplete, status, "actual deletion status different than expected")
 

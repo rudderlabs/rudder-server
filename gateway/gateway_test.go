@@ -106,7 +106,7 @@ type testContext struct {
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
-	// Enterprise mocks
+	//Enterprise mocks
 	mockSuppressUser        *mocksTypes.MockSuppressUserI
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
@@ -163,8 +163,10 @@ func (c *testContext) Finish() {
 }
 
 var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
-	gateway := &HandleT{}
-	_ = DescribeTable("newDSIdx tests",
+	var (
+		gateway = &HandleT{}
+	)
+	var _ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
 			testValidBody := `{"batch":[
 				{"anonymousId":"anon_id_1","event":"event_1_1"},
@@ -253,6 +255,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
 		})
 	})
+
 })
 
 var _ = Describe("Gateway", func() {
@@ -302,7 +305,7 @@ var _ = Describe("Gateway", func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength, batchId int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
@@ -326,7 +329,7 @@ var _ = Describe("Gateway", func() {
 			Expect(batch.Array()).To(HaveLen(batchLength))
 		}
 
-		createValidBody := func(customProperty, customValue string) []byte {
+		createValidBody := func(customProperty string, customValue string) []byte {
 			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
@@ -394,7 +397,9 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Rate limits", func() {
-		gateway := &HandleT{}
+		var (
+			gateway = &HandleT{}
+		)
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
@@ -438,7 +443,9 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Invalid requests", func() {
-		gateway := &HandleT{}
+		var (
+			gateway = &HandleT{}
+		)
 
 		BeforeEach(func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())

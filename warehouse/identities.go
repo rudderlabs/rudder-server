@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
-
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"

@@ -44,7 +44,6 @@ var SampleBackendConfig = ConfigT{
 		},
 	},
 }
-
 var SampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
@@ -66,7 +65,6 @@ var SampleFilteredSources = ConfigT{
 		},
 	},
 }
-
 var SampleBackendConfig2 = ConfigT{
 	Sources: []SourceT{
 		{
@@ -80,7 +78,6 @@ var SampleBackendConfig2 = ConfigT{
 		},
 	},
 }
-
 var (
 	originalHttp       = Http
 	originalLogger     = pkgLogger
@@ -101,6 +98,7 @@ func initBackendConfig() {
 }
 
 var _ = Describe("newForDeployment", func() {
+
 	It("supports single workspace config", func() {
 		os.Setenv("WORKSPACE_TOKEN", "password")
 		config, err := newForDeployment(deployment.DedicatedType, nil)

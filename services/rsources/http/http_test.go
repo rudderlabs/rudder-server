@@ -21,7 +21,7 @@ func TestDelete(t *testing.T) {
 	service := rsources.NewMockJobService(mockCtrl)
 	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
 
-	tests := []struct {
+	var tests = []struct {
 		name                 string
 		jobRunId             string
 		endpoint             string
@@ -47,6 +47,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
 			service.EXPECT().Delete(gomock.Any(), tt.jobRunId).Return(tt.serviceReturnError).Times(1)
@@ -72,7 +73,7 @@ func TestGetStatus(t *testing.T) {
 	service := rsources.NewMockJobService(mockCtrl)
 	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
 
-	tests := []struct {
+	var tests = []struct {
 		name                 string
 		jobID                string
 		endpoint             string
@@ -153,6 +154,7 @@ func TestGetStatus(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
 
@@ -206,7 +208,7 @@ func withFilter(basicUrl string, filters map[string][]string) string {
 }
 
 func prepURL(url string, params ...string) string {
-	re := regexp.MustCompile(`{.*?}`)
+	var re = regexp.MustCompile(`{.*?}`)
 	i := 0
 	return string(re.ReplaceAllFunc([]byte(url), func(matched []byte) []byte {
 		if i >= len(params) {

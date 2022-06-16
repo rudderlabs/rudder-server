@@ -57,15 +57,15 @@ func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, erro
 		s = session.Must(session.NewSession(&aws.Config{
 			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
-		}))
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
 	var fh *firehose.Firehose = firehose.New(s)
 	return *fh, nil
 }
 
 // Produce creates a producer and send data to Firehose.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
+
 	parsedJSON := gjson.ParseBytes(jsonData)
 	var putOutput *firehose.PutRecordOutput = nil
 	var errorRec error
@@ -103,6 +103,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 		return 400, respStatus, responseMessage
 	}
 	value, err := json.Marshal(data)
+
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error  :: " + err.Error()
@@ -156,4 +157,5 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 		responseMessage = "[FireHose] error  :: Delivery Stream not found"
 		return 400, respStatus, responseMessage
 	}
+
 }

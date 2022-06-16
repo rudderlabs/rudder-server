@@ -110,7 +110,7 @@ func NewJobService(db *sql.DB) (JobService, error) {
 	}, nil
 }
 
-func NewMultiTenantJobService(db, readDB *sql.DB) (JobService, error) {
+func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) (JobService, error) {
 	multiExt, err := extension.NewMultitenantExtension(db, readDB)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,8 @@ func NewNoOpService() JobService {
 	return &noopService{}
 }
 
-type noopService struct{}
+type noopService struct {
+}
 
 func (*noopService) Delete(_ context.Context, _ string) error {
 	return nil
