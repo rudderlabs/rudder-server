@@ -1227,6 +1227,9 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
 		txn, err := dbHandle.Begin()
+		if err != nil {
+			return err
+		}
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
