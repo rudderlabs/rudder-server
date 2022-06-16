@@ -262,7 +262,11 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler, rsourcesService)
-		defer gw.Shutdown()
+		defer func() {
+			if err := gw.Shutdown(); err != nil {
+				pkgLogger.Warnf("Gateway shutdown error: %v", err)
+			}
+		}()
 
 		g.Go(func() error {
 			return gw.StartAdminHandler(ctx)

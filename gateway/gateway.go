@@ -1639,14 +1639,16 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	}))
 }
 
-func (gateway *HandleT) Shutdown() {
+func (gateway *HandleT) Shutdown() error {
 	gateway.backgroundCancel()
-	gateway.webhookHandler.Shutdown()
+	if err := gateway.webhookHandler.Shutdown(); err != nil {
+		return err
+	}
 
 	// UserWebRequestWorkers
 	for _, worker := range gateway.userWebRequestWorkers {
 		close(worker.webRequestQ)
 	}
 
-	_ = gateway.backgroundWait()
+	return gateway.backgroundWait()
 }
