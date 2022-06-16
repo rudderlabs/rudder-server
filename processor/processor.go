@@ -1533,9 +1533,14 @@ func (proc *HandleT) Store(in storeMessage) {
 			for k := range in.uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
-			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+			err = proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+			if err != nil {
+				panic(err)
+			}
 		}
+		// proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 	}
+	// }
 
 	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "router")
 	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_router")
