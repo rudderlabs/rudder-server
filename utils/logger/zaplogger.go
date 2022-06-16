@@ -8,22 +8,6 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// getZapLevel gives zapcore log level based on the level in config.toml
-// skipcq: SCC-U1000
-func getZapLevel(level int) zapcore.Level {
-	switch level {
-	case levelDebug:
-		return zapcore.DebugLevel
-	case levelInfo:
-		return zapcore.InfoLevel
-	case levelError:
-		return zapcore.ErrorLevel
-	case levelFatal:
-		return zapcore.FatalLevel
-	}
-	return zapcore.DebugLevel
-}
-
 // getEncoderConfig configures the output of the log
 func getEncoderConfig(isJson bool) zapcore.Encoder {
 	encoderConfig := zap.NewProductionEncoderConfig()
