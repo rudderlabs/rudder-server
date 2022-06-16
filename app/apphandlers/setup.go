@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -221,4 +222,24 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 		}()
 	}
 	wg.Wait()
+}
+
+// NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
+func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
+	var rsourcesConfig rsources.JobServiceConfig
+	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
+	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
+	rsourcesConfig.LocalHostname = config.GetEnv("JOBS_DB_HOST", "localhost")
+	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
+
+	switch deploymentType {
+	case deployment.HostedType, deployment.MultiTenantType:
+		// For specific deployment types we shall require the existence of a SHARED_DB
+		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
+		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
+			return nil, fmt.Errorf("deployment type %s requires SHARED_DB_DSN to be provided", deploymentType)
+		}
+	}
+
+	return rsources.NewJobService(rsourcesConfig)
 }
