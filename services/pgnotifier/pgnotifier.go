@@ -473,7 +473,7 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 			}
 			ids = append(ids, id)
 		}
-		rows.Close()
+		_ = rows.Close()
 		pkgLogger.Debugf("PgNotifier: Retriggered job ids: %v", ids)
 
 		select {
@@ -481,6 +481,5 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 			return nil
 		case <-time.After(jobOrphanTimeout / 5):
 		}
-
 	}
 }
