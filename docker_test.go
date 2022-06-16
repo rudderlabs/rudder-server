@@ -465,7 +465,7 @@ func TestMainFlow(t *testing.T) {
 			t.Log("Error in ENV variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
 			t.FailNow()
 		}
-		//Disabling big query dedup
+		// Disabling big query dedup
 		config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 		bq.Init()
 		bqTest := wht.Test.BQTest
@@ -512,7 +512,7 @@ func TestMainFlow(t *testing.T) {
 		}
 
 		whDestinationTest(t, whDestTest)
-		//Enabling big query dedup
+		// Enabling big query dedup
 		config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
 		bq.Init()
 
@@ -755,7 +755,7 @@ func sendEventsToGateway(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	}`)
-	sendEvent(t, payload2, "identify", writeKey) //sending duplicate event to check dedup
+	sendEvent(t, payload2, "identify", writeKey) // sending duplicate event to check dedup
 
 	// Sending Batch event
 	payloadBatch := strings.NewReader(`{
@@ -856,7 +856,7 @@ func sendEventsToGateway(t *testing.T) {
 }
 
 func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	s := make([]rune, n)
 	for i := range s {
 		s[i] = letters[rand.Intn(len(letters))]
@@ -923,10 +923,9 @@ func blockOnHold(t *testing.T) {
 	<-c
 }
 
-func getEvent(url string, method string) (string, error) {
+func getEvent(url, method string) (string, error) {
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
-
 	if err != nil {
 		return "", err
 	}
@@ -973,7 +972,7 @@ func sendPixelEvents(t *testing.T, writeKey string) {
 	}
 }
 
-func sendEvent(t *testing.T, payload *strings.Reader, callType string, writeKey string) {
+func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string) {
 	t.Helper()
 	t.Logf("Sending %s Event", callType)
 
