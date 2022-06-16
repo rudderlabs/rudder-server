@@ -1,3 +1,5 @@
+//go:build integration
+
 package jobsdb_test
 
 import (
@@ -726,6 +728,56 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 		require.Equal(t, 3, len(allJobs), "should get limit+1 jobs")
 	})
 
+}
+
+func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
+	t.Setenv("RSERVER_JOBS_DB_ANALYZE_THRESHOLD", "0")
+	initJobsDB()
+	stats.Setup()
+
+	maxDSSize := 10
+	jobDB := jobsdb.HandleT{
+		MaxDSSize: &maxDSSize,
+	}
+	queryFilters := jobsdb.QueryFiltersT{
+		CustomVal: true,
+	}
+
+	jobDB.Setup(jobsdb.ReadWrite, false, "gw", 5*time.Minute, "", true, queryFilters, []prebackup.Handler{})
+	defer jobDB.TearDown()
+	customVal := "MOCKDS"
+	var sampleTestJob = jobsdb.JobT{
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  defaultWorkspaceID,
+		EventCount:   1,
+	}
+	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
+	require.NoError(t, err)
+	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{customVal},
+		JobsLimit:        1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
+	})
+	unprocessedList := unprocessedJob.Jobs
+	require.Equal(t, 1, len(unprocessedList))
+	j := unprocessedList[0]
+	jobStatus := &jobsdb.JobStatusT{
+		JobID:         j.JobID,
+		JobState:      "succeeded",
+		AttemptNum:    1,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		ErrorCode:     "202",
+		ErrorResponse: []byte(`{"success":"OK"}`),
+		Parameters:    []byte(`{}`),
+		WorkspaceId:   defaultWorkspaceID,
+	}
+	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{jobStatus}, []string{customVal}, []jobsdb.ParameterFilterT{})
+	require.NoError(t, err)
 }
 
 func filterWorkspaceJobs(jobs []*jobsdb.JobT, workspaceId string) []*jobsdb.JobT {

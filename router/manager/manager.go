@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -65,8 +64,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 // Gets the config from config backend and extracts enabled writekeys
 func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory) {
-	ch := make(chan pubsub.DataEvent)
-	r.BackendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := r.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
@@ -79,40 +77,35 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 	routerFactory.RouterDB.DeleteExecuting()
 	batchrouterFactory.RouterDB.DeleteExecuting()
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case config := <-ch:
-			sources := config.Data.(backendconfig.ConfigT)
-			enabledDestinations := make(map[string]bool)
-			for _, source := range sources.Sources {
-				for _, destination := range source.Destinations {
-					enabledDestinations[destination.DestinationDefinition.Name] = true
-					//For batch router destinations
-					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
-							brt.Start()
-							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-						}
-					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							rt := routerFactory.New(destination.DestinationDefinition)
-							rt.Start()
-							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = rt
-						}
+	for config := range ch {
+		sources := config.Data.(backendconfig.ConfigT)
+		enabledDestinations := make(map[string]bool)
+		for _, source := range sources.Sources {
+			for _, destination := range source.Destinations {
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				//For batch router destinations
+				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+						brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
+						brt.Start()
+						cleanup = append(cleanup, brt.Shutdown)
+						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
+					}
+				} else {
+					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
+						rt := routerFactory.New(destination.DestinationDefinition)
+						rt.Start()
+						cleanup = append(cleanup, rt.Shutdown)
+						dstToRouter[destination.DestinationDefinition.Name] = rt
 					}
 				}
 			}
 		}
+
 	}
 
 	g, _ := errgroup.WithContext(context.Background())

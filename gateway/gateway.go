@@ -45,7 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -1465,10 +1464,8 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
-	for {
-		config := <-ch
+	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	for config := range ch {
 		configSubscriberLock.Lock()
 		writeKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}

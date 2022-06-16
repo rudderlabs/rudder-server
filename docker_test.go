@@ -3,6 +3,8 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
+//go:build integration
+
 package main_test
 
 import (
@@ -14,6 +16,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"io"
 	"log"
 	"math/rand"
@@ -60,7 +63,7 @@ var (
 	disableDestinationWebhookURL string
 	webhook                      *WebhookRecorder
 	disableDestinationWebhook    *WebhookRecorder
-	runIntegration               bool
+	runSlow                      bool
 	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
@@ -287,12 +290,12 @@ func TestMain(m *testing.M) {
 	}
 
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
+	flag.BoolVar(&runSlow, "slow", false, "run slow tests")
 	flag.BoolVar(&runBigQueryTest, "bigqueryintegration", false, "run big query test")
 	flag.Parse()
 
-	if !runIntegration {
-		log.Println("Skipping integration test. Use `-integration` to run them.")
+	if !runSlow {
+		log.Println("Skipping tests. Use `-slow` to run them.")
 		return
 	}
 
@@ -374,6 +377,7 @@ func run(m *testing.M) (int, error) {
 	_ = os.Setenv("JOBS_DB_PORT", PostgresContainer.Port)
 	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", PostgresContainer.Port)
 	_ = os.Setenv("DEST_TRANSFORM_URL", TransformerContainer.TransformURL)
+	_ = os.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	wht.InitWHConfig()
 

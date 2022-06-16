@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -165,8 +164,7 @@ func StartRouter(
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batchRouterFactory *batchrouter.Factory) {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := backendconfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
@@ -179,40 +177,34 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	routerFactory.RouterDB.DeleteExecuting()
 	batchRouterFactory.RouterDB.DeleteExecuting()
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case config := <-ch:
-			sources := config.Data.(backendconfig.ConfigT)
-			enabledDestinations := make(map[string]bool)
-			for i := range sources.Sources {
-				source := &sources.Sources[i] // Copy of large value inside loop: CRT-P0006
-				for k := range source.Destinations {
-					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
-					enabledDestinations[destination.DestinationDefinition.Name] = true
-					//For batch router destinations
-					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-						misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
-						misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
-							brt.Start()
-							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-						}
-					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-							router := routerFactory.New(destination.DestinationDefinition)
-							router.Start()
-							cleanup = append(cleanup, router.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = router
-						}
+	for config := range ch {
+		sources := config.Data.(backendconfig.ConfigT)
+		enabledDestinations := make(map[string]bool)
+		for i := range sources.Sources {
+			source := &sources.Sources[i] // Copy of large value inside loop: CRT-P0006
+			for k := range source.Destinations {
+				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				//For batch router destinations
+				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+					misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
+					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+						brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
+						brt.Start()
+						cleanup = append(cleanup, brt.Shutdown)
+						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
+					}
+				} else {
+					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
+						router := routerFactory.New(destination.DestinationDefinition)
+						router.Start()
+						cleanup = append(cleanup, router.Shutdown)
+						dstToRouter[destination.DestinationDefinition.Name] = router
 					}
 				}
 			}
