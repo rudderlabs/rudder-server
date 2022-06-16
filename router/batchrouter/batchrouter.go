@@ -267,8 +267,8 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 
 	for jobState, countByAttemptMap := range jobStateCounts {
+		tags["job_state"] = jobState
 		for attempt, count := range countByAttemptMap {
-			tags["job_state"] = jobState
 			tags["attempt_number"] = attempt
 			if count > 0 {
 				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
@@ -437,7 +437,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										if err != nil {
 											panic(err)
 										}
-
+										brt.updateProcessedEventsMetrics(statusList)
 										continue
 									}
 									for _, job := range importingList {
@@ -490,6 +490,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if err != nil {
 									panic(err)
 								}
+								brt.updateProcessedEventsMetrics(statusList)
 							} else if statusCode != 0 {
 								var statusList []*jobsdb.JobStatusT
 								list := brt.jobsDB.GetImporting(
@@ -552,7 +553,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if err != nil {
 									panic(err)
 								}
-
+								brt.updateProcessedEventsMetrics(statusList)
 							} else {
 								continue
 							}
@@ -1354,6 +1355,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 	if err != nil {
 		panic(err)
 	}
+	brt.updateProcessedEventsMetrics(statusList)
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
 
@@ -1462,6 +1464,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	if err != nil {
 		panic(err)
 	}
+	brt.updateProcessedEventsMetrics(statusList)
 }
 
 func getBRTErrorCode(state string) int {
@@ -1726,6 +1729,7 @@ func (worker *workerT) workerProcess() {
 				if err != nil {
 					panic(err)
 				}
+				brt.updateProcessedEventsMetrics(statusList)
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 						"destType":  brt.destType,
@@ -2373,4 +2377,19 @@ func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Upda
 		return fmt.Errorf("publishing rsources stats: %w", err)
 	}
 	return nil
+}
+
+func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
+	countPerState := map[string]int{}
+	for i := range statusList {
+		state := statusList[i].JobState
+		countPerState[state]++
+	}
+	for state, count := range countPerState {
+		stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+			"module":   "batch_router",
+			"destType": brt.destType,
+			"state":    state,
+		}).Count(count)
+	}
 }

@@ -114,8 +114,6 @@ type HandleT struct {
 	routerTransformInputCountStat          stats.RudderStats
 	routerTransformOutputCountStat         stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
-	eventsAbortedStat                      stats.RudderStats
-	drainedJobsStat                        stats.RudderStats
 	routerResponseTransformStat            stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
@@ -1091,12 +1089,12 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 }
 
 func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
-	worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+	eventsAbortedStat := stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
 	})
-	worker.rt.eventsAbortedStat.Increment()
+	eventsAbortedStat.Increment()
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
@@ -1672,6 +1670,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		if err != nil {
 			panic(err)
 		}
+		rt.updateProcessedEventsMetrics(statusList)
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -2131,14 +2130,15 @@ func (rt *HandleT) readAndProcess() int {
 		if err != nil {
 			panic(err)
 		}
+		rt.updateProcessedEventsMetrics(drainList)
 		for destID, destDrainStat := range drainStatsbyDest {
-			rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
+			drainedJobsStat := stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 				"destType": rt.destName,
 				"destId":   destID,
 				"module":   "router",
 				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
-			rt.drainedJobsStat.Count(destDrainStat.Count)
+			drainedJobsStat.Count(destDrainStat.Count)
 			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
 		}
 	}
@@ -2347,7 +2347,7 @@ func (rt *HandleT) Shutdown() {
 func (rt *HandleT) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for config := range ch {
-		
+
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
@@ -2489,4 +2489,19 @@ func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Updat
 		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
 	return err
+}
+
+func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
+	eventsPerState := map[string]int{}
+	for i := range statusList {
+		state := statusList[i].JobState
+		eventsPerState[state]++
+	}
+	for state, count := range eventsPerState {
+		stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+			"module":   "router",
+			"destType": rt.destName,
+			"state":    state,
+		}).Count(count)
+	}
 }
