@@ -65,14 +65,15 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 
 	offset := jsonArchiver.Offset
 	for {
-
 		data := map[string]int{
 			"Pagination": jsonArchiver.Pagination,
 			"Offset":     offset,
 		}
 
 		buf := bytes.Buffer{}
-		t.Execute(&buf, data)
+		if err := t.Execute(&buf, data); err != nil {
+			return location, err
+		}
 		query := buf.String()
 
 		var rawJSONRows sql.NullString
