@@ -9,20 +9,18 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spaolacci/murmur3"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/allisson/go-pglock/v2"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
+	"github.com/spaolacci/murmur3"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	whUtils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -114,16 +112,16 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 	}
 
 	// setup metrics
-	pgNotifierModuleTag := warehouseutils.Tag{Name: "module", Value: "pgnotifier"}
+	pgNotifierModuleTag := whUtils.Tag{Name: "module", Value: "pgnotifier"}
 	// publish metrics
-	pgNotifierPublish = warehouseutils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
-	pgNotifierPublishTime = warehouseutils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
+	pgNotifierPublish = whUtils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
+	pgNotifierPublishTime = whUtils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
 	// claim metrics
-	pgNotifierClaimSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
-	pgNotifierClaimFailed = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
-	pgNotifierClaimSucceededTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
-	pgNotifierClaimFailedTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
-	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
+	pgNotifierClaimSucceeded = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailed = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimSucceededTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailedTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimUpdateFailed = whUtils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
 
 	notifier = PgNotifierT{
 		dbHandle:            dbHandle,
