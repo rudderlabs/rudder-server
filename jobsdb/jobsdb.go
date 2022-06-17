@@ -1104,8 +1104,8 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{
-					minJobID: int64(minID.Int64),
-					maxJobID: int64(maxID.Int64), ds: ds,
+					minJobID: minID.Int64,
+					maxJobID: maxID.Int64, ds: ds,
 				})
 			prevMax = maxID.Int64
 		}
@@ -3231,7 +3231,7 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	err := row.Scan(&count)
 	jd.assertError(err)
 	if count.Valid {
-		return int64(count.Int64) == int64(0)
+		return count.Int64 == 0
 	}
 	panic("Unable to get count on this dataset")
 }

@@ -141,9 +141,9 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 	}
 
 	if maxID.Valid {
-		return int64(maxID.Int64)
+		return maxID.Int64
 	}
-	return int64(0)
+	return 0
 }
 
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {

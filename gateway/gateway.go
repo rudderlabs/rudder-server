@@ -602,7 +602,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				UserID:       builtUserID,
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
-				EventPayload: []byte(body),
+				EventPayload: body,
 				EventCount:   totalEventsInReq,
 				WorkspaceId:  workspaceId,
 			}

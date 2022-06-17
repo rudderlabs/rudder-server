@@ -274,7 +274,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 	}
 
 	if count.Valid {
-		return int64(count.Int64), nil
+		return count.Int64, nil
 	}
 
 	jd.logger.Debugf("Returning 0 because unprocessed count is invalid. This could be because there are no unprocessed jobs. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
@@ -426,7 +426,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	}
 
 	if count.Valid {
-		return int64(count.Int64), nil
+		return count.Int64, nil
 	}
 
 	jd.logger.Debugf("Returning 0 because processed count is invalid. This could be because there are no jobs in non terminal state. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
