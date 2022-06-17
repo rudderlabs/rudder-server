@@ -376,7 +376,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventMap := map[string]interface{}(event)
 	flattenedEvent, err := flatten.Flatten(eventMap, "", flatten.DotStyle)
 	if err != nil {
-		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
+		pkgLogger.Debugf("[EventSchemas] Failed to flatten the event %+v with error: %v", eventMap, err)
 		return
 	}
 
@@ -864,7 +864,7 @@ func assertError(err error) {
 func assertTxnError(err error, txn *sql.Tx) {
 	if err != nil {
 		pkgLogger.Error(err.Error())
-		pkgLogger.Debug(fmt.Sprintf("%+v", txn))
+		pkgLogger.Debugf("%+v", txn)
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
 			pkgLogger.Error(err.Error())
 			panic(fmt.Errorf("%v: %v", err, rollbackErr))
