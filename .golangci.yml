@@ -1,0 +1,21 @@
+run:
+  timeout: 5m
+  go: '1.17'
+  skip-dirs:
+    - warehouse
+    - event-schema
+
+linters:
+  enable:
+    - bodyclose
+    - decorder 
+    - makezero
+    - misspell
+    - nilnil
+    - nilerr
+    - rowserrcheck
+    - tenv
+    - unconvert
+    - wastedassign
+    # - wrapcheck
+    - unparam
