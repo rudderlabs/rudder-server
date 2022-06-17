@@ -95,7 +95,9 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                 // stripping starting '[' and ending ']'
 		jsonBytes = append(jsonBytes, '\n')                                         // appending '\n'
 
-		_, _ = gzWriter.Write(jsonBytes)
+		if _, err = gzWriter.Write(jsonBytes); err != nil {
+			return location, err
+		}
 
 		if !hasPagination {
 			break
@@ -104,7 +106,9 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		offset += jsonArchiver.Pagination
 	}
 
-	_ = gzWriter.CloseGZ()
+	if err = gzWriter.CloseGZ(); err != nil {
+		return location, err
+	}
 
 	file, err := os.Open(jsonArchiver.OutputPath)
 	if err != nil {
