@@ -355,7 +355,7 @@ func Test_Workspaces(t *testing.T) {
 		require.Error(t, m.Err())
 	}
 
-	t.Log("channel should close after context cancelation")
+	t.Log("channel should close after context cancellation")
 	cancel()
 	{
 		_, ok := <-ch
