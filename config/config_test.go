@@ -16,7 +16,7 @@ func TestStatic_checkAndHotReloadConfig(t *testing.T) {
 	configVar2 := newConfigVar(&var2, 1, "var2", true, []string{"KEY_VAR"})
 
 	configMap["KEY_VAR"] = []*ConfigVar{configVar1, configVar2}
-	os.Setenv("RSERVER_KEY_VAR", "value_changed")
+	require.NoError(t, os.Setenv("RSERVER_KEY_VAR", "value_changed"))
 
 	checkAndHotReloadConfig(configMap)
 
