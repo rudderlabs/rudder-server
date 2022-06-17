@@ -863,9 +863,12 @@ func assertError(err error) {
 
 func assertTxnError(err error, txn *sql.Tx) {
 	if err != nil {
-		txn.Rollback()
-		pkgLogger.Info(fmt.Sprintf("%#v\n", err))
-		pkgLogger.Info(fmt.Sprintf("%#v\n", txn))
+		pkgLogger.Error(err.Error())
+		pkgLogger.Debug(fmt.Sprintf("%+v", txn))
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			pkgLogger.Error(err.Error())
+			panic(fmt.Errorf("%v: %v", err, rollbackErr))
+		}
 		panic(err)
 	}
 }
