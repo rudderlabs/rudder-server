@@ -17,7 +17,7 @@ func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 func (handler *NormalModeHandler) HasThresholdReached() bool {
 	config.RegisterIntConfigVariable(5, &maxCrashes, false, 1, "recovery.normal.crashThreshold")
 	config.RegisterIntConfigVariable(300, &duration, false, 1, "recovery.normal.durationInS")
-	return CheckOccurences(handler.recoveryData.StartTimes, maxCrashes, duration)
+	return CheckOccurrences(handler.recoveryData.StartTimes, maxCrashes, duration)
 }
 
 func (handler *NormalModeHandler) Handle() {

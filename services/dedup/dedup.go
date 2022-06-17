@@ -7,8 +7,9 @@ import (
 	"sort"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/badger/v2/options"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -202,8 +203,8 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 	for _, messageID := range messageIDs {
 		messageIDSet[messageID] = struct{}{}
 	}
-	// Eg messagIDSet: [m1, m2, m3]
-	// In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
+	// Eg messageIDSet: [m1, m2, m3]
+	// In this loop it will remove from set for first occurrence and if not found in set it means it's a duplicate
 	for idx, messageID := range messageIDs {
 		if _, ok := messageIDSet[messageID]; ok {
 			delete(messageIDSet, messageID)
@@ -243,5 +244,5 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 func (d *DedupHandleT) Close() {
 	close(d.close)
 	<-d.gcDone
-	d.badgerDB.Close()
+	_ = d.badgerDB.Close()
 }

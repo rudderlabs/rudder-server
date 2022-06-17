@@ -282,7 +282,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 *    <identify> There will be only identify event_model per source. Schema versions can change with different traits.
 *
 * This function is goroutine-safe. We can scale multiple go-routines calling this function,
-* but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
+* but since this method does mostly in-memory operations and has locks, there might not be much performance improvement.
 */
 func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventType, ok := event["type"].(string)

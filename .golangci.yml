@@ -26,3 +26,4 @@ linters:
     - tenv
     - wastedassign
     - unparam
+    - misspell

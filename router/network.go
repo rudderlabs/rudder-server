@@ -142,7 +142,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 		// add queryparams to the url
 		// support of array type in params is handled if the
-		// response from transformers are "," seperated
+		// response from transformers are "," separated
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
 

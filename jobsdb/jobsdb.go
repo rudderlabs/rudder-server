@@ -36,12 +36,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -50,7 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 )
 
@@ -177,8 +178,8 @@ type JobsDB interface {
 	/* Commands */
 
 	// WithTx begins a new transaction that can be used by the provided function.
-	// If the function returns an error, the transaction will rollback and return the error,
-	// otherwise the transaction will be commited and a nil error will be returned.
+	// If the function returns an error, the transaction will be rollbacked and return the error,
+	// otherwise the transaction will be committed and a nil error will be returned.
 	WithTx(func(tx *sql.Tx) error) error
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
@@ -1045,7 +1046,7 @@ func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
-	// this shrinked datasetList is used to compute DSRangeList
+	// this shrank datasetList is used to compute DSRangeList
 	// This is done because, writers don't care about the left datasets in the sorted datasetList
 	if jd.ownerType == Write {
 		if len(jd.datasetList) > 2 {
@@ -1114,8 +1115,8 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 
 /*
 Functions for checking when DB is full or DB needs to be migrated.
-We migrate the DB ONCE most of the jobs have been processed (suceeded/aborted)
-Or when the job_status table gets too big because of lot of retries/failures
+We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
+Or when the job_status table gets too big because of lots of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
@@ -1128,7 +1129,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	err := row.Scan(&totalCount)
 	jd.assertError(err)
 
-	// Jobs which have either succeded or expired
+	// Jobs which have either succeeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
                                       from "%s"
                                       WHERE job_state IN ('%s')`,
@@ -1209,7 +1210,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 Function to add a new dataset. DataSet can be added to the end (e.g when last
 becomes full OR in between during migration. DataSets are assigned numbers
 monotonically when added  to end. So, with just add to end, numbers would be
-like 1,2,3,4, and so on. Theese are called level0 datasets. And the Index is
+like 1,2,3,4, and so on. These are called level0 datasets. And the Index is
 called level0 Index
 During internal migration, we add datasets in between. In the example above, if we migrate
 1 & 2, we would need to create a new DS between 2 & 3. This is assigned the
@@ -1222,7 +1223,7 @@ deleted. Hence there should NEVER be any requirement for having more than two le
 There is an exception to this. In case of cross node migration during a scale up/down,
 we continue to accept new events in level0 datasets. To maintain the ordering guarantee,
 we write the imported jobs to the previous level1 datasets. Now if an internal migration
-is to happen on one of the level1 dataset, we ahve to migrate them to level2 dataset
+is to happen on one of the level1 dataset, we have to migrate them to level2 dataset
 
 Eg. When the node has 1, 2, 3, 4 data sets and an import is triggered, new events start
 going to 5, 6, 7... so on. And the imported data start going to 4_1, 4_2, 4_3... so on
@@ -3705,7 +3706,7 @@ func (jd *HandleT) internalUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStat
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(tx, statusList, tags)
 	if err != nil {
-		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
 		return err
 	}
 

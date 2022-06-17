@@ -343,7 +343,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
 		}
 
-		// perform version compatability check only on success
+		// perform version compatibility check only on success
 		if resp.StatusCode == http.StatusOK {
 			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
 			if convErr != nil {

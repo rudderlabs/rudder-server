@@ -1546,7 +1546,7 @@ Setup initializes this module:
 - Starts web request batch db writer goroutine, that writes incoming batches to JobsDB.
 - Starts debugging goroutine that prints gateway stats.
 
-This function will block until backend config is initialy received.
+This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
 	gateway.logger = pkgLogger

@@ -158,7 +158,7 @@ func (a *Admin) StartCpuProfile(path, reply *string) (err error) {
 	pkgLogger.Info("Starting cpu profile. Writing to ", *path)
 	err = pprof.StartCPUProfile(f)
 	if err != nil {
-		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running or some other error occured.")
+		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running or some other error occurred.")
 		*reply = err.Error()
 	} else {
 		*reply = "Cpu profile is being written to " + *path
