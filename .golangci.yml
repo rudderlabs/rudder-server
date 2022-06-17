@@ -3,7 +3,7 @@ run:
   go: '1.18'
   skip-dirs:
     - warehouse
-    - event-schema
+    - enterprise
 
 linters:
   enable:
