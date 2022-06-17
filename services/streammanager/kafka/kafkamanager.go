@@ -507,8 +507,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 		return 400, "Failure", "Invalid message"
 	}
 
-	data := messageValue.(interface{})
-	value, err := json.Marshal(data)
+	value, err := json.Marshal(messageValue)
 	if err != nil {
 		return makeErrorResponse(err)
 	}
