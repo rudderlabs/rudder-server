@@ -33,7 +33,7 @@ func canConnect(host, port, protocol string) bool {
 				}
 			}
 		}
-		conn.Close()
+		_ = conn.Close()
 		fmt.Println("Opened", net.JoinHostPort(host, port))
 		return true
 	}
@@ -58,7 +58,7 @@ func main() {
 		if connected {
 			os.Exit(0)
 		}
-		time.Sleep(time.Duration(1 * time.Second))
+		time.Sleep(time.Second)
 	}
 	os.Exit(1)
 }

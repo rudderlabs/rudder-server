@@ -27,3 +27,4 @@ linters:
     - wastedassign
     - unparam
     - misspell
+    - unconvert
