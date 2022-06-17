@@ -419,13 +419,17 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		totalSchemaVersions += len(offloadedSchemaVersions[eventModel.UUID])
 
 		if wasOffloaded {
-			manager.reloadSchemaVersion(offloadedVersion)
-			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
-			if !ok {
-				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedVersion.UUID, writeKey, eventType, eventIdentifier)
-				return
+			err := manager.reloadSchemaVersion(offloadedVersion)
+			if err != nil {
+				schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
+			} else {
+				schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
+				if !ok {
+					pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedVersion.UUID, writeKey, eventType, eventIdentifier)
+					return
+				}
+				stats.NewTaggedStat("reload_offloaded_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
-			stats.NewTaggedStat("reload_offloaded_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else if wasArchived {
 			if totalSchemaVersions >= schemaVersionPerEventModelLimit {
 				archiveOldestLastSeenVersion()
