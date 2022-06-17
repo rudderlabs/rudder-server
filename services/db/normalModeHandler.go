@@ -20,7 +20,7 @@ func (handler *NormalModeHandler) HasThresholdReached() bool {
 	return CheckOccurrences(handler.recoveryData.StartTimes, maxCrashes, duration)
 }
 
-func (_ *NormalModeHandler) Handle() {
+func (*NormalModeHandler) Handle() {
 }
 
 type NormalModeHandler struct {

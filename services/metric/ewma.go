@@ -9,7 +9,7 @@ const (
 
 	// DECAY The formula for computing the decay factor from the average age comes
 	// from "Production and Operations Analysis" by Steven Nahmias.
-	DECAY = 2 / (float64(AVG_METRIC_AGE) + 1)
+	DECAY = 2 / (AVG_METRIC_AGE + 1)
 
 	// WARMUP_SAMPLES For best results, the moving average should not be initialized to the
 	// samples it sees immediately. The book "Production and Operations
