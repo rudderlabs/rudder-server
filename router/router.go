@@ -2138,17 +2138,12 @@ func (rt *HandleT) readAndProcess() int {
 				partition := rt.getWorkerPartition(drainedUserID)
 				drainWorker := rt.workers[partition]
 
-				drainWorker.failedJobIDMutex.RLock()
+				drainWorker.failedJobIDMutex.Lock()
 				lastJobID, ok := drainWorker.failedJobIDMap[drainedUserID]
-				drainWorker.failedJobIDMutex.RUnlock()
-
 				if ok && lastJobID == drainedJob.JobID {
-
-					drainWorker.failedJobIDMutex.Lock()
 					delete(drainWorker.failedJobIDMap, drainedUserID)
-					drainWorker.failedJobIDMutex.Unlock()
-
 				}
+				drainWorker.failedJobIDMutex.Unlock()
 			}
 		}
 
