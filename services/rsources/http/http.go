@@ -96,5 +96,4 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 		h.logger.Errorf("error while writing response body: %v", err)
 		return
 	}
-
 }

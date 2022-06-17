@@ -25,7 +25,6 @@ func TestCounterAdd(t *testing.T) {
 	if expected, got := "counter cannot decrease in value", decreaseCounter(counter).Error(); expected != got {
 		t.Errorf("Expected error %q, got %q.", expected, got)
 	}
-
 }
 
 func TestCounterAddConcurrently(t *testing.T) {

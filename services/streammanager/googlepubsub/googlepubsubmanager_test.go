@@ -31,7 +31,6 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
-
 	config := Config{
 		ProjectId: projectId,
 		EventToTopicMap: []map[string]string{
@@ -64,7 +63,6 @@ func Test_Timeout(t *testing.T) {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-
 	config := Config{
 		ProjectId: projectId,
 		EventToTopicMap: []map[string]string{
@@ -77,7 +75,6 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
-
 }
 
 func TestMain(m *testing.M) {

@@ -19,7 +19,6 @@ import (
 )
 
 func (manager *DOSpacesManager) getSession() *session.Session {
-
 	var region string
 	if manager.Config.Region != nil {
 		region = *manager.Config.Region
@@ -79,7 +78,6 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 }
 
 func (manager *DOSpacesManager) Download(ctx context.Context, output *os.File, key string) error {
-
 	downloadSession := manager.getSession()
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))

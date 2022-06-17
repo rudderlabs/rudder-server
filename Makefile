@@ -78,7 +78,13 @@ install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
 
+	go install mvdan.cc/gofumpt@latest
+
 .PHONY: lint
-lint:
+lint: fmt
 	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.46.2 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
+
+.PHONY: fmt
+fmt: install-tools
+	gofumpt -l -w -extra  .

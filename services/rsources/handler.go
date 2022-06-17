@@ -5,17 +5,25 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/services/rsources/internal/extension"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
+// In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
+var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
+
 type sourcesHandler struct {
-	extension.Extension
+	config         JobServiceConfig
+	localDB        *sql.DB
+	sharedDB       *sql.DB
+	cleanupTrigger func() <-chan time.Time
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
-
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -42,8 +50,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			ORDER BY task_run_id, source_id, destination_id DESC`,
 		filters)
 
-	rows, err := sh.Extension.GetReadDB().QueryContext(ctx, sqlStatement, filterParams...)
-
+	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -108,9 +115,131 @@ func (*sourcesHandler) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, 
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
-	return sh.Extension.DropStats(ctx, jobRunId)
+	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
+	_, err := sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
+	return err
+}
+
+func (sh *sourcesHandler) DropStats(ctx context.Context, jobRunId string) error {
+	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
+	_, err := sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
+	return err
 }
 
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
-	return sh.Extension.CleanupLoop(ctx)
+	err := sh.doCleanupTables(ctx)
+	if err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-sh.cleanupTrigger():
+			err := sh.doCleanupTables(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
+	before := time.Now().Add(-config.GetDuration("RSOURCES_STATS_RETENTION", 24, time.Hour))
+	sqlStatement := `delete from "rsources_stats" where job_run_id in (
+		select lastUpdateToJobRunId.job_run_id from 
+			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
+		where lastUpdateToJobRunId.mts <= $1
+	)`
+	_, err := sh.localDB.ExecContext(ctx, sqlStatement, before)
+	return err
+}
+
+func (sh *sourcesHandler) readDB() *sql.DB {
+	if sh.sharedDB != nil {
+		return sh.sharedDB
+	}
+	return sh.localDB
+}
+
+func (sh *sourcesHandler) init() error {
+	ctx := context.TODO()
+	if sh.cleanupTrigger == nil {
+		sh.cleanupTrigger = func() <-chan time.Time {
+			return time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 1, time.Hour))
+		}
+	}
+	err := setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
+	if err != nil {
+		return fmt.Errorf("failed to setup local stats table: %w", err)
+	}
+	if sh.sharedDB != nil {
+		err = setupStatsTable(ctx, sh.sharedDB, "shared")
+		if err != nil {
+			return fmt.Errorf("failed to setup shared stats table: %w", err)
+		}
+		err = sh.setupLogicalReplication(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to setup logical replication: %w", err)
+		}
+	}
+	return nil
+}
+
+func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	sqlStatement := fmt.Sprintf(`create table if not exists "rsources_stats" (
+		db_name text not null default '%s',
+		job_run_id text not null,
+		task_run_id text not null,
+		source_id text not null,
+		destination_id text not null,
+		in_count integer not null default 0,
+		out_count integer not null default 0,
+		failed_count integer not null default 0,
+		ts timestamp not null default NOW(),
+		primary key (db_name, job_run_id, task_run_id, source_id, destination_id)
+	)`, defaultDbName)
+	_, err = tx.ExecContext(ctx, sqlStatement)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `create index if not exists rsources_stats_job_run_id_idx on "rsources_stats" (job_run_id)`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
+	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
+	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
+	if err != nil {
+		pqError, ok := err.(*pq.Error)
+		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+			return fmt.Errorf("failed to create publication on local database: %w", err)
+		}
+	}
+
+	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
+	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
+	// Create subscription for the above publication (ignore already exists error)
+	subscriptionConn := sh.config.SubscriptionTargetConn
+	if subscriptionConn == "" {
+		subscriptionConn = sh.config.LocalConn
+	}
+	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn)
+	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery)
+	if err != nil {
+		pqError, ok := err.(*pq.Error)
+		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+			return fmt.Errorf("failed to create subscription on shared database: %w", err)
+		}
+	}
+	return nil
 }

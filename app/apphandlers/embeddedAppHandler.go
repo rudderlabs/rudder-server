@@ -2,17 +2,16 @@ package apphandlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"net/http"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -27,7 +26,6 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -37,7 +35,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//EmbeddedApp is the type for embedded type implemention
+// EmbeddedApp is the type for embedded type implemention
 type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -57,7 +55,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %w", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	// Setting up reporting client
 	if embedded.App.Features().Reporting != nil {
 		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -79,20 +83,14 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
-	localDb, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
 		return err
 	}
 
-	localDb.SetMaxOpenConns(config.GetInt("Rsources.PoolSize", 5))
-	rsourcesService, err := rsources.NewJobService(localDb)
-	if err != nil {
-		return err
-	}
-
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
-	//Processor.
+	// Processor.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -180,19 +178,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 			g.Go(func() error {
 				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
-					startRouterFunc) //TODO
+					startRouterFunc) // TODO
 				return nil
 			})
 		}
 	}
 
 	var modeProvider cluster.ChangeEventProvider
-
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
 	switch deploymentType {
 	case deployment.MultiTenantType:
@@ -254,8 +246,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		rateLimiter.SetUp()
 		gw := gateway.HandleT{}
 		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
-		//the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
-		//will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+		// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+		// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
 		gatewayDB = *jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
@@ -282,8 +274,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
-		//because if this start before that then there might be a case when ReadDB will try to read the owner table
-		//which gets created after either Write or ReadWrite DB is created.
+		// because if this start before that then there might be a case when ReadDB will try to read the owner table
+		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
 	})
 

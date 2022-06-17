@@ -26,9 +26,7 @@ const (
 	defaultTestTimeout = 60 * time.Second
 )
 
-var (
-	overrideArm64Check bool
-)
+var overrideArm64Check bool
 
 func TestMain(m *testing.M) {
 	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {

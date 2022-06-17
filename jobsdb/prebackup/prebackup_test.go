@@ -19,5 +19,4 @@ func Test_DropSourceIdsHandler_Without_SourceIds(t *testing.T) {
 
 	// then handler doesn't do anything and no error is returned
 	require.NoError(t, err)
-
 }

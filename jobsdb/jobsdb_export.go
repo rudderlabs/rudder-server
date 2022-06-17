@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//SetupForExport is used to setup jobsdb for export or for import or for both
+// SetupForExport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForExport() {
 	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
 	jd.migrationState.nonExportedJobsCountByDS = make(map[string]int64)
@@ -29,16 +29,16 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 	return ds
 }
 
-//GetNonMigratedAndMarkMigrating all jobs with no filters
+// GetNonMigratedAndMarkMigrating all jobs with no filters
 func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	queryStat := stats.NewTaggedStat("get_for_export_and_update_status", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
 	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
-	//The order of lock is very important. The mainCheckLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The mainCheckLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -53,7 +53,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		return outJobs
 	}
 
-	//Nothing to export in this case
+	// Nothing to export in this case
 	if jd.migrationState.lastDsForExport.Index == "" {
 		return outJobs
 	}
@@ -101,7 +101,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			break
 		}
 
-		//Instead of full dsList, it needs to do only till the dataset before import and newEvent datasets
+		// Instead of full dsList, it needs to do only till the dataset before import and newEvent datasets
 		if ds.Index == jd.migrationState.lastDsForExport.Index {
 			break
 		}
@@ -118,16 +118,16 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			jd.markClearEmptyResult(ds, workspace, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
-		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+		// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 	jd.assertError(err)
 
-	//Release lock
+	// Release lock
 	return outJobs
 }
 
-//BuildStatus generates a struct of type JobStatusT for a given job and jobState
+// BuildStatus generates a struct of type JobStatusT for a given job and jobState
 func BuildStatus(job *JobT, jobState string) *JobStatusT {
 	newStatus := JobStatusT{
 		JobID:         job.JobID,
@@ -143,10 +143,10 @@ func BuildStatus(job *JobT, jobState string) *JobStatusT {
 	return &newStatus
 }
 
-//SQLJobStatusT is a temporary struct to handle nulls from postgres query
+// SQLJobStatusT is a temporary struct to handle nulls from postgres query
 type SQLJobStatusT struct {
 	JobID         sql.NullInt64
-	JobState      sql.NullString //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated
+	JobState      sql.NullString // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated
 	AttemptNum    sql.NullInt64
 	ExecTime      sql.NullTime
 	RetryTime     sql.NullTime
@@ -214,8 +214,8 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 	return jobList, nil
 }
 
-//UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
-func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, jobsCount int64, uploadLocation string) {
+// UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
+func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID, toNodeID string, jobsCount int64, uploadLocation string) {
 	queryStat := stats.NewTaggedStat("update_status_and_checkpoint", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -238,20 +238,20 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 			jd.markClearEmptyResult(ds, workspace, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, updatedStates...)
 		}
-		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+		// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), []string{}, []ParameterFilterT{}, hasJobs, nil)
 	}
 }
 
-//IsMigrating returns true if there are non zero jobs with status = 'migrating'
+// IsMigrating returns true if there are non zero jobs with status = 'migrating'
 func (jd *HandleT) IsMigrating() bool {
 	queryStat := stats.NewTaggedStat("is_migrating_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The mainCheckLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The mainCheckLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -308,7 +308,7 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 	return int64(0)
 }
 
-//PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'
+// PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'
 func (jd *HandleT) PreExportCleanup() {
 	queryStat := stats.NewTaggedStat("pre_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -323,7 +323,7 @@ func (jd *HandleT) PreExportCleanup() {
 	}
 }
 
-//PostExportCleanup removes all the entries from job_status_tables that are of state 'wont_migrate' or 'migrating'
+// PostExportCleanup removes all the entries from job_status_tables that are of state 'wont_migrate' or 'migrating'
 func (jd *HandleT) PostExportCleanup() {
 	queryStat := stats.NewTaggedStat("post_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -353,7 +353,7 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 	jd.assertError(err)
 }
 
-//GetUserID from job
+// GetUserID from job
 func (*HandleT) GetUserID(job *JobT) string {
 	return job.UserID
 }

@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/sony/gobreaker"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/sony/gobreaker"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -55,7 +56,7 @@ type CustomManagerT struct {
 	backendConfigInitialized chan struct{}
 }
 
-//clientHolder keeps the config of a destination and corresponding producer for a stream destination
+// clientHolder keeps the config of a destination and corresponding producer for a stream destination
 type clientHolder struct {
 	config interface{}
 	client interface{}
@@ -80,7 +81,6 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) error {
-
 	destConfig := customManager.config[destID].Config
 	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
 		var customDestination *clientHolder
@@ -114,7 +114,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client, config interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
@@ -330,7 +330,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 }
 
 func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map[string]interface{} {
-	var relevantConfigs = make(map[string]interface{})
+	relevantConfigs := make(map[string]interface{})
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
 		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)

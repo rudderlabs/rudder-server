@@ -133,7 +133,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var chSetupError error
 	if chClusterTest.Network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-network"}); err != nil {
+		Name: "clickhouse-network",
+	}); err != nil {
 		chSetupError = err
 		log.Println(fmt.Errorf("could not create clickhouse cluster network: %s", err.Error()))
 	}

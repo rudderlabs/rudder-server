@@ -125,8 +125,10 @@ type reportingNOOP struct{}
 
 func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
 }
+
 func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
 }
+
 func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
 }
 
@@ -139,8 +141,10 @@ const (
 
 var (
 	workspaceID             = uuid.Must(uuid.NewV4()).String()
-	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
-		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
+	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
+		ID: GADestinationDefinitionID, Name: "GA",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+	}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
@@ -148,8 +152,10 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{ID: GADestinationID, Name: "ga dest",
-					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+				Destinations: []backendConfig.DestinationT{{
+					ID: GADestinationID, Name: "ga dest",
+					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
+				}},
 			},
 		},
 	}
@@ -232,8 +238,8 @@ func TestDynamicClusterManager(t *testing.T) {
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(
-		ctx context.Context, topic backendConfig.Topic) pubsub.DataChannel {
-
+		ctx context.Context, topic backendConfig.Topic,
+	) pubsub.DataChannel {
 		ch := make(chan pubsub.DataEvent, 1)
 		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 

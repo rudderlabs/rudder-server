@@ -37,6 +37,13 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
+
+      - run: make fmt
+      - run: git diff --exit-code
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
+
   enterprise:
     name: Check .enterprise-commit
     runs-on: ubuntu-latest

@@ -2,7 +2,6 @@ package apphandlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -30,7 +29,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -39,7 +37,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//ProcessorApp is the type for Processor type implemention
+// ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -81,7 +79,13 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %w", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	// Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -102,17 +106,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
-	localDb, err := sql.Open("postgres", jobsdb.GetConnectionString())
-	if err != nil {
-		return err
-	}
-	localDb.SetMaxOpenConns(config.GetInt("Rsources.PoolSize", 5))
-	rsourcesService, err := rsources.NewJobService(localDb)
+	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
 		return err
 	}
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -196,18 +195,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) // TODO
 				return nil
 			})
 		}
 	}
 	var modeProvider cluster.ChangeEventProvider
-
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
 	switch deploymentType {
 	case deployment.MultiTenantType:
@@ -272,8 +265,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
-		//because if this start before that then there might be a case when ReadDB will try to read the owner table
-		//which gets created after either Write or ReadWrite DB is created.
+		// because if this start before that then there might be a case when ReadDB will try to read the owner table
+		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
 	})
 
@@ -285,7 +278,7 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 }
 
 func startHealthWebHandler(ctx context.Context) error {
-	//Port where Processor health handler is running
+	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", healthHandler)

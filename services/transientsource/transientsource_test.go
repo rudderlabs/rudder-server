@@ -56,7 +56,6 @@ func Test_Service_ApplyParams(t *testing.T) {
 }
 
 func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
-
 	RegisterTestingT(t)
 	ctrl := gomock.NewController(t)
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)

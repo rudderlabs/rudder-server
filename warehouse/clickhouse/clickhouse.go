@@ -74,10 +74,12 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"boolean":         "UInt8",
 	"array(boolean)":  "Array(UInt8)",
 }
+
 var clickhouseSpecificColumnNameMappings = map[string]string{
 	"event":      "LowCardinality(String)",
 	"event_text": "LowCardinality(String)",
 }
+
 var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
@@ -250,7 +252,7 @@ func loadConfig() {
  registerTLSConfig will create a global map, use different names for the different tls config.
  clickhouse will access the config by mentioning the key in connection string
 */
-func registerTLSConfig(key string, certificate string) {
+func registerTLSConfig(key, certificate string) {
 	tlsConfig := &tls.Config{}
 	caCert := []byte(certificate)
 	caCertPool := x509.NewCertPool()
@@ -293,7 +295,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	return strings.Join(arr[:], ",")
 }
 
-func getClickHouseCodecForColumnType(columnType string, tableName string) string {
+func getClickHouseCodecForColumnType(columnType, tableName string) string {
 	switch columnType {
 	case "datetime":
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
@@ -303,7 +305,7 @@ func getClickHouseCodecForColumnType(columnType string, tableName string) string
 	return ""
 }
 
-func getClickhouseColumnTypeForSpecificColumn(columnName string, columnType string, isNullable bool) string {
+func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
 	specificColumnType := columnType
 	if strings.Contains(specificColumnType, "Array") {
 		return specificColumnType
@@ -316,11 +318,10 @@ func getClickhouseColumnTypeForSpecificColumn(columnName string, columnType stri
 	}
 
 	return specificColumnType
-
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string, columnType string, notNullableKey bool) string {
+func getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
 	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && disableNullable) {
 		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
@@ -353,7 +354,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	var dErr error
 	var fileNamesLock sync.RWMutex
 
-	var jobs = make([]misc.RWCJob, 0)
+	jobs := make([]misc.RWCJob, 0)
 	for _, object := range objects {
 		jobs = append(jobs, object)
 	}
@@ -428,7 +429,7 @@ func generateArgumentString(arg string, length int) string {
 	return strings.Join(args, ",")
 }
 
-func castStringToArray(data string, dataType string) interface{} {
+func castStringToArray(data, dataType string) interface{} {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)
@@ -488,7 +489,7 @@ func castStringToArray(data string, dataType string) interface{} {
 }
 
 // typecastDataFromType typeCasts string data to the mentioned data type
-func typecastDataFromType(data string, dataType string) interface{} {
+func typecastDataFromType(data, dataType string) interface{} {
 	var dataI interface{}
 	var err error
 	switch dataType {
@@ -785,7 +786,6 @@ func getSortKeyTuple(sortKeyFields []string) string {
 		} else {
 			tuple += fmt.Sprintf(`"%s",`, field)
 		}
-
 	}
 	tuple += ")"
 	return tuple
@@ -843,7 +843,7 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 }
 
 // AddColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -863,7 +863,7 @@ func (ch *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (ch *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -888,7 +888,6 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	}
 
 	return nil
-
 }
 
 func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
@@ -1031,7 +1030,7 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 

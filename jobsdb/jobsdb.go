@@ -29,6 +29,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cenkalti/backoff"
@@ -38,11 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
-
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -87,7 +86,6 @@ type QueryConditions struct {
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
 type GetQueryParamsT struct {
-
 	// query conditions
 
 	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
@@ -111,7 +109,7 @@ type GetQueryParamsT struct {
 	PayloadSizeLimit int64
 }
 
-//statTags is a struct to hold tags for stats
+// statTags is a struct to hold tags for stats
 type statTags struct {
 	CustomValFilters []string
 	ParameterFilters []ParameterFilterT
@@ -173,7 +171,6 @@ func EmptyUpdateSafeTx() UpdateSafeTx {
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
-
 	// Identifier returns the jobsdb's identifier, a.k.a. table prefix
 	Identifier() string
 
@@ -273,8 +270,10 @@ const (
 	allWorkspaces = "_all_"
 )
 
-var masterBackupEnabled bool
-var pathPrefix string
+var (
+	masterBackupEnabled bool
+	pathPrefix          string
+)
 
 /*
 UpdateJobStatusInTx updates the status of a batch of jobs in the passed transaction
@@ -283,7 +282,6 @@ Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
 func (jd *HandleT) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-
 	updateCmd := func() error {
 		if len(statusList) == 0 {
 			return nil
@@ -302,7 +300,6 @@ func (jd *HandleT) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT
 		})
 	}
 	return updateCmd()
-
 }
 
 /*
@@ -313,7 +310,7 @@ ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
 	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
+	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
@@ -357,7 +354,7 @@ func (job *JobT) sanitizeJson() {
 	job.Parameters = sanitizeJson(job.Parameters)
 }
 
-//The struct fields need to be exposed to JSON package
+// The struct fields need to be exposed to JSON package
 type dataSetT struct {
 	JobTable       string `json:"job"`
 	JobStatusTable string `json:"status"`
@@ -372,7 +369,7 @@ type dataSetRangeT struct {
 	ds        dataSetT
 }
 
-//migrationState maintains the state required during the migration process
+// migrationState maintains the state required during the migration process
 type migrationState struct {
 	dsForNewEvents             dataSetT
 	dsForImport                dataSetT
@@ -398,7 +395,7 @@ type HandleT struct {
 	dsListLock                    lock.DSListLocker
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry //DS -> workspace -> customVal -> params -> state -> cacheEntry
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry // DS -> workspace -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *backupSettings
 	jobsFileUploader              filemanager.FileManager
@@ -445,7 +442,7 @@ type QueryFiltersT struct {
 	ParameterFilters []string
 }
 
-//The struct which is written to the journal
+// The struct which is written to the journal
 type journalOpPayloadT struct {
 	From []dataSetT `json:"from"`
 	To   dataSetT   `json:"to"`
@@ -478,7 +475,7 @@ func (jd *HandleT) registerBackUpSettings() {
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
-//Some helper functions
+// Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
@@ -548,12 +545,12 @@ type jobStateT struct {
 	State      string
 }
 
-//State definitions
+// State definitions
 var (
-	//Not valid, Not terminal
+	// Not valid, Not terminal
 	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "not_picked_yet"}
 
-	//Valid, Not terminal
+	// Valid, Not terminal
 	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
 	Executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
 	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
@@ -561,14 +558,14 @@ var (
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
-	//Valid, Terminal
+	// Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
 	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
 	WontMigrate = jobStateT{isValid: true, isTerminal: true, State: "wont_migrate"}
 )
 
-//Adding a new state to this list, will require an enum change in postgres db.
+// Adding a new state to this list, will require an enum change in postgres db.
 var jobStates []jobStateT = []jobStateT{
 	NotProcessed,
 	Failed,
@@ -583,15 +580,15 @@ var jobStates []jobStateT = []jobStateT{
 	Importing,
 }
 
-//OwnerType for this jobsdb instance
+// OwnerType for this jobsdb instance
 type OwnerType string
 
 const (
-	//Read : Only Reader of this jobsdb instance
+	// Read : Only Reader of this jobsdb instance
 	Read OwnerType = "READ"
-	//Write : Only Writer of this jobsdb instance
+	// Write : Only Writer of this jobsdb instance
 	Write OwnerType = "WRITE"
-	//ReadWrite : Reader and Writer of this jobsdb instance
+	// ReadWrite : Reader and Writer of this jobsdb instance
 	ReadWrite OwnerType = ""
 )
 
@@ -685,7 +682,6 @@ func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
 		host, port, user, password, dbname, sslmode, appName)
-
 }
 
 type OptsFunc func(jd *HandleT)
@@ -784,7 +780,6 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 }
 
 func (jd *HandleT) init() {
-
 	if jd.MaxDSSize == nil {
 		// passing `maxDSSize` by reference, so it can be hot reloaded
 		jd.MaxDSSize = &maxDSSize
@@ -873,7 +868,6 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterIntConfigVariable(20, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
 	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
 	config.RegisterIntConfigVariable(30000, &jd.analyzeThreshold, false, 1, analyzeThresholdKeys...)
-
 }
 
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
@@ -909,7 +903,6 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 			jd.readerWriterSetup(ctx, l)
 		}
 	})
-
 }
 
 func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
@@ -935,8 +928,8 @@ func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 func (jd *HandleT) readerSetup(ctx context.Context, l lock.DSListLockToken) {
 	jd.recoverFromJournal(Read)
 
-	//This is a thread-safe operation.
-	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
+	// This is a thread-safe operation.
+	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
 
 	jd.refreshDSRangeList(l)
@@ -959,12 +952,12 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.DSListLockToken) {
 
 func (jd *HandleT) writerSetup(ctx context.Context, l lock.DSListLockToken) {
 	jd.recoverFromJournal(Write)
-	//This is a thread-safe operation.
-	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
+	// This is a thread-safe operation.
+	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
 
 	jd.refreshDSRangeList(l)
-	//If no DS present, add one
+	// If no DS present, add one
 	if len(jd.getDSList()) == 0 {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
@@ -987,7 +980,6 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.DSListLockToken
 		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
-
 }
 
 // Stop stops the background goroutines and waits until they finish.
@@ -1011,8 +1003,8 @@ func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
 
-//removeExtraKey : removes extra key present in map1 and not in map2
-//Assumption is keys in map1 and map2 are same, except that map1 has one key more than map2
+// removeExtraKey : removes extra key present in map1 and not in map2
+// Assumption is keys in map1 and map2 are same, except that map1 has one key more than map2
 func removeExtraKey(map1, map2 map[string]string) string {
 	var deleteKey, key string
 	for key = range map1 {
@@ -1044,15 +1036,14 @@ func (jd *HandleT) getDSList() []dataSetT {
 
 // refreshDSList refreshes the ds list from the database
 func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
-
 	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
-	//Reset the global list
+	// Reset the global list
 	jd.datasetList = nil
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
-	//if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
-	//this shrinked datasetList is used to compute DSRangeList
-	//This is done because, writers don't care about the left datasets in the sorted datasetList
+	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
+	// this shrinked datasetList is used to compute DSRangeList
+	// This is done because, writers don't care about the left datasets in the sorted datasetList
 	if jd.ownerType == Write {
 		if len(jd.datasetList) > 2 {
 			jd.datasetList = jd.datasetList[len(jd.datasetList)-2 : len(jd.datasetList)]
@@ -1070,18 +1061,17 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 
 // refreshDSRangeList first refreshes the DS list and then calculate the DS range list
 func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
-
 	var minID, maxID sql.NullInt64
 	var prevMax int64
 
-	//At this point we must have write-locked dsListLock
+	// At this point we must have write-locked dsListLock
 	dsList := jd.refreshDSList(l)
 	jd.datasetRangeList = nil
 
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM "%s"`, ds.JobTable)
-		//Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
+		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
 		rows, err := jd.dbHandle.Query(sqlStatement)
 		jd.assertError(err)
 		for rows.Next() {
@@ -1092,7 +1082,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 		jd.logger.Debug(sqlStatement, minID, maxID)
 
 		rows.Close()
-		//We store ranges EXCEPT for
+		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
 
@@ -1105,12 +1095,14 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 		}
 
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
-			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
+			// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
-				dataSetRangeT{minJobID: int64(minID.Int64),
-					maxJobID: int64(maxID.Int64), ds: ds})
+				dataSetRangeT{
+					minJobID: int64(minID.Int64),
+					maxJobID: int64(maxID.Int64), ds: ds,
+				})
 			prevMax = maxID.Int64
 		}
 	}
@@ -1133,7 +1125,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	err := row.Scan(&totalCount)
 	jd.assertError(err)
 
-	//Jobs which have either succeded or expired
+	// Jobs which have either succeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
                                       from "%s"
                                       WHERE job_state IN ('%s')`,
@@ -1142,8 +1134,8 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	err = row.Scan(&delCount)
 	jd.assertError(err)
 
-	//Total number of job status. If this table grows too big (e.g. lot of retries)
-	//we migrate to a new table and get rid of old job status
+	// Total number of job status. If this table grows too big (e.g. lot of retries)
+	// we migrate to a new table and get rid of old job status
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, ds.JobStatusTable)
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&statusCount)
@@ -1154,8 +1146,8 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 		return false, 0
 	}
 
-	//If records are newer than what is required. One example use case is
-	//gateway DB where records are kept to dedup
+	// If records are newer than what is required. One example use case is
+	// gateway DB where records are kept to dedup
 
 	var lastUpdate time.Time
 	sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from "%s"`, ds.JobTable)
@@ -1195,7 +1187,6 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
-
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
 		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
@@ -1238,7 +1229,7 @@ create a newDS between 4_1 and 4_2. This is assigned to 4_1_1, 4_1_2 and so on.
 
 func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	indexStr := strings.Split(ds.Index, "_")
-	//Currently we don't have a scenario where we need more than 3 levels.
+	// Currently we don't have a scenario where we need more than 3 levels.
 	if len(indexStr) > 3 {
 		err = fmt.Errorf("len(indexStr): %d > 3", len(indexStr))
 		return
@@ -1253,7 +1244,7 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	return len(levelVals), levelVals, nil
 }
 
-func newDataSet(tablePrefix string, dsIdx string) dataSetT {
+func newDataSet(tablePrefix, dsIdx string) dataSetT {
 	jobTable := fmt.Sprintf("%s_jobs_%s", tablePrefix, dsIdx)
 	jobStatusTable := fmt.Sprintf("%s_job_status_%s", tablePrefix, dsIdx)
 	return dataSetT{
@@ -1293,14 +1284,14 @@ func (jd *HandleT) computeNewIdxForAppend(l lock.DSListLockToken) string {
 	} else {
 		levels, levelVals, err := mapDSToLevel(dList[len(dList)-1])
 		jd.assertError(err)
-		//Last one can only be Level0
+		// Last one can only be Level0
 		jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
 		newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
 	}
 	return newDSIdx
 }
 
-func (jd *HandleT) computeNewIdxForInterNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { //ClusterMigration
+func (jd *HandleT) computeNewIdxForInterNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { // ClusterMigration
 	jd.logger.Debugf("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.refreshDSList(l)
 	newIdx, err := computeIdxForClusterMigration(jd.tablePrefix, dList, insertBeforeDS)
@@ -1370,14 +1361,14 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 	return
 }
 
-//Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
+// Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
 func computeInsertVals(before, after []string) ([]string, error) {
 	for {
 		if before == nil || after == nil {
 			return nil, fmt.Errorf("before or after is nil")
 		}
-		//Safe check: In the current jobsdb implementation, indices don't go more
-		//than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
+		// Safe check: In the current jobsdb implementation, indices don't go more
+		// than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
 		if len(before) > 4 {
 			return before, fmt.Errorf("can't compute insert index due to bad inputs. before: %v, after: %v", before, after)
 		}
@@ -1388,7 +1379,7 @@ func computeInsertVals(before, after []string) ([]string, error) {
 		if err != nil {
 			return calculatedVals, err
 		}
-		//Just increment the last value of the index as a possible candidate
+		// Just increment the last value of the index as a possible candidate
 		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
 		var equals bool
 		if len(calculatedVals) == len(after) {
@@ -1409,8 +1400,8 @@ func computeInsertVals(before, after []string) ([]string, error) {
 				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
 			}
 		}
-		//Only when the index starts with 0, we allow three levels and when we are using the legacy migration
-		//In all other cases, we allow only two levels
+		// Only when the index starts with 0, we allow three levels and when we are using the legacy migration
+		// In all other cases, we allow only two levels
 		var comparatorBool bool
 		if skipZeroAssertionForMultitenant {
 			comparatorBool = len(calculatedVals) == 2
@@ -1460,7 +1451,7 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	return calculatedIdx, nil
 }
 
-func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { //Within the node
+func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { // Within the node
 	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.refreshDSList(l)
 	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
@@ -1480,21 +1471,20 @@ func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.DSListLockToken, in
 type transactionHandler interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 	Prepare(query string) (*sql.Stmt, error)
-	//If required, add other definitions that are common between *sql.DB and *sql.Tx
-	//Never include Commit and Rollback in this interface
-	//That ensures that whoever is acting on a transactionHandler can't commit or rollback
-	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
+	// If required, add other definitions that are common between *sql.DB and *sql.Tx
+	// Never include Commit and Rollback in this interface
+	// That ensures that whoever is acting on a transactionHandler can't commit or rollback
+	// Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
 func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
-
-	//Mark the start of operation. If we crash somewhere here, we delete the
-	//DS being added
+	// Mark the start of operation. If we crash somewhere here, we delete the
+	// DS being added
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
-	//Create the jobs and job_status tables
+	// Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%s" (
                                       job_id BIGSERIAL PRIMARY KEY,
 									  workspace_id TEXT NOT NULL DEFAULT '',
@@ -1510,7 +1500,7 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	//TODO : Evaluate a way to handle indexes only for particular tables
+	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
 		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
@@ -1531,8 +1521,8 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	//In case of a migration, we don't yet update the in-memory list till
-	//we finish the migration
+	// In case of a migration, we don't yet update the in-memory list till
+	// we finish the migration
 	if l != nil {
 		jd.setSequenceNumber(l, newDS.Index)
 	}
@@ -1540,17 +1530,17 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 }
 
 func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) dataSetT {
-	//Refresh the in-memory list. We only need to refresh the
-	//last DS, not the entire but we do it anyway.
-	//For the range list, we use the cached data. Internally
-	//it queries the new dataset which was added.
+	// Refresh the in-memory list. We only need to refresh the
+	// last DS, not the entire but we do it anyway.
+	// For the range list, we use the cached data. Internally
+	// it queries the new dataset which was added.
 	dList := jd.refreshDSList(l)
 	dRangeList := jd.refreshDSRangeList(l)
 
-	//We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
+	// We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
 	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
 
-	//Now set the min JobID for the new DS just added to be 1 more than previous max
+	// Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dRangeList) > 0 {
 		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
 		// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
@@ -1566,11 +1556,10 @@ func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) da
  * Function to return max dataset index in the DB
  */
 func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
-
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	//dList is already sorted.
+	// dList is already sorted.
 	dList := jd.getDSList()
 	ds := dList[len(dList)-1]
 	maxDSIndex, err := strconv.ParseInt(ds.Index, 10, 64)
@@ -1582,18 +1571,15 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 }
 
 func (jd *HandleT) prepareAndExecStmtInTx(tx *sql.Tx, sqlStatement string) {
-
 	stmt, err := tx.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 
 	_, err = stmt.Exec()
 	jd.assertError(err)
-
 }
 
 func (jd *HandleT) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement string) {
-
 	const (
 		savepointSql = "SAVEPOINT prepareAndExecStmtInTxAllowMissing"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
@@ -1617,7 +1603,6 @@ func (jd *HandleT) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement s
 			jd.assertError(err)
 		}
 	}
-
 }
 
 // mustDropDS drops a dataset and panics if it fails to do so
@@ -1645,12 +1630,10 @@ func (jd *HandleT) dropDS(ds dataSetT) error {
 		jd.postDropDs(ds)
 		return nil
 	})
-
 }
 
-//Drop a dataset and ignore if a table is missing
+// Drop a dataset and ignore if a table is missing
 func (jd *HandleT) dropDSForRecovery(ds dataSetT) {
-
 	var sqlStatement string
 	var err error
 	tx, err := jd.dbHandle.Begin()
@@ -1667,11 +1650,10 @@ func (jd *HandleT) dropDSForRecovery(ds dataSetT) {
 	jd.prepareAndExecStmtInTx(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
-
 }
 
 func (jd *HandleT) postDropDs(ds dataSetT) {
-	//Bursting Cache for this dataset
+	// Bursting Cache for this dataset
 	jd.invalidateCache(ds)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
@@ -1683,7 +1665,7 @@ func (jd *HandleT) postDropDs(ds dataSetT) {
 }
 
 func (jd *HandleT) invalidateCache(ds dataSetT) {
-	//Trimming pre_drop from the table name
+	// Trimming pre_drop from the table name
 	if strings.HasPrefix(ds.JobTable, preDropTablePrefix) {
 		parentDS := dataSetT{
 			JobTable:       strings.ReplaceAll(ds.JobTable, preDropTablePrefix, ""),
@@ -1696,11 +1678,11 @@ func (jd *HandleT) invalidateCache(ds dataSetT) {
 	}
 }
 
-//mustRenameDS renames a dataset
+// mustRenameDS renames a dataset
 func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 	var sqlStatement string
-	var renamedJobStatusTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
-	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
+	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
+	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *sql.Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
 		_, err := tx.Exec(sqlStatement)
@@ -1740,8 +1722,8 @@ func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 // renameDS renames a dataset if it exists
 func (jd *HandleT) renameDS(ds dataSetT) error {
 	var sqlStatement string
-	var renamedJobStatusTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
-	var renamedJobTable = fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
+	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
+	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *sql.Tx) error {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
 		_, err := tx.Exec(sqlStatement)
@@ -1760,7 +1742,7 @@ func (jd *HandleT) renameDS(ds dataSetT) error {
 
 func (jd *HandleT) getBackupDSList() ([]dataSetT, error) {
 	var dsList []dataSetT
-	//Read the table names from PG
+	// Read the table names from PG
 	tableNames, err := getAllTableNames(jd.dbHandle)
 	if err != nil {
 		return dsList, err
@@ -1834,7 +1816,7 @@ func (jd *HandleT) dropAllDS(l lock.DSListLockToken) error {
 		}
 	}
 
-	//Update the lists
+	// Update the lists
 	jd.refreshDSRangeList(l)
 
 	return err
@@ -1847,17 +1829,17 @@ completed (state is failed or waiting or waiting_retry or executiong) are copied
 over. Then the status (only the latest) is set for those jobs
 */
 
-func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated int, err error) {
+func (jd *HandleT) migrateJobs(srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
 	queryStat := stats.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	//Unprocessed jobs
+	// Unprocessed jobs
 	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, GetQueryParamsT{})
 
-	//Jobs which haven't finished processing
+	// Jobs which haven't finished processing
 	retryList := jd.getProcessedJobsDS(srcDS, true,
 		GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
@@ -1867,7 +1849,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 		if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
 			return err
 		}
-		//Now copy over the latest status of the unfinished jobs
+		// Now copy over the latest status of the unfinished jobs
 		var statusList []*JobStatusT
 		for _, job := range retryList.Jobs {
 			newStatus := JobStatusT{
@@ -1890,8 +1872,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 }
 
 func (jd *HandleT) postMigrateHandleDS(l lock.DSListLockToken, migrateFrom []dataSetT) error {
-
-	//Rename datasets before dropping them, so that they can be uploaded to s3
+	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
 		if jd.BackupSettings.isBackupEnabled() && isBackupConfigured() {
 			if err := jd.mustRenameDS(ds); err != nil {
@@ -1906,7 +1887,7 @@ func (jd *HandleT) postMigrateHandleDS(l lock.DSListLockToken, migrateFrom []dat
 
 	jd.inProgressMigrationTargetDS = nil
 
-	//Refresh the in-memory lists
+	// Refresh the in-memory lists
 	jd.refreshDSRangeList(l)
 
 	return nil
@@ -1928,7 +1909,7 @@ func (jd *HandleT) internalStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*Job
 Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
-func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
+func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { // When fixing callers make sure error is handled with assertError
 	queryStat := jd.getTimerStat("copy_jobs", nil)
 	queryStat.Start()
 	defer queryStat.End()
@@ -1946,7 +1927,7 @@ func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
 }
 
 func (jd *HandleT) inStoreSafeCtx(f func() error) error {
-	//Only locks the list
+	// Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 	return f()
@@ -1959,9 +1940,9 @@ func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
 }
 
 func (jd *HandleT) inUpdateSafeCtx(f func() error) error {
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -1986,7 +1967,7 @@ func (jd *HandleT) WithTx(f func(tx *sql.Tx) error) error {
 
 func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	customValParamMap := make(map[string]map[string]map[string]struct{})
-	var workspaces []string //for bursting old cache
+	var workspaces []string // for bursting old cache
 	for _, job := range jobList {
 		if !misc.ContainsString(workspaces, job.WorkspaceId) {
 			workspaces = append(workspaces, job.WorkspaceId)
@@ -1997,7 +1978,7 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	if useNewCacheBurst {
 		jd.doClearCache(ds, customValParamMap)
 	} else {
-		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+		// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 		for _, workspace := range workspaces {
 			jd.markClearEmptyResult(ds, workspace, []string{}, []string{}, nil, hasJobs, nil)
@@ -2055,7 +2036,6 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(tx *sql.Tx, ds dataSetT, jobLi
 
 		// try to store
 		err := jd.storeJob(tx, ds, job)
-
 		if err != nil {
 			errorMessagesMap[job.UUID] = err.Error()
 			// rollback to savepoint
@@ -2068,7 +2048,7 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(tx *sql.Tx, ds dataSetT, jobLi
 }
 
 // Creates a map of workspace:customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
-//and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
+// and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[string]struct{}, customVal string, params []byte, workspace string) {
 	if _, ok := CVPMap[workspace]; !ok {
 		CVPMap[workspace] = make(map[string]map[string]struct{})
@@ -2092,9 +2072,9 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[st
 	}
 }
 
-//mark cache empty after going over ds->workspace->customvals->params and for all stateFilters
+// mark cache empty after going over ds->workspace->customvals->params and for all stateFilters
 func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
-	//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+	// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 	for workspace, workspaceCVPMap := range CVPMap {
 		if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
 			for cv, cVal := range workspaceCVPMap {
@@ -2294,7 +2274,7 @@ func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	job.sanitizeJson()
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
-		//Empty customValFilters means we want to clear for all
+		// Empty customValFilters means we want to clear for all
 		jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
@@ -2348,7 +2328,7 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
 	if workspace == "" {
 		jd.logger.Errorf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
@@ -2358,10 +2338,10 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
 
-	//This means we want to mark/clear all customVals and stateFilters
-	//When clearing, we remove the entire dataset entry. Not a big issue
-	//We process ALL only during internal migration and caching empty
-	//results is not important
+	// This means we want to mark/clear all customVals and stateFilters
+	// When clearing, we remove the entire dataset entry. Not a big issue
+	// We process ALL only during internal migration and caching empty
+	// results is not important
 	if len(stateFilters) == 0 || len(customValFilters) == 0 {
 		if value == hasJobs || value == dropDSFromCache {
 			delete(jd.dsEmptyResultCache, ds)
@@ -2413,7 +2393,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 // 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
 //  * The entry is noJobs
 //  * The entry is not expired (entry time + cache expiration > now)
-func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -2430,8 +2410,8 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters []s
 	if !ok {
 		return false
 	}
-	//We want to check for all states and customFilters. Cannot
-	//assert that from cache
+	// We want to check for all states and customFilters. Cannot
+	// assert that from cache
 	if len(stateFilters) == 0 || len(customValFilters) == 0 {
 		return false
 	}
@@ -2461,8 +2441,8 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters []s
 			}
 		}
 	}
-	//Every state and every customVal in the DS is empty
-	//so can return
+	// Every state and every customVal in the DS is empty
+	// so can return
 	return true
 }
 
@@ -2791,7 +2771,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 
 	result := hasJobs
 	dsList := jd.getDSList()
-	//if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
+	// if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
 	if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		result = noJobs
@@ -2833,7 +2813,7 @@ func (jd *HandleT) copyJobStatusDS(tx *sql.Tx, ds dataSetT, statusList []*JobSta
 		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
 		allUpdatedStates = append(allUpdatedStates, stateFilters...)
 	}
-	//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+	// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 	jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	return nil
 }
@@ -2951,9 +2931,9 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		jd.dsListLock.RUnlock()
 		latestDS := dsList[len(dsList)-1]
 		if jd.checkIfFullDS(latestDS) {
-			//Adding a new DS updates the list
-			//Doesn't move any data so we only
-			//take the list lock
+			// Adding a new DS updates the list
+			// Doesn't move any data so we only
+			// take the list lock
 			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
 				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
 				jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
@@ -2986,7 +2966,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		}
 		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
 
-		//This block disables internal migration/consolidation while cluster-level migration is in progress
+		// This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
 			continue
@@ -3008,8 +2988,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 			var idxCheck bool
 			if jd.ownerType == Read {
-				//if jobsdb owner is read, expempting the last two datasets from migration.
-				//This is done to avoid dslist conflicts between reader and writer
+				// if jobsdb owner is read, expempting the last two datasets from migration.
+				// This is done to avoid dslist conflicts between reader and writer
 				idxCheck = (idx == len(dsList)-1 || idx == len(dsList)-2)
 			} else {
 				idxCheck = (idx == len(dsList)-1)
@@ -3035,13 +3015,13 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			migrateDSProbeCount++
 		}
 
-		//Take the lock and run actual migration
+		// Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
 
 		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 		migrationLoopStat.Start()
 		var opID int64
-		//Add a temp DS to append to
+		// Add a temp DS to append to
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				var migrateTo dataSetT
@@ -3051,9 +3031,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
 					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
 					jd.logger.Infof("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
-					//Mark the start of copy operation. If we fail here
-					//we just delete the new DS being copied into. The
-					//sources are still around
+					// Mark the start of copy operation. If we fail here
+					// we just delete the new DS being copied into. The
+					// sources are still around
 					opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 					jd.assertError(err)
 					opID = jd.JournalMarkStart(migrateCopyOperation, opPayload)
@@ -3090,9 +3070,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 						return err
 					}
 				}
-				//Mark the start of del operation. If we fail in between
-				//we need to finish deleting the source datasets. Cannot
-				//del the destination as some sources may have been deleted
+				// Mark the start of del operation. If we fail in between
+				// we need to finish deleting the source datasets. Cannot
+				// del the destination as some sources may have been deleted
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 				if err != nil {
 					return err
@@ -3157,7 +3137,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
-		//Currently, we retry uploading a table for sometime & if it fails. We only drop that table & not all `pre_drop` tables.
+		// Currently, we retry uploading a table for sometime & if it fails. We only drop that table & not all `pre_drop` tables.
 		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
 		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
 		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
@@ -3166,7 +3146,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 	}
 }
 
-//backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
+// backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	// return after backing up aboprted jobs if the flag is turned on
 	// backupDS is only called when BackupSettings.BackupEnabled is true
@@ -3223,7 +3203,6 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 	}
 
 	return stmt
-
 }
 
 // getFileUploader get a file uploader
@@ -3253,12 +3232,12 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	panic("Unable to get count on this dataset")
 }
 
-//Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
+// Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
 func (jd *HandleT) Identifier() string {
 	return jd.tablePrefix
 }
 
-//GetTablePrefix returns the table prefix of the jobsdb.
+// GetTablePrefix returns the table prefix of the jobsdb.
 func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }
@@ -3301,7 +3280,6 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 			)
 			countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, tableName)
 		}
-
 	}
 
 	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
@@ -3338,13 +3316,13 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		}
 
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
-		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
+		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) // replacing ", \n " with "\n"
 		batchCount++
 
-		//Asserting that the first character is '[' and last character is ']'
+		// Asserting that the first character is '[' and last character is ']'
 		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), "json agg output is not in the expected format. Excepted format: JSON Array [{}]")
-		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
-		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
+		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] // stripping starting '[' and ending ']'
+		rawJSONRows = append(rawJSONRows, '\n')           // appending '\n'
 
 		gzWriter.Write(rawJSONRows)
 		offset += backupRowsBatchSize
@@ -3368,7 +3346,6 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	// For empty path prefix, don't need to add anything to the array
 	if jd.BackupSettings.PathPrefix != "" {
 		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
-
 	} else {
 		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 	}
@@ -3414,10 +3391,10 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	var backupDS dataSetT
 	var backupDSRange dataSetRangeT
 
-	//Read the table names from PG
+	// Read the table names from PG
 	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
 
-	//We check for job_status because that is renamed after job
+	// We check for job_status because that is renamed after job
 	dnumList := []string{}
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, preDropTablePrefix+jd.tablePrefix+"_jobs_") {
@@ -3513,10 +3490,9 @@ func (jd *HandleT) JournalMarkStartInTx(tx *sql.Tx, opType string, opPayload jso
                                        VALUES ($1, $2, $3, $4, $5) RETURNING id`, jd.tablePrefix)
 	err := tx.QueryRow(sqlStatement, opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
 	return opID, err
-
 }
 
-//JournalMarkDone marks the end of a journal action
+// JournalMarkDone marks the end of a journal action
 func (jd *HandleT) JournalMarkDone(opID int64) {
 	err := jd.WithTx(func(tx *sql.Tx) error {
 		return jd.journalMarkDoneInTx(tx, opID)
@@ -3524,7 +3500,7 @@ func (jd *HandleT) JournalMarkDone(opID int64) {
 	jd.assertError(err)
 }
 
-//JournalMarkDoneInTx marks the end of a journal action in a transaction
+// JournalMarkDoneInTx marks the end of a journal action in a transaction
 func (jd *HandleT) journalMarkDoneInTx(tx *sql.Tx, opID int64) error {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1 AND owner=$4`, jd.tablePrefix)
 	_, err := tx.Exec(sqlStatement, opID, true, time.Now(), jd.ownerType)
@@ -3566,7 +3542,6 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 }
 
 func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
-
 	var opTypes []string
 	switch goRoutineType {
 	case addDSGoRoutine:
@@ -3602,7 +3577,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	var opDone bool
 	var opPayload json.RawMessage
 	var opPayloadJSON journalOpPayloadT
-	var undoOp = false
+	undoOp := false
 	var count int
 
 	for rows.Next() {
@@ -3614,12 +3589,12 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {
-		//Nothing to recoer
+		// Nothing to recoer
 		return
 	}
 
-	//Need to recover the last failed operation
-	//Get the payload and undo
+	// Need to recover the last failed operation
+	// Get the payload and undo
 	err = json.Unmarshal(opPayload, &opPayloadJSON)
 	jd.assertError(err)
 
@@ -3627,14 +3602,14 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case addDSOperation:
 		newDS := opPayloadJSON.To
 		undoOp = true
-		//Drop the table we were tring to create
+		// Drop the table we were tring to create
 		jd.logger.Info("Recovering new DS operation", newDS)
 		jd.dropDSForRecovery(newDS)
 	case migrateCopyOperation:
 		migrateDest := opPayloadJSON.To
-		//Delete the destination of the interrupted
-		//migration. After we start, code should
-		//redo the migration
+		// Delete the destination of the interrupted
+		// migration. After we start, code should
+		// redo the migration
 		jd.logger.Info("Recovering migrateCopy operation", migrateDest)
 		jd.dropDSForRecovery(migrateDest)
 		undoOp = true
@@ -3646,7 +3621,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.deleteSetupCheckpoint(ImportOp)
 		undoOp = true
 	case postMigrateDSOperation:
-		//Some of the source datasets would have been
+		// Some of the source datasets would have been
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
 			if jd.BackupSettings.isBackupEnabled() {
@@ -3662,7 +3637,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.logger.Info("Removing all stale json dumps of tables")
 		undoOp = true
 	case dropDSOperation, backupDropDSOperation:
-		//Some of the source datasets would have been
+		// Some of the source datasets would have been
 		var dataset dataSetT
 		json.Unmarshal(opPayload, &dataset)
 		jd.dropDSForRecovery(dataset)
@@ -3693,7 +3668,7 @@ func (jd *HandleT) recoverFromJournal(owner OwnerType) {
 	jd.recoverFromCrash(owner, backupGoRoutine)
 }
 
-//RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
+// RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
 func (jd *HandleT) RecoverFromMigrationJournal() {
 	jd.recoverFromCrash(Write, migratorRoutine)
 	jd.recoverFromCrash(ReadWrite, migratorRoutine)
@@ -3731,7 +3706,7 @@ func (jd *HandleT) internalUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStat
 			jd.markClearEmptyResult(ds, workspace, stateList, customValFilters, parameterFilters, hasJobs, nil)
 			allUpdatedStates = append(allUpdatedStates, stateList...)
 		}
-		//NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
+		// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 		jd.markClearEmptyResult(ds, allWorkspaces, misc.Unique(allUpdatedStates), customValFilters, parameterFilters, hasJobs, nil)
 	}
 
@@ -3748,25 +3723,25 @@ func (jd *HandleT) doUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStatusT, t
 		return
 	}
 
-	//First we sort by JobID
+	// First we sort by JobID
 	sort.Slice(statusList, func(i, j int) bool {
 		return statusList[i].JobID < statusList[j].JobID
 	})
 
-	//We scan through the list of jobs and map them to DS
+	// We scan through the list of jobs and map them to DS
 	var lastPos int
 	dsRangeList := jd.getDSRangeList()
 	updatedStatesByDS = make(map[dataSetT]map[string][]string)
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
 		maxID := ds.maxJobID
-		//We have processed upto (but excluding) lastPos on statusList.
-		//Hence that element must lie in this or subsequent dataset's
-		//range
+		// We have processed upto (but excluding) lastPos on statusList.
+		// Hence that element must lie in this or subsequent dataset's
+		// range
 		jd.assert(statusList[lastPos].JobID >= minID, fmt.Sprintf("statusList[lastPos].JobID: %d < minID:%d", statusList[lastPos].JobID, minID))
 		var i int
 		for i = lastPos; i < len(statusList); i++ {
-			//The JobID is outside this DS's range
+			// The JobID is outside this DS's range
 			if statusList[i].JobID > maxID {
 				if i > lastPos {
 					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
@@ -3785,7 +3760,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStatusT, t
 				break
 			}
 		}
-		//Reached the end. Need to process this range
+		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			var updatedStates map[string][]string
@@ -3802,12 +3777,12 @@ func (jd *HandleT) doUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStatusT, t
 		}
 	}
 
-	//The last (most active DS) might not have range element as it is being written to
+	// The last (most active DS) might not have range element as it is being written to
 	if lastPos < len(statusList) {
-		//Make sure range is missing for the last ds and migration ds (if at all present)
+		// Make sure range is missing for the last ds and migration ds (if at all present)
 		dsList := jd.getDSList()
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
-		//Update status in the last element
+		// Update status in the last element
 		jd.logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates map[string][]string
 		updatedStates, err = jd.updateJobStatusDSInTx(tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
@@ -3828,7 +3803,6 @@ func (jd *HandleT) Store(jobList []*JobT) error {
 	return jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
 		return jd.StoreInTx(tx, jobList)
 	})
-
 }
 
 // StoreInTx stores new jobs to the jobsdb.
@@ -3848,7 +3822,6 @@ func (jd *HandleT) StoreInTx(tx StoreSafeTx, jobList []*JobT) error {
 		return jd.inStoreSafeCtx(storeCmd)
 	}
 	return storeCmd()
-
 }
 
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
@@ -3885,15 +3858,13 @@ printLists is a debuggging function used to print
 the current in-memory copy of jobs and job ranges
 */
 func (jd *HandleT) printLists(console bool) {
-
-	//This being an internal function, we don't lock
+	// This being an internal function, we don't lock
 	jd.logger.Debug("List:", jd.getDSList())
 	jd.logger.Debug("Ranges:", jd.getDSRangeList())
 	if console {
 		fmt.Println("List:", jd.getDSList())
 		fmt.Println("Ranges:", jd.getDSRangeList())
 	}
-
 }
 
 /*
@@ -3912,7 +3883,6 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) JobsResult {
 	}
 	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).(JobsResult)
 	return res
-
 }
 
 /*
@@ -3920,7 +3890,6 @@ getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
-
 	if params.JobsLimit <= 0 {
 		return JobsResult{}
 	}
@@ -3930,9 +3899,9 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -3972,7 +3941,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
 			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
 		}
 	}
-	//Release lock
+	// Release lock
 	return completeUnprocessedJobs
 }
 
@@ -4018,15 +3987,14 @@ if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTx deletes the latest status of a batch of jobs
 */
 func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions QueryConditions) error {
-
 	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
 	queryStat := jd.getTimerStat("delete_job_status_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -4135,9 +4103,9 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) JobsResult {
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -4198,7 +4166,6 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) JobsResult {
 	}
 	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
 	return res
-
 }
 
 /*
@@ -4268,7 +4235,6 @@ func (jd *HandleT) DeleteExecuting() {
 		return nil
 	}
 	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
-
 }
 
 /*

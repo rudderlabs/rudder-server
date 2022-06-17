@@ -2,16 +2,14 @@ package databricks
 
 import (
 	"context"
+
 	"github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"google.golang.org/grpc"
 )
 
-
-var (
-	pkgLogger logger.LoggerI
-)
+var pkgLogger logger.LoggerI
 
 type CredentialsT struct {
 	Host            string
@@ -57,4 +55,3 @@ func (dbT *DBHandleT) Close() {
 	}
 	dbT.Conn.Close()
 }
-

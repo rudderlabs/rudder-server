@@ -5,11 +5,13 @@ import (
 	"sync"
 )
 
-type Tags map[string]string
-type TagsWithValue struct {
-	Tags  Tags
-	Value interface{}
-}
+type (
+	Tags          map[string]string
+	TagsWithValue struct {
+		Tags  Tags
+		Value interface{}
+	}
+)
 
 // Registry is a safe way to capture metrics in a highly concurrent environment.
 // The registry is responsible for creating and storing the various measurements and
@@ -23,7 +25,6 @@ type TagsWithValue struct {
 // the following is guaranteed to be executed atomically:
 //   registry.MustGetCounter("key").Inc()
 type Registry interface {
-
 	// GetCounter gets a counter by key. If a value for this key
 	// already exists but corresponds to another measurement type,
 	// e.g. a Gauge, an error is returned
@@ -197,7 +198,7 @@ func (r *registry) MustGetVarMovingAvg(m Measurement, age float64) MovingAverage
 	return ma
 }
 
-func (r *registry) Range(f func(key interface{}, value interface{}) bool) {
+func (r *registry) Range(f func(key, value interface{}) bool) {
 	r.store.Range(f)
 }
 

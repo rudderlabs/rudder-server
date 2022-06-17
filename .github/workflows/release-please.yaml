@@ -15,6 +15,7 @@ jobs:
       - uses: google-github-actions/release-please-action@v3
         with:
           token: ${{ secrets.GH_PAT }}
+          pull-request-title-pattern: "chore: release ${version}"
           release-type: go
           package-name: rudder-server
           default-branch: ${{ steps.extract_branch.outputs.branch }}

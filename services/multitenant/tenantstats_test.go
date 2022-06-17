@@ -1,11 +1,12 @@
 package multitenant
 
 import (
-	"github.com/stretchr/testify/assert"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -34,14 +35,13 @@ var (
 	workspaceID2 = uuid.Must(uuid.NewV4()).String()
 	workspaceID3 = uuid.Must(uuid.NewV4()).String()
 )
-var _ = Describe("tenantStats", func() {
 
+var _ = Describe("tenantStats", func() {
 	BeforeEach(func() {
 		metric.GetManager().Reset()
 		config.Load()
 		logger.Init()
 		Init()
-
 	})
 
 	Context(
@@ -57,7 +57,6 @@ var _ = Describe("tenantStats", func() {
 			})
 
 			It("TenantStats init", func() {
-
 				Expect(len(tenantStats.routerInputRates)).To(Equal(1))
 				Expect(len(tenantStats.lastDrainedTimestamps)).To(Equal(0))
 				Expect(len(tenantStats.failureRate)).To(Equal(0))
@@ -200,7 +199,7 @@ var _ = Describe("tenantStats", func() {
 				input[workspaceID3][destType1] = addJobWID3
 				tenantStats.processorStageTime = time.Now().Add(time.Duration(-1) * time.Minute)
 				tenantStats.ReportProcLoopAddStats(input, "rt")
-				//Explicitly Making the Input Rate Lower to pick from PileUp
+				// Explicitly Making the Input Rate Lower to pick from PileUp
 				for i := 0; i < int(metric.AVG_METRIC_AGE); i++ {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 1)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.3)
@@ -292,14 +291,14 @@ var _ = Describe("tenantStats", func() {
 				input[workspaceID1][destType1] = addJobWID1
 				input[workspaceID2][destType1] = addJobWID2
 				input[workspaceID3][destType1] = addJobWID3
-				//Explicitly Making the Input Rate Lower to pick from PileUp
+				// Explicitly Making the Input Rate Lower to pick from PileUp
 				tenantStats.processorStageTime = time.Now().Add(time.Duration(-1) * time.Minute)
 				tenantStats.ReportProcLoopAddStats(input, "rt")
 				for i := 0; i < int(metric.AVG_METRIC_AGE); i++ {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 0.4)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.41)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0.42)
-					//Making the failure rate for workspaceID1 high
+					// Making the failure rate for workspaceID1 high
 					tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, false)
 				}
 				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
@@ -320,7 +319,6 @@ var _ = Describe("tenantStats", func() {
 })
 
 func Benchmark_Counts(b *testing.B) {
-
 	b.ResetTimer()
 	metric.GetManager().Reset()
 	const writeRatio = 1000

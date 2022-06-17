@@ -61,7 +61,6 @@ func TestPubSub_late_subscription_gets_latest_value(t *testing.T) {
 	if v.Data.(int) != 2 {
 		t.Errorf("Expected late consumer to have consumed latest value 2, instead got %d.", v.Data.(int))
 	}
-
 }
 
 func TestPubSub_Close(t *testing.T) {

@@ -32,18 +32,18 @@ func init() {
 	contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 }
 
-//NetHandleT is the wrapper holding private variables
+// NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
 	httpClient sysUtils.HTTPClientI
 	logger     logger.LoggerI
 }
 
-//Network interface
+// Network interface
 type NetHandleI interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT, destName string, jobId int64, transformerProxy bool) *utils.SendPostResponse
 }
 
-//temp solution for handling complex query params
+// temp solution for handling complex query params
 func handleQueryParam(param interface{}) string {
 	switch p := param.(type) {
 	case string:
@@ -93,7 +93,6 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 				bodyValue = v.(map[string]interface{})
 				break
 			}
-
 		}
 
 		var payload io.Reader
@@ -309,7 +308,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			contentTypeHeader = resp.Header.Get("Content-Type")
 		}
 		if contentTypeHeader == "" {
-			//Detecting content type of the respBody
+			// Detecting content type of the respBody
 			contentTypeHeader = http.DetectContentType(respBody)
 		}
 		mediaType, _, _ := mime.ParseMediaType(contentTypeHeader)
@@ -344,22 +343,21 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		StatusCode:   200,
 		ResponseBody: []byte{},
 	}
-
 }
 
-//Setup initializes the module
+// Setup initializes the module
 func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
-	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
+	// Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) //TODO: Handle error
+		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) // TODO: Handle error
 	}
 	var defaultTransportCopy http.Transport
-	//Not safe to copy DefaultTransport
-	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
-	//Solved in go1.8 https://github.com/golang/go/issues/26013
+	// Not safe to copy DefaultTransport
+	// https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
+	// Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
 	network.logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
 	if getRouterConfigBool("forceHTTP1", destID, false) {

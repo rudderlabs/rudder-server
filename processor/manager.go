@@ -33,8 +33,8 @@ type LifecycleManager struct {
 }
 
 // Start starts a processor, this is not a blocking call.
-//If the processor is not completely started and the data started coming then also it will not be problematic as we
-//are assuming that the DBs will be up.
+// If the processor is not completely started and the data started coming then also it will not be problematic as we
+// are assuming that the DBs will be up.
 func (proc *LifecycleManager) Start() {
 	if proc.Transformer != nil {
 		proc.HandleT.transformer = proc.Transformer
@@ -64,7 +64,8 @@ func (proc *LifecycleManager) Stop() {
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service,
-	rsourcesService rsources.JobService) *LifecycleManager {
+	rsourcesService rsources.JobService,
+) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx:          ctx,
