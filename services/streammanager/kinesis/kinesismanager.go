@@ -11,8 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -119,7 +120,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 	}
 
 	putOutput, err := kc.PutRecord(&kinesis.PutRecordInput{
-		Data:         []byte(value),
+		Data:         value,
 		StreamName:   streamName,
 		PartitionKey: partitionKey,
 	})
