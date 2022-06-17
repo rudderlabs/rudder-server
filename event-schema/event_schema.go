@@ -887,7 +887,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 	} else {
 		assertError(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var eventModel EventModelT
@@ -930,7 +930,7 @@ func (manager *EventSchemaManagerT) populateEventModelsMinimal() {
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var eventModel EventModelT
@@ -964,7 +964,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
