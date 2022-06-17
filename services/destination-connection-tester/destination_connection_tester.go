@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -121,8 +122,12 @@ func createTestFileForBatchDestination(destinationID string) string {
 		pkgLogger.Errorf("DCT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
-	_ = gzWriter.WriteGZ(testPayload)
-	_ = gzWriter.CloseGZ()
+	if err = gzWriter.WriteGZ(testPayload); err != nil {
+		panic(err)
+	}
+	if err = gzWriter.CloseGZ(); err != nil {
+		panic(err)
+	}
 	return gzipFilePath
 }
 
