@@ -101,7 +101,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 
 	streamName := aws.String(config.Stream)
 
-	data := parsedJSON.Get("message").Value().(interface{})
+	data := parsedJSON.Get("message").Value()
 	value, err := json.Marshal(data)
 	if err != nil {
 		return GetStatusCodeFromError(err), err.Error(), err.Error()

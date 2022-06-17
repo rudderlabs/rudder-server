@@ -129,7 +129,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 				continue
 			}
 
-			_, ok = output["batch"].(interface{})
+			_, ok = output["batch"]
 			if !ok {
 				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
 				continue
