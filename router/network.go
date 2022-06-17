@@ -162,10 +162,10 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		req.URL.RawQuery = queryParams.Encode()
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
-			req.Header[key] = []string{ val.(string) }
+			req.Header[key] = []string{val.(string)}
 		}
 
-		req.Header["User-Agent"] = []string { "RudderLabs" }
+		req.Header["User-Agent"] = []string{"RudderLabs"}
 
 		// We will change this to `transformerProxy`
 		if transformerProxy {
@@ -190,7 +190,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 				if err != nil {
 					// For FORM and JSON body formats, the expected value is JSON type
 					// Hence, declare it an error if we couldn't unmarshal
-					if (bodyFormat == "JSON" || bodyFormat == "FORM") {
+					// Note: For FORM, the final payload is a string
+					if bodyFormat == "JSON" {
 						return &utils.SendPostResponse{
 							StatusCode:   400,
 							ResponseBody: []byte(fmt.Sprintf(`[TransformerProxyTest] (Dest-%[1]v) {Job - %[2]v} 400 Unable to unmarshal payload "%[3]v" request for URL : "%[4]v"`, destName, jobId, requestMethod, postInfo.URL)),
@@ -215,11 +216,21 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			// This is being done to facilitate compatible comparison
 			// As map[string][]string is the data-type for url.Values in golang
 			// But params is an object in Javascript, hence we need to level the plane for effective comparison
-			queryParamsMap := make(map[string]string)
-			for k, v := range req.URL.Query() {
-				queryParamsMap[strings.ToLower(k)] = string(v[0])
-			}
-			rtPayload.Params = queryParamsMap
+			// queryParamsMap := make(map[string]string)
+			// for k, v := range req.URL.Query() {
+			// 	queryParamsMap[strings.ToLower(k)] = string(v[0])
+			// }
+
+			/**
+			Sending params as the original "params" is required
+			For example:
+			When a URL is set as http://endpoint.com?someKey=someVal & "params" is not set
+			If we send queryParamsMap to transformer (/proxyTest)
+			We'd be including someKey in "params" object of the routerPayload but infact params is still "{}"
+			Due to which there will be a mis-match
+			Hence we should just send what is sent as part of "params" here(requestQueryParams)
+			**/
+			rtPayload.Params = requestQueryParams
 
 			proxyReqBody := transformer.ProxyTestRequestPayload{
 				RouterDeliveryPayload: rtPayload,
