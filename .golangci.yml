@@ -24,3 +24,5 @@ linters:
     - nilerr
     - rowserrcheck
     - tenv
+    - wastedassign
+    - unparam
