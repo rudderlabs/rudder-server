@@ -17,3 +17,6 @@ linters:
     - typecheck
     - unused
     - varcheck
+    - bodyclose
+    - decorder
+    - makezero
