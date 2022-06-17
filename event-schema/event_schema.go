@@ -248,10 +248,6 @@ func (manager *EventSchemaManagerT) deleteFromSchemaVersionCache(schemaVersion *
 	delete(countersCache, schemaHash)
 }
 
-func (manager *EventSchemaManagerT) deleteModelFromSchemaVersionCache(eventModel *EventModelT) {
-	delete(manager.schemaVersionMap, eventModel.UUID)
-}
-
 func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *SchemaVersionT, toCreateOrUpdate bool) {
 	eventModelID := schemaVersion.EventModelID
 	schemaHash := schemaVersion.SchemaHash
