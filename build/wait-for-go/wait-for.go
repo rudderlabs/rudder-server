@@ -45,7 +45,7 @@ func main() {
 	udp := flag.Bool("u", false, "check for udp")
 	timeout := flag.Int("t", 60, "Timeout in seconds")
 	flag.Parse()
-	if *udp == true {
+	if *udp {
 		protocol = "udp"
 	}
 	hostport := flag.Args()
