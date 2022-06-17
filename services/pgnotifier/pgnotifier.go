@@ -9,13 +9,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/spaolacci/murmur3"
 
-	pglock "github.com/allisson/go-pglock/v2"
-	uuid "github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	"github.com/allisson/go-pglock/v2"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -422,20 +424,27 @@ func GetSQLTimestamp(t time.Time) string {
 
 // RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
 // which were left behind by dead workers in executing state
-//
 func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
 	if err != nil {
 		return err
 	}
+
+	var locked bool
+	defer func() {
+		if locked {
+			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
+				pkgLogger.Errorf("Error while unlocking maintenance worker lock: %v", err)
+			}
+		}
+	}()
 	for {
-		locked, err := maintenanceWorkerLock.Lock(ctx)
+		locked, err = maintenanceWorkerLock.Lock(ctx)
 		if err != nil {
-			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
+			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock: %v", err)
 		}
 		if locked {
-			defer maintenanceWorkerLock.Unlock(ctx)
 			break
 		}
 
