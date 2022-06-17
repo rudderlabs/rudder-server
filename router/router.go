@@ -92,7 +92,6 @@ type HandleT struct {
 	failedEventsListMutex                  sync.RWMutex
 	failedEventsList                       *list.List
 	failedEventsChan                       chan jobsdb.JobStatusT
-	isEnabled                              bool
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
 	requestsMetricLock                     sync.RWMutex
@@ -1427,7 +1426,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		return rt.workers[rand.Intn(rt.noOfWorkers)]
 	}
 
-	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
+	index := rt.getWorkerPartition(userID)
 
 	worker := rt.workers[index]
 
@@ -1491,6 +1490,10 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	return false
 }
 
+func (rt *HandleT) getWorkerPartition(userID string) int {
+	return misc.GetHash(userID) % rt.noOfWorkers
+}
+
 func (rt *HandleT) shouldThrottle(destID, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
@@ -1511,16 +1514,6 @@ func (rt *HandleT) ResetSleep() {
 	}
 }
 
-// Enable enables a router :)
-func (rt *HandleT) Enable() {
-	rt.isEnabled = true
-}
-
-// Disable disables a router:)
-func (rt *HandleT) Disable() {
-	rt.isEnabled = false
-}
-
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
@@ -1532,6 +1525,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
+
 		var parameters JobParametersT
 		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
 		if err != nil {
@@ -2136,6 +2130,23 @@ func (rt *HandleT) readAndProcess() int {
 			drainedJobsStat.Count(destDrainStat.Count)
 			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
 		}
+
+		if rt.guaranteeUserEventOrder {
+			for _, drainedJob := range drainJobList {
+				// cleanup failedJobIDMap for drained jobs
+				drainedUserID := drainedJob.UserID
+				partition := rt.getWorkerPartition(drainedUserID)
+				drainWorker := rt.workers[partition]
+
+				drainWorker.failedJobIDMutex.Lock()
+				lastJobID, ok := drainWorker.failedJobIDMap[drainedUserID]
+				if ok && lastJobID == drainedJob.JobID {
+					delete(drainWorker.failedJobIDMap, drainedUserID)
+				}
+				drainWorker.failedJobIDMutex.Unlock()
+			}
+		}
+
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
 
@@ -2204,7 +2215,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.failedEventsList = list.New()
 	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
-	rt.isEnabled = true
 
 	if rt.netHandle == nil {
 		netHandle := &NetHandleT{}
