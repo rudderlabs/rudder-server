@@ -1,3 +1,5 @@
+//go:build whintegration
+
 package deltalake_test
 
 import (

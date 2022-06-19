@@ -1,3 +1,5 @@
+//go:build whintegration
+
 package bigquery_test
 
 import (

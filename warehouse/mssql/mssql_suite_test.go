@@ -1,3 +1,5 @@
+//go:build whintegration
+
 package mssql_test
 
 import (

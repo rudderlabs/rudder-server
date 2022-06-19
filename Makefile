@@ -94,5 +94,5 @@ setup-warehouse-integration: cleanup-warehouse-integration
 
 run-warehouse-integration: setup-warehouse-integration
 	go clean -testcache
-	go test -v github.com/rudderlabs/rudder-server/warehouse/... -p 1 -timeout 30m -slow || make logs-warehouse-integration
+	go test -v github.com/rudderlabs/rudder-server/warehouse/... -p 1 -timeout 30m -slow -tags=whintegration || make logs-warehouse-integration
 	make cleanup-warehouse-integration

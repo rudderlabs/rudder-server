@@ -1,3 +1,5 @@
+//go:build whintegration
+
 package datalake_test
 
 import (

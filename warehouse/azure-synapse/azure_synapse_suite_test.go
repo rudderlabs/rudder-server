@@ -1,3 +1,5 @@
+//go:build whintegration
+
 package azuresynapse_test
 
 import (
