@@ -759,30 +759,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
 							//transformer proxy start
-							if worker.rt.transformerProxy {
-								rtl_time := time.Now()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
-								worker.routerProxyStat.SendTiming(time.Since(rtl_time))
-								authType := router_utils.GetAuthType(destinationJob.Destination)
-								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-									pkgLogger.Debugf(`Sending for OAuth destination`)
-									// Token from header of the request
-									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
-										ctx:            ctx,
-										destinationJob: destinationJob,
-										workerId:       worker.workerID,
-										trRespStCd:     respStatusCode,
-										trRespBody:     respBodyTemp,
-										secret:         destinationJob.JobMetadataArray[0].Secret,
-									})
-								}
-							} else {
-								rdl_time := time.Now()
-								resp := worker.rt.netHandle.SendPost(sendCtx, val)
-								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-								// stat end
-								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
-							}
+							rdl_time := time.Now()
+							jobId := destinationJob.JobMetadataArray[0].JobID
+							resp := worker.rt.netHandle.SendPost(sendCtx, val, worker.rt.destName, jobId, worker.rt.transformerProxy)
+							respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+							// stat end
+							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							// transformer proxy end
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)

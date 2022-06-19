@@ -38,6 +38,26 @@ type HandleT struct {
 	logger                             logger.LoggerI
 }
 
+type RouterDelPayload struct {
+	// The data of the router payload after some changes are applied while preparing the event delivery request
+	Data interface{} `json:"data,omitempty"`
+	// The event delivery request method
+	Method string `json:"method"`
+	// The query parameters for the event delivery
+	Params interface{} `json:"params,omitempty"`
+	// The url to which the event has to be sent
+	Endpoint string `json:"endpoint"`
+	// The headers for the event delivery request
+	Headers interface{} `json:"headers,omitempty"`
+}
+
+type ProxyTestRequestPayload struct {
+	// The event delivery request payload formed by Router
+	RouterDeliveryPayload RouterDelPayload `json:"destinationRequestPayload"`
+	// The payload which will be used by the transformer to the form event delivery request payload
+	ProxyRequestPayload integrations.PostParametersT `json:"deliveryPayload"`
+}
+
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
