@@ -13,7 +13,7 @@ import (
 	"github.com/cenkalti/backoff"
 )
 
-//HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
+// HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type HostedWorkspacesConfig struct {
 	CommonBackendConfig
 	Token                     string
@@ -25,12 +25,12 @@ type HostedWorkspacesConfig struct {
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-//WorkspacesT holds sources of workspaces
+// WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
 
-//SetUp sets up MultiWorkspaceConfig
+// SetUp sets up MultiWorkspaceConfig
 func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if multiWorkspaceConfig.Token == "" {
@@ -42,7 +42,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
 	return multiWorkspaceConfig.Token
 }
 
-//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+// GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -54,7 +54,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForWriteKey(wr
 	return ""
 }
 
-//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+// GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForSourceID(sourceID string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -66,7 +66,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForSourceID(so
 	return ""
 }
 
-//GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
 func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -77,7 +77,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWork
 	return LibrariesT{}
 }
 
-//Get returns sources from all hosted workspaces
+// Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool) {
 	var url string
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
@@ -99,7 +99,6 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false

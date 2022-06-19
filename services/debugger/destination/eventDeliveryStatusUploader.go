@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-//DeliveryStatusT is a structure to hold everything related to event delivery
+// DeliveryStatusT is a structure to hold everything related to event delivery
 type DeliveryStatusT struct {
 	DestinationID string          `json:"destinationId"`
 	SourceID      string          `json:"sourceId"`
@@ -27,8 +27,10 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-var uploadEnabledDestinationIDs map[string]bool
-var configSubscriberLock sync.RWMutex
+var (
+	uploadEnabledDestinationIDs map[string]bool
+	configSubscriberLock        sync.RWMutex
+)
 
 var uploader debugger.UploaderI
 
@@ -50,13 +52,12 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 }
 
-type EventDeliveryStatusUploader struct {
-}
+type EventDeliveryStatusUploader struct{}
 
-//RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
-//which will be processed by handleJobs.
+// RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
+// which will be processed by handleJobs.
 func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
-	//if disableEventDeliveryStatusUploads is true, return;
+	// if disableEventDeliveryStatusUploads is true, return;
 	if disableEventDeliveryStatusUploads {
 		return false
 	}
@@ -81,7 +82,7 @@ func HasUploadEnabled(destID string) bool {
 	return ok
 }
 
-//Setup initializes this module
+// Setup initializes this module
 func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}

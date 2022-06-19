@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -40,7 +41,7 @@ var (
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
 
-//AppHandler to be implemented by different app type objects.
+// AppHandler to be implemented by different app type objects.
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
@@ -99,7 +100,7 @@ func rudderCoreBaseSetup() {
 		})
 	}
 
-	//Reload Config
+	// Reload Config
 	loadConfig()
 
 	readonlyGatewayDB.Setup("gw")
@@ -111,7 +112,7 @@ func rudderCoreBaseSetup() {
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 }
 
-//StartProcessor atomically starts processor process if not already started
+// StartProcessor atomically starts processor process if not already started
 func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
@@ -122,13 +123,13 @@ func StartProcessor(
 		return
 	}
 
-	var processorInstance = processor.NewProcessor()
+	processorInstance := processor.NewProcessor()
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 
-//StartRouter atomically starts router process if not already started
+// StartRouter atomically starts router process if not already started
 func StartRouter(
 	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
@@ -169,11 +170,11 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
 
-	//Crash recover routerDB, batchRouterDB
-	//Note: The following cleanups can take time if there are too many
-	//rt / batch_rt tables and there would be a delay reading from channel `ch`
-	//However, this shouldn't be the problem since backend config pushes config
-	//to its subscribers in separate goroutines to prevent blocking.
+	// Crash recover routerDB, batchRouterDB
+	// Note: The following cleanups can take time if there are too many
+	// rt / batch_rt tables and there would be a delay reading from channel `ch`
+	// However, this shouldn't be the problem since backend config pushes config
+	// to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.DeleteExecuting()
 	batchRouterFactory.RouterDB.DeleteExecuting()
 
@@ -185,7 +186,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 			for k := range source.Destinations {
 				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				//For batch router destinations
+				// For batch router destinations
 				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
 					misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
 					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
@@ -221,4 +222,24 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 		}()
 	}
 	wg.Wait()
+}
+
+// NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
+func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
+	var rsourcesConfig rsources.JobServiceConfig
+	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
+	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
+	rsourcesConfig.LocalHostname = config.GetEnv("JOBS_DB_HOST", "localhost")
+	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
+
+	switch deploymentType {
+	case deployment.HostedType, deployment.MultiTenantType:
+		// For specific deployment types we shall require the existence of a SHARED_DB
+		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
+		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
+			return nil, fmt.Errorf("deployment type %s requires SHARED_DB_DSN to be provided", deploymentType)
+		}
+	}
+
+	return rsources.NewJobService(rsourcesConfig)
 }

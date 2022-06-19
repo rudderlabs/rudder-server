@@ -38,7 +38,7 @@ var (
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
 
-	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
+	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
 	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
 	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
@@ -237,7 +237,7 @@ func Init() {
 	loadConfig()
 }
 
-func trackConfig(preConfig ConfigT, curConfig ConfigT) {
+func trackConfig(preConfig, curConfig ConfigT) {
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
@@ -278,14 +278,13 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 }
 
 func configUpdate(eb *pubsub.PublishSubscriber, statConfigBackendError stats.RudderStats, workspaces string) {
-
 	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
 		statConfigBackendError.Increment()
 	}
 
-	//sorting the sourceJSON.
-	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+	// sorting the sourceJSON.
+	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
 	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
@@ -330,6 +329,7 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 func GetWorkspaceIDForSourceID(sourceID string) string {
 	return backendConfig.GetWorkspaceIDForSourceID(sourceID)
 }
+
 func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 	return backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceId)
 }

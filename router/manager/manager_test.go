@@ -119,8 +119,10 @@ type reportingNOOP struct{}
 
 func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
 }
+
 func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
 }
+
 func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
 }
 
@@ -133,10 +135,14 @@ const (
 
 var (
 	workspaceID             = uuid.Must(uuid.NewV4()).String()
-	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
-		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
-	gcsDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GCS",
-		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
+	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
+		ID: GADestinationDefinitionID, Name: "GA",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+	}
+	gcsDestinationDefinition = backendConfig.DestinationDefinitionT{
+		ID: GADestinationDefinitionID, Name: "GCS",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+	}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
@@ -144,16 +150,20 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID,
-					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+				Destinations: []backendConfig.DestinationT{{
+					ID:   GADestinationID,
+					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
+				}},
 			},
 			{
 				WorkspaceID: workspaceID,
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{backendConfig.DestinationT{ID: GADestinationID, Name: "ga dest",
-					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+				Destinations: []backendConfig.DestinationT{{
+					ID: GADestinationID, Name: "ga dest",
+					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
+				}},
 			},
 		},
 	}
@@ -190,7 +200,8 @@ func TestRouterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).DoAndReturn(func(
-		ctx context.Context, topic backendConfig.Topic) pubsub.DataChannel {
+		ctx context.Context, topic backendConfig.Topic,
+	) pubsub.DataChannel {
 		// on Subscribe, emulate a backend configuration event
 
 		ch := make(chan pubsub.DataEvent, 1)

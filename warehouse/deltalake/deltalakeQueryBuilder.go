@@ -2,6 +2,7 @@ package deltalake
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -13,7 +14,7 @@ func primaryKey(tableName string) string {
 	return key
 }
 
-func stagingSqlStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	if tableName == warehouseutils.UsersTable {
 		sqlStatement = fmt.Sprintf(`SELECT %[3]s FROM %[1]s.%[2]s`,
@@ -32,7 +33,7 @@ func stagingSqlStatement(namespace string, tableName string, stagingTableName st
 }
 
 // mergeableLTSQLStatement merge load table sql statement
-func mergeableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
@@ -52,7 +53,7 @@ func mergeableLTSQLStatement(namespace string, tableName string, stagingTableNam
 }
 
 // appendableLTSQLStatement append load table sql statement
-func appendableLTSQLStatement(namespace string, tableName string, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func appendableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s );`,
 		namespace,

@@ -5,19 +5,17 @@ import (
 	"os"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 // Options contains application's initialisation options
 type Options struct {
-	NormalMode     bool
-	DegradedMode   bool
-	MigrationMode  string
-	ClearDB        bool
-	Cpuprofile     string
-	Memprofile     string
-	VersionFlag    bool
-	DeploymentType deployment.Type
+	NormalMode    bool
+	DegradedMode  bool
+	MigrationMode string
+	ClearDB       bool
+	Cpuprofile    string
+	Memprofile    string
+	VersionFlag   bool
 }
 
 // LoadOptions loads application's initialisation options based on command line flags and environment

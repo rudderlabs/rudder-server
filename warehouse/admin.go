@@ -3,8 +3,9 @@ package warehouse
 import (
 	"encoding/json"
 	"errors"
-	client2 "github.com/rudderlabs/rudder-server/warehouse/client"
 	"strings"
+
+	client2 "github.com/rudderlabs/rudder-server/warehouse/client"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"

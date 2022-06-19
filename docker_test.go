@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"io"
 	"log"
 	"math/rand"
@@ -34,6 +33,9 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+
+	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -117,8 +119,9 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
+
 func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	s := make([]rune, n)
 	for i := range s {
@@ -195,10 +198,10 @@ func blockOnHold() {
 
 	<-c
 }
-func GetEvent(url string, method string) (string, error) {
+
+func GetEvent(url, method string) (string, error) {
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
-
 	if err != nil {
 		return "", err
 	}
@@ -240,13 +243,12 @@ func SendPixelEvents(writeKey string) {
 	}
 }
 
-func SendEvent(payload *strings.Reader, callType string, writeKey string) {
+func SendEvent(payload *strings.Reader, callType, writeKey string) {
 	log.Println(fmt.Sprintf("Sending %s Event", callType))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
 	method := "POST"
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-
 	if err != nil {
 		log.Println(err)
 		return
@@ -495,7 +497,7 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload2, "identify", writeKey) //sending duplicate event to check dedup
+	SendEvent(payload2, "identify", writeKey) // sending duplicate event to check dedup
 
 	// Sending Batch event
 	payloadBatch := strings.NewReader(`{
@@ -631,7 +633,7 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, 0, len(disableDestinationWebhook.Requests()))
 }
 
-//Verify Event in POSTGRES
+// Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
@@ -776,7 +778,7 @@ func consume(t *testing.T, client *kafkaclient.Client, topics []testutil.TopicPa
 	return messages, errors
 }
 
-//Verify Event Models EndPoint
+// Verify Event Models EndPoint
 func TestEventModels(t *testing.T) {
 	// GET /schemas/event-models
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)

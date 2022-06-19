@@ -17,6 +17,7 @@ import (
 var SampleWorkspaceSourcesMultitenant = map[string]ConfigT{
 	workspaceId: SampleBackendConfig,
 }
+
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
 		backendConfig = &MultiTenantWorkspacesConfig{

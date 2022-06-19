@@ -324,7 +324,7 @@ func (job *UploadJobT) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
-		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadInProgress, Value: false}}})
+		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadInProgress, Value: false}}})
 
 		timerStat.End()
 		ch <- struct{}{}
@@ -337,7 +337,7 @@ func (job *UploadJobT) run() (err error) {
 	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}, UploadColumnT{Column: UploadInProgress, Value: true}}})
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -767,13 +767,13 @@ func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[st
 			status := tableStatus.status
 			if uploadID < job.upload.ID && (status == TableUploadExportingFailed ||
 				status == UserTableUploadExportingFailed ||
-				status == IdentityTableUploadExportingFailed) { //Previous upload and table upload failed
+				status == IdentityTableUploadExportingFailed) { // Previous upload and table upload failed
 				previouslyFailedTableMap[tableName] = &TableUploadIDInfoT{
 					uploadID: uploadID,
 					error:    tableStatus.error,
 				}
 			}
-			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
+			if uploadID == job.upload.ID && status == TableUploadExported { // Current upload and table upload succeeded
 				currentlySucceededTableMap[tableName] = true
 			}
 		}
@@ -832,7 +832,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-//TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
+// TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
 	tableName        string
 	previousJobID    int64
@@ -1142,7 +1142,6 @@ func (job *UploadJobT) setUpdatedTableSchema(tableName string, updatedSchema map
 }
 
 func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (errors []error, tableUploadErr error) {
-
 	for tName, loadErr := range errorMap {
 		// TODO: set last_exec_time
 		tableUpload := NewTableUpload(job.upload.ID, tName)
@@ -1256,7 +1255,7 @@ func (job *UploadJobT) setUploadSchema(consolidatedSchema warehouseutils.SchemaT
 	// return job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
 	// )
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema}}})
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
 func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) error {
@@ -1265,11 +1264,11 @@ func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) erro
 		panic(err)
 	}
 	job.upload.MergedSchema = mergedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: MergedSchemaField, Value: marshalledSchema}}})
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs
-func (job *UploadJobT) setLoadFileIDs(startLoadFileID int64, endLoadFileID int64) error {
+func (job *UploadJobT) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error {
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
@@ -1277,7 +1276,7 @@ func (job *UploadJobT) setLoadFileIDs(startLoadFileID int64, endLoadFileID int64
 	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
 	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
 	// )
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
 }
 
 type UploadColumnsOpts struct {
@@ -1350,7 +1349,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 // { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
 // from a particular upload.
 func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
-
 	var uploadErrors map[string]map[string]interface{}
 	err := json.Unmarshal(message, &uploadErrors)
 	if err != nil {
@@ -1386,7 +1384,6 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 // Aborted makes a check that if the state of the job
 // should be aborted
 func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
-
 	// Defensive check to prevent garbage startTime
 	if startTime.IsZero() {
 		return false
@@ -1549,7 +1546,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
 	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
-
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
 		return false, err
@@ -1565,7 +1561,7 @@ func (job *UploadJobT) getAttemptNumber() int {
 		return 0
 	}
 
-	gjson.Parse(string(uploadError)).ForEach(func(key gjson.Result, value gjson.Result) bool {
+	gjson.Parse(string(uploadError)).ForEach(func(key, value gjson.Result) bool {
 		attempts += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
 	})
@@ -1623,7 +1619,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 	return
 }
 
-func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
+func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID, endLoadFileID int64, err error) {
 	stmt := fmt.Sprintf(`
 		SELECT
 			MIN(id), MAX(id)
@@ -1664,7 +1660,7 @@ func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
 	}
 }
 
-func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64, endLoadFileID int64, err error) {
+func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLoadFileID int64, err error) {
 	destID := job.upload.DestinationID
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
@@ -1875,7 +1871,7 @@ func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 }
 
 func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
-	//Using transactions for bulk copying
+	// Using transactions for bulk copying
 	txn, err := dbHandle.Begin()
 	if err != nil {
 		return
@@ -2079,7 +2075,6 @@ func getFailedState(state string) string {
 }
 
 func initializeStateMachine() {
-
 	stateTransitions = make(map[string]*uploadStateT)
 
 	waitingState := &uploadStateT{

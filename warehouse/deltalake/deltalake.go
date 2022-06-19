@@ -3,9 +3,10 @@ package deltalake
 import (
 	"context"
 	"fmt"
-	"github.com/iancoleman/strcase"
 	"strings"
 	"time"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
@@ -191,7 +192,7 @@ func GetDatabricksConnectorURL() string {
 }
 
 // checkAndIgnoreAlreadyExistError checks and ignores native errors.
-func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
+func checkAndIgnoreAlreadyExistError(errorCode, ignoreError string) bool {
 	if errorCode == "" || errorCode == ignoreError {
 		return true
 	}
@@ -296,7 +297,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 }
 
 // ExecuteSQL executes sql using grpc Client
-func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error) {
+func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -450,7 +451,7 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder string, err error) {
+func (dl *HandleT) getLoadFolder(tableName, location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == "S3" {
 		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
@@ -476,7 +477,7 @@ func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseuti
 }
 
 // loadTable Loads table with table name
-func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
@@ -510,8 +511,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
-	var tableSchemaDiff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
-	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
+	tableSchemaDiff := getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	sortedColumnNames := dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
@@ -799,7 +800,7 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 }
 
 // AddColumn adds column for column name and type
-func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
+func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s );`, tableName, columnName, getDeltaLakeDataType(columnType))
 	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
@@ -826,7 +827,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (dl *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -1013,7 +1014,6 @@ func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 		misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config),
 	)
 	dbHandleT, err := dl.connectToWarehouse()
-
 	if err != nil {
 		return client.Client{}, err
 	}
@@ -1086,7 +1086,7 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {

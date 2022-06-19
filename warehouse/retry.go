@@ -3,14 +3,13 @@ package warehouse
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"strings"
 )
 
-var (
-	retryQueryPlaceHolder = "<retry>"
-)
+var retryQueryPlaceHolder = "<retry>"
 
 type RetryRequest struct {
 	WorkspaceID     string
