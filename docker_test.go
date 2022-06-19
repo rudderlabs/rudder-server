@@ -35,7 +35,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
-	"github.com/gofrs/uuid"
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
