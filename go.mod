@@ -122,7 +122,7 @@ require (
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
-	github.com/klauspost/compress v1.14.4 // indirect
+	github.com/klauspost/compress v1.15.0 // indirect
 	github.com/klauspost/cpuid v1.2.3 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
@@ -173,4 +173,15 @@ require (
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20220512140231-539c8e751b99 // indirect
+)
+
+require (
+	github.com/OneOfOne/xxhash v1.2.2
+	github.com/cespare/xxhash/v2 v2.1.2
+	github.com/valyala/fasthttp v1.37.0
+)
+
+require (
+	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
 )
