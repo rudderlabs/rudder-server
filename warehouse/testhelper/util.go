@@ -3,9 +3,10 @@ package testhelper
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff"
 	"log"
 	"strings"
+
+	"github.com/cenkalti/backoff"
 )
 
 const (

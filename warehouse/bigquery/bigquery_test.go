@@ -3,10 +3,15 @@
 package bigquery_test
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
+	"cloud.google.com/go/bigquery"
+
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -14,9 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/assert"
-	"log"
-	"os"
-	"testing"
 )
 
 type BigQueryCredentials struct {
@@ -35,9 +37,7 @@ type BiqQueryTest struct {
 	Context     context.Context
 }
 
-var (
-	BQTest *BiqQueryTest
-)
+var BQTest *BiqQueryTest
 
 func TestUnsupportedCredentials(t *testing.T) {
 	credentials := bigquery2.BQCredentialsT{
@@ -74,7 +74,7 @@ func (*BiqQueryTest) SetUpDestination() {
 
 	var err error
 
-	//Convert Map to Bytes(which can easily be converted to JSON string)
+	// Convert Map to Bytes(which can easily be converted to JSON string)
 	credentials, err := json.Marshal(BQTest.Credentials.Credentials)
 	if err != nil {
 		log.Panicf("Error while unmarshalling credentials for bigquery with error: %s", err.Error())
@@ -102,7 +102,7 @@ func (*BiqQueryTest) SetUpDestination() {
 func TestBigQueryIntegration(t *testing.T) {
 	t.Skip()
 
-	//Disabling big query dedup
+	// Disabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
 	bigquery2.Init()
 
@@ -143,7 +143,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	}
 	testhelper.VerifyingDestination(t, whDestTest)
 
-	//Enabling big query dedup
+	// Enabling big query dedup
 	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
 	bigquery2.Init()
 

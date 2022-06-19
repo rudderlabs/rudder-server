@@ -56,9 +56,7 @@ var (
 	loadTableStrategy  string
 )
 
-var (
-	enablePartition bool
-)
+var enablePartition bool
 
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{

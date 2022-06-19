@@ -593,7 +593,7 @@ func (rs *HandleT) CreateSchema() (err error) {
 	return rs.createSchema()
 }
 
-func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	if setVarCharMax && columnType == "text" {
 		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
 	}
@@ -746,7 +746,6 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
-
 	if err != nil {
 		return client.Client{}, err
 	}

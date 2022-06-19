@@ -6,13 +6,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"log"
-	"os"
-	"testing"
 )
 
 type SnowflakeCredentials struct {
@@ -33,9 +34,7 @@ type SnowflakeTest struct {
 	WriteKey    string
 }
 
-var (
-	SFTest *SnowflakeTest
-)
+var SFTest *SnowflakeTest
 
 func credentials() (sfCredentials *SnowflakeCredentials) {
 	cred := os.Getenv("SNOWFLAKE_INTEGRATION_TEST_USER_CRED")

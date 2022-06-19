@@ -3,12 +3,13 @@ package testhelper
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"strings"
-	"time"
 )
 
 type JobsDBResource struct {

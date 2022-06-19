@@ -5,14 +5,15 @@ package clickhouse_test
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"log"
-	"os"
-	"testing"
 )
 
 type CHNOOP struct{}

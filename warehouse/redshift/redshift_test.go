@@ -6,13 +6,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"log"
-	"os"
-	"testing"
 )
 
 type RedshiftCredentials struct {
@@ -33,9 +34,7 @@ type RedshiftTest struct {
 	WriteKey    string
 }
 
-var (
-	RSTest *RedshiftTest
-)
+var RSTest *RedshiftTest
 
 func credentials() (rsCredentials *RedshiftCredentials) {
 	cred := os.Getenv("REDSHIFT_INTEGRATION_TEST_USER_CRED")

@@ -5,15 +5,16 @@ package deltalake_test
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"log"
-	"os"
-	"testing"
 )
 
 type DeltalakeCredentials struct {
@@ -33,9 +34,7 @@ type DeltalakeTest struct {
 	WriteKey    string
 }
 
-var (
-	DLTest *DeltalakeTest
-)
+var DLTest *DeltalakeTest
 
 func credentials() (credentials *DeltalakeCredentials) {
 	cred := os.Getenv("DATABRICKS_INTEGRATION_TEST_USER_CRED")

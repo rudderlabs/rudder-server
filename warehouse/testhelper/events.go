@@ -3,12 +3,13 @@ package testhelper
 import (
 	b64 "encoding/base64"
 	"fmt"
-	"github.com/gofrs/uuid"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/gofrs/uuid"
 )
 
 func sendEvent(payload *strings.Reader, eventType, writeKey string) {
@@ -148,5 +149,4 @@ func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 			sendEvent(payloadGroup, "group", wdt.WriteKey)
 		}
 	}
-
 }

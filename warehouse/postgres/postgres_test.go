@@ -5,12 +5,13 @@ package postgres_test
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"os"
-	"testing"
 )
 
 type PostgresTest struct {
@@ -20,9 +21,7 @@ type PostgresTest struct {
 	WriteKey    string
 }
 
-var (
-	PGTest *PostgresTest
-)
+var PGTest *PostgresTest
 
 func (*PostgresTest) SetUpDestination() {
 	PGTest.WriteKey = "kwzDkh9h2fhfUVuS9jZ8uVbhV3v"

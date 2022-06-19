@@ -3,6 +3,12 @@ package testhelper
 import (
 	"flag"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -14,20 +20,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-	"log"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	runSlow bool
-)
+var runSlow bool
 
 var (
 	WaitFor2Minute            = 2 * time.Minute
@@ -41,9 +40,7 @@ var (
 	ConnectBackoffRetryMax = 5
 )
 
-var (
-	jobsDB *JobsDBResource
-)
+var jobsDB *JobsDBResource
 
 type ISetup interface {
 	SetUpDestination()

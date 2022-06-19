@@ -5,12 +5,13 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"os"
-	"testing"
 )
 
 type MSSQLTest struct {
@@ -20,9 +21,7 @@ type MSSQLTest struct {
 	WriteKey    string
 }
 
-var (
-	MTest *MSSQLTest
-)
+var MTest *MSSQLTest
 
 func (*MSSQLTest) SetUpDestination() {
 	MTest.WriteKey = "YSQ3n267l1VQKGNbSuJE9fQbzON"
