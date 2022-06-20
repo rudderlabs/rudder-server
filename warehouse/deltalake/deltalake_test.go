@@ -6,10 +6,13 @@ package deltalake_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
