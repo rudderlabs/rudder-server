@@ -173,14 +173,17 @@ func (d *DedupHandleT) writeToBadger(messageIDs []string) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, messageID := range messageIDs {
 		e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
-		if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-			if err := txn.Commit(); err != nil {
+		err := txn.SetEntry(e)
+		if err == badger.ErrTxnTooBig {
+			if err = txn.Commit(); err != nil {
 				return err
 			}
 			txn = d.badgerDB.NewTransaction(true)
-			if err := txn.SetEntry(e); err != nil {
+			if err = txn.SetEntry(e); err != nil {
 				return err
 			}
+		} else if err != nil {
+			return err
 		}
 	}
 	return txn.Commit()
