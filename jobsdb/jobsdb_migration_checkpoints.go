@@ -105,8 +105,9 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	}
 
 	defer func() {
-		err := stmt.Close()
-		jd.logger.Warnf("Error closing statement: %v", err)
+		if err := stmt.Close(); err != nil {
+			jd.logger.Warnf("Error closing statement: %v", err)
+		}
 	}()
 
 	if migrationCheckpoint.ID > 0 {
