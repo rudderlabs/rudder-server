@@ -89,9 +89,9 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	runSlow = config.GetEnvAsBool("SLOW", false)
+	runSlow = config.GetEnvAsBool("SLOW", true)
 	if !runSlow {
-		t.Skip("Skipping tests. Use 'SLOW=1' env var to run them.")
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
 	hold = config.GetEnvAsBool("HOLD", false)
