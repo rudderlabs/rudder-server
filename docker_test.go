@@ -32,6 +32,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	main "github.com/rudderlabs/rudder-server"
@@ -45,7 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/stretchr/testify/require"
 )
 
 var (
