@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -21,7 +22,7 @@ type SchemaHandleT struct {
 	uploadSchema      warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
+func HandleSchemaChange(existingDataType string, columnType string, columnVal interface{}, destinationId string) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text/json
 		if columnType != "string" && columnType != "text" && columnType != "json" {
@@ -35,6 +36,7 @@ func HandleSchemaChange(existingDataType string, columnType string, columnVal in
 			newColumnVal = nil
 		} else {
 			newColumnVal = float64(intVal)
+			warehouseutils.DestStat(stats.CountType, "schema_int_freq", destinationId).Count(1)
 		}
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := columnVal.(float64)

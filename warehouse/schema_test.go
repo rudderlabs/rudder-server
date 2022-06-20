@@ -4,10 +4,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	. "github.com/rudderlabs/rudder-server/warehouse"
 )
 
 var _ = Describe("Schema", func() {
+	stats.Setup()
 	Describe("Handle schema change", func() {
 		Context("No discards", func() {
 			It("should send int values if existing datatype is int", func() {
@@ -16,7 +18,7 @@ var _ = Describe("Schema", func() {
 
 				columnVal = 1.501
 				convertedVal = 1
-				newColumnVal, ok = HandleSchemaChange("int", "float", columnVal)
+				newColumnVal, ok = HandleSchemaChange("int", "float", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 			})
@@ -27,7 +29,7 @@ var _ = Describe("Schema", func() {
 
 				columnVal = 1
 				convertedVal = 1.0
-				newColumnVal, ok = HandleSchemaChange("float", "int", columnVal)
+				newColumnVal, ok = HandleSchemaChange("float", "int", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 			})
@@ -38,31 +40,31 @@ var _ = Describe("Schema", func() {
 
 				columnVal = false
 				convertedVal = "false"
-				newColumnVal, ok = HandleSchemaChange("string", "boolean", columnVal)
+				newColumnVal, ok = HandleSchemaChange("string", "boolean", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = 1
 				convertedVal = "1"
-				newColumnVal, ok = HandleSchemaChange("string", "int", columnVal)
+				newColumnVal, ok = HandleSchemaChange("string", "int", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = 1.501
 				convertedVal = "1.501"
-				newColumnVal, ok = HandleSchemaChange("string", "float", columnVal)
+				newColumnVal, ok = HandleSchemaChange("string", "float", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = "2022-05-05T00:00:00.000Z"
 				convertedVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("string", "datetime", columnVal)
+				newColumnVal, ok = HandleSchemaChange("string", "datetime", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = `{"json":true}`
 				convertedVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("string", "json", columnVal)
+				newColumnVal, ok = HandleSchemaChange("string", "json", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 			})
@@ -73,37 +75,37 @@ var _ = Describe("Schema", func() {
 
 				columnVal = false
 				convertedVal = "false"
-				newColumnVal, ok = HandleSchemaChange("json", "boolean", columnVal)
+				newColumnVal, ok = HandleSchemaChange("json", "boolean", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = 1
 				convertedVal = "1"
-				newColumnVal, ok = HandleSchemaChange("json", "int", columnVal)
+				newColumnVal, ok = HandleSchemaChange("json", "int", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = 1.501
 				convertedVal = "1.501"
-				newColumnVal, ok = HandleSchemaChange("json", "float", columnVal)
+				newColumnVal, ok = HandleSchemaChange("json", "float", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = "2022-05-05T00:00:00.000Z"
 				convertedVal = `"2022-05-05T00:00:00.000Z"`
-				newColumnVal, ok = HandleSchemaChange("json", "datetime", columnVal)
+				newColumnVal, ok = HandleSchemaChange("json", "datetime", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				columnVal = "string value"
 				convertedVal = `"string value"`
-				newColumnVal, ok = HandleSchemaChange("json", "string", columnVal)
+				newColumnVal, ok = HandleSchemaChange("json", "string", columnVal, "dummyID")
 				Expect(newColumnVal).To(Equal(convertedVal))
 				Expect(ok).To(BeTrue())
 
 				var columnArrVal []interface{}
 				columnArrVal = append(columnArrVal, false, 1, "string value")
-				newColumnVal, ok = HandleSchemaChange("json", "string", columnArrVal)
+				newColumnVal, ok = HandleSchemaChange("json", "string", columnArrVal, "dummyID")
 				Expect(newColumnVal).To(Equal(columnArrVal))
 				Expect(ok).To(BeTrue())
 			})
@@ -115,27 +117,27 @@ var _ = Describe("Schema", func() {
 				var ok bool
 
 				columnVal = 1
-				newColumnVal, ok = HandleSchemaChange("boolean", "int", columnVal)
+				newColumnVal, ok = HandleSchemaChange("boolean", "int", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = 1.501
-				newColumnVal, ok = HandleSchemaChange("boolean", "float", columnVal)
+				newColumnVal, ok = HandleSchemaChange("boolean", "float", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("boolean", "string", columnVal)
+				newColumnVal, ok = HandleSchemaChange("boolean", "string", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("boolean", "datetime", columnVal)
+				newColumnVal, ok = HandleSchemaChange("boolean", "datetime", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("boolean", "json", columnVal)
+				newColumnVal, ok = HandleSchemaChange("boolean", "json", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
@@ -145,22 +147,22 @@ var _ = Describe("Schema", func() {
 				var ok bool
 
 				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("int", "boolean", columnVal)
+				newColumnVal, ok = HandleSchemaChange("int", "boolean", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("int", "string", columnVal)
+				newColumnVal, ok = HandleSchemaChange("int", "string", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("int", "datetime", columnVal)
+				newColumnVal, ok = HandleSchemaChange("int", "datetime", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("int", "json", columnVal)
+				newColumnVal, ok = HandleSchemaChange("int", "json", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
@@ -170,22 +172,22 @@ var _ = Describe("Schema", func() {
 				var ok bool
 
 				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("float", "boolean", columnVal)
+				newColumnVal, ok = HandleSchemaChange("float", "boolean", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("float", "string", columnVal)
+				newColumnVal, ok = HandleSchemaChange("float", "string", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("float", "datetime", columnVal)
+				newColumnVal, ok = HandleSchemaChange("float", "datetime", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("float", "json", columnVal)
+				newColumnVal, ok = HandleSchemaChange("float", "json", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
@@ -194,27 +196,27 @@ var _ = Describe("Schema", func() {
 				var newColumnVal, columnVal interface{}
 				var ok bool
 				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("datetime", "boolean", columnVal)
+				newColumnVal, ok = HandleSchemaChange("datetime", "boolean", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("datetime", "string", columnVal)
+				newColumnVal, ok = HandleSchemaChange("datetime", "string", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = 1
-				newColumnVal, ok = HandleSchemaChange("datetime", "int", columnVal)
+				newColumnVal, ok = HandleSchemaChange("datetime", "int", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = 1.501
-				newColumnVal, ok = HandleSchemaChange("datetime", "float", columnVal)
+				newColumnVal, ok = HandleSchemaChange("datetime", "float", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 
 				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("datetime", "json", columnVal)
+				newColumnVal, ok = HandleSchemaChange("datetime", "json", columnVal, "dummyID")
 				Expect(newColumnVal).To(BeNil())
 				Expect(ok).To(BeFalse())
 			})
