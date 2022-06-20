@@ -265,7 +265,7 @@ func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err err
 	case "Error Code Count By Destination":
 		response, err = readOnlyJobsDB.GetFailedStatusErrorCodeCountsByDestination(args)
 	}
-	*reply = string(response)
+	*reply = response
 	return err
 }
 

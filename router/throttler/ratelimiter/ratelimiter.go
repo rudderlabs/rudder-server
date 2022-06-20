@@ -39,7 +39,7 @@ func (r *RateLimiter) Inc(key string, currentTime time.Time) error {
 	return r.dataStore.Inc(key, currentWindow)
 }
 
-// Inc increments limiter counter for a given key or returns error when it's not possible
+// Dec decrements limiter counter for a given key or returns error when it's not possible
 func (r *RateLimiter) Dec(key string, count int64, currentTime time.Time) error {
 	if currentTime.IsZero() {
 		currentTime = time.Now()
@@ -71,7 +71,7 @@ func (r *RateLimiter) Check(key string, currentTime time.Time) (limitStatus *Lim
 	}
 	timeFromCurrWindow := currentTime.UTC().Sub(currentWindow)
 
-	rate := float64((float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize))*float64(prevValue) + float64(currentValue)
+	rate := (float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize)*float64(prevValue) + float64(currentValue)
 	limitStatus = &LimitStatus{}
 	if rate >= float64(r.requestsLimit) {
 		limitStatus.IsLimited = true
@@ -81,10 +81,6 @@ func (r *RateLimiter) Check(key string, currentTime time.Time) (limitStatus *Lim
 	limitStatus.CurrentRate = rate
 
 	return limitStatus, nil
-}
-
-func (r *RateLimiter) calcRate(timeFromCurrWindow time.Duration, prevValue, currentValue int64) float64 {
-	return float64((float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize))*float64(prevValue) + float64(currentValue)
 }
 
 func (r *RateLimiter) calcLimitDuration(prevValue, currValue int64, timeFromCurrWindow time.Duration) time.Duration {

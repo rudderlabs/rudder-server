@@ -87,10 +87,6 @@ var (
 	mockLogger         *mock_logger.MockLoggerI
 	originalMockPubSub = pubsub.PublishSubscriber{}
 	ctrl               *gomock.Controller
-	testRequestData    map[string]interface{} = map[string]interface{}{
-		"instanceName":         "1",
-		"replayConfigDataList": "test",
-	}
 )
 
 func initBackendConfig() {
@@ -249,7 +245,7 @@ var _ = Describe("BackendConfig", func() {
 		It("Should not wait if initialized is true", func() {
 			initialized = true
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
-			backendConfig.WaitForConfig(context.TODO())
+			_ = backendConfig.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
 			initialized = false
@@ -261,7 +257,7 @@ var _ = Describe("BackendConfig", func() {
 					initialized = true
 				}
 			}).Times(5)
-			backendConfig.WaitForConfig(context.TODO())
+			_ = backendConfig.WaitForConfig(context.TODO())
 		})
 	})
 })

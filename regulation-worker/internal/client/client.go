@@ -30,7 +30,7 @@ type JobAPI struct {
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	method := "GET"
@@ -66,7 +66,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
-			pkgLogger.Errorf("error while decoding reponse body: %v", err)
+			pkgLogger.Errorf("error while decoding response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
@@ -98,11 +98,11 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 }
 
-// marshals status into appropriate status schema, and sent as payload
+// UpdateStatus marshals status into appropriate status schema, and sent as payload
 // checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	method := "PATCH"
@@ -132,7 +132,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 		pkgLogger.Errorf("error while making http request: %v", err)
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

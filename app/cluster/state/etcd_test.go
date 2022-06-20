@@ -108,16 +108,15 @@ func Init() {
 }
 
 func Test_Ping(t *testing.T) {
-	etcd := state.ETCDManager{
+	em := state.ETCDManager{
 		Config: &state.ETCDConfig{
 			Endpoints: etcdHosts,
 		},
 	}
 
-	err := etcd.Ping()
+	err := em.Ping()
 	require.NoError(t, err)
-
-	etcd.Close()
+	em.Close()
 }
 
 func Test_ServerMode(t *testing.T) {
@@ -139,13 +138,14 @@ func Test_ServerMode(t *testing.T) {
 
 		ch := provider.ServerMode(ctx)
 
-		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
 		m, ok := <-ch
 
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, servermode.DegradedMode, m.Mode())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -168,7 +168,8 @@ func Test_ServerMode(t *testing.T) {
 
 		ch := provider.ServerMode(ctx)
 
-		etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
 		m, ok := <-ch
 
 		require.True(t, ok)
@@ -180,7 +181,8 @@ func Test_ServerMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+	_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+	require.NoError(t, err)
 
 	ch := provider.ServerMode(ctx)
 
@@ -190,7 +192,7 @@ func Test_ServerMode(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, servermode.DegradedMode, m.Mode())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -199,13 +201,14 @@ func Test_ServerMode(t *testing.T) {
 
 	t.Log("update should be received")
 	{
-		etcdClient.Put(ctx, modeRequestKey, `{"mode": "NORMAL", "ack_key": "test-ack/2"}`)
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "NORMAL", "ack_key": "test-ack/2"}`)
+		require.NoError(t, err)
 
 		m, ok := <-ch
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, servermode.NormalMode, m.Mode())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
@@ -214,7 +217,8 @@ func Test_ServerMode(t *testing.T) {
 
 	t.Log("update with invalid JSON should return error")
 	{
-		etcdClient.Put(ctx, modeRequestKey, `{"mode''`)
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode''`)
+		require.NoError(t, err)
 
 		m, ok := <-ch
 		require.True(t, ok)
@@ -223,7 +227,8 @@ func Test_ServerMode(t *testing.T) {
 
 	t.Log("update with invalid mode should return error")
 	{
-		etcdClient.Put(ctx, modeRequestKey, `{"mode": "NOT_A_MODE", "ack_key": "test-ack/2"}`)
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "NOT_A_MODE", "ack_key": "test-ack/2"}`)
+		require.NoError(t, err)
 
 		m, ok := <-ch
 		require.True(t, ok)
@@ -260,7 +265,8 @@ func Test_Workspaces(t *testing.T) {
 
 		ch := provider.WorkspaceIDs(ctx)
 
-		etcdClient.Put(ctx, requestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		_, err := etcdClient.Put(ctx, requestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
 		m, ok := <-ch
 
 		require.True(t, ok)
@@ -288,13 +294,14 @@ func Test_Workspaces(t *testing.T) {
 
 		ch := provider.WorkspaceIDs(ctx)
 
-		etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+		_, err := etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
 		m, ok := <-ch
 
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -304,7 +311,8 @@ func Test_Workspaces(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+	_, err := etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2", "ack_key": "test-ack/1"}`)
+	require.NoError(t, err)
 
 	ch := provider.WorkspaceIDs(ctx)
 
@@ -314,7 +322,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -323,13 +331,14 @@ func Test_Workspaces(t *testing.T) {
 
 	t.Log("update should be received")
 	{
-		etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2,5", "ack_key": "test-ack/2"}`)
+		_, err := etcdClient.Put(ctx, requestKey, `{"workspaces": "1,2,5", "ack_key": "test-ack/2"}`)
+		require.NoError(t, err)
 
 		m, ok := <-ch
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2", "5"}, m.WorkspaceIDs())
-		m.Ack(ctx)
+		require.NoError(t, m.Ack(ctx))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
@@ -338,14 +347,15 @@ func Test_Workspaces(t *testing.T) {
 
 	t.Log("error if update with invalid JSON ")
 	{
-		etcdClient.Put(ctx, requestKey, `{"mode''`)
+		_, err := etcdClient.Put(ctx, requestKey, `{"mode''`)
+		require.NoError(t, err)
 
 		m, ok := <-ch
 		require.True(t, ok)
 		require.Error(t, m.Err())
 	}
 
-	t.Log("channel should close after context cancelation")
+	t.Log("channel should close after context cancellation")
 	cancel()
 	{
 		_, ok := <-ch

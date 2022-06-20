@@ -62,7 +62,7 @@ var _ = Describe("workspace-config", func() {
 				rw.WriteHeader(http.StatusAccepted)
 				js, _ := json.Marshal(SampleWorkspaceSources)
 				rw.Header().Set("Content-Type", "application/json")
-				rw.Write(js)
+				_, _ = rw.Write(js)
 			}))
 			defer server.Close()
 
@@ -84,7 +84,7 @@ var _ = Describe("workspace-config", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")
-				rw.Write([]byte(`""`))
+				_, _ = rw.Write([]byte(`""`))
 			}))
 			defer server.Close()
 

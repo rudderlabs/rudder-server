@@ -47,13 +47,18 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 
 	obj := client.Bucket(manager.Config.Bucket).Object(fileName)
 	w := obj.NewWriter(ctx)
-	defer func() error {
-		return w.Close()
-	}()
 	if _, err := io.Copy(w, file); err != nil {
+		err = fmt.Errorf("copying file to GCS: %v", err)
+		if closeErr := w.Close(); closeErr != nil {
+			return UploadOutput{}, fmt.Errorf("closing writer: %q, while: %w", closeErr, err)
+		}
+
 		return UploadOutput{}, err
 	}
-	w.Close()
+	err = w.Close()
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("closing writer: %w", err)
+	}
 
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {

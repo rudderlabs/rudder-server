@@ -79,7 +79,7 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	)
 	defer os.Remove(path)
 
-	fManager, err := filemanager.New(&filemanager.SettingsT{
+	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})

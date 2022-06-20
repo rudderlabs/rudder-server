@@ -197,7 +197,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, resp.err, code)
 	} else {
 		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
-		w.Write([]byte(response.GetStatus(response.Ok)))
+		_, _ = w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
 
@@ -350,7 +350,7 @@ func (webhook *HandleT) Register(name string) {
 	}
 }
 
-func (webhook *HandleT) Shutdown() {
+func (webhook *HandleT) Shutdown() error {
 	webhook.backgroundCancel()
 	for _, q := range webhook.requestQ {
 		close(q)
@@ -358,7 +358,7 @@ func (webhook *HandleT) Shutdown() {
 	webhook.batchRequestsWg.Wait()
 	close(webhook.batchRequestQ)
 
-	webhook.backgroundWait()
+	return webhook.backgroundWait()
 }
 
 // TODO: Check if correct

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Config struct {
@@ -87,7 +88,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 
 	// ** Preparing the Header Data **
-	// Creating the array of string which are then coverted in to an array of interface which are to
+	// Creating the array of string which are then converted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
 	// Example: | First Name | Last Name | Birth Day | Item Purchased | ..
 	// Here messageId is by default the first column

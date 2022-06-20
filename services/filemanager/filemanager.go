@@ -56,11 +56,6 @@ func init() {
 	DefaultFileManagerFactory = &FileManagerFactoryT{}
 }
 
-// Deprecated: Use an instance of FileManagerFactory instead
-func New(settings *SettingsT) (FileManager, error) {
-	return DefaultFileManagerFactory.New(settings)
-}
-
 // New returns FileManager backed by configured provider
 func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	var timeout time.Duration

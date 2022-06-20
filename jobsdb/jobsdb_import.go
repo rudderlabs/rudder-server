@@ -135,12 +135,15 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
-	row.Scan(&maxID)
+	err := row.Scan(&maxID)
+	if err != nil {
+		panic(fmt.Errorf("query for max job_id: %q", err))
+	}
 
 	if maxID.Valid {
-		return int64(maxID.Int64)
+		return maxID.Int64
 	}
-	return int64(0)
+	return 0
 }
 
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {

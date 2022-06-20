@@ -195,7 +195,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	var respCode int
 
 	url := getProxyURL(destName)
-	payload := []byte(rawJSON)
+	payload := rawJSON
 
 	operation := func() error {
 		var requestError error
