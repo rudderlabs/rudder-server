@@ -290,7 +290,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	defer func() {
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				err = fmt.Errorf("%v: %v", err, rollbackErr)
+				err = fmt.Errorf("%v: %w", err, rollbackErr)
 			}
 		}
 	}()
