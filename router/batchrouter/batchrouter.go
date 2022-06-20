@@ -1539,6 +1539,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 		"module":      "batch_router",
 		"destType":    brt.destType,
 		"destination": destinationTag,
+		"workspace":   destination.Source.WorkspaceID,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
@@ -1548,6 +1549,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 			"module":      "batch_router",
 			"destType":    brt.destType,
 			"destination": destinationTag,
+			"workspace":   destination.Source.WorkspaceID,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
