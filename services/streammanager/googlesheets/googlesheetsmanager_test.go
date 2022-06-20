@@ -126,21 +126,21 @@ func blockOnHold() {
 	<-c
 }
 
-type deferer interface {
-	Defer(func() error)
+type cleaner interface {
+	Cleanup(func())
+	Log(...interface{})
 }
 
-func SetupTestGoogleSheets(pool *dockertest.Pool, d deferer) (*TestConfig, error) {
+func SetupTestGoogleSheets(pool *dockertest.Pool, cln cleaner) (*TestConfig, error) {
 	var config TestConfig
 	dockerContainer, err := pool.Run("atzoum/simulator-google-sheets", "latest", []string{})
 	if err != nil {
 		return nil, fmt.Errorf("Could not start resource: %s", err)
 	}
-	d.Defer(func() error {
+	cln.Cleanup(func() {
 		if err := pool.Purge(dockerContainer); err != nil {
-			return fmt.Errorf("Could not purge resource: %s \n", err)
+			cln.Log(fmt.Errorf("could not purge resource: %v", err))
 		}
-		return nil
 	})
 	config.Endpoint = fmt.Sprintf("https://127.0.0.1:%s/", dockerContainer.GetPort("8443/tcp"))
 	config.AccessToken = "cd887efc-7c7d-4e8e-9580-f7502123badf"

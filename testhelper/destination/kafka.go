@@ -3,7 +3,6 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 
 	_ "github.com/lib/pq"
@@ -61,8 +60,9 @@ type logger interface {
 	Log(...interface{})
 }
 
-type deferer interface {
-	Defer(func() error)
+type cleaner interface {
+	Cleanup(func())
+	Log(...interface{})
 }
 
 // WithLogger allows to set a logger that prints debugging information
@@ -119,7 +119,7 @@ func (k *KafkaResource) Destroy() error {
 	return g.Wait()
 }
 
-func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResource, error) {
+func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResource, error) {
 	var c config
 	for _, opt := range opts {
 		opt.apply(&c)
@@ -130,11 +130,10 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 	if err != nil {
 		return nil, fmt.Errorf("could not create docker network: %w", err)
 	}
-	d.Defer(func() error {
+	cln.Cleanup(func() {
 		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			return fmt.Errorf("could not remove kafka network: %w", err)
+			cln.Log(fmt.Errorf("could not remove kafka network: %w", err))
 		}
-		return nil
 	})
 
 	zookeeperPortInt, err := freeport.GetFreePort()
@@ -155,11 +154,10 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 	if err != nil {
 		return nil, err
 	}
-	d.Defer(func() error {
+	cln.Cleanup(func() {
 		if err := pool.Purge(zookeeperContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			cln.Log("Could not purge resource", err)
 		}
-		return nil
 	})
 
 	c.logger.Log("Zookeeper localhost port", zookeeperContainer.GetPort("2181/tcp"))
@@ -276,11 +274,10 @@ func SetupKafka(pool *dockertest.Pool, d deferer, opts ...Option) (*KafkaResourc
 		if err != nil {
 			return nil, err
 		}
-		d.Defer(func() error {
+		cln.Cleanup(func() {
 			if err := pool.Purge(containers[i]); err != nil {
-				return fmt.Errorf("could not purge Kafka resource: %w", err)
+				cln.Log(fmt.Errorf("could not purge Kafka resource: %w", err))
 			}
-			return nil
 		})
 	}
 

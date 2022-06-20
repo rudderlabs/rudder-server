@@ -436,6 +436,11 @@ type HandleT struct {
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
+
+	lifecycle struct {
+		mu      sync.Mutex
+		started bool
+	}
 }
 
 type QueryFiltersT struct {
@@ -877,6 +882,13 @@ func (jd *HandleT) workersAndAuxSetup() {
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
 func (jd *HandleT) Start() {
+	jd.lifecycle.mu.Lock()
+	defer jd.lifecycle.mu.Unlock()
+	if jd.lifecycle.started {
+		return
+	}
+	defer func() { jd.lifecycle.started = true }()
+
 	jd.writeCapacity = make(chan struct{}, jd.maxWriters)
 	jd.readCapacity = make(chan struct{}, jd.maxReaders)
 
@@ -990,8 +1002,13 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.DSListLockToken
 // Stop should be called once only after Start.
 // Only Start and Close can be called after Stop.
 func (jd *HandleT) Stop() {
-	jd.backgroundCancel()
-	_ = jd.backgroundGroup.Wait()
+	jd.lifecycle.mu.Lock()
+	defer jd.lifecycle.mu.Unlock()
+	if jd.lifecycle.started {
+		defer func() { jd.lifecycle.started = false }()
+		jd.backgroundCancel()
+		_ = jd.backgroundGroup.Wait()
+	}
 }
 
 // TearDown stops the background goroutines,
