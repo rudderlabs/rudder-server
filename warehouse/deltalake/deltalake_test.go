@@ -70,9 +70,9 @@ func (*DeltalakeTest) SetUpDestination() {
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
-	verify := func() {
-		t.Skip()
+	t.Skip()
 
+	verify := func() {
 		whDestTest := &testhelper.WareHouseDestinationTest{
 			Client: &client.Client{
 				DBHandleT: DLTest.DB,
