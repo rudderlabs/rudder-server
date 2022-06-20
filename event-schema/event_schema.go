@@ -859,7 +859,7 @@ func assertTxnError(err error, txn *sql.Tx) {
 		pkgLogger.Debugf("%+v", txn)
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
 			pkgLogger.Error(err.Error())
-			panic(fmt.Errorf("%v: %v", err, rollbackErr))
+			pkgLogger.Error(rollbackErr.Error())
 		}
 		panic(err)
 	}
