@@ -99,6 +99,5 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration || make logs-warehouse-integration
 
 run-warehouse-integration: setup-warehouse-integration
-	docker exec -it warehouse_backend_1 go clean -testcache
-	docker exec -it warehouse_backend_1 go test -v github.com/rudderlabs/rudder-server/warehouse/... -p 1 -timeout 30m -slow -tags=whintegration || make logs-warehouse-integration
+	docker-compose -f warehouse/docker-compose.test.yml exec backend go test -v ./warehouse/... -p 1 -timeout 30m -slow -tags=whintegration || make logs-warehouse-integration
 	make cleanup-warehouse-integration
