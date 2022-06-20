@@ -38,6 +38,7 @@ import (
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
@@ -601,7 +602,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	transformerContainer, err = destination.SetupTransformer(pool, t)
 	require.NoError(t, err)
 
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
 		time.Minute,
@@ -699,7 +700,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		serviceHealthEndpoint,
 		time.Minute,
@@ -845,31 +846,6 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
-}
-
-func waitUntilReady(ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string) {
-	t.Helper()
-	probe := time.NewTicker(interval)
-	timeout := time.After(atMost)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout:
-			t.Fatalf(
-				"application was not ready after %s, for the end point: %s, caller: %s", atMost, endpoint, caller,
-			)
-		case <-probe.C:
-			resp, err := http.Get(endpoint)
-			if err != nil {
-				continue
-			}
-			if resp.StatusCode == http.StatusOK {
-				t.Log("application ready")
-				return
-			}
-		}
-	}
 }
 
 func blockOnHold(t *testing.T) {
