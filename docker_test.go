@@ -22,7 +22,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -42,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -680,15 +680,10 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig["rwhBQBucketName"] = wht.Test.BQTest.Credentials.Bucket
 		mapWorkspaceConfig["rwhBQCredentials"] = wht.Test.BQTest.Credentials.CredentialsEscaped
 	}
-	workspaceConfigPath := createWorkspaceConfig(
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
 	)
-	t.Cleanup(func() {
-		if err := os.Remove(workspaceConfigPath); err != nil {
-			t.Logf("Error while removing workspace config path: %v", err)
-		}
-	})
 	t.Log("workspace config path:", workspaceConfigPath)
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
@@ -850,26 +845,6 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
-}
-
-func createWorkspaceConfig(templatePath string, values map[string]string) string {
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		panic(err)
-	}
-
-	f, err := os.CreateTemp("", "workspaceConfig.*.json")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	err = t.Execute(f, values)
-	if err != nil {
-		panic(err)
-	}
-
-	return f.Name()
 }
 
 func waitUntilReady(ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string) {

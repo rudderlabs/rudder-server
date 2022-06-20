@@ -1,0 +1,28 @@
+package workspaceConfig
+
+import (
+	"html/template"
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func CreateTempFile(t *testing.T, templatePath string, values map[string]string) string {
+	t.Helper()
+	tpl, err := template.ParseFiles(templatePath)
+	require.NoError(t, err)
+
+	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tmpFile.Close() })
+
+	require.NoError(t, tpl.Execute(tmpFile, values))
+	t.Cleanup(func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Error while removing workspace config: %v", err)
+		}
+	})
+
+	return tmpFile.Name()
+}
