@@ -1,7 +1,5 @@
 version: "2.1"
 
-# Currently, we have added static ports around the services ranging from
-# 54320 to 54330
 services:
   jobsDb:
     container_name: jobsDb
@@ -11,7 +9,7 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=rudder
     ports:
-      - "54328:5432"
+      - "5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
@@ -20,7 +18,7 @@ services:
     container_name: transformer
     image: rudderlabs/rudder-transformer:latest
     ports:
-      - "54323:9090"
+      - "9090"
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
       interval: 1s
@@ -29,7 +27,7 @@ services:
     image: rudderstack/rudder-databricks-connector:v1.2.0
     container_name: databricks-connector
     ports:
-      - "54330:50051"
+      - "50051"
     healthcheck:
       test: /bin/grpc_health_probe -addr=localhost:50051
       interval: 1s
@@ -38,7 +36,7 @@ services:
     image: minio/minio:latest
     container_name: minio
     ports:
-      - "54329:9000/tcp"
+      - "9000/tcp"
     environment:
       - MINIO_ACCESS_KEY=MYACCESSKEY
       - MINIO_SECRET_KEY=MYSECRETKEY
@@ -55,7 +53,7 @@ services:
       - POSTGRES_PASSWORD=rudder-password
       - POSTGRES_USER=rudder
     ports:
-      - "54320:5432"
+      - "5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
@@ -68,7 +66,7 @@ services:
       - CLICKHOUSE_PASSWORD=rudder-password
       - CLICKHOUSE_USER=rudder
     ports:
-      - "54321:9000"
+      - "9000"
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
@@ -82,7 +80,7 @@ services:
       - SA_DB=master
       - SA_USER=SA
     ports:
-      - "54322:1433"
+      - "1433"
     healthcheck:
       test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
       interval: 1s
@@ -91,8 +89,6 @@ services:
     image: zookeeper:3.5
     container_name: clickhouse-zookeeper
     hostname: clickhouse-zookeeper
-    networks:
-      clickhouse-network:
     healthcheck:
       test: nc -z localhost 2181 || exit 1
       interval: 1s
@@ -100,10 +96,8 @@ services:
   clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse01
-    networks:
-      clickhouse-network:
     ports:
-      - "54324:9000"
+      - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
     depends_on:
@@ -116,10 +110,8 @@ services:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse02
     hostname: clickhouse02
-    networks:
-      clickhouse-network:
     ports:
-      - "54325:9000"
+      - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
     depends_on:
@@ -132,10 +124,8 @@ services:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse03
     hostname: clickhouse03
-    networks:
-      clickhouse-network:
     ports:
-      - "54326:9000"
+      - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
     depends_on:
@@ -148,10 +138,8 @@ services:
     image: yandex/clickhouse-server:21-alpine
     container_name: clickhouse04
     hostname: clickhouse04
-    networks:
-      clickhouse-network:
     ports:
-      - "54327:9000"
+      - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
@@ -195,7 +183,7 @@ services:
       context: ../
       dockerfile: build/Dockerfile-warehouse-integration
     ports:
-      - "8080:8080"
+      - "8080"
     env_file: testhelper/.env
     environment:
       RSERVER_ENABLE_MULTITENANCY: ${RSERVER_ENABLE_MULTITENANCY}
@@ -215,6 +203,3 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-networks:
-  clickhouse-network:
-    name: clickhouse-network

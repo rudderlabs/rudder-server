@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package redshift_test
 

@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package redshift_test
 
@@ -37,9 +38,9 @@ type RedshiftTest struct {
 var RSTest *RedshiftTest
 
 func credentials() (rsCredentials *RedshiftCredentials) {
-	cred := os.Getenv("REDSHIFT_INTEGRATION_TEST_USER_CRED")
+	cred := os.Getenv(testhelper.RedshiftIntegrationTestUserCred)
 	if cred == "" {
-		log.Panic("Error occurred while getting env variable REDSHIFT_INTEGRATION_TEST_USER_CRED")
+		log.Panicf("Error occurred while getting env variable %s", testhelper.RedshiftIntegrationTestUserCred)
 	}
 
 	var err error

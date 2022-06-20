@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package mssql_test
 
@@ -29,9 +30,9 @@ func (*MSSQLTest) SetUpDestination() {
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",
-		Host:     "localhost",
+		Host:     "mssql",
 		SSLMode:  "disable",
-		Port:     "54322",
+		Port:     "1433",
 	}
 	MTest.EventsMap = testhelper.DefaultEventMap()
 

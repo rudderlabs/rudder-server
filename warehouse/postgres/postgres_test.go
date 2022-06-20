@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package postgres_test
 
@@ -29,9 +30,9 @@ func (*PostgresTest) SetUpDestination() {
 		DBName:   "rudderdb",
 		Password: "rudder-password",
 		User:     "rudder",
-		Host:     "localhost",
+		Host:     "postgres",
 		SSLMode:  "disable",
-		Port:     "54320",
+		Port:     "5432",
 	}
 	PGTest.EventsMap = testhelper.DefaultEventMap()
 

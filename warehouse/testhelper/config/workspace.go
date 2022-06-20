@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	"log"
 	"os"
 	"text/template"
@@ -10,25 +11,9 @@ import (
 
 func main() {
 	log.Println("Started populating workspace config for warehouse integration tests")
-
-	values := map[string]string{}
-
-	log.Println("Populating snowflake credentials")
-	sfCredentials := credentialsFromEnv("SNOWFLAKE_INTEGRATION_TEST_USER_CRED")
-	for k, v := range sfCredentials {
-		values[fmt.Sprintf("sf_%s", k)] = v
-	}
-
-	log.Println("Populating redshift credentials")
-	rsCredentials := credentialsFromEnv("REDSHIFT_INTEGRATION_TEST_USER_CRED")
-	for k, v := range rsCredentials {
-		values[fmt.Sprintf("rs_%s", k)] = v
-	}
-
-	log.Println("Populating deltalake credentials")
-	dlCredentials := credentialsFromEnv("DATABRICKS_INTEGRATION_TEST_USER_CRED")
-	for k, v := range dlCredentials {
-		values[fmt.Sprintf("dl_%s", k)] = v
+	credentials, err := populateCredentials()
+	if err != nil {
+		log.Panicf("Error occurred while populating credentilas with error: %s", err.Error())
 	}
 
 	t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
@@ -42,29 +27,56 @@ func main() {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = t.Execute(f, values)
+	err = t.Execute(f, credentials)
 	if err != nil {
 		log.Panicf("Error occurred while executing template path files with error: %s", err.Error())
 	}
-
-	err = os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", f.Name())
-	if err != nil {
-		log.Panicf("Error occurred while setting env for config json path with error: %s", err.Error())
-	}
-
 	log.Println("Completed populating workspace config for warehouse integration tests")
 }
 
-func credentialsFromEnv(env string) (credentials map[string]string) {
-	cred := os.Getenv(env)
-	if cred == "" {
-		log.Panicf("Error occurred while getting env variable %s", env)
+func populateCredentials() (values map[string]string, err error) {
+	values = make(map[string]string)
+
+	log.Println("Populating snowflake credentials")
+	sfCredentials, err := credentialsFromEnv(testhelper.SnowflakeIntegrationTestUserCred)
+	if err != nil {
+		return
+	}
+	for k, v := range sfCredentials {
+		values[fmt.Sprintf("sf_%s", k)] = v
 	}
 
-	var err error
+	log.Println("Populating redshift credentials")
+	rsCredentials, err := credentialsFromEnv(testhelper.RedshiftIntegrationTestUserCred)
+	if err != nil {
+		return
+	}
+	for k, v := range rsCredentials {
+		values[fmt.Sprintf("rs_%s", k)] = v
+	}
+
+	log.Println("Populating deltalake credentials")
+	dlCredentials, err := credentialsFromEnv(testhelper.DatabricksIntegrationTestUserCred)
+	if err != nil {
+		return
+	}
+	for k, v := range dlCredentials {
+		values[fmt.Sprintf("dl_%s", k)] = v
+	}
+	return
+}
+
+func credentialsFromEnv(env string) (credentials map[string]string, err error) {
+	cred := os.Getenv(env)
+	if cred == "" {
+		err = fmt.Errorf("error occurred while getting env variable %s", env)
+		return
+	}
+
 	err = json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
-		log.Panicf("Error occurred while unmarshalling env variable %s test credentials with error: %s", env, err.Error())
+		err = fmt.Errorf("error occurred while unmarshalling env variable %s test credentials with error: %w", env, err)
+		return
 	}
 	return
 }

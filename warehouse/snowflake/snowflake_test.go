@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package snowflake_test
 
@@ -37,9 +38,9 @@ type SnowflakeTest struct {
 var SFTest *SnowflakeTest
 
 func credentials() (sfCredentials *SnowflakeCredentials) {
-	cred := os.Getenv("SNOWFLAKE_INTEGRATION_TEST_USER_CRED")
+	cred := os.Getenv(testhelper.SnowflakeIntegrationTestUserCred)
 	if cred == "" {
-		log.Panic("Error occurred while getting env variable SNOWFLAKE_INTEGRATION_TEST_USER_CRED")
+		log.Panicf("Error occurred while getting env variable %s", testhelper.SnowflakeIntegrationTestUserCred)
 	}
 
 	var err error

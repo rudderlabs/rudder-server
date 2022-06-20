@@ -782,12 +782,12 @@
       "destinations": [
         {
           "config": {
-            "host": "host.docker.internal",
+            "host": "clickhouse01",
             "database": "rudderdb",
             "cluster": "rudder_cluster",
             "user": "rudder",
             "password": "rudder-password",
-            "port": "54324",
+            "port": "9000",
             "secure": false,
             "namespace": "",
             "bucketProvider": "MINIO",

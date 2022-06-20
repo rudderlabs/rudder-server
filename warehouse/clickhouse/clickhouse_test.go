@@ -1,4 +1,5 @@
 //go:build whintegration
+// +build whintegration
 
 package clickhouse_test
 
@@ -64,14 +65,14 @@ func (*CHNOOP) SetUpDestination() {
 func SetUpClickHouseDestination() {
 	CHTest.WriteKey = "C5AWX39IVUWSP2NcHciWvqZTa2N"
 	CHTest.Credentials = &clickhouse.CredentialsT{
-		Host:          "localhost",
+		Host:          "clickhouse",
 		User:          "rudder",
 		Password:      "rudder-password",
 		DBName:        "rudderdb",
 		Secure:        "false",
 		SkipVerify:    "true",
 		TLSConfigName: "",
-		Port:          "54321",
+		Port:          "9000",
 	}
 	CHTest.EventsMap = testhelper.DefaultEventMap()
 
@@ -95,56 +96,56 @@ func SetUpClickHouseClusterDestination() {
 			Name:     "clickhouse01",
 			HostName: "clickhouse01",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "clickhouse01",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
 				Secure:        "false",
 				SkipVerify:    "true",
 				TLSConfigName: "",
-				Port:          "54324",
+				Port:          "9000",
 			},
 		},
 		{
 			Name:     "clickhouse02",
 			HostName: "clickhouse02",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "clickhouse02",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
 				Secure:        "false",
 				SkipVerify:    "true",
 				TLSConfigName: "",
-				Port:          "54325",
+				Port:          "9000",
 			},
 		},
 		{
 			Name:     "clickhouse03",
 			HostName: "clickhouse03",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "clickhouse03",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
 				Secure:        "false",
 				SkipVerify:    "true",
 				TLSConfigName: "",
-				Port:          "54326",
+				Port:          "9000",
 			},
 		},
 		{
 			Name:     "clickhouse04",
 			HostName: "clickhouse04",
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "localhost",
+				Host:          "clickhouse04",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
 				Secure:        "false",
 				SkipVerify:    "true",
 				TLSConfigName: "",
-				Port:          "54327",
+				Port:          "9000",
 			},
 		},
 	}

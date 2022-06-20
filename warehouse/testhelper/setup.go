@@ -3,6 +3,10 @@ package testhelper
 import (
 	"flag"
 	"fmt"
+	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"log"
 	"strconv"
 	"strings"
@@ -40,10 +44,34 @@ var (
 	ConnectBackoffRetryMax = 5
 )
 
-var jobsDB *JobsDBResource
+var (
+	jobsDB *JobsDBResource
+)
 
-type ISetup interface {
-	SetUpDestination()
+var (
+	SnowflakeIntegrationTestUserCred  = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
+	RedshiftIntegrationTestUserCred   = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
+	DatabricksIntegrationTestUserCred = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+)
+
+func (w *WareHouseDestinationTest) MsgId() string {
+	if w.MessageId == "" {
+		return uuid.Must(uuid.NewV4()).String()
+	}
+	return w.MessageId
+}
+
+func (w *WareHouseDestinationTest) Reset(destType string, randomProduct bool) {
+	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), randomness)
+
+	if randomProduct {
+		w.Event = fmt.Sprintf("Product Track %s", randomness)
+	} else {
+		w.Event = "Product Track"
+	}
+	w.EventsCountMap[strcase.ToSnake(w.Event)] = 1
+	w.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(w.Event), "pages", "screens", "aliases", "groups"}
 }
 
 func Run(m *testing.M, setup ISetup) int {
@@ -76,15 +104,19 @@ func loadEnv() {
 func initialize() {
 	config.Load()
 	logger.Init()
+
 	stats.Init()
 	stats.Setup()
-	postgres.Init()
-	clickhouse.Init()
-	mssql.Init()
+
+	azuresynapse.Init()
 	bigquery.Init()
-	snowflake.Init()
-	redshift.Init()
+	clickhouse.Init()
+	datalake.Init()
 	deltalake.Init()
+	mssql.Init()
+	postgres.Init()
+	redshift.Init()
+	snowflake.Init()
 }
 
 func setUpJobsDB() (jobsDB *JobsDBResource) {
@@ -92,9 +124,9 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 		DBName:   "jobsdb",
 		Password: "password",
 		User:     "rudder",
-		Host:     "localhost",
+		Host:     "jobsDb",
 		SSLMode:  "disable",
-		Port:     "54328",
+		Port:     "5432",
 	}
 	jobsDB = &JobsDBResource{}
 	jobsDB.Credentials = pgCredentials
