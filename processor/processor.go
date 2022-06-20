@@ -1630,7 +1630,10 @@ func (proc *HandleT) Store(in storeMessage) {
 				for k := range in.uniqueMessageIds {
 					dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 				}
-				proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+				err = proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
