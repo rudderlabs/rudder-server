@@ -1,7 +1,5 @@
-/*
- * Handling HTTP requests to expose the schemas
- *
- */
+// Package event_schema
+// Handling HTTP requests to expose the schemas
 package event_schema
 
 import (
@@ -11,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
+
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -54,7 +53,7 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 		return
 	}
 
-	w.Write(eventTypesJSON)
+	_, _ = w.Write(eventTypesJSON)
 }
 
 func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +87,7 @@ func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *htt
 		return
 	}
 
-	w.Write(jsonSchemas)
+	_, _ = w.Write(jsonSchemas)
 }
 
 type JSPropertyTypeT struct {
@@ -306,7 +305,7 @@ func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *h
 		return
 	}
 
-	w.Write(schemaVersionsJSON)
+	_, _ = w.Write(schemaVersionsJSON)
 }
 
 // TODO: Complete this
@@ -344,7 +343,7 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 		return
 	}
 
-	w.Write(keyCountsJSON)
+	_, _ = w.Write(keyCountsJSON)
 }
 
 func (manager *EventSchemaManagerT) getKeyCounts(eventID string) (keyCounts map[string]int64, err error) {
@@ -399,7 +398,7 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 		return
 	}
 
-	w.Write(metadataJSON)
+	_, _ = w.Write(metadataJSON)
 }
 
 func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request) {
@@ -433,7 +432,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWrit
 		return
 	}
 
-	w.Write(metadataJSON)
+	_, _ = w.Write(metadataJSON)
 }
 
 func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request) {
@@ -463,7 +462,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 
 	eventModel, err := manager.fetchEventModelByID(schema.EventModelID)
 	if err != nil {
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 		return
 	}
 
@@ -500,7 +499,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 		return
 	}
 
-	w.Write(missingKeyJSON)
+	_, _ = w.Write(missingKeyJSON)
 }
 
 func (manager *EventSchemaManagerT) fetchEventModelsByWriteKey(writeKey string) []*EventModelT {
@@ -513,7 +512,7 @@ func (manager *EventSchemaManagerT) fetchEventModelsByWriteKey(writeKey string) 
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	eventModels := make([]*EventModelT, 0)
 
@@ -534,7 +533,7 @@ func (manager *EventSchemaManagerT) fetchSchemaVersionsByEventID(eventID string)
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	schemaVersions := make([]*SchemaVersionT, 0)
 
@@ -555,7 +554,7 @@ func (manager *EventSchemaManagerT) fetchEventModelByID(id string) (*EventModelT
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	eventModels := make([]*EventModelT, 0)
 
@@ -585,7 +584,7 @@ func (manager *EventSchemaManagerT) fetchSchemaVersionByID(id string) (*SchemaVe
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	schemaVersions := make([]*SchemaVersionT, 0)
 
@@ -614,7 +613,7 @@ func (manager *EventSchemaManagerT) fetchMetadataByEventVersionID(eventVersionID
 
 	rows, err := manager.dbHandle.Query(metadataSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	metadatas := make([]*MetaDataT, 0)
 
@@ -648,7 +647,7 @@ func (manager *EventSchemaManagerT) fetchMetadataByEventModelID(eventModelID str
 
 	rows, err := manager.dbHandle.Query(metadataSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	metadatas := make([]*MetaDataT, 0)
 

@@ -44,7 +44,7 @@ type ProcessorApp struct {
 }
 
 var (
-	gatewayDB         jobsdb.HandleT
+	gatewayDB         *jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
@@ -122,7 +122,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
-	gatewayDB = *gwDBForProcessor
+	gatewayDB = gwDBForProcessor
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -305,5 +305,5 @@ func startHealthWebHandler(ctx context.Context) error {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, &gatewayDB)
+	app.HealthHandler(w, r, gatewayDB)
 }

@@ -248,7 +248,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 		// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 		// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-		gatewayDB = *jobsdb.NewForWrite(
+		gatewayDB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
 			jobsdb.WithRetention(gwDBRetention),
@@ -261,8 +261,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler, rsourcesService)
-		defer gw.Shutdown()
+		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, embedded.VersionHandler, rsourcesService)
+		defer func() {
+			if err := gw.Shutdown(); err != nil {
+				pkgLogger.Warnf("Gateway shutdown error: %v", err)
+			}
+		}()
 
 		g.Go(func() error {
 			return gw.StartAdminHandler(ctx)

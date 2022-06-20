@@ -71,12 +71,6 @@ func (fc *FrequencyCounter) Observe(key *string) {
 	fc.getCounter().Observe(*key)
 }
 
-// If we add counter support per key, change accordingly
-// skipcp: SCC-U1000
-func getCounterSupport(key string) float64 {
-	return counterSupport
-}
-
 func (fc *FrequencyCounter) ItemsAboveThreshold() []countish.Entry {
 	return fc.getCounter().ItemsAboveThreshold(counterThreshold)
 }

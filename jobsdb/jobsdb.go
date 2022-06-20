@@ -36,12 +36,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -50,7 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 )
 
@@ -177,8 +178,8 @@ type JobsDB interface {
 	/* Commands */
 
 	// WithTx begins a new transaction that can be used by the provided function.
-	// If the function returns an error, the transaction will rollback and return the error,
-	// otherwise the transaction will be commited and a nil error will be returned.
+	// If the function returns an error, the transaction will be rollbacked and return the error,
+	// otherwise the transaction will be committed and a nil error will be returned.
 	WithTx(func(tx *sql.Tx) error) error
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
@@ -435,6 +436,11 @@ type HandleT struct {
 	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
+
+	lifecycle struct {
+		mu      sync.Mutex
+		started bool
+	}
 }
 
 type QueryFiltersT struct {
@@ -486,7 +492,10 @@ func (jd *HandleT) assertError(err error) {
 
 func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
-		tx.Rollback()
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil {
+			jd.logger.Errorf("Failed to rollback transaction: %v", rollbackErr)
+		}
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
@@ -873,6 +882,13 @@ func (jd *HandleT) workersAndAuxSetup() {
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
 func (jd *HandleT) Start() {
+	jd.lifecycle.mu.Lock()
+	defer jd.lifecycle.mu.Unlock()
+	if jd.lifecycle.started {
+		return
+	}
+	defer func() { jd.lifecycle.started = true }()
+
 	jd.writeCapacity = make(chan struct{}, jd.maxWriters)
 	jd.readCapacity = make(chan struct{}, jd.maxReaders)
 
@@ -986,8 +1002,13 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.DSListLockToken
 // Stop should be called once only after Start.
 // Only Start and Close can be called after Stop.
 func (jd *HandleT) Stop() {
-	jd.backgroundCancel()
-	jd.backgroundGroup.Wait()
+	jd.lifecycle.mu.Lock()
+	defer jd.lifecycle.mu.Unlock()
+	if jd.lifecycle.started {
+		defer func() { jd.lifecycle.started = false }()
+		jd.backgroundCancel()
+		_ = jd.backgroundGroup.Wait()
+	}
 }
 
 // TearDown stops the background goroutines,
@@ -1042,7 +1063,7 @@ func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
-	// this shrinked datasetList is used to compute DSRangeList
+	// this shrank datasetList is used to compute DSRangeList
 	// This is done because, writers don't care about the left datasets in the sorted datasetList
 	if jd.ownerType == Write {
 		if len(jd.datasetList) > 2 {
@@ -1100,8 +1121,8 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{
-					minJobID: int64(minID.Int64),
-					maxJobID: int64(maxID.Int64), ds: ds,
+					minJobID: minID.Int64,
+					maxJobID: maxID.Int64, ds: ds,
 				})
 			prevMax = maxID.Int64
 		}
@@ -1111,8 +1132,8 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 
 /*
 Functions for checking when DB is full or DB needs to be migrated.
-We migrate the DB ONCE most of the jobs have been processed (suceeded/aborted)
-Or when the job_status table gets too big because of lot of retries/failures
+We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
+Or when the job_status table gets too big because of lots of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
@@ -1125,7 +1146,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	err := row.Scan(&totalCount)
 	jd.assertError(err)
 
-	// Jobs which have either succeded or expired
+	// Jobs which have either succeeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
                                       from "%s"
                                       WHERE job_state IN ('%s')`,
@@ -1206,7 +1227,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 Function to add a new dataset. DataSet can be added to the end (e.g when last
 becomes full OR in between during migration. DataSets are assigned numbers
 monotonically when added  to end. So, with just add to end, numbers would be
-like 1,2,3,4, and so on. Theese are called level0 datasets. And the Index is
+like 1,2,3,4, and so on. These are called level0 datasets. And the Index is
 called level0 Index
 During internal migration, we add datasets in between. In the example above, if we migrate
 1 & 2, we would need to create a new DS between 2 & 3. This is assigned the
@@ -1219,7 +1240,7 @@ deleted. Hence there should NEVER be any requirement for having more than two le
 There is an exception to this. In case of cross node migration during a scale up/down,
 we continue to accept new events in level0 datasets. To maintain the ordering guarantee,
 we write the imported jobs to the previous level1 datasets. Now if an internal migration
-is to happen on one of the level1 dataset, we ahve to migrate them to level2 dataset
+is to happen on one of the level1 dataset, we have to migrate them to level2 dataset
 
 Eg. When the node has 1, 2, 3, 4 data sets and an import is triggered, new events start
 going to 5, 6, 7... so on. And the imported data start going to 4_1, 4_2, 4_3... so on
@@ -3210,7 +3231,7 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 	if jd.jobsFileUploader != nil {
 		return jd.jobsFileUploader, nil
 	}
-	return filemanager.New(&filemanager.SettingsT{
+	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
@@ -3227,7 +3248,7 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	err := row.Scan(&count)
 	jd.assertError(err)
 	if count.Valid {
-		return int64(count.Int64) == int64(0)
+		return count.Int64 == 0
 	}
 	panic("Unable to get count on this dataset")
 }
@@ -3303,6 +3324,9 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	}
 
 	gzWriter, err := misc.CreateGZ(path)
+	if err != nil {
+		return false, fmt.Errorf("creating gz file %q: %w", path, err)
+	}
 	defer os.Remove(path)
 
 	var offset, batchCount int64
@@ -3324,14 +3348,18 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] // stripping starting '[' and ending ']'
 		rawJSONRows = append(rawJSONRows, '\n')           // appending '\n'
 
-		gzWriter.Write(rawJSONRows)
+		if _, err := gzWriter.Write(rawJSONRows); err != nil {
+			return false, fmt.Errorf("writing to gz file %q: %w", path, err)
+		}
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
 			break
 		}
 	}
 
-	gzWriter.CloseGZ()
+	if err := gzWriter.CloseGZ(); err != nil {
+		return false, fmt.Errorf("closing gz file %q: %w", path, err)
+	}
 	tableFileDumpTimeStat.End()
 
 	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
@@ -3616,7 +3644,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case migrateImportOperation:
 		jd.assert(db.IsValidMigrationMode(jd.migrationState.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
 		var importDest dataSetT
-		json.Unmarshal(opPayload, &importDest)
+		jd.assertError(json.Unmarshal(opPayload, &importDest))
 		jd.dropDSForRecovery(importDest)
 		jd.deleteSetupCheckpoint(ImportOp)
 		undoOp = true
@@ -3639,7 +3667,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case dropDSOperation, backupDropDSOperation:
 		// Some of the source datasets would have been
 		var dataset dataSetT
-		json.Unmarshal(opPayload, &dataset)
+		jd.assertError(json.Unmarshal(opPayload, &dataset))
 		jd.dropDSForRecovery(dataset)
 		jd.logger.Info("Recovering dropDS operation", dataset)
 		undoOp = false
@@ -3695,7 +3723,7 @@ func (jd *HandleT) internalUpdateJobStatusInTx(tx *sql.Tx, statusList []*JobStat
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(tx, statusList, tags)
 	if err != nil {
-		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
 		return err
 	}
 

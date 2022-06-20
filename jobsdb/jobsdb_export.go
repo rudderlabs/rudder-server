@@ -303,9 +303,9 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 	err := row.Scan(&count)
 	jd.assertError(err)
 	if count.Valid {
-		return int64(count.Int64)
+		return count.Int64
 	}
-	return int64(0)
+	return 0
 }
 
 // PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'

@@ -34,17 +34,19 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/sjson"
+
+	"github.com/thoas/go-funk"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/thoas/go-funk"
 )
 
 var (
@@ -166,7 +168,7 @@ func AppendError(callingMethodName string, firstError, secondError *error) {
 	}
 }
 
-// RecordAppError appends the error occured to error_store.json
+// RecordAppError appends the error occurred to error_store.json
 func RecordAppError(err error) {
 	if err == nil {
 		return
@@ -239,7 +241,7 @@ func GetRudderID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("rudderId", event)
 	if !ok {
 		// TODO: Remove this in next build.
-		// This is for backwards compatibilty, esp for those with sessions.
+		// This is for backwards compatibility, esp for those with sessions.
 		userID, ok = GetRudderEventVal("anonymousId", event)
 		if !ok {
 			return "", false
@@ -633,7 +635,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 	}
 	typeInterface := reflect.TypeOf(interfaceT).Kind()
 	if !(typeInterface != reflect.Slice) && !(typeInterface != reflect.Array) {
-		return intArr, errors.New("didn't recieve array from transformer")
+		return intArr, errors.New("didn't receive array from transformer")
 	}
 
 	interfaceArray := interfaceT.([]interface{})

@@ -10,6 +10,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
@@ -35,7 +36,7 @@ var (
 				mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
 				Http = mockHttp
 			})
-			It("Expect to execute request with the correct body and headers and return successfull response", func() {
+			It("Expect to execute request with the correct body and headers and return successful response", func() {
 				configFromFile = false
 				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 					username, pass, ok := req.BasicAuth()
@@ -46,7 +47,7 @@ var (
 					rw.WriteHeader(http.StatusAccepted)
 					js, _ := json.Marshal(SampleBackendConfig)
 					rw.Header().Set("Content-Type", "application/json")
-					rw.Write(js)
+					_, _ = rw.Write(js)
 				}))
 				defer server.Close()
 
@@ -103,7 +104,7 @@ var (
 				Expect(ok).To(BeFalse())
 			})
 
-			It("Expect to make the correct actions in case of successfull reading but failed parsing", func() {
+			It("Expect to make the correct actions in case of successful reading but failed parsing", func() {
 				configFromFile = true
 				data := []byte(`""`)
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
@@ -113,7 +114,7 @@ var (
 				Expect(config).To(Equal(ConfigT{}))
 				Expect(ok).To(BeFalse())
 			})
-			It("Expect to make the correct actions in case of successfull reading of the config file and return the correct value", func() {
+			It("Expect to make the correct actions in case of successful reading of the config file and return the correct value", func() {
 				configFromFile = true
 				data := []byte(`{
 			"sources": [

@@ -213,7 +213,6 @@ func TestDynamicClusterManager(t *testing.T) {
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockTransformer.EXPECT().Setup().Times(1)
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
@@ -280,9 +279,18 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	chACK := make(chan bool)
 	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
+		return nil
+	}))
+	require.Eventually(t, func() bool {
+		return dCM.Mode() == servermode.NormalMode
+	}, time.Second, time.Millisecond)
+	provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
 	}))
+	require.Eventually(t, func() bool {
+		return dCM.Mode() == servermode.DegradedMode
+	}, time.Second, time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		<-chACK

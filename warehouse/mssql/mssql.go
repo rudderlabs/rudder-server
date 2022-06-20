@@ -184,7 +184,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objects := ms.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
-	downloader, err := filemanager.New(&filemanager.SettingsT{
+	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -386,7 +386,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						if len(strValue) > mssqlStringLengthLimit {
 							strValue = strValue[:mssqlStringLengthLimit]
 						}
-						byteArr := []byte("")
+						var byteArr []byte
 						if hasDiacritics(strValue) {
 							pkgLogger.Debug("diacritics " + strValue)
 							byteArr = str2ucs2(strValue)

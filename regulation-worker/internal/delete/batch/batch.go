@@ -215,7 +215,7 @@ func (b *Batch) compress(fileName string, cleanedBytes []byte) error {
 	// compressing
 	var buffer bytes.Buffer
 	w := gzip.NewWriter(&buffer)
-	_, err := w.Write([]byte(cleanedBytes))
+	_, err := w.Write(cleanedBytes)
 	if err != nil {
 		return fmt.Errorf("error while compressing file: %w", err)
 	}

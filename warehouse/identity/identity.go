@@ -374,7 +374,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			return nil, err
 		}
 		storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
-		downloader, err := filemanager.New(&filemanager.SettingsT{
+		downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 			Provider: storageProvider,
 			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 				Provider:         storageProvider,
@@ -407,7 +407,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		panic(err)
 	}
 	storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
-	uploader, err := filemanager.New(&filemanager.SettingsT{
+	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,

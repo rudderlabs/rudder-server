@@ -148,7 +148,7 @@ func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int,
 		result = topic.Publish(
 			ctx,
 			&pubsub.Message{
-				Data:       []byte(value),
+				Data:       value,
 				Attributes: attributesMap,
 			},
 		)
@@ -156,7 +156,7 @@ func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int,
 		result = topic.Publish(
 			ctx,
 			&pubsub.Message{
-				Data: []byte(value),
+				Data: value,
 			},
 		)
 	}

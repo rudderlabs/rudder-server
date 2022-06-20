@@ -112,7 +112,11 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 			return err
 		}
 		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsourcesService)
-		defer gw.Shutdown()
+		defer func() {
+			if err := gw.Shutdown(); err != nil {
+				pkgLogger.Warnf("Gateway shutdown error: %v", err)
+			}
+		}()
 
 		g.Go(func() error {
 			return gw.StartAdminHandler(ctx)

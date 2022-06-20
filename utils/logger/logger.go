@@ -157,14 +157,14 @@ func (l *LoggerT) Child(s string) LoggerI {
 	if s == "" {
 		return l
 	}
-	copy := *l
-	copy.parent = l
+	cp := *l
+	cp.parent = l
 	if l.name == "" {
-		copy.name = s
+		cp.name = s
 	} else {
-		copy.name = strings.Join([]string{l.name, s}, ".")
+		cp.name = strings.Join([]string{l.name, s}, ".")
 	}
-	return &copy
+	return &cp
 }
 
 func (l *LoggerT) getLoggingLevel() int {
@@ -266,7 +266,7 @@ func (l *LoggerT) Fatal(args ...interface{}) {
 			stackTrace := string(byteArr[:n])
 			Log.Error(stackTrace)
 		}
-		Log.Sync()
+		_ = Log.Sync()
 	}
 }
 
@@ -316,14 +316,14 @@ func (l *LoggerT) Fatalf(format string, args ...interface{}) {
 			stackTrace := string(byteArr[:n])
 			Log.Error(stackTrace)
 		}
-		Log.Sync()
+		_ = Log.Sync()
 	}
 }
 
 // LogRequest reads and logs the request body and resets the body to original state.
 func (l *LoggerT) LogRequest(req *http.Request) {
 	if levelEvent >= l.getLoggingLevel() {
-		defer req.Body.Close()
+		defer func() { _ = req.Body.Close() }()
 		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))

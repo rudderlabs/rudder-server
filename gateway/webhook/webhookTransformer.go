@@ -76,7 +76,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 					]
 				}
 			},
-			// for event that give an error from source trasnformer
+			// for event that give an error from source transformer
 			{
 				statusCode: 400,
 				error: "event type is not supported"
@@ -129,7 +129,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 				continue
 			}
 
-			_, ok = output["batch"].(interface{})
+			_, ok = output["batch"]
 			if !ok {
 				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
 				continue

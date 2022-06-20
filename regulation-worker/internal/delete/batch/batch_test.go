@@ -170,9 +170,7 @@ type mockFileManager struct {
 	listCalled         bool
 }
 
-func (fm *mockFileManager) SetTimeout(timeout *time.Duration) {
-	return
-}
+func (fm *mockFileManager) SetTimeout(_ *time.Duration) {}
 
 // Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
 func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {

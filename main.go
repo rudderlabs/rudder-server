@@ -48,7 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -204,7 +203,6 @@ func runAllInit() {
 	gateway.Init()
 	apphandlers.Init()
 	apphandlers.Init2()
-	rruntime.Init()
 	integrations.Init()
 	alert.Init()
 	multitenant.Init()

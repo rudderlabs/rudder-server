@@ -7,8 +7,11 @@
 <p align="center"><b>The Customer Data Platform for Developers</b></p>
 
 <p align="center">
-  <a href="https://rudderstack.com/">
-    <img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master">
+  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/tests.yaml">
+    <img src="https://github.com/rudderlabs/rudder-server/actions/workflows/tests.yaml/badge.svg">
+  </a>
+  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml">
+    <img src="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml/badge.svg">
   </a>
   <a href="https://github.com/rudderlabs/rudder-server/releases">
     <img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver">
@@ -26,6 +29,8 @@
     <a href="https://rudderstack.com">Website</a>
     ·
     <a href="https://rudderstack.com/docs">Documentation</a>
+    ·
+    <a href="https://github.com/rudderlabs/rudder-server/blob/master/CHANGELOG.md">Changelog</a>
     ·
     <a href="https://rudderstack.com/blog">Blog</a>
     ·
