@@ -391,7 +391,6 @@ var _ = Describe("jobsdb", func() {
 				Expect(bgGroups[i-1]).To(Equal(bgGroups[i]))
 			}
 			Expect(jd.lifecycle.started).To(Equal(true))
-
 		})
 
 		It("can call Stop twice without side-effects", func() {
