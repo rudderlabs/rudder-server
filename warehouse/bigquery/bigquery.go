@@ -971,6 +971,9 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				return err
 			}
 			it, err := job.Read(ctx)
+			if err != nil {
+				return err
+			}
 			for {
 				var values []bigquery.Value
 

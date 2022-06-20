@@ -67,7 +67,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, erro
 // Produce creates a producer and send data to Firehose.
 func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
-	var putOutput *firehose.PutRecordOutput = nil
+	var putOutput *firehose.PutRecordOutput
 	var errorRec error
 
 	fh, ok := producer.(firehose.Firehose)

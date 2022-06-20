@@ -42,7 +42,7 @@ func (lc *LossyCounter) ItemsAboveThreshold(threshold float64) []Entry {
 	var results []Entry
 	fN := float64(lc.N)
 	for key, val := range lc.D {
-		if val.F >= (threshold-float64(lc.ErrorTolerance))*fN {
+		if val.F >= (threshold-lc.ErrorTolerance)*fN {
 			results = append(results, Entry{Key: key, Frequency: val.F/fN + lc.Support})
 		}
 	}

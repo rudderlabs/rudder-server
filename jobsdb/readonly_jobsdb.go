@@ -216,7 +216,9 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		txn.Rollback()
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
+		}
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
 		return 0, err
 	}
@@ -224,7 +226,9 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		txn.Rollback()
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
+		}
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
 		return 0, err
 	}
@@ -255,7 +259,11 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 
 	row := txn.QueryRow(sqlStatement)
 
-	defer txn.Commit()
+	defer func() {
+		if err := txn.Rollback(); err != nil {
+			jd.logger.Errorf("Transaction rollback (lock release) err. Dataset: %v. Err: %v", ds, err)
+		}
+	}()
 
 	var count sql.NullInt64
 	err = row.Scan(&count)
@@ -265,7 +273,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 	}
 
 	if count.Valid {
-		return int64(count.Int64), nil
+		return count.Int64, nil
 	}
 
 	jd.logger.Debugf("Returning 0 because unprocessed count is invalid. This could be because there are no unprocessed jobs. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
@@ -362,7 +370,9 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		txn.Rollback()
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
+		}
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
 		return 0, err
 	}
@@ -370,7 +380,9 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		txn.Rollback()
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
+		}
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
 		return 0, err
 	}
@@ -398,7 +410,11 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	jd.logger.Debug(sqlStatement)
 
 	row := txn.QueryRow(sqlStatement, time.Now())
-	defer txn.Commit()
+	defer func() {
+		if err := txn.Rollback(); err != nil {
+			jd.logger.Errorf("Transaction rollback (lock release) on ds(%v) commit err. Err: %v", ds, err)
+		}
+	}()
 
 	var count sql.NullInt64
 	err = row.Scan(&count)
@@ -408,7 +424,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	}
 
 	if count.Valid {
-		return int64(count.Int64), nil
+		return count.Int64, nil
 	}
 
 	jd.logger.Debugf("Returning 0 because processed count is invalid. This could be because there are no jobs in non terminal state. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)

@@ -120,7 +120,7 @@ func (n *reportingNOOP) Enabled() bool {
 Replay Feature
 *********************************/
 
-// ReplayFeature handles inserting of failed jobs into repsective gw/rt jobsdb
+// ReplayFeature handles inserting of failed jobs into respective gw/rt jobsdb
 type ReplayFeature interface {
 	Setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT)
 }

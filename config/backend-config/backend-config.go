@@ -378,7 +378,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(pollInterval)):
+		case <-time.After(pollInterval):
 		}
 	}
 	return nil

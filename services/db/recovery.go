@@ -27,7 +27,7 @@ type RecoveryHandler interface {
 }
 
 var (
-	CurrentMode string = normalMode // default mode
+	CurrentMode = normalMode // default mode
 	storagePath string
 )
 
@@ -87,24 +87,22 @@ func IsNormalMode() bool {
 	return CurrentMode == normalMode
 }
 
-/*
-CheckOccurences : check if this occurred numTimes times in numSecs seconds
-*/
-func CheckOccurences(occurences []int64, numTimes, numSecs int) (occurred bool) {
-	sort.Slice(occurences, func(i, j int) bool {
-		return occurences[i] < occurences[j]
+// CheckOccurrences : check if this occurred numTimes times in numSecs seconds
+func CheckOccurrences(occurrences []int64, numTimes, numSecs int) (occurred bool) {
+	sort.Slice(occurrences, func(i, j int) bool {
+		return occurrences[i] < occurrences[j]
 	})
 
-	recentOccurences := 0
+	recentOccurrences := 0
 	checkPointTime := time.Now().Unix() - int64(numSecs)
 
-	for i := len(occurences) - 1; i >= 0; i-- {
-		if occurences[i] < checkPointTime {
+	for i := len(occurrences) - 1; i >= 0; i-- {
+		if occurrences[i] < checkPointTime {
 			break
 		}
-		recentOccurences++
+		recentOccurrences++
 	}
-	if recentOccurences >= numTimes {
+	if recentOccurrences >= numTimes {
 		occurred = true
 	}
 	return

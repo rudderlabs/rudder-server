@@ -58,7 +58,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT)
 
 	var getTablesOutput *glue.GetTablesOutput
 	var getTablesInput *glue.GetTablesInput
-	for true {
+	for {
 		getTablesInput = &glue.GetTablesInput{DatabaseName: &warehouse.Namespace}
 
 		if getTablesOutput != nil && getTablesOutput.NextToken != nil {

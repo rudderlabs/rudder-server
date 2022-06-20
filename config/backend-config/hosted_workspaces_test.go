@@ -10,6 +10,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
@@ -54,7 +55,7 @@ var _ = Describe("workspace-config", func() {
 			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
 			Http = mockHttp
 		})
-		It("Expect to execute request with the correct body and headers and return successfull response", func() {
+		It("Expect to execute request with the correct body and headers and return successful response", func() {
 			backendConfig.(*HostedWorkspacesConfig).Token = "multiworkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				username, pass, ok := req.BasicAuth()
@@ -65,7 +66,7 @@ var _ = Describe("workspace-config", func() {
 				rw.WriteHeader(http.StatusAccepted)
 				js, _ := json.Marshal(SampleWorkspaceSources)
 				rw.Header().Set("Content-Type", "application/json")
-				rw.Write(js)
+				_, _ = rw.Write(js)
 			}))
 			defer server.Close()
 
@@ -81,12 +82,12 @@ var _ = Describe("workspace-config", func() {
 			Expect(config).To(Equal(mutliConfig))
 		})
 
-		It("Expect to execute request with the correct body and headers and return successfull response", func() {
+		It("Expect to execute request with the correct body and headers and return successful response", func() {
 			backendConfig.(*HostedWorkspacesConfig).Token = "multiworkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")
-				rw.Write([]byte(`""`))
+				_, _ = rw.Write([]byte(`""`))
 			}))
 			defer server.Close()
 

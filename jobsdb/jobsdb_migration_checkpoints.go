@@ -100,11 +100,15 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	var mcID int64
 
 	stmt, err = txHandler.Prepare(sqlStatement)
-	// skipcq: SCC-SA5001
-	defer stmt.Close()
 	if err != nil {
 		return mcID, err
 	}
+
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			jd.logger.Warnf("Error closing statement: %v", err)
+		}
+	}()
 
 	if migrationCheckpoint.ID > 0 {
 		err = stmt.QueryRow(migrationCheckpoint.Status, migrationCheckpoint.StartSeq, migrationCheckpoint.Payload, migrationCheckpoint.ID).Scan(&mcID)
@@ -293,12 +297,4 @@ func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []Mi
 		migrationCheckpoints = append(migrationCheckpoints, migrationCheckpoint)
 	}
 	return migrationCheckpoints
-}
-
-// skipcq: SCC-U1000
-func (migrationCheckpoint MigrationCheckpointT) getLastJobID() int64 {
-	if migrationCheckpoint.StartSeq == 0 {
-		return int64(0)
-	}
-	return migrationCheckpoint.StartSeq + migrationCheckpoint.JobsCount - 1
 }
