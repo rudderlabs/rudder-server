@@ -4,6 +4,7 @@ run:
   skip-dirs:
     - warehouse
     - enterprise
+    - event-schema
 
 linters:
   enable:
