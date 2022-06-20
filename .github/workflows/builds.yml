@@ -26,6 +26,7 @@ jobs:
             name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
           tags: |
             type=ref,event=branch
+            type=raw,value=1-alpine,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.head_ref }}
             type=semver,pattern={{version}}
