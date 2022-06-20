@@ -8,6 +8,8 @@ ARG COMMIT_HASH
 ARG RACE_ENABLED=false
 ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /rudder-server
 
@@ -19,10 +21,14 @@ RUN go mod download
 COPY . . 
 
 RUN BUILD_DATE=$(date "+%F,%T") \
+    GOOS=${TARGETOS} \
+    GOARCH=${TARGETARCH} \
     LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} " \
     make build
 
 FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
+ARG TARGETOS
+ARG TARGETARCH
 RUN apk -U --no-cache upgrade && \
     apk add --no-cache ca-certificates postgresql-client curl bash
 
@@ -32,7 +38,7 @@ COPY --from=builder rudder-server/build/regulation-worker .
 
 COPY build/docker-entrypoint.sh /
 COPY build/wait-for /
-COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
+COPY ./rudder-cli/rudder-cli.${TARGETOS}.${TARGETARCH} /usr/bin/rudder-cli
 COPY scripts/generate-event /scripts
 COPY scripts/batch.json /scripts
 
