@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"sync"
 
+	"github.com/dgraph-io/badger/v3"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -37,15 +39,24 @@ func main() {
 	flag.Parse()
 
 	initJobsDB()
-	db := jobsdb.NewForWrite("test_ingest", jobsdb.WithClearDB(true))
-	defer db.Close()
+	// db := jobsdb.NewForWrite("test_ingest", jobsdb.WithClearDB(true))
+	// defer db.Close()
 
-	db.Start()
-	defer db.Stop()
+	// db.Start()
+	// defer db.Stop()
 
 	lb := &StoreBalancer{}
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
+
+		b, err := badger.Open(badger.DefaultOptions(fmt.Sprintf("./db-%d", i)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		db := &badgerStore{
+			db: b,
+		}
+
 		jb := &JobBuffer{db: db}
 
 		go func() {
@@ -112,7 +123,7 @@ type JobWithACK struct {
 
 type JobBuffer struct {
 	mu   sync.Mutex
-	db   jobsdb.JobsDB
+	db   Storer
 	jobs []JobWithACK
 }
 
@@ -146,5 +157,38 @@ func (jb *JobBuffer) Flush() {
 		a <- err
 		close(a)
 	}
+
+}
+
+type badgerStore struct {
+	db *badger.DB
+}
+
+func (b *badgerStore) Store(jobs []*jobsdb.JobT) error {
+	txn := b.db.NewTransaction(true)
+
+	seq, err := b.db.GetSequence([]byte("foo"), 1000)
+	if err != nil {
+		return err
+	}
+	defer seq.Release()
+	for _, j := range jobs {
+		num, err := seq.Next()
+		if err != nil {
+			return err
+		}
+
+		key := []byte(strconv.FormatInt(int64(num), 36))
+		value := []byte(j.EventPayload)
+		if err := txn.Set(key, value); err == badger.ErrTxnTooBig {
+			_ = txn.Commit()
+			txn = b.db.NewTransaction(true)
+			_ = txn.Set(key, value)
+
+		} else if err != nil {
+			return err
+		}
+	}
+	return txn.Commit()
 
 }

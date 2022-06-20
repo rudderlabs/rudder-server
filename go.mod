@@ -96,7 +96,7 @@ require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
+	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/docker/cli v20.10.11+incompatible // indirect
 	github.com/docker/docker v20.10.13+incompatible // indirect
@@ -181,7 +181,10 @@ require (
 	github.com/valyala/fasthttp v1.37.0
 )
 
+require github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
+
 require (
 	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 )
