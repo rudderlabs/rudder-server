@@ -2122,10 +2122,11 @@ func (rt *HandleT) readAndProcess() int {
 		rt.updateProcessedEventsMetrics(drainList)
 		for destID, destDrainStat := range drainStatsbyDest {
 			drainedJobsStat := stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
-				"destType": rt.destName,
-				"destId":   destID,
-				"module":   "router",
-				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
+				"destType":  rt.destName,
+				"destId":    destID,
+				"module":    "router",
+				"reasons":   strings.Join(destDrainStat.Reasons, ", "),
+				"workspace": destDrainStat.Workspace,
 			})
 			drainedJobsStat.Count(destDrainStat.Count)
 			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
