@@ -260,9 +260,8 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 	row := txn.QueryRow(sqlStatement)
 
 	defer func() {
-		err := txn.Commit()
-		if err != nil {
-			jd.logger.Errorf("transaction commit err. Dataset: %v. Err: %v", ds, err)
+		if err := txn.Rollback(); err != nil {
+			jd.logger.Errorf("Transaction rollback (lock release) err. Dataset: %v. Err: %v", ds, err)
 		}
 	}()
 
@@ -412,9 +411,8 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 
 	row := txn.QueryRow(sqlStatement, time.Now())
 	defer func() {
-		err := txn.Commit()
-		if err != nil {
-			jd.logger.Errorf("transaction on ds(%v) commit err. Err: %v", ds, err)
+		if err := txn.Rollback(); err != nil {
+			jd.logger.Errorf("Transaction rollback (lock release) on ds(%v) commit err. Err: %v", ds, err)
 		}
 	}()
 
