@@ -3,15 +3,16 @@ package testhelper
 import (
 	"flag"
 	"fmt"
-	"github.com/gofrs/uuid"
-	"github.com/iancoleman/strcase"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"log"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
@@ -44,9 +45,7 @@ var (
 	ConnectBackoffRetryMax = 5
 )
 
-var (
-	jobsDB *JobsDBResource
-)
+var jobsDB *JobsDBResource
 
 var (
 	SnowflakeIntegrationTestUserCred  = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
