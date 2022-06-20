@@ -8,6 +8,7 @@ import (
 
 	"github.com/ory/dockertest/v3"
 
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
@@ -23,7 +24,7 @@ type ClickHouseTest struct {
 // SetWHClickHouseDestination setup warehouse clickhouse destination
 func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 	Test.CHTest = &ClickHouseTest{
-		WriteKey: randString(27),
+		WriteKey: rand.String(27),
 		Credentials: &clickhouse.CredentialsT{
 			Host:          "localhost",
 			User:          "rudder",

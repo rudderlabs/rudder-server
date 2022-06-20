@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +39,7 @@ import (
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -650,8 +650,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
-	writeKey = randString(27)
-	workspaceID = randString(27)
+	writeKey = rand.String(27)
+	workspaceID = rand.String(27)
 	mapWorkspaceConfig := map[string]string{
 		"webhookUrl":                          webhookURL,
 		"disableDestinationwebhookUrl":        disableDestinationWebhookURL,
@@ -850,15 +850,6 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
-}
-
-func randString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
 }
 
 func createWorkspaceConfig(templatePath string, values map[string]string) string {

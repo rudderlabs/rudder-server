@@ -10,6 +10,8 @@ import (
 
 	bq "cloud.google.com/go/bigquery"
 	"github.com/cenkalti/backoff"
+
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 )
 
@@ -58,7 +60,7 @@ func SetWHBigQueryDestination() (cleanup func()) {
 		return
 	}
 	Test.BQTest = &BiqQueryTest{
-		WriteKey:    randString(27),
+		WriteKey:    rand.String(27),
 		Credentials: &bqCredentials,
 		EventsMap: EventsCountMap{
 			"identifies":    1,
