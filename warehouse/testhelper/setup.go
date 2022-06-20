@@ -1,7 +1,6 @@
 package testhelper
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"strconv"
@@ -30,8 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
 )
-
-var runSlow bool
 
 var (
 	WaitFor2Minute            = 2 * time.Minute
@@ -74,14 +71,6 @@ func (w *WareHouseDestinationTest) Reset(destType string, randomProduct bool) {
 }
 
 func Run(m *testing.M, setup ISetup) int {
-	flag.BoolVar(&runSlow, "slow", false, "run slow tests")
-	flag.Parse()
-
-	if !runSlow {
-		log.Println("Skipping warehouse integration test. Use `-slow` to run them.")
-		return 0
-	}
-
 	loadEnv()
 
 	initialize()
