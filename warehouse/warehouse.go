@@ -85,6 +85,7 @@ var (
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
+	configBackendURL                    string
 )
 
 var (
@@ -182,6 +183,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -343,7 +345,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour', metadata->>'destination_revision_id'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -358,11 +360,13 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 	for rows.Next() {
 		var jsonUpload StagingFileT
 		var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour)
+		var destinationRevisionID sql.NullString
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour, &destinationRevisionID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.TimeWindow = time.Date(int(timeWindowYear.Int64), time.Month(timeWindowMonth.Int64), int(timeWindowDay.Int64), int(timeWindowHour.Int64), 0, 0, 0, time.UTC)
+		jsonUpload.DestinationRevisionID = destinationRevisionID.String
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -378,7 +382,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage', metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage', metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour', metadata->>'destination_revision_id'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -391,12 +395,12 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
-	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID sql.NullString
+	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID, destinationRevisionID sql.NullString
 	var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
 	var UseRudderStorage sql.NullBool
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID, &UseRudderStorage, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID, &UseRudderStorage, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour, &destinationRevisionID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -404,6 +408,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		jsonUpload.LastEventAt = lastEventAt.Time
 		jsonUpload.TimeWindow = time.Date(int(timeWindowYear.Int64), time.Month(timeWindowMonth.Int64), int(timeWindowDay.Int64), int(timeWindowHour.Int64), 0, 0, 0, time.UTC)
 		jsonUpload.UseRudderStorage = UseRudderStorage.Bool
+		jsonUpload.DestinationRevisionID = destinationRevisionID.String
 		// add cloud sources metadata
 		jsonUpload.SourceBatchID = sourceBatchID.String
 		jsonUpload.SourceTaskID = sourceTaskID.String
@@ -1277,16 +1282,17 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		lastEventAt = nil
 	}
 	metadataMap := map[string]interface{}{
-		"use_rudder_storage": stagingFile.UseRudderStorage,
-		"source_batch_id":    stagingFile.SourceBatchID,
-		"source_task_id":     stagingFile.SourceTaskID,
-		"source_task_run_id": stagingFile.SourceTaskRunID,
-		"source_job_id":      stagingFile.SourceJobID,
-		"source_job_run_id":  stagingFile.SourceJobRunID,
-		"time_window_year":   stagingFile.TimeWindow.Year(),
-		"time_window_month":  stagingFile.TimeWindow.Month(),
-		"time_window_day":    stagingFile.TimeWindow.Day(),
-		"time_window_hour":   stagingFile.TimeWindow.Hour(),
+		"use_rudder_storage":      stagingFile.UseRudderStorage,
+		"source_batch_id":         stagingFile.SourceBatchID,
+		"source_task_id":          stagingFile.SourceTaskID,
+		"source_task_run_id":      stagingFile.SourceTaskRunID,
+		"source_job_id":           stagingFile.SourceJobID,
+		"source_job_run_id":       stagingFile.SourceJobRunID,
+		"time_window_year":        stagingFile.TimeWindow.Year(),
+		"time_window_month":       stagingFile.TimeWindow.Month(),
+		"time_window_day":         stagingFile.TimeWindow.Day(),
+		"time_window_hour":        stagingFile.TimeWindow.Hour(),
+		"destination_revision_id": stagingFile.DestinationRevisionID,
 	}
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {

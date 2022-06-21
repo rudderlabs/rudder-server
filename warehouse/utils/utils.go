@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -178,13 +180,14 @@ type SchemaT map[string]map[string]string
 type TableSchemaT map[string]string
 
 type StagingFileT struct {
-	Schema           map[string]map[string]interface{}
-	BatchDestination DestinationT
-	Location         string
-	FirstEventAt     string
-	LastEventAt      string
-	TotalEvents      int
-	UseRudderStorage bool
+	Schema                map[string]map[string]interface{}
+	BatchDestination      DestinationT
+	Location              string
+	FirstEventAt          string
+	LastEventAt           string
+	TotalEvents           int
+	UseRudderStorage      bool
+	DestinationRevisionID string
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -928,4 +931,28 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
 	}
 	return timeWindowFormat
+}
+
+func GetRequestWithTimeout(url string, timeout time.Duration) ([]byte, int, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(config.GetWorkspaceToken(), "")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	var respBody []byte
+	if resp != nil && resp.Body != nil {
+		respBody, _ = io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+
+	return respBody, resp.StatusCode, nil
 }

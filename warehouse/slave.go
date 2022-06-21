@@ -86,13 +86,13 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 }
 
 // Get fileManager
-func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
-	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage)
+func (job *PayloadT) getFileManager(config interface{}) (filemanager.FileManager, error) {
+	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, job.UseRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
-			Config:                      job.DestinationConfig,
+			Config:                      config,
 			UseRudderStorage:            job.UseRudderStorage,
 			RudderStoragePrefixOverride: job.RudderStoragePrefix,
 		}),
@@ -103,7 +103,7 @@ func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
 /*
  * Download Staging file for the job
  */
-func (jobRun *JobRunT) downloadStagingFile() error {
+func (jobRun *JobRunT) downloadStagingFile(config interface{}) error {
 	filePath := jobRun.stagingFilePath
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -111,7 +111,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	}
 
 	job := jobRun.job
-	downloader, err := jobRun.job.getFileManager()
+	downloader, err := jobRun.job.getFileManager(config)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to initialize downloader")
 		return err
@@ -168,7 +168,7 @@ type loadFileUploadOutputT struct {
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager()
+	uploader, err := job.getFileManager(jobRun.job.DestinationConfig)
 	if err != nil {
 		return []loadFileUploadOutputT{}, err
 	}
@@ -354,9 +354,17 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile()
+	err = jobRun.downloadStagingFile(jobRun.job.DestinationConfig)
 	if err != nil {
-		return loadFileUploadOutputs, err
+		if jobRun.job.DestinationRevisionConfig != nil {
+			pkgLogger.Infof("[WH]: Starting downloading staging file with revision config for StagingFileID: %d, StagingFileLocation: %s, whIdentifier: %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			err = jobRun.downloadStagingFile(jobRun.job.DestinationRevisionConfig)
+			if err != nil {
+				return loadFileUploadOutputs, err
+			}
+		} else {
+			return loadFileUploadOutputs, err
+		}
 	}
 
 	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
