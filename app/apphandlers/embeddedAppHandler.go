@@ -273,7 +273,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
+		embedded.App.Features().Replay.Setup(&replayDB, gatewayDB, routerDB, batchRouterDB)
 	}
 
 	g.Go(func() error {
