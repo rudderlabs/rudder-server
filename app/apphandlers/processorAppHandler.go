@@ -252,13 +252,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		MultiTenantStat:  multitenantStats,
 	}
 
-	if enableReplay && processor.App.Features().Replay != nil {
-		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
-		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
-	}
-
 	g.Go(func() error {
 		return startHealthWebHandler(ctx)
 	})
