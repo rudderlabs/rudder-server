@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv"
 	"sync"
 
 	"github.com/dgraph-io/badger/v3"
@@ -56,6 +57,32 @@ func main() {
 		db := &badgerStore{
 			db: b,
 		}
+
+		go func() {
+			for {
+
+				jobs, err := db.Get(jobsdb.GetQueryParamsT{
+					EventsLimit: 10000,
+				})
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				jobIDs := make([]int64, len(jobs))
+				for i, j := range jobs {
+					jobIDs[i] = j.JobID
+				}
+				err = db.UpdateJobStatus(jobIDs)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				if len(jobs) > 0 {
+					log.Println("jobs", len(jobs), "jobIDs", jobIDs[0])
+				}
+
+			}
+		}()
 
 		jb := &JobBuffer{db: db}
 
@@ -178,7 +205,11 @@ func (b *badgerStore) Store(jobs []*jobsdb.JobT) error {
 			return err
 		}
 
-		key := []byte(strconv.FormatInt(int64(num), 36))
+		key := make([]byte, 9)
+		binary.BigEndian.PutUint64(key, num)
+
+		key[8] = 0x10
+
 		value := []byte(j.EventPayload)
 		if err := txn.Set(key, value); err == badger.ErrTxnTooBig {
 			_ = txn.Commit()
@@ -191,4 +222,83 @@ func (b *badgerStore) Store(jobs []*jobsdb.JobT) error {
 	}
 	return txn.Commit()
 
+}
+
+func (b *badgerStore) Get(params jobsdb.GetQueryParamsT) ([]*jobsdb.JobT, error) {
+	jobs := make([]*jobsdb.JobT, 0)
+
+	b.db.View(func(txn *badger.Txn) error {
+		iter := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer iter.Close()
+
+		skipKey := []byte("")
+
+		iter.Seek([]byte(""))
+		for {
+			if !iter.Valid() {
+				continue
+			}
+
+			item := iter.Item()
+			k := item.Key()
+
+			if bytes.Equal(k, skipKey) {
+				skipKey = nil
+				continue
+			}
+
+			if k[8] != 0x10 {
+				skipKey = append(k[:8], 0x10)
+			}
+
+			err := item.Value(func(val []byte) error {
+				jobs = append(jobs, &jobsdb.JobT{
+					JobID:        int64(binary.BigEndian.Uint64(k[:8])),
+					EventPayload: val,
+				})
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			if len(jobs) >= params.JobsLimit {
+				break
+			}
+			iter.Next()
+		}
+		return nil
+	})
+
+	return jobs, nil
+}
+
+func (b *badgerStore) UpdateJobStatus(jobIDs []int64) error {
+	if len(jobIDs) == 0 {
+		return nil
+	}
+
+	txn := b.db.NewTransaction(true)
+
+	for _, id := range jobIDs {
+		key := make([]byte, 9)
+		binary.BigEndian.PutUint64(key, uint64(id))
+
+		key[8] = 0x02
+
+		if err := txn.Set(key, []byte{}); err == badger.ErrTxnTooBig {
+			_ = txn.Commit()
+			txn = b.db.NewTransaction(true)
+			_ = txn.Set(key, []byte{})
+
+		} else if err != nil {
+			return err
+		}
+	}
+	return txn.Commit()
+
+}
+
+func (b *badgerStore) Close() {
+	b.db.Close()
 }
