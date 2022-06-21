@@ -211,12 +211,12 @@ func ValidateEnv() {
 	}
 	if !isDBCompatible {
 		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
-		panic(errors.New("Failed to start rudder-server"))
+		panic(errors.New("failed to start rudder-server"))
 	}
 
 	// SQL statements in rudder-server are not executed with a timeout context, instead we are letting them take as much time as they need :)
 	// Due to the above, when a server shutdown is initiated in a cloud environment while long-running statements are being executed,
-	// the server process will not manage to shutdown gracefully, since it will be blocked by the SQL statements.
+	// the server process will not manage to shut down gracefully, since it will be blocked by the SQL statements.
 	// The container orchestrator will eventually kill the server process, leaving one or more dangling connections in the database.
 	// This will ensure that before a new rudder-server instance starts working, all previous dangling connections belonging to this server are being killed.
 	killDanglingDBConnections(dbHandle)
