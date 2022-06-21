@@ -1639,6 +1639,8 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 	var responseCode int
 
 	for _, revisionID := range revisionIDs {
+		// We are ignoring current revision ID since we already have the config for this.
+		// No need to make config backend api call for the current config
 		if revisionID == job.warehouse.Destination.RevisionID {
 			continue
 		}
@@ -1649,14 +1651,17 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		response, responseCode, err = warehouseutils.GetRequestWithTimeout(urlStr, time.Second*60)
 		pkgLogger.Infof("[WH]: Get request Finished for Dest revisionID %s", revisionID)
 
-		if responseCode == 200 {
+		if err == nil && responseCode == 200 {
 			var destination backendconfig.DestinationT
 			err = json.Unmarshal(response, &destination)
 			if err != nil {
-				pkgLogger.Errorf("[WH]: Error occurred while unmarshal response for Dest revisionID %s with error: %s", revisionID, err.Error())
-				continue
+				err = fmt.Errorf("error occurred while unmarshalling response for Dest revisionID %s with error: %w", revisionID, err)
+				return
 			}
 			revisionIDMap[revisionID] = destination
+		} else {
+			err = fmt.Errorf("error occurred while getting destination history for revisionID %s, responseCode: %d, error: %w", revisionID, responseCode, err)
+			return
 		}
 	}
 	return
@@ -1716,7 +1721,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	// Getting distinct destination revision ID from staging files metadata
 	destinationRevisionIDs, err := job.destinationRevisionIDMap()
 	if err != nil {
-		err = fmt.Errorf("error occurred while populating destination revision ID Map with error: %s", err)
+		err = fmt.Errorf("error occurred while populating destination revision ID Map with error: %w", err)
 		return
 	}
 
