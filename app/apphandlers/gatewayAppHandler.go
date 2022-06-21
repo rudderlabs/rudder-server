@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -18,10 +17,14 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+
+	// This is necessary for compatibility with enterprise features
+	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-// GatewayApp is the type for Gateway type implemention
+// GatewayApp is the type for Gateway type implementation
 type GatewayApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -42,8 +45,8 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %v", err)
 	}
-	pkgLogger.Infof("Configured deployment type: %w", deploymentType)
 
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
@@ -65,7 +68,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	enableGateway := true
 	if gatewayApp.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			enableGateway = (migrationMode != db.EXPORT)
+			enableGateway = migrationMode != db.EXPORT
 
 			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
 		}
