@@ -354,6 +354,8 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	// This creates the file, so on successful creation remove it
 	err = jobRun.downloadStagingFile(jobRun.job.DestinationConfig)
 	if err != nil {
+		// If error occurs with the current config
+		// We retry with the revision config if it is present
 		if jobRun.job.DestinationRevisionConfig != nil {
 			pkgLogger.Infof("[WH]: Starting downloading staging file with revision config for StagingFileID: %d, StagingFileLocation: %s, whIdentifier: %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 			err = jobRun.downloadStagingFile(jobRun.job.DestinationRevisionConfig)
