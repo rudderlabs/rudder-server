@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	etcd "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -47,39 +47,17 @@ func run(m *testing.M) int {
 		return 1
 	}
 
-	container, err := pool.Run("bitnami/etcd", "3.4", []string{
-		"ALLOW_NONE_AUTHENTICATION=yes",
-	})
-	if err != nil {
-		log.Printf("Could not start resource: %s", err)
+	cleaner := &testhelper.Cleanup{}
+	defer cleaner.Run()
+
+	var etcdRes *thEtcd.Resource
+	if etcdRes, err = thEtcd.Setup(pool, cleaner); err != nil {
+		log.Printf("Could not setup ETCD: %v", err)
 		return 1
 	}
 
-	defer func() {
-		if err := pool.Purge(container); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	etcdHosts = []string{"http://localhost:" + container.GetPort("2379/tcp")}
-	if err := pool.Retry(func() error {
-		var err error
-
-		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints: etcdHosts,
-			DialOptions: []grpc.DialOption{
-				grpc.WithBlock(), // block until the underlying connection is up
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}); err != nil {
-		log.Printf("Could not connect to dockerized etcd: %s \n", err)
-		return 1
-	}
+	etcdHosts = etcdRes.Hosts
+	etcdClient = etcdRes.Client
 
 	code := m.Run()
 	blockOnHold()
