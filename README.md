@@ -7,10 +7,10 @@
 <p align="center"><b>The Customer Data Platform for Developers</b></p>
 
 <p align="center">
-  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/tests.yaml">
+  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/tests.yaml?query=branch%3Amaster">
     <img src="https://github.com/rudderlabs/rudder-server/actions/workflows/tests.yaml/badge.svg">
   </a>
-  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml">
+  <a href="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml?query=branch%3Amaster">
     <img src="https://github.com/rudderlabs/rudder-server/actions/workflows/builds.yml/badge.svg">
   </a>
   <a href="https://github.com/rudderlabs/rudder-server/releases">
