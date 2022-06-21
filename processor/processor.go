@@ -1682,7 +1682,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	proc.stats.statDBW.Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
 	// DB write throughput per second.
-	dbWriteThroughput := throughputPerSecond(len(destJobs), dbWriteTime)
+	dbWriteThroughput := throughputPerSecond(len(destJobs)+len(batchDestJobs), dbWriteTime)
 	proc.stats.DBWriteThroughput.Count(dbWriteThroughput)
 	proc.stats.statDBWriteJobsTime.SendTiming(writeJobsTime)
 	proc.stats.statDBWriteStatusTime.Since(txnStart)
