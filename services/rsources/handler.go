@@ -110,8 +110,59 @@ func (*sourcesHandler) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, 
 	return nil
 }
 
-func (*sourcesHandler) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobFilter) (FailedRecords, error) {
-	return FailedRecords{}, nil
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error) {
+	filterParams := []interface{}{}
+	filters := `WHERE job_run_id = $1`
+	filterParams = append(filterParams, jobRunId)
+
+	if len(filter.TaskRunID) > 0 {
+		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
+		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
+	}
+
+	if len(filter.SourceID) > 0 {
+		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
+		filterParams = append(filterParams, pq.Array(filter.SourceID))
+	}
+
+	sqlStatement := fmt.Sprintf(
+		`SELECT
+			job_run_id,
+			destination_id,
+			source_id,
+			task_run_id,
+			record_id,
+			created_at,
+			sum(failed_count) FROM "failed_keys" %s
+			ORDER BY task_run_id, source_id, destination_id DESC`,
+		filters)
+
+	failedRecords := make([]FailedRecord, 0)
+	rows, err := tx.QueryContext(ctx, sqlStatement, filterParams...)
+	if err != nil {
+		return FailedRecords{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var failedRecord FailedRecord
+		err := rows.Scan(
+			&failedRecord.JobRunID,
+			&failedRecord.DestinationID,
+			&failedRecord.SourceID,
+			&failedRecord.TaskRunID,
+			&failedRecord.RecordID,
+			&failedRecord.CreatedAt,
+		)
+		if err != nil {
+			return FailedRecords{}, err
+		}
+		failedRecords = append(failedRecords, failedRecord)
+	}
+	if err := rows.Err(); err != nil {
+		return FailedRecords{}, err
+	}
+
+	return failedRecords, nil
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
@@ -169,7 +220,11 @@ func (sh *sourcesHandler) init() error {
 			return time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 1, time.Hour))
 		}
 	}
-	err := setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
+	err := setupFailedKeysTable(ctx, sh.localDB)
+	if err != nil {
+		return fmt.Errorf("failed to setup failed keys table: %w", err)
+	}
+	err = setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
 	if err != nil {
 		return fmt.Errorf("failed to setup local stats table: %w", err)
 	}
@@ -184,6 +239,33 @@ func (sh *sourcesHandler) init() error {
 		}
 	}
 	return nil
+}
+
+func setupFailedKeysTable(ctx context.Context, db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	sqlStatement := `create table if not exists "failed_keys" (
+		job_run_id text not null,
+		task_run_id text not null,
+		source_id text not null,
+		destination_id text not null,
+		record_id jsonb not null,
+		created_at timestamp not null default NOW(),
+		primary key (job_run_id, task_run_id, source_id, destination_id)
+	)`
+	_, err = tx.ExecContext(ctx, sqlStatement)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `create index if not exists failed_keys_job_run_id_idx on "failed_keys" (job_run_id)`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) error {

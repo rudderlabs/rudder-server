@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -68,7 +69,16 @@ type DestinationStatus struct {
 	Stats     Stats  `json:"stats"`
 }
 
-type FailedRecords struct{}
+type FailedRecords []FailedRecord
+
+type FailedRecord struct {
+	DestinationID string          `json:"destination_id"`
+	RecordID      json.RawMessage `json:"record_id"`
+	JobRunID      string          `json:"job_run_id"`
+	TaskRunID     string          `json:"task_run_id"`
+	SourceID      string          `json:"source_id"`
+	CreatedAt     time.Time       `json:"createdAt"`
+}
 
 var StatusNotFoundError = errors.New("Status not found")
 
