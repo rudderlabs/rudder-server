@@ -106,11 +106,26 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (*sourcesHandler) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobTargetKey, _ []json.RawMessage) error {
-	return nil
+func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, recordID []json.RawMessage) error {
+	sqlStatement := `insert into "failed_keys" (
+		job_run_id,
+		task_run_id,
+		source_id,
+		destination_id,
+		record_id,
+		created_at
+	) values ($1, $2, $3, $4, $5, $6)`
+
+	_, err := tx.ExecContext(
+		ctx,
+		sqlStatement,
+		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
+		recordID, time.Now())
+
+	return err
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (*sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error) {
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -168,6 +183,13 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
 	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
 	_, err := sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
+	if err != nil {
+		return err
+	}
+
+	sqlStatement = `delete from "failed_keys" where job_run_id = $1`
+	_, err = sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
+
 	return err
 }
 
@@ -253,7 +275,6 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB) error {
 		destination_id text not null,
 		record_id jsonb not null,
 		created_at timestamp not null default NOW(),
-		primary key (job_run_id, task_run_id, source_id, destination_id)
 	)`
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
