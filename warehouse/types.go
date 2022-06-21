@@ -65,12 +65,12 @@ type StagingFileT struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceBatchID         string
-	SourceTaskID          string
-	SourceTaskRunID       string
-	SourceJobID           string
-	SourceJobRunID        string
-	TimeWindow            time.Time
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
+	TimeWindow      time.Time
 }
 
 type BatchRouterEventT struct {
