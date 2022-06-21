@@ -270,7 +270,7 @@ func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
-	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
+	trans.transformRequestTimerStat = stats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }

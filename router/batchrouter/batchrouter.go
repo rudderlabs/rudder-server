@@ -1539,6 +1539,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 		"module":      "batch_router",
 		"destType":    brt.destType,
 		"destination": destinationTag,
+		"workspace":   destination.Source.WorkspaceID,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
@@ -1548,6 +1549,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 			"module":      "batch_router",
 			"destType":    brt.destType,
 			"destination": destinationTag,
+			"workspace":   destination.Source.WorkspaceID,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
@@ -1601,7 +1603,7 @@ func (worker *workerT) workerProcess() {
 			if readPerDestination {
 				toQuery := worker.brt.jobQueryBatchSize
 				if !brt.holdFetchingJobs(parameterFilters) {
-					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
+					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "workerProcess", "destType": brt.destType})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 					queryParams := jobsdb.GetQueryParamsT{
@@ -1956,7 +1958,7 @@ func (brt *HandleT) readAndProcess() {
 		}
 
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
-		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
+		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "mainLoop", "destType": brt.destType})
 		brtQueryStat.Start()
 
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
