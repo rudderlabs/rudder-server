@@ -274,7 +274,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB) error {
 		source_id text not null,
 		destination_id text not null,
 		record_id jsonb not null,
-		created_at timestamp not null default NOW(),
+		created_at timestamp not null default NOW()
 	)`
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
