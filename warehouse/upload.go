@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/lib/pq"
@@ -1622,6 +1623,45 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 	return
 }
 
+func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]backendconfig.DestinationT, err error) {
+	revisionIDMap = make(map[string]backendconfig.DestinationT)
+	revisionIDs, err := destinationRevisionIDs(struct {
+		sourceID           string
+		destinationID      string
+		startStagingFileID int64
+		endStagingFileID   int64
+	}{sourceID: job.warehouse.Source.ID, destinationID: job.warehouse.Destination.ID, startStagingFileID: job.upload.StartStagingFileID, endStagingFileID: job.upload.EndStagingFileID})
+	if err != nil {
+		return
+	}
+
+	var response []byte
+	var responseCode int
+
+	for _, revisionID := range revisionIDs {
+		if revisionID == job.warehouse.Destination.RevisionID {
+			continue
+		}
+
+		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
+
+		pkgLogger.Infof("[WH]: Get request Started for Dest revisionID %s", revisionID)
+		response, responseCode, err = warehouseutils.GetRequestWithTimeout(urlStr, time.Second*60)
+		pkgLogger.Infof("[WH]: Get request Finished for Dest revisionID %s", revisionID)
+
+		if responseCode == 200 {
+			var destination backendconfig.DestinationT
+			err = json.Unmarshal(response, &destination)
+			if err != nil {
+				pkgLogger.Errorf("[WH]: Error occurred while unmarshal response for Dest revisionID %s with error: %s", revisionID, err.Error())
+				continue
+			}
+			revisionIDMap[revisionID] = destination
+		}
+	}
+	return
+}
+
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID, endLoadFileID int64, err error) {
 	stmt := fmt.Sprintf(`
 		SELECT
@@ -1673,6 +1713,13 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
+	// Getting distinct destination revision ID from staging files metadata
+	destinationRevisionIDs, err := job.destinationRevisionIDMap()
+	if err != nil {
+		err = fmt.Errorf("error occurred while populating destination revision ID Map with error: %s", err)
+		return
+	}
+
 	var wg sync.WaitGroup
 
 	var toProcessStagingFiles []*StagingFileT
@@ -1698,44 +1745,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			j = len(toProcessStagingFiles)
 		}
 
-		// TODO: batch staging files
-		// td: batch staging files baased on time window for s3 dest
-		// td: should we remove publishBatchSize or make it 120 -> process staging files for 60 mins
-		// td: define some batch size for breaking staging files belonging to one window - right now max is 60 stagingFiles per time window
-		// batchedStagingFiles := job.BatchStagingFilesOnTimeWindow(toProcessStagingFiles[i:j])
-		// // td : add prefix to payload for s3 dest
-		// var messages []pgnotifier.MessageT
-		// for timeWindow, stagingFiles := range batchedStagingFiles {
-		// 	payload := PayloadT{
-		// 		UploadID:            job.upload.ID,
-		// 		StagingFiles:        stagingFiles,
-		// 		Schema:              job.upload.Schema,
-		// 		SourceID:            job.warehouse.Source.ID,
-		// 		SourceName:          job.warehouse.Source.Name,
-		// 		DestinationID:       destID,
-		// 		DestinationName:     job.warehouse.Destination.Name,
-		// 		DestinationType:     destType,
-		// 		DestinationConfig:   job.warehouse.Destination.Config,
-		// 		UniqueLoadGenID:     uniqueLoadGenID,
-		// 		UseRudderStorage:    job.upload.UseRudderStorage,
-		// 		RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
-		// 	}
-
-		// 	if job.warehouse.Type == "S3_DATALAKE" {
-		// 		// td: use prefix from config
-		// 		payload.LoadFilePrefix = timeWindow
-		// 	}
-
-		// 	payloadJSON, err := json.Marshal(payload)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	message := pgnotifier.MessageT{
-		// 		Payload: payloadJSON,
-		// 	}
-		// 	messages = append(messages, message)
-		// }
-
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
@@ -1755,6 +1764,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				UniqueLoadGenID:      uniqueLoadGenID,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
+			}
+
+			if revisionConfig, ok := destinationRevisionIDs[stagingFile.DestinationRevisionID]; ok {
+				payload.DestinationRevisionConfig = revisionConfig.Config
 			}
 
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {

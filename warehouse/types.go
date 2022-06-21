@@ -15,24 +15,25 @@ import (
 // }
 
 type PayloadT struct {
-	BatchID              string
-	UploadID             int64
-	StagingFileID        int64
-	StagingFileLocation  string
-	UploadSchema         map[string]map[string]string
-	SourceID             string
-	SourceName           string
-	DestinationID        string
-	DestinationName      string
-	DestinationType      string
-	DestinationNamespace string
-	DestinationConfig    interface{}
-	UniqueLoadGenID      string
-	UseRudderStorage     bool
-	RudderStoragePrefix  string
-	Output               []loadFileUploadOutputT
-	LoadFilePrefix       string // prefix for the load file name
-	LoadFileType         string
+	BatchID                   string
+	UploadID                  int64
+	StagingFileID             int64
+	StagingFileLocation       string
+	UploadSchema              map[string]map[string]string
+	SourceID                  string
+	SourceName                string
+	DestinationID             string
+	DestinationName           string
+	DestinationType           string
+	DestinationNamespace      string
+	DestinationConfig         interface{}
+	DestinationRevisionConfig interface{}
+	UniqueLoadGenID           string
+	UseRudderStorage          bool
+	RudderStoragePrefix       string
+	Output                    []loadFileUploadOutputT
+	LoadFilePrefix            string // prefix for the load file name
+	LoadFileType              string
 }
 
 type ProcessStagingFilesJobT struct {
@@ -53,15 +54,16 @@ type LoadFileJobT struct {
 }
 
 type StagingFileT struct {
-	ID               int64
-	Location         string
-	SourceID         string
-	Schema           json.RawMessage
-	Status           string // enum
-	CreatedAt        time.Time
-	FirstEventAt     time.Time
-	LastEventAt      time.Time
-	UseRudderStorage bool
+	ID                    int64
+	Location              string
+	SourceID              string
+	Schema                json.RawMessage
+	Status                string // enum
+	CreatedAt             time.Time
+	FirstEventAt          time.Time
+	LastEventAt           time.Time
+	UseRudderStorage      bool
+	DestinationRevisionID string
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
