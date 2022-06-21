@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -143,7 +144,6 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	workspaceConfig.workspaceWriteKeysMapLock.Lock()
 	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
 	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
 
