@@ -77,11 +77,9 @@ type TransformerEventT struct {
 
 // HandleT is the handle for this class
 type HandleT struct {
-	perfStats          *misc.PerfStats
-	sentStat           stats.RudderStats
-	receivedStat       stats.RudderStats
-	failedStat         stats.RudderStats
-	transformTimerStat stats.RudderStats
+	perfStats    *misc.PerfStats
+	sentStat     stats.RudderStats
+	receivedStat stats.RudderStats
 
 	logger logger.LoggerI
 
@@ -144,8 +142,6 @@ func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
-	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
-	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
@@ -262,7 +258,6 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 	}
 
 	trans.receivedStat.Count(len(outClientEvents))
-	trans.failedStat.Count(len(failedEvents))
 	trans.perfStats.Rate(len(clientEvents), time.Since(s))
 
 	return ResponseT{
