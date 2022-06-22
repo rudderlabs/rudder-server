@@ -458,17 +458,6 @@ func blockOnHold() {
 	<-c
 }
 
-// func initJobsDB() {
-// 	config.Load()
-// 	logger.Init()
-// 	admin.Init()
-// 	jobsdb.Init()
-// 	jobsdb.Init2()
-// 	jobsdb.Init3()
-
-// 	archiver.Init()
-// }
-
 func genJobs(workspaceId, customVal string, jobCount, eventsPerJob int) []*JobT {
 	js := make([]*JobT, jobCount)
 	for i := range js {

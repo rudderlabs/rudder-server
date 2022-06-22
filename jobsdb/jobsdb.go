@@ -1157,7 +1157,6 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	err = row.Scan(&lastUpdate)
 	jd.assertError(err)
 	if jd.dsRetentionPeriod > time.Duration(0) && time.Since(lastUpdate) < jd.dsRetentionPeriod {
-
 		return false, totalCount - delCount
 	}
 
@@ -2920,6 +2919,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
+
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
 		var liveJobCount int
@@ -2938,12 +2938,14 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			} else {
 				idxCheck = (idx == len(dsList)-1)
 			}
+
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
 			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
+
 			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
 				insertBeforeDS = dsList[idx+1]
@@ -2963,7 +2965,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
-
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
