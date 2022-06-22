@@ -4,27 +4,23 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"database/sql"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/minio/minio-go"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -34,8 +30,9 @@ import (
 )
 
 var (
-	hold            bool
-	DB_DSN          = "root@tcp(127.0.0.1:3306)/service"
+	hold   bool
+	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
+
 	minioEndpoint   string
 	bucket          = "backup-test"
 	region          = "us-east-1"
@@ -334,130 +331,6 @@ var dsListInMemory = []dataSetT{
 	d2,
 }
 
-func TestMain(m *testing.M) {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
-
-	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	database := "jobsdb"
-	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
-	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	fmt.Println("DB_DSN:", DB_DSN)
-	os.Setenv("JOBS_DB_DB_NAME", database)
-	os.Setenv("JOBS_DB_HOST", "localhost")
-	os.Setenv("JOBS_DB_NAME", "jobsdb")
-	os.Setenv("JOBS_DB_USER", "rudder")
-	os.Setenv("JOBS_DB_PASSWORD", "password")
-	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err := sql.Open("postgres", DB_DSN)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	// running minio container on docker
-	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "minio/minio",
-		Tag:        "latest",
-		Cmd:        []string{"server", "/data"},
-		Env: []string{
-			fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
-			fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
-			fmt.Sprintf("MINIO_SITE_REGION=%s", region),
-		},
-	})
-	if err != nil {
-		panic(fmt.Errorf("Could not start resource: %s", err))
-	}
-	defer func() {
-		if err := pool.Purge(minioResource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
-
-	//check if minio server is up & running.
-	if err := pool.Retry(func() error {
-		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-		resp, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("status code not OK")
-		}
-		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-	fmt.Println("minio is up & running properly")
-
-	useSSL := false
-	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("minioClient created successfully")
-
-	//creating bucket inside minio where testing will happen.
-	err = minioClient.MakeBucket(bucket, "us-east-1")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("bucket created successfully")
-
-	code := m.Run()
-	blockOnHold()
-
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
-}
-
 func genJobs(workspaceId, customVal string, jobCount, eventsPerJob int) []*JobT {
 	js := make([]*JobT, jobCount)
 	for i := range js {
@@ -512,10 +385,64 @@ func setTestEnvs(t *testing.T) {
 	t.Setenv("AWS_REGION", region)
 }
 
-func insertMockData() {
-
-}
 func TestBackupTable(t *testing.T) {
+
+	// running minio container on docker
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "minio/minio",
+		Tag:        "latest",
+		Cmd:        []string{"server", "/data"},
+		Env: []string{
+			fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
+			fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
+			fmt.Sprintf("MINIO_SITE_REGION=%s", region),
+		},
+	})
+	if err != nil {
+		panic(fmt.Errorf("Could not start resource: %s", err))
+	}
+	defer func() {
+		if err := pool.Purge(minioResource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+
+	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
+
+	//check if minio server is up & running.
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	fmt.Println("minio is up & running properly")
+
+	useSSL := false
+	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("minioClient created successfully")
+
+	//creating bucket inside minio where testing will happen.
+	err = minioClient.MakeBucket(bucket, "us-east-1")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("bucket created successfully")
 	setTestEnvs(t)
 
 	initJobsDB()
@@ -541,7 +468,6 @@ func TestBackupTable(t *testing.T) {
 
 	customVal := "MOCKDS"
 
-	insertMockData()
 	jobs := genJobs("defaultWorkspaceID-1", customVal, 30, 2)
 	require.NoError(t, jobDB.Store(jobs))
 	jobs = jobDB.GetUnprocessed(GetQueryParamsT{JobsLimit: 100})
