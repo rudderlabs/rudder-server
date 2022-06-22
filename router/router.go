@@ -725,23 +725,42 @@ func (worker *workerT) processDestinationJobs() {
 						}
 						respBody = strings.Join(respBodyArr, " ")
 						if worker.rt.transformerProxy {
-							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
-								"destType":      worker.rt.destName,
-								"destinationId": destinationJob.Destination.ID,
-								"workspace":     workspaceID,
-							}).Count(len(result))
+							// Need to check why we're getting count difference
+							// This code-snippet has been added to understand what is happening
+							inputLength := len(result)
+							respLength := len(respBodyArr)
+							if inputLength != respLength {
+								diffCount := int(math.Abs(float64(inputLength - respLength)))
+								pkgLogger.Infof(`[TransformerProxyDiff] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
+									destinationJob.JobMetadataArray[0].JobID,
+									inputLength,
+									respLength,
+								)
+								stats.NewTaggedStat("transformer_proxy.input_output_diff_count", stats.CountType, stats.Tags{
+									"destType":      worker.rt.destName,
+									"destinationId": destinationJob.Destination.ID,
+									"workspace":     workspaceID,
+									"inputLength":   strconv.Itoa(inputLength),
+									"respLength":    strconv.Itoa(respLength),
+								}).Count(diffCount)
+							}
+
+							// stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
+							// 	"destType":      worker.rt.destName,
+							// 	"destinationId": destinationJob.Destination.ID,
+							// 	"workspace":     workspaceID,
+							// }).Count(len(result))
 
 							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
 								destinationJob.JobMetadataArray[0].JobID,
-								len(result),
-								len(respBodyArr),
+								inputLength,
+								respLength,
 							)
-
-							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
-								"destType":      worker.rt.destName,
-								"destinationId": destinationJob.Destination.ID,
-								"workspace":     workspaceID,
-							}).Count(len(respBodyArr))
+							// stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
+							// 	"destType":      worker.rt.destName,
+							// 	"destinationId": destinationJob.Destination.ID,
+							// 	"workspace":     workspaceID,
+							// }).Count(len(respBodyArr))
 						}
 					}
 				}
