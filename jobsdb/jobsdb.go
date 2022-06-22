@@ -1136,7 +1136,6 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&delCount)
 	jd.assertError(err)
-
 	//Total number of job status. If this table grows too big (e.g. lot of retries)
 	//we migrate to a new table and get rid of old job status
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, ds.JobStatusTable)
@@ -1157,8 +1156,8 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&lastUpdate)
 	jd.assertError(err)
-
 	if jd.dsRetentionPeriod > time.Duration(0) && time.Since(lastUpdate) < jd.dsRetentionPeriod {
+
 		return false, totalCount - delCount
 	}
 
@@ -2921,7 +2920,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
-
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
 		var liveJobCount int
@@ -2940,14 +2938,12 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			} else {
 				idxCheck = (idx == len(dsList)-1)
 			}
-
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
 			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
-
 			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
 				insertBeforeDS = dsList[idx+1]
@@ -2967,6 +2963,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
+
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
@@ -3236,6 +3233,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 
 	} else {
 		if isJobStatusTable {
+
 			stmt = fmt.Sprintf(`SELECT json_agg(dump_table), count(*) FROM (select * from "%[1]s" order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
 		} else {
 			stmt = fmt.Sprintf(`
@@ -3267,9 +3265,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							ROW_NUMBER() 
 							OVER (
 							ORDER BY 
-								jobs.custom_val, 
-								jobs.status_job_id, 
-								jobs.exec_time
+								job_id ASC
 							) AS row_num  
 						FROM
 							(
@@ -3286,7 +3282,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							) jobs
 					) subquery 
 				WHERE 
-					AND subquery.running_payload_size <= %[4]d OR subquery.row_num = 1
+					subquery.running_payload_size <= %[4]d OR subquery.row_num = 1
 			) AS dump_table
 			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
 		}
@@ -3399,6 +3395,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	var offset, batchCount, jobCount int64
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
+		// fmt.Println("stmt:", stmt)
 		var rawJSONRows json.RawMessage
 		row := jd.dbHandle.QueryRow(stmt)
 
@@ -3406,7 +3403,6 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		if err != nil {
 			panic(fmt.Errorf("Scanning row failed with error : %w", err))
 		}
-
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
 		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
 		batchCount++
@@ -3415,7 +3411,6 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), "json agg output is not in the expected format. Excepted format: JSON Array [{}]")
 		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
 		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
-
 		gzWriter.Write(rawJSONRows)
 		offset += jobCount
 		if offset >= totalCount {
@@ -3451,7 +3446,6 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return false, err
 	}
-
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
 	totalTableDumpTimeStat.End()
