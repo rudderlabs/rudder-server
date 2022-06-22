@@ -112,20 +112,19 @@ func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunI
 		task_run_id,
 		source_id,
 		destination_id,
-		record_id,
-		created_at
-	) values ($1, $2, $3, $4, $5, $6)`
+		record_id
+	) values ($1, $2, $3, $4, $5)`
 
 	_, err := tx.ExecContext(
 		ctx,
 		sqlStatement,
 		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
-		recordID, time.Now())
+		recordID)
 
 	return err
 }
 
-func (*sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -143,17 +142,16 @@ func (*sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunI
 	sqlStatement := fmt.Sprintf(
 		`SELECT
 			job_run_id,
-			destination_id,
-			source_id,
 			task_run_id,
+			source_id,
+			destination_id,
 			record_id,
-			created_at,
-			sum(failed_count) FROM "failed_keys" %s
+			created_at FROM "failed_keys" %s
 			ORDER BY task_run_id, source_id, destination_id DESC`,
 		filters)
 
 	failedRecords := make([]FailedRecord, 0)
-	rows, err := tx.QueryContext(ctx, sqlStatement, filterParams...)
+	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		return FailedRecords{}, err
 	}
@@ -162,9 +160,9 @@ func (*sourcesHandler) GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunI
 		var failedRecord FailedRecord
 		err := rows.Scan(
 			&failedRecord.JobRunID,
-			&failedRecord.DestinationID,
-			&failedRecord.SourceID,
 			&failedRecord.TaskRunID,
+			&failedRecord.SourceID,
+			&failedRecord.DestinationID,
 			&failedRecord.RecordID,
 			&failedRecord.CreatedAt,
 		)
@@ -242,18 +240,14 @@ func (sh *sourcesHandler) init() error {
 			return time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 1, time.Hour))
 		}
 	}
-	err := setupFailedKeysTable(ctx, sh.localDB)
+	err := setupTables(ctx, sh.localDB, sh.config.LocalHostname)
 	if err != nil {
-		return fmt.Errorf("failed to setup failed keys table: %w", err)
-	}
-	err = setupStatsTable(ctx, sh.localDB, sh.config.LocalHostname)
-	if err != nil {
-		return fmt.Errorf("failed to setup local stats table: %w", err)
+		return err
 	}
 	if sh.sharedDB != nil {
-		err = setupStatsTable(ctx, sh.sharedDB, "shared")
+		err = setupTables(ctx, sh.sharedDB, "shared")
 		if err != nil {
-			return fmt.Errorf("failed to setup shared stats table: %w", err)
+			return err
 		}
 		err = sh.setupLogicalReplication(ctx)
 		if err != nil {
@@ -263,19 +257,34 @@ func (sh *sourcesHandler) init() error {
 	return nil
 }
 
-func setupFailedKeysTable(ctx context.Context, db *sql.DB) error {
+func setupTables(ctx context.Context, db *sql.DB, defaultDbName string) error {
+	err := setupFailedKeysTable(ctx, db, defaultDbName)
+	if err != nil {
+		return fmt.Errorf("failed to setup %s failed keys table: %w", defaultDbName, err)
+	}
+	err = setupStatsTable(ctx, db, defaultDbName)
+	if err != nil {
+		return fmt.Errorf("failed to setup %s stats table: %w", defaultDbName, err)
+	}
+	return nil
+}
+
+func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
-	sqlStatement := `create table if not exists "failed_keys" (
+	sqlStatement := fmt.Sprintf(`create table if not exists "failed_keys" (
+		id BIGSERIAL,
+		db_name text not null default '%s',
 		job_run_id text not null,
 		task_run_id text not null,
 		source_id text not null,
 		destination_id text not null,
 		record_id jsonb not null,
-		created_at timestamp not null default NOW()
-	)`
+		created_at timestamp not null default NOW(),
+		primary key (job_run_id, task_run_id, source_id, destination_id, db_name, id)
+	)`, defaultDbName)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		_ = tx.Rollback()
@@ -320,7 +329,7 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) erro
 }
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
-	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
+	publicationQuery := `CREATE PUBLICATION "rsources_pub" FOR TABLE rsources_stats, failed_keys`
 	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
 	if err != nil {
 		pqError, ok := err.(*pq.Error)
@@ -330,13 +339,13 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
-	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
+	subscriptionName := fmt.Sprintf("%s_rsources_sub", normalizedHostname)
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionConn := sh.config.SubscriptionTargetConn
 	if subscriptionConn == "" {
 		subscriptionConn = sh.config.LocalConn
 	}
-	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn)
+	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_pub"`, subscriptionName, subscriptionConn)
 	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery)
 	if err != nil {
 		pqError, ok := err.(*pq.Error)

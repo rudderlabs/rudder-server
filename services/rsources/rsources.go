@@ -72,11 +72,11 @@ type DestinationStatus struct {
 type FailedRecords []FailedRecord
 
 type FailedRecord struct {
-	DestinationID string          `json:"destination_id"`
-	RecordID      json.RawMessage `json:"record_id"`
 	JobRunID      string          `json:"job_run_id"`
 	TaskRunID     string          `json:"task_run_id"`
 	SourceID      string          `json:"source_id"`
+	DestinationID string          `json:"destination_id"`
+	RecordID      json.RawMessage `json:"record_id"`
 	CreatedAt     time.Time       `json:"createdAt"`
 }
 
@@ -111,7 +111,7 @@ type JobService interface {
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
 
 	// TODO: future extension
-	GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error)
+	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
@@ -166,7 +166,7 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 	return nil
 }
 
-func (*noopService) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobFilter) (FailedRecords, error) {
+func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter) (FailedRecords, error) {
 	return FailedRecords{}, nil
 }
 
