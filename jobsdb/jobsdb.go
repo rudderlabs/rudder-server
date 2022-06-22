@@ -2352,7 +2352,7 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
 	if workspace == "" {
-		jd.logger.Errorf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
+		jd.logger.Debugf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
 		jd.invalidCacheKeyStat.Increment()
 	}
 
