@@ -48,6 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/config/config-reporting"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -158,6 +159,7 @@ func runAllInit() {
 	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
+	config_reporting.Init()
 	warehouseutils.Init()
 	bigquery.Init()
 	clickhouse.Init()
@@ -238,6 +240,8 @@ func Run(ctx context.Context) {
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
+
+	_ = config_reporting.ReportDataPlaneConfig()
 
 	version := versionInfo()
 	bugsnag.Configure(bugsnag.Configuration{
