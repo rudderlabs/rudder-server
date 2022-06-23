@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/rudderlabs/rudder-server/compare/v0.1.10...v0.1.10) (2022-06-23)
+
+
+### Miscellaneous Chores
+
+* change release to 0.1.10 ([7afd330](https://github.com/rudderlabs/rudder-server/commit/7afd330f647e8bc65feb6ee44291a995a0163345))
+
 ## [0.1.10](https://github.com/rudderlabs/rudder-server/compare/v0.1.11...v0.1.10) (2022-06-23)
 
 
