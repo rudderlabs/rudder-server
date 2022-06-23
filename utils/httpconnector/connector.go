@@ -3,13 +3,14 @@ package httpconnector
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/rudderlabs/rudder-server/config"
 	"net/http"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 // MakeHTTPPostRequest makes HTTP Post call to the url with the body as payload and returns the error if any.
-//This uses basic authentication
+// This uses basic authentication
 func MakeHTTPPostRequest(url string, payload []byte) error {
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {

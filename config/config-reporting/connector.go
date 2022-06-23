@@ -3,12 +3,13 @@ package config_reporting
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/httpconnector"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"os"
-	"time"
 )
 
 var (
