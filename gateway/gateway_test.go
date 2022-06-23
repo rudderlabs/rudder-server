@@ -531,9 +531,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should return a robots.txt", func() {
 			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
-
 		})
-
 	})
 })
 
