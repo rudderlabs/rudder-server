@@ -1502,7 +1502,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
-		err := fmt.Errorf("Empty source and destination id")
+		err := fmt.Errorf("empty source and destination id")
 		pkgLogger.Errorf("[WH]: trigger upload : %v", err)
 		return err
 	}
@@ -1690,7 +1690,7 @@ func setupDB(connInfo string) {
 	}
 
 	if !isDBCompatible {
-		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
+		err := errors.New("rudder Warehouse Service needs postgres version >= 10. Exiting")
 		pkgLogger.Error(err)
 		panic(err)
 	}

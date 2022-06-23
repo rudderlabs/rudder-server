@@ -125,6 +125,7 @@ func versionInfo() map[string]interface{} {
 func versionHandler(w http.ResponseWriter, r *http.Request) {
 	version := versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
+	w.Header().Set("X-Robots-Tag", "noindex")
 	_, _ = w.Write(versionFormatted)
 }
 
