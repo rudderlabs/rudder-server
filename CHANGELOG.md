@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/rudderlabs/rudder-server/compare/v0.1.10...v0.1.11) (2022-06-23)
+
+
+### Bug Fixes
+
+* recordId lookup ([#2095](https://github.com/rudderlabs/rudder-server/issues/2095)) ([0e4918f](https://github.com/rudderlabs/rudder-server/commit/0e4918f0b128c738efaebb0fa02ad7f9c9ce95a8))
+
 ## 0.1.10 (2022-06-14)
 
 
