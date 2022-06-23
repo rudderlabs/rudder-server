@@ -22,8 +22,9 @@ type Opts struct {
 }
 
 // schema is the AVRO schema required to convert the data to AVRO
-type schema struct {
-	avroSchema string
+type avroSchema struct {
+	SchemaId string
+	Schema   string
 }
 
 // configuration is the config that is required to send data to Kafka
@@ -38,7 +39,7 @@ type configuration struct {
 	Username      string
 	Password      string
 	ConvertToAvro bool
-	avroSchema    []schema
+	AvroSchemas   []avroSchema
 }
 
 func (c *configuration) validate() error {
@@ -107,13 +108,13 @@ type producer interface {
 	Publish(context.Context, ...client.Message) error
 
 	getTimeout() time.Duration
-	getCodecs() []goavro.Codec
+	getCodecs() map[string]goavro.Codec
 }
 
 type producerImpl struct {
 	p       *client.Producer
 	timeout time.Duration
-	codecs  []goavro.Codec
+	codecs  map[string]goavro.Codec
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
@@ -131,7 +132,7 @@ func (p *producerImpl) Close(ctx context.Context) error {
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
-func (p *producerImpl) getCodecs() []goavro.Codec {
+func (p *producerImpl) getCodecs() map[string]goavro.Codec {
 	return p.codecs
 }
 
@@ -294,16 +295,16 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 		return nil, err
 	}
 	convertToAvro := destConfig.ConvertToAvro
-	avroSchema := destConfig.avroSchema
-	var codecs []goavro.Codec
+	avroSchemas := destConfig.AvroSchemas
+	var codecs map[string]goavro.Codec
 	if convertToAvro {
-		codecs = make([]goavro.Codec, len(avroSchema))
-		for i, avroSchema := range avroSchema {
-			tempCodec, err := goavro.NewCodec(avroSchema.avroSchema)
+		codecs = make(map[string]goavro.Codec, len(avroSchemas))
+		for _, avroSchema := range avroSchemas {
+			newCodec, err := goavro.NewCodec(avroSchema.Schema)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
 			}
-			codecs[i] = *tempCodec
+			codecs[avroSchema.SchemaId] = *newCodec
 		}
 	}
 	return &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}, nil
@@ -419,35 +420,20 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 	}
 }
 
-// This function is used to create the error string of an individual schema
-func createErrString(err error, index int) string {
-	return fmt.Sprintf(" Schema[%d]: ", index+1) + err.Error() + "."
-}
-
 // This function is used to serialize the binary data according to the avroSchema.
 // It iterates over the schemas provided by the customer and tries to serialize the data.
 // If it's able to serialize the data then it returns the converted data otherwise it returns an error.
 // We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
-func serialize(value []byte, codecs []goavro.Codec) ([]byte, error) {
-	var errorStr string
-	for i, codec := range codecs {
-		native, _, err := codec.NativeFromTextual(value)
-		if err != nil {
-			errorStr += createErrString(err, i)
-			continue
-		}
-		binary, err := codec.BinaryFromNative(nil, native)
-		if err != nil {
-			errorStr += createErrString(err, i)
-			continue
-		}
-		if err == nil {
-			return binary, nil
-		} else {
-			errorStr += createErrString(err, i)
-		}
+func serialize(value []byte, codec goavro.Codec) ([]byte, error) {
+	native, _, err := codec.NativeFromTextual(value)
+	if err != nil {
+		return nil, fmt.Errorf("unable convert the event to native from textual, with error: %s", err)
 	}
-	return nil, fmt.Errorf("unable convert the event with any of the given schema." + errorStr)
+	binary, err := codec.BinaryFromNative(nil, native)
+	if err != nil {
+		return nil, fmt.Errorf("unable convert the event to binary from native, with error: %s", err)
+	}
+	return binary, nil
 }
 
 func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producer) (
@@ -474,12 +460,22 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		if err != nil {
 			return nil, err
 		}
-		codec := p.getCodecs()
-		if len(codec) > 0 {
-			marshalledMsg, err = serialize(marshalledMsg, codec)
-			if err != nil {
-				return messages, err
+		codecs := p.getCodecs()
+		if len(codecs) > 0 {
+			schemaId, _ := data["schemaId"].(string)
+			fmt.Println(schemaId)
+			if schemaId == "" {
+				return nil, fmt.Errorf("schemaId is not available for this event")
 			}
+			if codec, ok := codecs[schemaId]; ok {
+				marshalledMsg, err = serialize(marshalledMsg, codec)
+				if err != nil {
+					return nil, fmt.Errorf("unable to convert the event with schemaId: %v, with error: %s", schemaId, err)
+				}
+			} else {
+				return nil, fmt.Errorf("unable to find schema with schemaId: %v", schemaId)
+			}
+
 		}
 		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
 	}
@@ -573,11 +569,17 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
-	codec := p.getCodecs()
-	if len(codec) > 0 {
-		value, err = serialize(value, codec)
-		if err != nil {
-			return makeErrorResponse(err)
+	codecs := p.getCodecs()
+	if len(codecs) > 0 {
+		schemaId, _ := parsedJSON.Get("schemaId").Value().(string)
+		if schemaId == "" {
+			return makeErrorResponse(fmt.Errorf("schemaId is not available for this event"))
+		}
+		if codec, ok := codecs[schemaId]; ok {
+			value, err = serialize(value, codec)
+			if err != nil {
+				return makeErrorResponse(err)
+			}
 		}
 	}
 	message := prepareMessage(topic, userID, value, timestamp)
