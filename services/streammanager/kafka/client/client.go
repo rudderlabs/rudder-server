@@ -73,7 +73,7 @@ func New(network string, addresses []string, conf Config) (*Client, error) {
 }
 
 // NewConfluentCloud returns a Kafka client pre-configured to connect to Confluent Cloud
-func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error) {
+func NewConfluentCloud(addresses []string, key, secret string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     key,
@@ -82,11 +82,11 @@ func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", []string{address}, conf)
+	return New("tcp", addresses, conf)
 }
 
 // NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
-func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, error) {
+func NewAzureEventHubs(addresses []string, connectionString string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     "$ConnectionString",
@@ -95,7 +95,7 @@ func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, 
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", []string{address}, conf)
+	return New("tcp", addresses, conf)
 }
 
 // Ping is used to check the connectivity only, then it discards the connection

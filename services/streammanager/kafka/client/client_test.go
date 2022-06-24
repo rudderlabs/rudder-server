@@ -624,7 +624,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewConfluentCloud(kafkaHost, confluentCloudKey, confluentCloudSecret, Config{
+	c, err := NewConfluentCloud([]string{kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -650,7 +650,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = NewConfluentCloud(kafkaHost, "A BAD KEY", confluentCloudSecret, Config{
+	c, err = NewConfluentCloud([]string{kafkaHost}, "A BAD KEY", confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -669,7 +669,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewAzureEventHubs(kafkaHost, azureEventHubsConnString, Config{
+	c, err := NewAzureEventHubs([]string{kafkaHost}, azureEventHubsConnString, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -692,7 +692,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = NewAzureEventHubs(kafkaHost, "A BAD CONNECTION STRING", Config{
+	c, err = NewAzureEventHubs([]string{kafkaHost}, "A BAD CONNECTION STRING", Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})

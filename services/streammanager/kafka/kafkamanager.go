@@ -311,8 +311,9 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewAzureEventHubs(
-		destConfig.BootstrapServer, destConfig.EventHubsConnectionString, client.Config{
+		addresses, destConfig.EventHubsConnectionString, client.Config{
 			DialTimeout: kafkaDialTimeout,
 		},
 	)
@@ -362,8 +363,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewConfluentCloud(
-		destConfig.BootstrapServer, destConfig.APIKey, destConfig.APISecret, client.Config{
+		addresses, destConfig.APIKey, destConfig.APISecret, client.Config{
 			DialTimeout: kafkaDialTimeout,
 		},
 	)
