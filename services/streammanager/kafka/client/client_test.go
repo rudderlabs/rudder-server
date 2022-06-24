@@ -53,6 +53,11 @@ func TestClient_Ping(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, c.Ping(ctx))
 
+	// shuffling hosts
+	c, err = New("tcp", []string{kafkaHost, "bad-host", kafkaHost}, Config{})
+	require.NoError(t, err)
+	require.NoError(t, c.Ping(ctx))
+
 	require.NoError(t, kafkaContainer.Destroy())
 	err = c.Ping(ctx)
 	require.Error(t, err)
@@ -71,7 +76,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -211,7 +216,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -371,7 +376,7 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{
+			c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{
 				ClientID:    "some-client",
 				DialTimeout: 10 * time.Second,
 				SASL: &SASL{
@@ -452,7 +457,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{
 		ClientID:    "some-client",
 		DialTimeout: 10 * time.Second,
 		SASL: &SASL{
@@ -486,7 +491,7 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -554,7 +559,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -624,7 +629,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewConfluentCloud([]string{kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
+	c, err := NewConfluentCloud([]string{"bad-host", kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -692,7 +697,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = NewAzureEventHubs([]string{kafkaHost}, "A BAD CONNECTION STRING", Config{
+	c, err = NewAzureEventHubs([]string{"bad-host", kafkaHost}, "A BAD CONNECTION STRING", Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
