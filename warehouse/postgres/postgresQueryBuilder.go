@@ -19,18 +19,17 @@ type QueryExecution struct {
 // Any SELECT, INSERT, UPDATE, DELETE, VALUES, EXECUTE, DECLARE, CREATE TABLE AS, or CREATE MATERIALIZED VIEW AS statement, whose execution plan you wish to see.
 func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
 	sqlStatement := e.query
-	if e.enableWithQueryPlan {
-		sqlStatement = "EXPLAIN ANALYZE " + e.query
-	}
 
 	if e.enableWithQueryPlan {
+		sqlStatement = "EXPLAIN " + e.query
+
 		var rows *sql.Rows
 		if e.txn != nil {
 			rows, err = e.txn.Query(sqlStatement)
 		} else if e.db != nil {
 			rows, err = e.db.Query(sqlStatement)
 		} else {
-			err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s", sqlStatement)
+			err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s as both txn and db are nil", sqlStatement)
 			return
 		}
 		if err != nil {
@@ -48,16 +47,16 @@ func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
 			}
 			response = append(response, s)
 		}
-		pkgLogger.Infof("[WH][POSTGRES] Execution Query plan for statement: %s is %s", sqlStatement, strings.Join(response, "\n"))
+		pkgLogger.Infof(fmt.Sprintf(`[WH][POSTGRES] Execution Query plan for statement: %s is %s`, sqlStatement, strings.Join(response, `
+`)))
+	}
+	if e.txn != nil {
+		result, err = e.txn.Exec(sqlStatement)
+	} else if e.db != nil {
+		result, err = e.db.Exec(sqlStatement)
 	} else {
-		if e.txn != nil {
-			result, err = e.txn.Exec(sqlStatement)
-		} else if e.db != nil {
-			result, err = e.db.Exec(sqlStatement)
-		} else {
-			err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s", sqlStatement)
-			return
-		}
+		err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s as both txn and db are nil", sqlStatement)
+		return
 	}
 	return
 }
