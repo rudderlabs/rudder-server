@@ -99,17 +99,23 @@ func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, 
 }
 
 // Ping is used to check the connectivity only, then it discards the connection
+// Ping ensures that at least one of the provide addresses is reachable.
 func (c *Client) Ping(ctx context.Context) error {
-	address := kafka.TCP(c.addresses...).String()
-	conn, err := c.dialer.DialContext(ctx, c.network, address)
-	if err != nil {
-		return fmt.Errorf("could not dial %s/%s: %w", c.network, address, err)
+	var lastErr error
+
+	for _, addr := range c.addresses {
+		conn, err := c.dialer.DialContext(ctx, c.network, addr)
+		if err == nil {
+			// we can connect with first available address, no need to check all
+			return nil
+		}
+		lastErr = err
+
+		defer func() {
+			// close asynchronously, if we block we might not respect the context
+			go func() { _ = conn.Close() }()
+		}()
 	}
 
-	defer func() {
-		// close asynchronously, if we block we might not respect the context
-		go func() { _ = conn.Close() }()
-	}()
-
-	return nil
+	return fmt.Errorf("could not dial any of the addresses %s/%s: %w", c.network, kafka.TCP(c.addresses...).String(), lastErr)
 }
