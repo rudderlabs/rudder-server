@@ -187,7 +187,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 
 		destConfig := map[string]interface{}{
 			"topic":                     azureEventHubName,
-			"bootstrapServer":           kafkaHost + "," + kafkaHost,
+			"bootstrapServer":           "bad-host," + kafkaHost + "," + kafkaHost,
 			"eventHubsConnectionString": azureEventHubsConnString,
 		}
 		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
@@ -271,7 +271,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 		destConfig := map[string]interface{}{
 			"topic":           "TestConfluentAzureCloud",
-			"bootstrapServer": kafkaHost + "," + kafkaHost,
+			"bootstrapServer": "bad-host," + kafkaHost + "," + kafkaHost,
 			"apiKey":          confluentCloudKey,
 			"apiSecret":       confluentCloudSecret,
 		}
