@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,13 +30,13 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
-		overrideArm64Check = true
-	}
-	if runtime.GOARCH == "arm64" && !overrideArm64Check {
-		fmt.Println("arm64 is not supported yet")
-		os.Exit(0)
-	}
+	// if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
+	// 	overrideArm64Check = true
+	// }
+	// if runtime.GOARCH == "arm64" && !overrideArm64Check {
+	// 	fmt.Println("arm64 is not supported yet")
+	// 	os.Exit(0)
+	// }
 	os.Exit(m.Run())
 }
 
@@ -73,7 +72,9 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	kafkaHost1 := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+
+	c, err := New("tcp", []string{kafkaHost, kafkaHost1}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -213,7 +214,9 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	kafkaHost1 := fmt.Sprintf("127.0.0.1:%s", kafkaContainer.Port)
+
+	c, err := New("tcp", []string{kafkaHost, kafkaHost1}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -488,7 +491,9 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	kafkaHost2 := fmt.Sprintf("127.0.0.1:%s", kafkaContainer.Port)
+
+	c, err := New("tcp", []string{kafkaHost, kafkaHost2}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
