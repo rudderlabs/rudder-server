@@ -102,16 +102,17 @@ func NewAzureEventHubs(addresses []string, connectionString string, conf Config)
 // Ping ensures that at least one of the provided addresses is reachable.
 func (c *Client) Ping(ctx context.Context) error {
 	var lastErr error
-
 	for _, addr := range c.addresses {
 		conn, err := c.dialer.DialContext(ctx, c.network, kafka.TCP(addr).String())
 		if err == nil {
 			go func() { _ = conn.Close() }()
-			// we can connect with first available address, no need to check all
+			// we can connect to at least one address, no need to check all of them
 			return nil
 		}
 		lastErr = err
 	}
 
-	return fmt.Errorf("could not dial any of the addresses %s/%s: %w", c.network, kafka.TCP(c.addresses...).String(), lastErr)
+	return fmt.Errorf(
+		"could not dial any of the addresses %s/%s: %w", c.network, kafka.TCP(c.addresses...).String(), lastErr,
+	)
 }
