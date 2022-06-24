@@ -99,7 +99,7 @@ func NewAzureEventHubs(addresses []string, connectionString string, conf Config)
 }
 
 // Ping is used to check the connectivity only, then it discards the connection
-// Ping ensures that at least one of the provide addresses is reachable.
+// Ping ensures that at least one of the provided addresses is reachable.
 func (c *Client) Ping(ctx context.Context) error {
 	var lastErr error
 
