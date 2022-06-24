@@ -70,7 +70,6 @@ type Tags map[string]string
 
 // Strings returns all key value pairs as an ordered list of strings, sorted by increasing key order
 func (t Tags) Strings() []string {
-
 	res := make([]string, 0, len(t)*2)
 	// sorted by tag name (!important for consistent map iteration order)
 	tagNames := make([]string, 0, len(t))

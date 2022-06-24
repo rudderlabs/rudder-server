@@ -36,5 +36,4 @@ func TestTags(t *testing.T) {
 		require.Equal(t, []string{}, emptyTags.Strings())
 		require.Equal(t, "", emptyTags.String())
 	})
-
 }
