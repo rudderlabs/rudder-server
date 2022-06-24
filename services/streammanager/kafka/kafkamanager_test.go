@@ -276,8 +276,8 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			"apiSecret":       confluentCloudSecret,
 		}
 		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
-		require.NotNil(t, p)
 		require.NoError(t, err)
+		require.NotNil(t, p)
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
