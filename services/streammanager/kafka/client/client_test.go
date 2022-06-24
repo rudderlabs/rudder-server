@@ -47,7 +47,7 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{})
+	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -71,7 +71,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -211,7 +211,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -371,7 +371,7 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", []string{kafkaHost}, Config{
+			c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{
 				ClientID:    "some-client",
 				DialTimeout: 10 * time.Second,
 				SASL: &SASL{
