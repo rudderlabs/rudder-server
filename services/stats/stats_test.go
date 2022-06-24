@@ -33,7 +33,7 @@ func TestTags(t *testing.T) {
 
 	t.Run("empty tags", func(t *testing.T) {
 		emptyTags := stats.Tags{}
-		require.Equal(t, []string{}, emptyTags.Strings())
+		require.Nil(t, emptyTags.Strings())
 		require.Equal(t, "", emptyTags.String())
 	})
 }
