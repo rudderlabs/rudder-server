@@ -49,10 +49,15 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
+	require.NoError(t, c.Ping(ctx))
+
+	// shuffling hosts
+	c, err = New("tcp", []string{kafkaHost, "bad-host", kafkaHost}, Config{})
+	require.NoError(t, err)
 	require.NoError(t, c.Ping(ctx))
 
 	require.NoError(t, kafkaContainer.Destroy())
@@ -73,7 +78,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -82,7 +87,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -213,7 +218,7 @@ func TestConsumer_Partition(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	var (
@@ -222,7 +227,7 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -373,7 +378,7 @@ func TestWithSASL(t *testing.T) {
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-			c, err := New("tcp", []string{kafkaHost}, Config{
+			c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{
 				ClientID:    "some-client",
 				DialTimeout: 10 * time.Second,
 				SASL: &SASL{
@@ -454,7 +459,7 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{
 		ClientID:    "some-client",
 		DialTimeout: 10 * time.Second,
 		SASL: &SASL{
@@ -488,13 +493,13 @@ func TestProducer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
@@ -556,7 +561,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{ClientID: "some-client", DialTimeout: 5 * time.Second})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -565,7 +570,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	require.Eventually(t, func() bool {
 		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
 		if err != nil {
@@ -626,7 +631,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewConfluentCloud(kafkaHost, confluentCloudKey, confluentCloudSecret, Config{
+	c, err := NewConfluentCloud([]string{"bad-host", kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -652,7 +657,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = NewConfluentCloud(kafkaHost, "A BAD KEY", confluentCloudSecret, Config{
+	c, err = NewConfluentCloud([]string{kafkaHost}, "A BAD KEY", confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -671,7 +676,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewAzureEventHubs(kafkaHost, azureEventHubsConnString, Config{
+	c, err := NewAzureEventHubs([]string{kafkaHost}, azureEventHubsConnString, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -694,7 +699,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	cancel()
 	require.NoError(t, err)
 
-	c, err = NewAzureEventHubs(kafkaHost, "A BAD CONNECTION STRING", Config{
+	c, err = NewAzureEventHubs([]string{"bad-host", kafkaHost}, "A BAD CONNECTION STRING", Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})

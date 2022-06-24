@@ -742,7 +742,7 @@ func TestKafka(t *testing.T) {
 	topics, err := tc.ListTopics(context.TODO())
 	require.NoError(t, err)
 
-	c, err := kafkaclient.New("tcp", []string{kafkaHost}, kafkaclient.Config{})
+	c, err := kafkaclient.New("tcp", []string{kafkaHost, kafkaHost}, kafkaclient.Config{})
 	require.NoError(t, err)
 
 	messages, errors := consume(t, c, topics)
