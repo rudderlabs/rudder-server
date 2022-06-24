@@ -47,7 +47,7 @@ func TestClient_Ping(t *testing.T) {
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	c, err := New("tcp", []string{kafkaHost, kafkaHost}, Config{})
+	c, err := New("tcp", []string{"bad-host", kafkaHost}, Config{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
