@@ -21,7 +21,7 @@ func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
 	sqlStatement := e.query
 
 	if e.enableWithQueryPlan {
-		sqlStatement = "EXPLAIN " + e.query
+		sqlStatement := "EXPLAIN " + e.query
 
 		var rows *sql.Rows
 		if e.txn != nil {
