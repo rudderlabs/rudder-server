@@ -106,7 +106,7 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, recordID []json.RawMessage) error {
+func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error {
 	sqlStatement := `insert into "failed_keys" (
 		job_run_id,
 		task_run_id,
@@ -115,13 +115,18 @@ func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunI
 		record_id
 	) values ($1, $2, $3, $4, $5)`
 
-	_, err := tx.ExecContext(
-		ctx,
-		sqlStatement,
-		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
-		recordID)
+	for i := range records {
+		_, err := tx.ExecContext(
+			ctx,
+			sqlStatement,
+			jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
+			records[i])
+		if err != nil {
+			return err
+		}
+	}
 
-	return err
+	return nil
 }
 
 func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
@@ -145,8 +150,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			task_run_id,
 			source_id,
 			destination_id,
-			record_id,
-			created_at FROM "failed_keys" %s
+			record_id  FROM "failed_keys" %s
 			ORDER BY task_run_id, source_id, destination_id DESC`,
 		filters)
 
@@ -164,7 +168,6 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			&failedRecord.SourceID,
 			&failedRecord.DestinationID,
 			&failedRecord.RecordID,
-			&failedRecord.CreatedAt,
 		)
 		if err != nil {
 			return FailedRecords{}, err
