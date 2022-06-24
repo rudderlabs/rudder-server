@@ -11,11 +11,11 @@ import (
 )
 
 // NewWithDialer returns a client with a custom dialer
-func NewWithDialer(dialer *kafka.Dialer, network, address string) *Client {
+func NewWithDialer(dialer *kafka.Dialer, network string, address ...string) *Client {
 	return &Client{
-		dialer:  dialer,
-		network: network,
-		address: address,
+		dialer:    dialer,
+		network:   network,
+		addresses: address,
 	}
 }
 
@@ -28,20 +28,35 @@ func New(network, address string) *Client {
 }
 
 type Client struct {
-	dialer           *kafka.Dialer
-	network, address string
+	dialer    *kafka.Dialer
+	network   string
+	addresses []string
+}
+
+func (c *Client) ping(ctx context.Context) (*kafka.Conn, error) {
+	var (
+		err  error
+		conn *kafka.Conn
+	)
+	for _, addr := range c.addresses {
+		conn, err = c.dialer.DialContext(ctx, c.network, kafka.TCP(addr).String())
+		if err == nil { // we can connect to at least one address, no need to check all of them
+			break
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"could not dial any of the addresses %s/%s: %w", c.network, kafka.TCP(c.addresses...).String(), err,
+		)
+	}
+	return conn, nil
 }
 
 func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, replicationFactor int) error {
-	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
+	conn, err := c.ping(ctx)
 	if err != nil {
-		return fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
+		return err
 	}
-
-	defer func() {
-		// close asynchronously, if we block we might not respect the context
-		go func() { _ = conn.Close() }()
-	}()
 
 	var (
 		errors  = make(chan error, 1)
@@ -101,15 +116,10 @@ type TopicPartition struct {
 }
 
 func (c *Client) ListTopics(ctx context.Context) ([]TopicPartition, error) {
-	conn, err := c.dialer.DialContext(ctx, c.network, c.address)
+	conn, err := c.ping(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not dial %s/%s: %w", c.network, c.address, err)
+		return nil, err
 	}
-
-	defer func() {
-		// close asynchronously, if we block we might not respect the context
-		go func() { _ = conn.Close() }()
-	}()
 
 	var (
 		done   = make(chan []kafka.Partition, 1)

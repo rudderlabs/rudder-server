@@ -5,17 +5,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestCircuitBreaker(t *testing.T) {
 	const (
-		normalError  = "could not ping: could not dial tcp/unknown.example.com:9999: failed to dial: failed to open connection to unknown.example.com:9999: dial tcp: lookup unknown.example.com: no such host"
+		normalError  = "could not ping: could not dial any of the addresses"
 		breakerError = "circuit breaker is open"
 	)
 
@@ -74,12 +75,12 @@ func TestCircuitBreaker(t *testing.T) {
 
 func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) { // skipcq: CRT-P0003
 	err := manager.onNewDestination(dest)
-	assert.EqualError(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
 }
 
 func newClientAttempt(t *testing.T, manager *CustomManagerT, destId string, attempt int, errorString string) {
 	err := manager.newClient(destId)
-	assert.EqualError(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
 }
 
 func getDestConfig() backendconfig.DestinationT {

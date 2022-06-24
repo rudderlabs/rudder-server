@@ -233,7 +233,7 @@ func TestMainFlow(t *testing.T) {
 		topics, err := tc.ListTopics(context.TODO())
 		require.NoError(t, err)
 
-		c, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
+		c, err := kafkaClient.New("tcp", []string{kafkaHost, kafkaHost}, kafkaClient.Config{})
 		require.NoError(t, err)
 
 		messages, errors := consume(t, c, topics)

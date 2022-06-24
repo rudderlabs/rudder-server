@@ -187,7 +187,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 
 		destConfig := map[string]interface{}{
 			"topic":                     azureEventHubName,
-			"bootstrapServer":           kafkaHost,
+			"bootstrapServer":           "bad-host," + kafkaHost + "," + kafkaHost,
 			"eventHubsConnectionString": azureEventHubsConnString,
 		}
 		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
@@ -271,13 +271,13 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 		destConfig := map[string]interface{}{
 			"topic":           "TestConfluentAzureCloud",
-			"bootstrapServer": kafkaHost,
+			"bootstrapServer": "bad-host," + kafkaHost + "," + kafkaHost,
 			"apiKey":          confluentCloudKey,
 			"apiSecret":       confluentCloudSecret,
 		}
 		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
-		require.NotNil(t, p)
 		require.NoError(t, err)
+		require.NotNil(t, p)
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
