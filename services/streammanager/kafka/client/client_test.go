@@ -85,7 +85,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -225,7 +225,7 @@ func TestConsumer_Partition(t *testing.T) {
 		c01Count, c02Count  int32
 		noOfMessages        = 50
 		ctx, cancel         = context.WithCancel(context.Background())
-		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+		tc                  = testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	)
 
 	t.Cleanup(gracefulTermination.Wait)
@@ -497,7 +497,7 @@ func TestProducer_Timeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
@@ -568,7 +568,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	// Check connectivity and try to create the desired topic until the brokers are up and running (max 30s)
 	require.NoError(t, c.Ping(ctx))
 
-	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses[0])
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
 	require.Eventually(t, func() bool {
 		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 2, replication factor = 1
 		if err != nil {
