@@ -59,7 +59,7 @@ SourceDebugger:
 DestinationDebugger:
   disableEventDeliveryStatusUploads: false
 TransformationDebugger:
-  disableTransformationStatusUploads: false
+  disableTransformationStatusUploads: true
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
