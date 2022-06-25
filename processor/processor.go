@@ -1361,6 +1361,10 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 			for _, destType := range enabledDestTypes {
+				// Skip batch destinations
+				if misc.ContainsString(batchDestinations, destType) {
+					continue
+				}
 				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 				enabledDestinationsMap[destType] = enabledDestinationsList
 				// Adding a singular event multiple times if there are multiple destinations of same type
