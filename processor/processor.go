@@ -679,28 +679,33 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEvent j
 	*event.Message = message
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent json.RawMessage, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
+func makeCommonMetadataFromSingularEvent(eventType, eventName, messageID string, singularEvent json.RawMessage, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
-	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.SourceID = source.ID
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = gjson.GetBytes(singularEvent, "messageId").String()
+	commonMetadata.MessageID = messageID
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceBatchID = gjson.GetBytes(singularEvent, "context.sources.batch_id").String()
-	commonMetadata.SourceTaskID = gjson.GetBytes(singularEvent, "context.sources.task_id").String()
-	commonMetadata.SourceJobRunID = gjson.GetBytes(singularEvent, "context.sources.job_run_id").String()
-	commonMetadata.SourceJobID = gjson.GetBytes(singularEvent, "context.sources.job_id").String()
-	commonMetadata.SourceTaskRunID = gjson.GetBytes(singularEvent, "context.sources.task_run_id").String()
+	context := gjson.GetBytes(singularEvent, "context").Value()
+	cntxt, err := context.(map[string]string)
+	if !err {
+		pkgLogger.Error(`Processor : error casting context to map[string]string`)
+	}
+	commonMetadata.SourceBatchID = cntxt["batch_id"]
+	commonMetadata.SourceTaskID = cntxt["task_id"]
+	commonMetadata.SourceJobRunID = cntxt["job_run_id"]
+	commonMetadata.SourceJobID = cntxt["job_id"]
+	commonMetadata.SourceTaskRunID = cntxt["task_run_id"]
 	commonMetadata.RecordID = gjson.GetBytes(singularEvent, "recordID").String()
 
-	commonMetadata.EventName = gjson.GetBytes(singularEvent, "event").String()
-	commonMetadata.EventType = gjson.GetBytes(singularEvent, "type").String()
+	commonMetadata.EventName = eventName
+	commonMetadata.EventType = eventType
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
 
 	return &commonMetadata
@@ -1070,15 +1075,13 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	return failedEventsToStore, failedMetrics, failedCountMap
 }
 
-func (proc *HandleT) updateSourceEventStatsDetailed(event json.RawMessage, writeKey string) {
+func (proc *HandleT) updateSourceEventStatsDetailed(event json.RawMessage, writeKey string) (eventType, eventName string) {
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
 		}
 	}()
-	var eventType string
-	var eventName string
 	val := gjson.GetBytes(event, "type").String()
 	if val != "" {
 		eventType = val
@@ -1108,6 +1111,7 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event json.RawMessage, write
 			statEventTypeDetailed.Count(1)
 		}
 	}
+	return eventType, eventName
 }
 
 func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap map[string]int64) []*types.PUReportedMetric {
@@ -1192,30 +1196,31 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]json
 			singularEvents = parsedEventList[idx]
 			ok = singularEvents != nil
 		}
-		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
-		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
-		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
+		writeKey := gjson.GetBytes(batchEvent.EventPayload, "writeKey").Str
+		requestIP := gjson.GetBytes(batchEvent.EventPayload, "requestIP").Str
+		receivedAt := gjson.GetBytes(batchEvent.EventPayload, "receivedAt").Time()
 
 		if ok {
+			var allMessageIdsInBatch []string
+			for _, singularEvent := range singularEvents {
+				messageID := gjson.GetBytes(singularEvent, "messageId").String()
+				allMessageIdsInBatch = append(allMessageIdsInBatch, messageID)
+			}
 			var duplicateIndexes []int
 			if enableDedup {
-				var allMessageIdsInBatch []string
-				for _, singularEvent := range singularEvents {
-					allMessageIdsInBatch = append(allMessageIdsInBatch, gjson.GetBytes(singularEvent, "messageId").String())
-				}
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
-				messageId := gjson.GetBytes(singularEvent, "messageId").String()
+				messageId := allMessageIdsInBatch[eventIndex]
 				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
 				}
 
-				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+				eventType, eventName := proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
 				uniqueMessageIds[messageId] = struct{}{}
 				// We count this as one, not destination specific ones
@@ -1232,6 +1237,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]json
 				}
 
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+					eventType, eventName,
+					messageId,
 					singularEvent,
 					batchEvent,
 					receivedAt,
