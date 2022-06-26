@@ -692,16 +692,11 @@ func makeCommonMetadataFromSingularEvent(eventType, eventName, messageID string,
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	context := gjson.GetBytes(singularEvent, "context").Value()
-	cntxt, err := context.(map[string]string)
-	if !err {
-		pkgLogger.Error(`Processor : error casting context to map[string]string`)
-	}
-	commonMetadata.SourceBatchID = cntxt["batch_id"]
-	commonMetadata.SourceTaskID = cntxt["task_id"]
-	commonMetadata.SourceJobRunID = cntxt["job_run_id"]
-	commonMetadata.SourceJobID = cntxt["job_id"]
-	commonMetadata.SourceTaskRunID = cntxt["task_run_id"]
+	commonMetadata.SourceBatchID = gjson.GetBytes(singularEvent, "context.sources.batch_id").String()
+	commonMetadata.SourceTaskID = gjson.GetBytes(singularEvent, "context.sources.task_id").String()
+	commonMetadata.SourceJobRunID = gjson.GetBytes(singularEvent, "context.sources.job_run_id").String()
+	commonMetadata.SourceJobID = gjson.GetBytes(singularEvent, "context.sources.job_id").String()
+	commonMetadata.SourceTaskRunID = gjson.GetBytes(singularEvent, "context.sources.task_run_id").String()
 	commonMetadata.RecordID = gjson.GetBytes(singularEvent, "recordID").String()
 
 	commonMetadata.EventName = eventName
