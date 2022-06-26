@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/tidwall/gjson"
 )
 
 type TrackingPlanStatT struct {
@@ -27,7 +28,8 @@ func reportViolations(validateEvent *transformer.TransformerResponseT, trackingP
 	validationErrors := validateEvent.ValidationErrors
 	output := validateEvent.Output
 
-	eventContext, castOk := output["context"].(map[string]interface{})
+	context := gjson.GetBytes(*output, "context").Value()
+	eventContext, castOk := context.(map[string]interface{})
 	if castOk {
 		eventContext["trackingPlanId"] = trackingPlanId
 		eventContext["violationErrors"] = validationErrors

@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
@@ -115,11 +115,8 @@ func ValidatePostInfo(transformRawParams PostParametersT) error {
 
 // FilterClientIntegrations parses the destination names from the
 // input JSON, matches them with enabled destinations from controle plane and returns the IDSs
-func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
-	if !ok {
-		clientIntgs = make(map[string]interface{})
-	}
+func FilterClientIntegrations(clientEvent *json.RawMessage, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
+	clientIntgs := gjson.GetBytes(*clientEvent, "integrations").Value()
 	clientIntgsList, ok := clientIntgs.(map[string]interface{})
 	if !ok {
 		return

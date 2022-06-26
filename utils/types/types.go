@@ -5,21 +5,19 @@ package types
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"time"
 )
 
-// SingularEventT single event structrue
-type SingularEventT map[string]interface{}
-
 type SingularEventWithReceivedAt struct {
-	SingularEvent SingularEventT
+	SingularEvent json.RawMessage
 	ReceivedAt    time.Time
 }
 
 // GatewayBatchRequestT batch request structure
 type GatewayBatchRequestT struct {
-	Batch []SingularEventT `json:"batch"`
+	Batch []json.RawMessage `json:"batch"`
 }
 
 // SuppressUserI is interface to access Suppress user feature

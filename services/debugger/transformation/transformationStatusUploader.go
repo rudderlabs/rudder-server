@@ -2,11 +2,13 @@ package transformationdebugger
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -39,16 +41,16 @@ type TransformStatusT struct {
 }
 
 type EventBeforeTransform struct {
-	EventName  string               `json:"eventName"`
-	EventType  string               `json:"eventType"`
-	ReceivedAt string               `json:"receivedAt"`
-	Payload    types.SingularEventT `json:"payload"`
+	EventName  string          `json:"eventName"`
+	EventType  string          `json:"eventType"`
+	ReceivedAt string          `json:"receivedAt"`
+	Payload    json.RawMessage `json:"payload"`
 }
 
 type EventPayloadAfterTransform struct {
-	EventName string               `json:"eventName"`
-	EventType string               `json:"eventType"`
-	Payload   types.SingularEventT `json:"payload"`
+	EventName string          `json:"eventName"`
+	EventType string          `json:"eventType"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 type EventsAfterTransform struct {
@@ -185,9 +187,9 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 	}
 }
 
-func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventBeforeTransform {
-	eventType, _ := singularEvent["type"].(string)
-	eventName, _ := singularEvent["event"].(string)
+func getEventBeforeTransform(singularEvent json.RawMessage, receivedAt time.Time) *EventBeforeTransform {
+	eventType := gjson.GetBytes(singularEvent, "type").String()
+	eventName := gjson.GetBytes(singularEvent, "event").String()
 	if eventName == "" {
 		eventName = eventType
 	}
@@ -200,9 +202,9 @@ func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time
 	}
 }
 
-func getEventAfterTransform(singularEvent types.SingularEventT) *EventPayloadAfterTransform {
-	eventType, _ := singularEvent["type"].(string)
-	eventName, _ := singularEvent["event"].(string)
+func getEventAfterTransform(singularEvent json.RawMessage) *EventPayloadAfterTransform {
+	eventType := gjson.GetBytes(singularEvent, "type").String()
+	eventName := gjson.GetBytes(singularEvent, "event").String()
 	if eventName == "" {
 		eventName = eventType
 	}
@@ -214,7 +216,7 @@ func getEventAfterTransform(singularEvent types.SingularEventT) *EventPayloadAft
 	}
 }
 
-func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventsAfterTransform {
+func getEventsAfterTransform(singularEvent json.RawMessage, receivedAt time.Time) *EventsAfterTransform {
 	return &EventsAfterTransform{
 		ReceivedAt:    receivedAt.Format(misc.RFC3339Milli),
 		StatusCode:    200,
@@ -249,10 +251,10 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 			}
 
 			if _, ok := eventAfterMap[metadata.MessageID]; !ok {
-				eventAfterMap[metadata.MessageID] = getEventsAfterTransform(tStatus.UserTransformedEvents[i].Message, time.Now())
+				eventAfterMap[metadata.MessageID] = getEventsAfterTransform(*tStatus.UserTransformedEvents[i].Message, time.Now())
 			} else {
 				payloadArr := eventAfterMap[metadata.MessageID].EventPayloads
-				payloadArr = append(payloadArr, getEventAfterTransform(tStatus.UserTransformedEvents[i].Message))
+				payloadArr = append(payloadArr, getEventAfterTransform(*tStatus.UserTransformedEvents[i].Message))
 				eventAfterMap[metadata.MessageID].EventPayloads = payloadArr
 			}
 		}

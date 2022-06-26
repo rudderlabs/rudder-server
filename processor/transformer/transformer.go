@@ -5,6 +5,7 @@ package transformer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,7 +69,7 @@ type MetadataT struct {
 }
 
 type TransformerEventT struct {
-	Message     types.SingularEventT       `json:"message"`
+	Message     *json.RawMessage           `json:"message"`
 	Metadata    MetadataT                  `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
 	SessionID   string                     `json:"session_id,omitempty"`
@@ -124,11 +125,11 @@ func loadConfig() {
 
 type TransformerResponseT struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output           map[string]interface{} `json:"output"`
-	Metadata         MetadataT              `json:"metadata"`
-	StatusCode       int                    `json:"statusCode"`
-	Error            string                 `json:"error"`
-	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
+	Output           *json.RawMessage   `json:"output"`
+	Metadata         MetadataT          `json:"metadata"`
+	StatusCode       int                `json:"statusCode"`
+	Error            string             `json:"error"`
+	ValidationErrors []ValidationErrorT `json:"validationErrors"`
 }
 
 type ValidationErrorT struct {

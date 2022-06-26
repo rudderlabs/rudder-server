@@ -29,6 +29,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/hashicorp/go-retryablehttp"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/araddon/dateparse"
@@ -36,8 +37,8 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -45,8 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/thoas/go-funk"
-
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -215,40 +214,18 @@ func GetMD5Hash(input string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// GetRudderEventVal returns the value corresponding to the key in the message structure
-func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{}, bool) {
-	rudderVal, ok := rudderEvent[key]
-	if !ok {
-		return nil, false
-	}
-	return rudderVal, true
-}
-
 // ParseRudderEventBatch looks for the batch structure inside event
-func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
-	var gatewayBatchEvent types.GatewayBatchRequestT
-	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
-	if err != nil {
-		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
-		return nil, false
+func ParseRudderEventBatch(eventPayload json.RawMessage) ([]json.RawMessage, bool) {
+	singularEventsArray := gjson.GetBytes(eventPayload, "batch").Array()
+	if len(singularEventsArray) == 0 {
+		return []json.RawMessage{}, false
+	}
+	singularEvents := make([]json.RawMessage, len(singularEventsArray))
+	for i, singularEvent := range singularEventsArray {
+		singularEvents[i] = json.RawMessage(singularEvent.Raw)
 	}
 
-	return gatewayBatchEvent.Batch, true
-}
-
-// GetRudderID return the UserID from the object
-func GetRudderID(event types.SingularEventT) (string, bool) {
-	userID, ok := GetRudderEventVal("rudderId", event)
-	if !ok {
-		// TODO: Remove this in next build.
-		// This is for backwards compatibility, esp for those with sessions.
-		userID, ok = GetRudderEventVal("anonymousId", event)
-		if !ok {
-			return "", false
-		}
-	}
-	userIDStr, ok := userID.(string)
-	return userIDStr, ok
+	return singularEvents, true
 }
 
 // ZipFiles compresses files[] into zip at filename

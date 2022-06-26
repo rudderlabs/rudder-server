@@ -19,6 +19,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -646,37 +647,39 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event json.RawMessage, field string) time.Time {
 	var timestamp time.Time
 	var ok bool
-	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
+	if timestamp, ok = misc.GetParsedTimestamp(gjson.GetBytes(event, field).String()); !ok {
 		timestamp = time.Now()
 	}
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMap types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEvent json.RawMessage, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
-	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp")
+	sentAt := getTimestampFromEvent(singularEvent, "sentAt")
 	var timestamp time.Time
 	var ok bool
+	message := *event.Message
 
 	// use existing timestamp if it exists in the event, add new timestamp otherwise
-	if timestamp, ok = misc.GetParsedTimestamp(event.Message["timestamp"]); !ok {
+	if timestamp, ok = misc.GetParsedTimestamp(gjson.GetBytes(message, "timestamp").String()); !ok {
 		// calculate new timestamp using the formula
 		// timestamp = receivedAt - (sentAt - originalTimestamp)
 		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
 	}
 
 	// set all timestamps in RFC3339 format
-	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
-	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
-	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
+	message, _ = sjson.SetBytes(message, "receivedAt", receivedAt.Format(time.RFC3339))
+	message, _ = sjson.SetBytes(message, "originalTimestamp", originalTimestamp.Format(time.RFC3339))
+	message, _ = sjson.SetBytes(message, "sentAt", sentAt.Format(time.RFC3339))
+	message, _ = sjson.SetBytes(message, "timestamp", timestamp.Format(time.RFC3339))
+	*event.Message = message
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
+func makeCommonMetadataFromSingularEvent(singularEvent json.RawMessage, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
@@ -684,20 +687,20 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
+	commonMetadata.MessageID = gjson.GetBytes(singularEvent, "messageId").String()
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceBatchID, _ = misc.MapLookup(singularEvent, "context", "sources", "batch_id").(string)
-	commonMetadata.SourceTaskID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_id").(string)
-	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
-	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
-	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
-	commonMetadata.RecordID = misc.MapLookup(singularEvent, "context", "record_id")
+	commonMetadata.SourceBatchID = gjson.GetBytes(singularEvent, "context.sources.batch_id").String()
+	commonMetadata.SourceTaskID = gjson.GetBytes(singularEvent, "context.sources.task_id").String()
+	commonMetadata.SourceJobRunID = gjson.GetBytes(singularEvent, "context.sources.job_run_id").String()
+	commonMetadata.SourceJobID = gjson.GetBytes(singularEvent, "context.sources.job_id").String()
+	commonMetadata.SourceTaskRunID = gjson.GetBytes(singularEvent, "context.sources.task_run_id").String()
+	commonMetadata.RecordID = gjson.GetBytes(singularEvent, "recordID").String()
 
-	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
-	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
+	commonMetadata.EventName = gjson.GetBytes(singularEvent, "event").String()
+	commonMetadata.EventType = gjson.GetBytes(singularEvent, "type").String()
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
 
 	return &commonMetadata
@@ -953,7 +956,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	failedCountMap := make(map[string]int64)
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
-		var messages []types.SingularEventT
+		var messages []json.RawMessage
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
 			messageIds := failedEvent.Metadata.MessageIDs
 			for _, msgID := range messageIds {
@@ -991,7 +994,8 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			"record_id":          failedEvent.Metadata.RecordID,
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 		}
-		eventContext, castOk := failedEvent.Output["context"].(map[string]interface{})
+		context := gjson.GetBytes(*failedEvent.Output, "context").Value()
+		eventContext, castOk := context.(map[string]interface{})
 		if castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
 		}
@@ -1066,7 +1070,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	return failedEventsToStore, failedMetrics, failedCountMap
 }
 
-func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+func (proc *HandleT) updateSourceEventStatsDetailed(event json.RawMessage, writeKey string) {
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
@@ -1075,8 +1079,9 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 	}()
 	var eventType string
 	var eventName string
-	if val, ok := event["type"]; ok {
-		eventType = val.(string)
+	val := gjson.GetBytes(event, "type").String()
+	if val != "" {
+		eventType = val
 		tags := map[string]string{
 			"writeKey":   writeKey,
 			"event_type": eventType,
@@ -1087,8 +1092,9 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 			if eventType != "track" {
 				eventName = eventType
 			} else {
-				if val, ok := event["event"]; ok {
-					eventName = val.(string)
+				val := gjson.GetBytes(event, "event").String()
+				if val != "" {
+					eventName = val
 				} else {
 					eventName = eventType
 				}
@@ -1135,7 +1141,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]types.SingularEventT) transformationMessage {
+func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]json.RawMessage) transformationMessage {
 	jobList := subJobs.subJobs
 	start := time.Now()
 
@@ -1178,7 +1184,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 	for idx, batchEvent := range jobList {
 
-		var singularEvents []types.SingularEventT
+		var singularEvents []json.RawMessage
 		var ok bool
 		if parsedEventList == nil {
 			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
@@ -1195,14 +1201,14 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			if enableDedup {
 				var allMessageIdsInBatch []string
 				for _, singularEvent := range singularEvents {
-					allMessageIdsInBatch = append(allMessageIdsInBatch, misc.GetStringifiedData(singularEvent["messageId"]))
+					allMessageIdsInBatch = append(allMessageIdsInBatch, gjson.GetBytes(singularEvent, "messageId").String())
 				}
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
-				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				messageId := gjson.GetBytes(singularEvent, "messageId").String()
 				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
@@ -1244,7 +1250,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 				// Getting all the destinations which are enabled for this
 				// event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
-				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+				enabledDestTypes := integrations.FilterClientIntegrations(&singularEvent, backendEnabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
 					continue
@@ -1255,8 +1261,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
 				}
 				shallowEventCopy := transformer.TransformerEventT{}
-				shallowEventCopy.Message = singularEvent
-				shallowEventCopy.Message["request_ip"] = requestIP
+				singularEvent, _ = sjson.SetBytes(singularEvent, "request_ip", requestIP)
+				shallowEventCopy.Message = &singularEvent
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
@@ -2101,8 +2107,8 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 		if ok {
 			supportedTypeInterface, ok := supportedTypes.([]interface{})
 			if ok && filterUnsupportedMessageTypes {
-				messageType, typOk := event.Message["type"].(string)
-				if !typOk {
+				messageType := gjson.GetBytes(*event.Message, "type").String()
+				if messageType == "" {
 					// add to FailedEvents
 					errMessage = "Invalid message type. Type assertion failed"
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
