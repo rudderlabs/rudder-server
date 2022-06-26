@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/linkedin/goavro"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/gjson"
 )
 
 type Opts struct {
@@ -134,6 +135,7 @@ func (p *producerImpl) Close(ctx context.Context) error {
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
+
 func (p *producerImpl) getCodecs() map[string]goavro.Codec {
 	return p.codecs
 }
@@ -558,6 +560,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	returnMessage := "Kafka: Message delivered in batch"
 	return 200, returnMessage, returnMessage
 }
+
 func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
