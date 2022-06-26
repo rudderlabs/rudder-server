@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
@@ -44,8 +45,10 @@ type reportingNOOP struct{}
 
 func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
 }
+
 func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
 }
+
 func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
 }
 
@@ -156,6 +159,7 @@ func TestProcessorManager(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
@@ -208,7 +212,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService())
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		gwDB.Start()
@@ -224,6 +228,7 @@ func TestProcessorManager(t *testing.T) {
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
+		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 		processor.BackendConfig = mockBackendConfig
 		processor.HandleT.transformer = mockTransformer
 		processor.Start()
@@ -234,7 +239,7 @@ func TestProcessorManager(t *testing.T) {
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}).Jobs)
-		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
 	})
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
@@ -251,6 +256,8 @@ func TestProcessorManager(t *testing.T) {
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
+		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
+
 		processor.Start()
 		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
@@ -266,7 +273,7 @@ func TestProcessorManager(t *testing.T) {
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			}).Jobs)
-		}, time.Minute, 10*time.Millisecond).Should(Equal(0))
+		}, time.Minute, 100*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})
 }

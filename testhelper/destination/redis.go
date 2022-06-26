@@ -3,7 +3,6 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/go-redis/redis"
 	_ "github.com/lib/pq"
@@ -14,17 +13,16 @@ type RedisResource struct {
 	RedisAddress string
 }
 
-func SetupRedis(pool *dockertest.Pool, d deferer) (*RedisResource, error) {
+func SetupRedis(pool *dockertest.Pool, d cleaner) (*RedisResource, error) {
 	// pulls an redis image, creates a container based on it and runs it
 	redisContainer, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
 		return nil, err
 	}
-	d.Defer(func() error {
+	d.Cleanup(func() {
 		if err := pool.Purge(redisContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			d.Log("Could not purge resource:", err)
 		}
-		return nil
 	})
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	redisAddress := fmt.Sprintf("localhost:%s", redisContainer.GetPort("6379/tcp"))

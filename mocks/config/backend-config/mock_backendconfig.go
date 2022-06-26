@@ -158,9 +158,11 @@ func (mr *MockBackendConfigMockRecorder) Stop() *gomock.Call {
 }
 
 // Subscribe mocks base method.
-func (m *MockBackendConfig) Subscribe(arg0 chan pubsub.DataEvent, arg1 backendconfig.Topic) {
+func (m *MockBackendConfig) Subscribe(arg0 context.Context, arg1 backendconfig.Topic) pubsub.DataChannel {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Subscribe", arg0, arg1)
+	ret := m.ctrl.Call(m, "Subscribe", arg0, arg1)
+	ret0, _ := ret[0].(pubsub.DataChannel)
+	return ret0
 }
 
 // Subscribe indicates an expected call of Subscribe.

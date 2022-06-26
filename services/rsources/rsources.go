@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-
-	"github.com/rudderlabs/rudder-server/services/rsources/internal/extension"
+	"fmt"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -17,9 +16,9 @@ type JobFilter struct {
 }
 
 type JobTargetKey struct {
-	TaskRunID     string
-	SourceID      string
-	DestinationID string
+	TaskRunID     string `json:"source_task_run_id"`
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 type Stats struct {
@@ -73,18 +72,30 @@ type FailedRecords struct{}
 
 var StatusNotFoundError = errors.New("Status not found")
 
+// StatsIncrementer increments stats
+type StatsIncrementer interface {
+	// IncrementStats increments the existing statistic counters
+	// for a specific job measurement.
+	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
+}
+
+type JobServiceConfig struct {
+	LocalHostname          string
+	LocalConn              string
+	MaxPoolSize            int
+	SharedConn             string
+	SubscriptionTargetConn string
+}
+
 // JobService manages information about jobs created by rudder-sources
 type JobService interface {
+	StatsIncrementer
 
 	// Delete deletes all relevant information for a given jobRunId
 	Delete(ctx context.Context, jobRunId string) error
 
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
-
-	// IncrementStats increments the existing statistic counters
-	// for a specific job measurement.
-	IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error
 
 	// TODO: future extension
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
@@ -96,32 +107,38 @@ type JobService interface {
 	CleanupLoop(ctx context.Context) error
 }
 
-func NewJobService(db *sql.DB) (JobService, error) {
-	defExt, err := extension.NewStandardExtension(db)
-	if err != nil {
-		return nil, err
-	}
-	return &sourcesHandler{
-		Extension: defExt,
-	}, nil
-}
+func NewJobService(config JobServiceConfig) (JobService, error) {
+	var (
+		localDB, sharedDB *sql.DB
+		err               error
+	)
 
-func NewMultiTenantJobService(db *sql.DB, readDB *sql.DB) (JobService, error) {
-	multiExt, err := extension.NewMultitenantExtension(db, readDB)
+	localDB, err = sql.Open("postgres", config.LocalConn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
-	return &sourcesHandler{
-		Extension: multiExt,
-	}, nil
+	localDB.SetMaxOpenConns(config.MaxPoolSize)
+
+	if config.SharedConn != "" {
+		sharedDB, err = sql.Open("postgres", config.SharedConn)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
+		}
+		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
+	}
+	handler := &sourcesHandler{
+		config:   config,
+		localDB:  localDB,
+		sharedDB: sharedDB,
+	}
+	return handler, handler.init()
 }
 
 func NewNoOpService() JobService {
 	return &noopService{}
 }
 
-type noopService struct {
-}
+type noopService struct{}
 
 func (*noopService) Delete(_ context.Context, _ string) error {
 	return nil

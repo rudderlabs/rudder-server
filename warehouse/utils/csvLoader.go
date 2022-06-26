@@ -34,12 +34,12 @@ func (loader *CsvLoader) GetLoadTimeFomat(columnName string) string {
 	return misc.RFC3339Milli
 }
 
-func (loader *CsvLoader) AddColumn(columnName string, columnType string, val interface{}) {
+func (loader *CsvLoader) AddColumn(columnName, columnType string, val interface{}) {
 	valString := fmt.Sprintf("%v", val)
 	loader.csvRow = append(loader.csvRow, valString)
 }
 
-func (loader *CsvLoader) AddRow(columnNames []string, row []string) {
+func (loader *CsvLoader) AddRow(columnNames, row []string) {
 	loader.csvRow = append(loader.csvRow, row...)
 }
 

@@ -79,7 +79,6 @@ func (iu *IoUtil) ReadFile(filename string) ([]byte, error) {
 // (before umask); otherwise WriteFile truncates it before writing.
 func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(filename, data, perm)
-
 }
 
 // ReadAll reads from r until an error or EOF and returns the data it read.
@@ -88,12 +87,10 @@ func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) erro
 // as an error to be reported.
 func (iu *IoUtil) ReadAll(r io.Reader) ([]byte, error) {
 	return io.ReadAll(r)
-
 }
 
 // NopCloser returns a ReadCloser with a no-op Close method wrapping
 // the provided Reader r.
 func (iu *IoUtil) NopCloser(r io.Reader) io.ReadCloser {
 	return io.NopCloser(r)
-
 }

@@ -60,9 +60,11 @@ func (mr *MockDedupIMockRecorder) FindDuplicates(arg0, arg1 interface{}) *gomock
 }
 
 // MarkProcessed mocks base method.
-func (m *MockDedupI) MarkProcessed(arg0 []string) {
+func (m *MockDedupI) MarkProcessed(arg0 []string) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "MarkProcessed", arg0)
+	ret := m.ctrl.Call(m, "MarkProcessed", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // MarkProcessed indicates an expected call of MarkProcessed.

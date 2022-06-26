@@ -5,8 +5,10 @@ import (
 	"math/rand"
 )
 
-var Rand = rand.Float64
-var RandCoin = rand.Int31n
+var (
+	Rand     = rand.Float64
+	RandCoin = rand.Int31n
+)
 
 type StickySampler struct {
 	ErrorTolerance  float64
@@ -32,7 +34,7 @@ func NewSampler(Support, ErrorTolerance, FailureProb float64) *StickySampler {
 	}
 }
 
-const sucessful = 0
+const successful = 0
 
 func (s *StickySampler) prune() {
 	for key, val := range s.S {
@@ -42,11 +44,11 @@ func (s *StickySampler) prune() {
 		// by looking at how close to 0
 		// a number in [0, 1) is.
 		for {
-			if RandCoin(2) == sucessful {
+			if RandCoin(2) == successful {
 				break
 			}
 			// diminish by one for every
-			// unsucessful outcome
+			// unsuccessful outcome
 			val--
 			// delete if needed
 			if val <= 0 {

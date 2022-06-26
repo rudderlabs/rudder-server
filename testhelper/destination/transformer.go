@@ -3,7 +3,6 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
-	"log"
 
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -14,7 +13,7 @@ type TransformerResource struct {
 	Port         string
 }
 
-func SetupTransformer(pool *dockertest.Pool, d deferer) (*TransformerResource, error) {
+func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, error) {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
 	transformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -29,11 +28,10 @@ func SetupTransformer(pool *dockertest.Pool, d deferer) (*TransformerResource, e
 		return nil, err
 	}
 
-	d.Defer(func() error {
+	d.Cleanup(func() {
 		if err := pool.Purge(transformerContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			d.Log("Could not purge resource:", err)
 		}
-		return nil
 	})
 
 	return &TransformerResource{

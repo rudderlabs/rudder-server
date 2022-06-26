@@ -23,7 +23,7 @@ import (
 )
 
 type HttpI interface {
-	NewRequest(method string, url string, body io.Reader) (*http.Request, error)
+	NewRequest(method, url string, body io.Reader) (*http.Request, error)
 }
 
 type Http struct{}
@@ -34,6 +34,6 @@ func NewHttp() *Http {
 }
 
 // NewRequest wraps NewRequestWithContext using the background context.
-func (gz *Http) NewRequest(method string, url string, body io.Reader) (*http.Request, error) {
+func (gz *Http) NewRequest(method, url string, body io.Reader) (*http.Request, error) {
 	return http.NewRequest(method, url, body)
 }

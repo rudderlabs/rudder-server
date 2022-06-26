@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-//SingularEventT single event structrue
+// SingularEventT single event structrue
 type SingularEventT map[string]interface{}
 
 type SingularEventWithReceivedAt struct {
@@ -17,7 +17,7 @@ type SingularEventWithReceivedAt struct {
 	ReceivedAt    time.Time
 }
 
-//GatewayBatchRequestT batch request structure
+// GatewayBatchRequestT batch request structure
 type GatewayBatchRequestT struct {
 	Batch []SingularEventT `json:"batch"`
 }
@@ -29,7 +29,7 @@ type SuppressUserI interface {
 
 // EventSchemasI is interface to access EventSchemas feature
 type EventSchemasI interface {
-	RecordEventSchema(writeKey string, eventBatch string) bool
+	RecordEventSchema(writeKey, eventBatch string) bool
 	GetEventModels(w http.ResponseWriter, r *http.Request)
 	GetEventVersions(w http.ResponseWriter, r *http.Request)
 	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)

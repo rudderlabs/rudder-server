@@ -223,3 +223,7 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	d.currentMode = newMode
 	return nil
 }
+
+func (d *Dynamic) Mode() servermode.Mode {
+	return d.currentMode
+}
