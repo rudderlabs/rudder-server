@@ -248,6 +248,24 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	convertToAvro := destConfig.ConvertToAvro
+	avroSchemas := destConfig.AvroSchemas
+	var codecs map[string]goavro.Codec
+	if convertToAvro {
+		codecs = make(map[string]goavro.Codec, len(avroSchemas))
+		for i, avroSchema := range avroSchemas {
+			if len(avroSchema.SchemaId) > 0 {
+				newCodec, err := goavro.NewCodec(avroSchema.Schema)
+				if err != nil {
+					return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
+				}
+				codecs[avroSchema.SchemaId] = *newCodec
+			} else {
+				return nil, fmt.Errorf("length of a schemaId is 0, of index: %d", i)
+			}
+		}
+	}
+
 	clientConf := client.Config{
 		DialTimeout: kafkaDialTimeout,
 	}
@@ -297,19 +315,6 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	})
 	if err != nil {
 		return nil, err
-	}
-	convertToAvro := destConfig.ConvertToAvro
-	avroSchemas := destConfig.AvroSchemas
-	var codecs map[string]goavro.Codec
-	if convertToAvro {
-		codecs = make(map[string]goavro.Codec, len(avroSchemas))
-		for _, avroSchema := range avroSchemas {
-			newCodec, err := goavro.NewCodec(avroSchema.Schema)
-			if err != nil {
-				return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
-			}
-			codecs[avroSchema.SchemaId] = *newCodec
-		}
 	}
 	return &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}, nil
 }
@@ -449,7 +454,7 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
 
 	var messages []client.Message
-	for _, data := range batch {
+	for i, data := range batch {
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
@@ -469,14 +474,13 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		codecs := p.getCodecs()
 		if len(codecs) > 0 {
 			schemaId, _ := data["schemaId"].(string)
-			fmt.Println(schemaId)
 			if schemaId == "" {
-				return nil, fmt.Errorf("schemaId is not available for this event")
+				return nil, fmt.Errorf("schemaId is not available for the event of index:%d", i)
 			}
 			if codec, ok := codecs[schemaId]; ok {
 				marshalledMsg, err = serialize(marshalledMsg, codec)
 				if err != nil {
-					return nil, fmt.Errorf("unable to convert the event with schemaId: %v, with error: %s", schemaId, err)
+					return nil, fmt.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
 				}
 			} else {
 				return nil, fmt.Errorf("unable to find schema with schemaId: %v", schemaId)
@@ -578,14 +582,17 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	codecs := p.getCodecs()
 	if len(codecs) > 0 {
 		schemaId, _ := parsedJSON.Get("schemaId").Value().(string)
+		messageId, _ := parsedJSON.Get("message.messageId").Value().(string)
 		if schemaId == "" {
-			return makeErrorResponse(fmt.Errorf("schemaId is not available for this event"))
+			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
 		}
 		if codec, ok := codecs[schemaId]; ok {
 			value, err = serialize(value, codec)
 			if err != nil {
-				return makeErrorResponse(err)
+				return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 			}
+		} else {
+			return makeErrorResponse(fmt.Errorf("unable to find schema with schemaId: %v", schemaId))
 		}
 	}
 	message := prepareMessage(topic, userID, value, timestamp)

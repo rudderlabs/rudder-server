@@ -97,6 +97,25 @@ func TestNewProducer(t *testing.T) {
 			require.Nil(t, p)
 			require.EqualError(t, err, `invalid configuration: invalid port: 0`)
 		})
+		t.Run("invalid schema", func(t *testing.T) {
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), 1)
+
+			destConfig := map[string]interface{}{
+				"topic":         "some-topic",
+				"hostname":      "some-hostname",
+				"port":          "9090",
+				"convertToAvro": true,
+				"avroSchemas": []interface{}{
+					map[string]string{"schemaId": "schema001"},
+					map[string]interface{}{
+						"schema": map[string]string{"name": "MyClass"},
+					},
+				},
+			}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, `unable to create codec for schemaId:schema001, with error: cannot unmarshal schema JSON: unexpected end of JSON input`)
+		})
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -588,6 +607,88 @@ func TestSendBatchedMessage(t *testing.T) {
 		require.Equal(t, "some-topic", p.calls[0][0].Topic)
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
+
+	t.Run("schemaId not available", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]goavro.Codec{
+				"schemaId001": *codec,
+			}}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: schemaId is not available for the event of index:0", err)
+	})
+
+	t.Run("wrong codec", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]goavro.Codec{
+				"schemaId001": *codec,
+			}}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: unable to serialize the event of index: 0, with error: unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\"", err)
+	})
+
+	t.Run("unavailable schemaId", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]goavro.Codec{
+				"schemaId001": *codec,
+			}}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: unable to find schema with schemaId: schemaId002", err)
+	})
+
 }
 
 func TestSendMessage(t *testing.T) {
@@ -640,6 +741,56 @@ func TestSendMessage(t *testing.T) {
 		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
 		require.Equal(t, "some-topic", p.calls[0][0].Topic)
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
+	t.Run("schemaId not available", func(t *testing.T) {
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]goavro.Codec{
+				"schemaId001": *codec,
+			}}
+		sc, res, err := sendMessage(
+			context.Background(),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "schemaId is not available for event with messageId: message001 error occurred.", res)
+		require.Equal(t, "schemaId is not available for event with messageId: message001", err)
+	})
+
+	t.Run("wrong codec", func(t *testing.T) {
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]goavro.Codec{
+				"schemaId001": *codec,
+			}}
+		sc, res, err := sendMessage(
+			context.Background(),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\" error occurred.", res)
+		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\"", err)
 	})
 }
 
