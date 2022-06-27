@@ -270,11 +270,11 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 	}
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
-	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
-	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
+	workspaceIdLookupKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
+	manager.logger.Infof("Workspace ID Lookup Key: %s", workspaceIdLookupKey)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)
-	resp, err := manager.Client.Get(ctx, modeRequestKey)
+	resp, err := manager.Client.Get(ctx, workspaceIdLookupKey)
 	if err != nil {
 		return errChWorkspacesRequest(err)
 	}
@@ -285,7 +285,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		revision = resp.Header.Revision + 1
 	}
 
-	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(revision))
+	etcdWatchChan := manager.Client.Watch(ctx, workspaceIdLookupKey, clientv3.WithRev(revision))
 
 	go func() {
 		for watchResp := range etcdWatchChan {
@@ -297,10 +297,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					select {
-					case resultChan <- manager.unmarshalWorkspace(event.Kv.Value):
-					case <-ctx.Done():
-					}
+					resultChan <- manager.unmarshalWorkspace(event.Kv.Value)
 				default:
 					manager.logger.Warnf("unknown event type %s", event.Type)
 				}
@@ -308,7 +305,6 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		}
 		close(resultChan)
 	}()
-
 	return resultChan
 }
 
