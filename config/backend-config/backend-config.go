@@ -386,6 +386,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	var backendConfig BackendConfig
+	ctx, cancel := context.WithCancel(context.Background())
 
 	switch deploymentType {
 	case deployment.DedicatedType:
@@ -393,12 +394,18 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
 				eb:               pubsub.New(),
+				ctx:              ctx,
+				cancel:           cancel,
+				blockChan:        make(chan struct{}),
 			},
 		}
 	case deployment.HostedType:
 		backendConfig = &HostedWorkspacesConfig{
 			CommonBackendConfig: CommonBackendConfig{
-				eb: pubsub.New(),
+				eb:        pubsub.New(),
+				ctx:       ctx,
+				cancel:    cancel,
+				blockChan: make(chan struct{}),
 			},
 		}
 	case deployment.MultiTenantType:
@@ -406,6 +413,9 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			CommonBackendConfig: CommonBackendConfig{
 				configEnvHandler: configEnvHandler,
 				eb:               pubsub.New(),
+				ctx:              ctx,
+				cancel:           cancel,
+				blockChan:        make(chan struct{}),
 			},
 		}
 	// Fallback to dedicated
@@ -440,12 +450,8 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *CommonBackendConfig) StartWithIDs(workspaces string) {
-	ctx, cancel := context.WithCancel(context.Background())
-	bc.ctx = ctx
-	bc.cancel = cancel
-	bc.blockChan = make(chan struct{})
 	rruntime.Go(func() {
-		pollConfigUpdate(ctx, bc.eb, workspaces)
+		pollConfigUpdate(bc.ctx, bc.eb, workspaces)
 		close(bc.blockChan)
 	})
 }

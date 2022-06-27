@@ -267,8 +267,6 @@ func Run(ctx context.Context) {
 			pkgLogger.Errorf("Unable to setup backend config: %s", err)
 			return
 		}
-
-		backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
