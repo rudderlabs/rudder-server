@@ -420,6 +420,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		}
 	// Fallback to dedicated
 	default:
+		cancel()
 		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
 	}
 
