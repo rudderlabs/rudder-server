@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -37,10 +38,11 @@ func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.Chang
 }
 
 // WorkspaceIDs returns an empty channel, since we don't expect workspaceIDs updates with static provider
-// TODO: This method should return proper workspaceIDs for backend config, even with static provide.
 func (s *StaticProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {
-	ch := make(chan workspace.ChangeEvent)
-
+	ch := make(chan workspace.ChangeEvent, 1)
+	wId := backendconfig.DefaultBackendConfig.AccessToken()
+	ackFn := func(_ context.Context) error { return nil }
+	ch <- workspace.NewWorkspacesRequest([]string{wId}, ackFn)
 	go func() {
 		<-ctx.Done()
 		close(ch)

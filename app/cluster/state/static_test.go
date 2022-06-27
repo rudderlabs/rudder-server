@@ -2,11 +2,13 @@ package state_test
 
 import (
 	"context"
-	"testing"
-
+	"github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestStatic_ServerMode(t *testing.T) {
@@ -29,12 +31,18 @@ func TestStatic_ServerMode(t *testing.T) {
 }
 
 func TestStatic_WorkspaceIDs(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	backendconfig.DefaultBackendConfig = mockBackendConfig
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	s := state.NewStaticProvider(servermode.DegradedMode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ch := s.WorkspaceIDs(ctx)
-	require.Empty(t, ch)
+	chEvent := <-ch
+	wIds := chEvent.WorkspaceIDs()
+	require.Equal(t, []string{mockBackendConfig.AccessToken()}, wIds)
 
 	t.Log("cancel context should close channel")
 	cancel()
