@@ -2,7 +2,7 @@ package config_reporting
 
 import (
 	"encoding/json"
-	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -35,13 +35,17 @@ func ReportDataPlaneConfig() error {
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/data-plane-planeConfig", configBackendURL)
+	parsedURL, err := url.Parse(configBackendURL)
+	if err != nil {
+		pkgLogger.Errorf("Failed to get the control plane host URL to report the data-plane config: %s", err.Error())
+	}
+	parsedURL.Path = "data-plane-planeConfig"
 	op := func() error {
-		return httpconnector.MakeHTTPPostRequest(url, rawJson)
+		return httpconnector.MakeHTTPPostRequest(parsedURL.String(), rawJson)
 	}
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err = backoff.RetryNotify(op, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("Failed to report data-plane planeConfig to control-plane with error: %s, retrying after: %v",
+		pkgLogger.Errorf("Failed to report data-plane Config to control-plane with error: %s, retrying after: %v",
 			err.Error(), t)
 	})
 	if err != nil {
