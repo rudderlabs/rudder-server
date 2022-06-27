@@ -35,7 +35,7 @@ func TestStatic_WorkspaceIDs(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	backendconfig.DefaultBackendConfig = mockBackendConfig
-	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+	mockBackendConfig.EXPECT().AccessToken().Times(2)
 	s := state.NewStaticProvider(servermode.DegradedMode)
 
 	ctx, cancel := context.WithCancel(context.Background())
