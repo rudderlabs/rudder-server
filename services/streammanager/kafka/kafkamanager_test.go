@@ -114,7 +114,7 @@ func TestNewProducer(t *testing.T) {
 			}
 			p, err := NewProducer(destConfig, Opts{})
 			require.Nil(t, p)
-			require.EqualError(t, err, `unable to create codec for schemaId:schema001, with error: cannot unmarshal schema JSON: unexpected end of JSON input`)
+			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
 		})
 	})
 
