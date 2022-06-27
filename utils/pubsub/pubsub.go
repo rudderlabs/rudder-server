@@ -3,6 +3,8 @@ package pubsub
 import (
 	"context"
 	"sync"
+
+	"github.com/savsgio/gotils/nocopy"
 )
 
 type DataEvent struct {
@@ -15,6 +17,7 @@ type DataChannel <-chan DataEvent
 
 // PublishSubscriber stores the information about subscribers interested for a particular topic
 type PublishSubscriber struct {
+	nocopy.NoCopy
 	lastEventMutex sync.RWMutex
 	// lastEvent holds the last event for each topic so that we can send it to new subscribers
 	lastEvent map[string]*DataEvent

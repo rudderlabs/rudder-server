@@ -174,3 +174,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20220512140231-539c8e751b99 // indirect
 )
+
+require github.com/savsgio/gotils v0.0.0-20220530130905-52f3993e8d6d
