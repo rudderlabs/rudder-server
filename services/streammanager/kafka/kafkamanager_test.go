@@ -623,7 +623,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		p := &pMockErr{
 			codecs: map[string]goavro.Codec{
 				"schemaId001": *codec,
-			}}
+			},
+		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}]`),
@@ -650,7 +651,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		p := &pMockErr{
 			codecs: map[string]goavro.Codec{
 				"schemaId001": *codec,
-			}}
+			},
+		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}]`),
@@ -677,7 +679,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		p := &pMockErr{
 			codecs: map[string]goavro.Codec{
 				"schemaId001": *codec,
-			}}
+			},
+		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002"}]`),
@@ -688,7 +691,6 @@ func TestSendBatchedMessage(t *testing.T) {
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Error while preparing batched message: unable to find schema with schemaId: schemaId002", err)
 	})
-
 }
 
 func TestSendMessage(t *testing.T) {
@@ -756,7 +758,8 @@ func TestSendMessage(t *testing.T) {
 		p := &pMockErr{
 			codecs: map[string]goavro.Codec{
 				"schemaId001": *codec,
-			}}
+			},
+		}
 		sc, res, err := sendMessage(
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}`),
@@ -781,7 +784,8 @@ func TestSendMessage(t *testing.T) {
 		p := &pMockErr{
 			codecs: map[string]goavro.Codec{
 				"schemaId001": *codec,
-			}}
+			},
+		}
 		sc, res, err := sendMessage(
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}`),
