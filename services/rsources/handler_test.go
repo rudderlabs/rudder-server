@@ -578,6 +578,36 @@ var _ = Describe("Using sources handler", func() {
 				json.RawMessage(`{"id": "2"}`),
 				json.RawMessage(`{"id": "3"}`),
 			})
+			expected := FailedRecords{
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "1"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "2"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "2"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "3"}`),
+				},
+			}
 			Eventually(func() bool {
 				failedKeysA, err := serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
@@ -589,7 +619,7 @@ var _ = Describe("Using sources handler", func() {
 					TaskRunID: []string{"task_run_id"},
 				})
 				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceB")
-				return reflect.DeepEqual(failedKeysA, failedKeysB)
+				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
 			}, "20s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
 		})
 
@@ -624,6 +654,142 @@ var _ = Describe("Using sources handler", func() {
 			}
 			_, err := NewJobService(badConfig)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
+		})
+	})
+
+	Context("adding failed_keys to the publication alongside stats", func() {
+		It("should be able to add rsources_failed_keys table to the publication and subscription seamlessly", func() {
+			pool, err := dockertest.NewPool("")
+			Expect(err).NotTo(HaveOccurred())
+			const networkId = "TestMultitenantSourcesHandler"
+			network, _ := pool.Client.NetworkInfo(networkId)
+			if network == nil {
+				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
+				Expect(err).NotTo(HaveOccurred())
+			}
+			for containerID := range network.Containers { // Remove any containers left from previous runs
+				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
+			}
+
+			pgA := newDBResource(pool, network.ID, "postgres-1", "wal_level=logical")
+			pgB := newDBResource(pool, network.ID, "postgres-2", "wal_level=logical")
+			pgC := newDBResource(pool, network.ID, "postgres-3")
+
+			defer func() {
+				if network != nil {
+					_ = pool.Client.RemoveNetwork(network.ID)
+				}
+				if pgA.resource != nil {
+					purgeResource(pool, pgA.resource, pgB.resource, pgC.resource)
+				}
+			}()
+
+			configA := JobServiceConfig{
+				LocalHostname:          "postgres-1",
+				MaxPoolSize:            1,
+				LocalConn:              pgA.externalDSN,
+				SharedConn:             pgC.externalDSN,
+				SubscriptionTargetConn: pgA.internalDSN,
+			}
+
+			configB := JobServiceConfig{
+				LocalHostname:          "postgres-2",
+				MaxPoolSize:            1,
+				LocalConn:              pgB.externalDSN,
+				SharedConn:             pgC.externalDSN,
+				SubscriptionTargetConn: pgB.internalDSN,
+			}
+
+			// Setting up previous environment before adding failedkeys table to the publication
+			// setup databases
+			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
+			defer databaseA.Close()
+			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
+			defer databaseB.Close()
+			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
+			defer databaseC.Close()
+
+			// create tables
+			err = setupStatsTable(context.TODO(), databaseA, configA.LocalHostname)
+			Expect(err).NotTo(HaveOccurred())
+			err = setupStatsTable(context.TODO(), databaseB, configB.LocalHostname)
+			Expect(err).NotTo(HaveOccurred())
+			err = setupStatsTable(context.TODO(), databaseC, "shared")
+			Expect(err).NotTo(HaveOccurred())
+
+			// setup logical replication(only stats tables as previously done)
+			publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
+			_, err = databaseA.ExecContext(context.TODO(), publicationQuery)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseB.ExecContext(context.TODO(), publicationQuery)
+			Expect(err).NotTo(HaveOccurred())
+
+			normalizedHostnameA := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configA.LocalHostname), "_")
+			normalizedHostnameB := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(configB.LocalHostname), "_")
+			subscriptionAName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameA)
+			subscriptionBName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameB)
+			subscriptionQuery := `CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`
+
+			_, err = databaseC.ExecContext(context.TODO(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
+			Expect(err).NotTo(HaveOccurred())
+			_, err = databaseC.ExecContext(context.TODO(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Now setup the handlers
+			serviceA := createService(configA)
+			serviceB := createService(configB)
+			jobRunId := newJobRunId()
+			addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []json.RawMessage{
+				json.RawMessage(`{"id": "1"}`),
+				json.RawMessage(`{"id": "2"}`),
+			})
+			addFailedRecords(pgB.db, jobRunId, defaultJobTargetKey, serviceB, []json.RawMessage{
+				json.RawMessage(`{"id": "2"}`),
+				json.RawMessage(`{"id": "3"}`),
+			})
+			expected := FailedRecords{
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "1"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "2"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "2"}`),
+				},
+				{
+					JobRunID:      jobRunId,
+					TaskRunID:     defaultJobTargetKey.TaskRunID,
+					SourceID:      defaultJobTargetKey.SourceID,
+					DestinationID: defaultJobTargetKey.DestinationID,
+					RecordID:      json.RawMessage(`{"id": "3"}`),
+				},
+			}
+			Eventually(func() bool {
+				failedKeysA, err := serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+					SourceID:  []string{"source_id"},
+					TaskRunID: []string{"task_run_id"},
+				})
+				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceA")
+				failedKeysB, err := serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+					SourceID:  []string{"source_id"},
+					TaskRunID: []string{"task_run_id"},
+				})
+				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceB")
+				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
+			}, "20s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
 		})
 	})
 })
@@ -712,4 +878,11 @@ func purgeResource(pool *dockertest.Pool, resources ...*dockertest.Resource) {
 	for _, resource := range resources {
 		_ = pool.Purge(resource)
 	}
+}
+
+func getDB(conn string, maxOpenConns int) *sql.DB {
+	db, err := sql.Open("postgres", conn)
+	db.SetMaxOpenConns(maxOpenConns)
+	Expect(err).NotTo(HaveOccurred())
+	return db
 }

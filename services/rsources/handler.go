@@ -355,7 +355,7 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) erro
 }
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
-	publicationQuery := `CREATE PUBLICATION "rsources_pub" FOR TABLE rsources_stats, rsources_failed_keys`
+	publicationQuery := `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`
 	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
 	if err != nil {
 		pqError, ok := err.(*pq.Error)
@@ -364,14 +364,23 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 		}
 	}
 
+	alterPublicationQuery := `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys`
+	_, err = sh.localDB.ExecContext(ctx, alterPublicationQuery)
+	if err != nil {
+		pqError, ok := err.(*pq.Error)
+		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+			return fmt.Errorf("failed to create publication on local database: %w", err)
+		}
+	}
+
 	normalizedHostname := replSlotDisallowedChars.ReplaceAllString(strings.ToLower(sh.config.LocalHostname), "_")
-	subscriptionName := fmt.Sprintf("%s_rsources_sub", normalizedHostname)
+	subscriptionName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostname)
 	// Create subscription for the above publication (ignore already exists error)
 	subscriptionConn := sh.config.SubscriptionTargetConn
 	if subscriptionConn == "" {
 		subscriptionConn = sh.config.LocalConn
 	}
-	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_pub"`, subscriptionName, subscriptionConn)
+	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`, subscriptionName, subscriptionConn)
 	_, err = sh.sharedDB.ExecContext(ctx, subscriptionQuery)
 	if err != nil {
 		pqError, ok := err.(*pq.Error)
@@ -379,5 +388,9 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
 		}
 	}
-	return nil
+
+	refreshSubscriptionQuery := fmt.Sprintf(`ALTER SUBSCRIPTION %s REFRESH PUBLICATION`, subscriptionName)
+	_, err = sh.sharedDB.ExecContext(ctx, refreshSubscriptionQuery)
+
+	return err
 }
