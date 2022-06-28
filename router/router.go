@@ -74,7 +74,6 @@ type HandleDestOAuthRespParamsT struct {
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	pausingWorkers                         bool
 	generatorPauseChannel                  chan *PauseT
 	generatorResumeChannel                 chan bool
 	statusLoopPauseChannel                 chan *PauseT
@@ -442,10 +441,6 @@ func (worker *workerT) workerProcess() {
 				return
 			}
 
-			if worker.rt.pausingWorkers {
-				continue
-			}
-
 			job := message.job
 			worker.throttledAtTime = message.throttledAtTime
 			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
@@ -561,9 +556,6 @@ func (worker *workerT) workerProcess() {
 
 		case <-timeout:
 			timeout = time.After(jobsBatchTimeout)
-			if worker.rt.pausingWorkers {
-				continue
-			}
 
 			if len(worker.routerJobs) > 0 {
 				if worker.rt.enableBatching {
@@ -1874,10 +1866,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			pkgLogger.Infof("Generator loop is resumed. Dest type: %s", rt.destName)
 		case <-timeout:
 			timeout = time.After(10 * time.Millisecond)
-			if rt.pausingWorkers {
-				time.Sleep(time.Second)
-				continue
-			}
+
 			generatorStat.Start()
 
 			processCount := rt.readAndProcess()
