@@ -1107,6 +1107,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 	)
 	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+	rsourcesFailedRecordsMap := make(map[string]map[rsources.JobTargetKey][]json.RawMessage)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
@@ -1189,7 +1190,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
-				router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
+				router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 				jobState = jobsdb.Aborted.State
 			}
 			if postToWarehouseErr && isWarehouse {
@@ -1199,7 +1200,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
-					router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
+					router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -1208,7 +1209,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			abortedEvents = append(abortedEvents, job)
-			router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
+			router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
@@ -1346,6 +1347,16 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		// Save msgids of aborted jobs
 		if len(jobRunIDAbortedEventsMap) > 0 {
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+		}
+		if len(rsourcesFailedRecordsMap) > 0 {
+			for jobRunID := range rsourcesFailedRecordsMap {
+				for jobTarget := range rsourcesFailedRecordsMap[jobRunID] {
+					err = brt.rsourcesService.AddFailedRecords(context.TODO(), tx.Tx(), jobRunID, jobTarget, rsourcesFailedRecordsMap[jobRunID][jobTarget])
+					if err != nil {
+						return err
+					}
+				}
+			}
 		}
 		if brt.reporting != nil && brt.reportingEnabled {
 			brt.reporting.Report(reportMetrics, tx.Tx())

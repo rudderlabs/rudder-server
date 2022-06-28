@@ -1516,6 +1516,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
+	rsourcesFailedRecordsMap := make(map[string]map[rsources.JobTargetKey][]json.RawMessage)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1570,7 +1571,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		}
 
@@ -1648,6 +1649,18 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			err = rt.updateRudderSourcesStats(context.TODO(), tx, completedJobsList, statusList)
 			if err != nil {
 				return err
+			}
+
+			// this should go with store routerAbortedJobs above? with a WithStoreSafeTx
+			if len(rsourcesFailedRecordsMap) > 0 {
+				for jobRunID := range rsourcesFailedRecordsMap {
+					for jobTarget := range rsourcesFailedRecordsMap[jobRunID] {
+						err = rt.rsourcesService.AddFailedRecords(context.TODO(), tx.Tx(), jobRunID, jobTarget, rsourcesFailedRecordsMap[jobRunID][jobTarget])
+						if err != nil {
+							return err
+						}
+					}
+				}
 			}
 
 			// Save msgids of aborted jobs
@@ -1968,6 +1981,8 @@ func (rt *HandleT) readAndProcess() int {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	transformedAtMap := make(map[string]string)
+	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
+	rsourcesFailedRecordsMap := make(map[string]map[rsources.JobTargetKey][]json.RawMessage)
 	// Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
@@ -2006,6 +2021,7 @@ func (rt *HandleT) readAndProcess() int {
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
 			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+			PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 
 			// REPORTING - ROUTER - START
 			var parameters JobParametersT
@@ -2102,6 +2118,18 @@ func (rt *HandleT) readAndProcess() int {
 			err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
 			if err != nil {
 				return err
+			}
+
+			// this should go with store routerAbortedJobs above? with a WithStoreSafeTx
+			if len(rsourcesFailedRecordsMap) > 0 {
+				for jobRunID := range rsourcesFailedRecordsMap {
+					for jobTarget := range rsourcesFailedRecordsMap[jobRunID] {
+						err = rt.rsourcesService.AddFailedRecords(context.TODO(), tx.Tx(), jobRunID, jobTarget, rsourcesFailedRecordsMap[jobRunID][jobTarget])
+						if err != nil {
+							return err
+						}
+					}
+				}
 			}
 
 			rt.Reporting.Report(reportMetrics, tx.Tx())
@@ -2464,8 +2492,10 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 	return http.StatusBadRequest, destResBody
 }
 
-func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT, rSourcesMap map[string]map[rsources.JobTargetKey][]json.RawMessage) {
+	jobRunID := gjson.GetBytes(parameters, "source_job_run_id").String()
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
+	sourceID := gjson.GetBytes(parameters, "source_id").String()
 	destinationID := gjson.GetBytes(parameters, "destination_id").String()
 	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
 	if taskRunID == "" {
@@ -2475,6 +2505,14 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
 	}
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
+
+	if _, ok := rSourcesMap[jobRunID]; !ok {
+		rSourcesMap[jobRunID] = make(map[rsources.JobTargetKey][]json.RawMessage)
+	}
+	if _, ok := rSourcesMap[jobRunID][rsources.JobTargetKey{SourceID: sourceID, TaskRunID: taskRunID, DestinationID: destinationID}]; !ok {
+		rSourcesMap[jobRunID][rsources.JobTargetKey{SourceID: sourceID, TaskRunID: taskRunID, DestinationID: destinationID}] = []json.RawMessage{}
+	}
+	rSourcesMap[jobRunID][rsources.JobTargetKey{SourceID: sourceID, TaskRunID: taskRunID, DestinationID: destinationID}] = append(rSourcesMap[jobRunID][rsources.JobTargetKey{SourceID: sourceID, TaskRunID: taskRunID, DestinationID: destinationID}], recordID)
 }
 
 func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {

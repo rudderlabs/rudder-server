@@ -2075,13 +2075,25 @@ func (proc *HandleT) transformSrcDest(
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
 		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+		rsourcesFailedRecordsMap := make(map[string]map[rsources.JobTargetKey][]json.RawMessage)
 		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
+			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap, rsourcesFailedRecordsMap)
 		}
 
 		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
 			// TODO: error propagation
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
+			var err error
+			if len(rsourcesFailedRecordsMap) > 0 {
+				for jobRunID := range rsourcesFailedRecordsMap {
+					for jobTarget := range rsourcesFailedRecordsMap[jobRunID] {
+						err = proc.rsourcesService.AddFailedRecords(context.TODO(), tx, jobRunID, jobTarget, rsourcesFailedRecordsMap[jobRunID][jobTarget])
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
 			return nil
 		})
 
