@@ -3,7 +3,6 @@ package config_reporting
 import (
 	"encoding/json"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -13,8 +12,9 @@ import (
 )
 
 var (
-	pkgLogger        logger.LoggerI
-	configBackendURL string
+	pkgLogger                    logger.LoggerI
+	configBackendURL             string
+	dpConfigReportingAPIEndpoint string = "data-plane-planeConfig"
 )
 
 func Init() {
@@ -28,10 +28,10 @@ func loadConfig() {
 
 // ReportDataPlaneConfig sends the data-plane information to the control-plane.
 func ReportDataPlaneConfig() error {
-	planeConfig := dataPlaneConfig{
-		Namespace: os.Getenv("NAMESPACE"),
+	dpConfig := dataPlaneConfig{
+		Namespace: config.GetEnv("NAMESPACE", "non-k8s-deployment"),
 	}
-	rawJson, err := json.Marshal(planeConfig)
+	rawJson, err := json.Marshal(dpConfig)
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func ReportDataPlaneConfig() error {
 	if err != nil {
 		pkgLogger.Errorf("Failed to get the control plane host URL to report the data-plane config: %s", err.Error())
 	}
-	parsedURL.Path = "data-plane-planeConfig"
+	parsedURL.Path = dpConfigReportingAPIEndpoint
 	op := func() error {
 		return httpconnector.MakeHTTPPostRequest(parsedURL.String(), rawJson)
 	}
