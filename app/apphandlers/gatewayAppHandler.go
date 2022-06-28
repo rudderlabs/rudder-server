@@ -76,31 +76,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	var modeProvider cluster.ChangeEventProvider
-
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
-		pkgLogger.Info("using Static Cluster Manager")
-		if enableProcessor && enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
-		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
-	}
-
-	dm := cluster.Dynamic{
-		Provider:         modeProvider,
-		GatewayComponent: true,
-	}
-	g.Go(func() error {
-		return dm.Run(ctx)
-	})
-
 	if enableGateway {
 		var gw gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
@@ -117,6 +92,28 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 				pkgLogger.Warnf("Gateway shutdown error: %v", err)
 			}
 		}()
+
+		var modeProvider cluster.ChangeEventProvider
+
+		switch deploymentType {
+		case deployment.MultiTenantType:
+			pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+			modeProvider = state.NewETCDDynamicProvider()
+		case deployment.HostedType, deployment.DedicatedType:
+			pkgLogger.Info("using Static Cluster Manager")
+			if enableProcessor && enableRouter {
+				modeProvider = state.NewStaticProvider(servermode.NormalMode)
+			} else {
+				modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+			}
+		default:
+			return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		}
+
+		dm := gateway.NewGatewayManager(modeProvider, &gw)
+		g.Go(func() error {
+			return dm.Run(ctx)
+		})
 
 		g.Go(func() error {
 			return gw.StartAdminHandler(ctx)

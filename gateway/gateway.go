@@ -184,7 +184,8 @@ type HandleT struct {
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
 
-	rsourcesService rsources.JobService
+	rsourcesService     rsources.JobService
+	currentWorkspaceIDs string
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
