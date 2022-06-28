@@ -107,10 +107,10 @@ type JobService interface {
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
 
-	// TODO: future extension
+	// AddFailedRecords adds failed records to the database as part of a transaction
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
 
-	// TODO: future extension
+	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
 	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error

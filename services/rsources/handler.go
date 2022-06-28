@@ -106,27 +106,33 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error {
-	sqlStatement := `insert into "failed_keys" (
+func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) (err error) {
+	stmt, err := tx.Prepare(`insert into "rsources_failed_keys" (
 		job_run_id,
 		task_run_id,
 		source_id,
 		destination_id,
 		record_id
-	) values ($1, $2, $3, $4, $5)`
+	) values ($1, $2, $3, $4, $5)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
 
 	for i := range records {
-		_, err := tx.ExecContext(
+		_, err = stmt.ExecContext(
 			ctx,
-			sqlStatement,
-			jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
+			jobRunId,
+			key.TaskRunID,
+			key.SourceID,
+			key.DestinationID,
 			records[i])
 		if err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return
 }
 
 func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
@@ -150,7 +156,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			task_run_id,
 			source_id,
 			destination_id,
-			record_id  FROM "failed_keys" %s
+			record_id  FROM "rsources_failed_keys" %s
 			ORDER BY task_run_id, source_id, destination_id DESC`,
 		filters)
 
@@ -182,22 +188,25 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
-	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
-	_, err := sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
+	tx, err := sh.localDB.Begin()
 	if err != nil {
 		return err
 	}
-
-	sqlStatement = `delete from "failed_keys" where job_run_id = $1`
-	_, err = sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
-
-	return err
-}
-
-func (sh *sourcesHandler) DropStats(ctx context.Context, jobRunId string) error {
 	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
-	_, err := sh.localDB.ExecContext(ctx, sqlStatement, jobRunId)
-	return err
+	_, err = tx.ExecContext(ctx, sqlStatement, jobRunId)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	sqlStatement = `delete from "rsources_failed_keys" where job_run_id = $1`
+	_, err = tx.ExecContext(ctx, sqlStatement, jobRunId)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
@@ -219,14 +228,28 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 }
 
 func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
-	before := time.Now().Add(-config.GetDuration("RSOURCES_STATS_RETENTION", 24, time.Hour))
-	sqlStatement := `delete from "rsources_stats" where job_run_id in (
+	tx, err := sh.localDB.Begin()
+	if err != nil {
+		return err
+	}
+
+	before := time.Now().Add(-config.GetDuration("RSOURCES_RETENTION", 24, time.Hour))
+	sqlStatement := `delete from "%[1]s" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from 
-			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
+			(select job_run_id, max(ts) as mts from "%[1]s" group by job_run_id) lastUpdateToJobRunId
 		where lastUpdateToJobRunId.mts <= $1
 	)`
-	_, err := sh.localDB.ExecContext(ctx, sqlStatement, before)
-	return err
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(sqlStatement, "rsources_stats"), before)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(sqlStatement, "rsources_failed_keys"), before)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (sh *sourcesHandler) readDB() *sql.DB {
@@ -277,7 +300,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string)
 	if err != nil {
 		return err
 	}
-	sqlStatement := fmt.Sprintf(`create table if not exists "failed_keys" (
+	sqlStatement := fmt.Sprintf(`create table if not exists "rsources_failed_keys" (
 		id BIGSERIAL,
 		db_name text not null default '%s',
 		job_run_id text not null,
@@ -285,7 +308,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string)
 		source_id text not null,
 		destination_id text not null,
 		record_id jsonb not null,
-		created_at timestamp not null default NOW(),
+		ts timestamp not null default NOW(),
 		primary key (job_run_id, task_run_id, source_id, destination_id, db_name, id)
 	)`, defaultDbName)
 	_, err = tx.ExecContext(ctx, sqlStatement)
@@ -293,7 +316,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string)
 		_ = tx.Rollback()
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `create index if not exists failed_keys_job_run_id_idx on "failed_keys" (job_run_id)`)
+	_, err = tx.ExecContext(ctx, `create index if not exists failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -332,7 +355,7 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string) erro
 }
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
-	publicationQuery := `CREATE PUBLICATION "rsources_pub" FOR TABLE rsources_stats, failed_keys`
+	publicationQuery := `CREATE PUBLICATION "rsources_pub" FOR TABLE rsources_stats, rsources_failed_keys`
 	_, err := sh.localDB.ExecContext(ctx, publicationQuery)
 	if err != nil {
 		pqError, ok := err.(*pq.Error)

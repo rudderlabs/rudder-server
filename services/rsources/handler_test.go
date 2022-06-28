@@ -77,7 +77,7 @@ var _ = Describe("Using sources handler", func() {
 
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
-			expcetdRecords := FailedRecords{
+			expcetedRecords := FailedRecords{
 				{
 					JobRunID:      jobRunId,
 					TaskRunID:     "task_run_id",
@@ -93,7 +93,7 @@ var _ = Describe("Using sources handler", func() {
 					RecordID:      json.RawMessage(`{"record-2": "id-2"}`),
 				},
 			}
-			Expect(failedRecords).To(Equal(expcetdRecords), "it should be able to get failed records")
+			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
 		})
 
 		It("should be able to get the status", func() {
@@ -402,13 +402,23 @@ var _ = Describe("Using sources handler", func() {
 		It("should be able to execute the cleanup loop", func() {
 			jobRunId := newJobRunId()
 			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
 			ts := time.Now().Add(-48 * time.Hour)
 			stmt, err := resource.db.Prepare(`update "rsources_stats" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
+			defer stmt.Close()
+			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = stmt2.Exec(ts)
+			defer stmt2.Close()
+			Expect(err).NotTo(HaveOccurred())
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
 			go func() { _ = sh.CleanupLoop(ctx) }()
 
@@ -418,11 +428,18 @@ var _ = Describe("Using sources handler", func() {
 					Fail("it should cleanup all tables")
 					return
 				case <-time.After(1 * time.Second):
-					sqlStatement := `select count(*) from "rsources_stats"`
-					var count int
-					err = resource.db.QueryRow(sqlStatement).Scan(&count)
+					sqlStatement := `select count(*) from "rsources_stats" where job_run_id = $1`
+					var statCount int
+					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
 					Expect(err).NotTo(HaveOccurred())
-					if count == 0 {
+
+					// sqlStatement = `select count(*) from "rsources_failed_keys" where job_run_id = $1`
+					// var failedRecordCount int
+					// err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
+					// Expect(err).NotTo(HaveOccurred())
+
+					// if statCount == 0 && failedRecordCount == 0 {
+					if statCount == 0 {
 						return
 					}
 				}
