@@ -369,7 +369,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	if err != nil {
 		pqError, ok := err.(*pq.Error)
 		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
-			return fmt.Errorf("failed to create publication on local database: %w", err)
+			return fmt.Errorf("failed to alter publication on local database to add failed_keys table: %w", err)
 		}
 	}
 
@@ -391,6 +391,9 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 
 	refreshSubscriptionQuery := fmt.Sprintf(`ALTER SUBSCRIPTION %s REFRESH PUBLICATION`, subscriptionName)
 	_, err = sh.sharedDB.ExecContext(ctx, refreshSubscriptionQuery)
+	if err != nil {
+		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
+	}
 
-	return err
+	return nil
 }
