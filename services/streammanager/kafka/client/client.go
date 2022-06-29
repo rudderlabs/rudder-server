@@ -73,7 +73,7 @@ func New(network string, addresses []string, conf Config) (*Client, error) {
 }
 
 // NewConfluentCloud returns a Kafka client pre-configured to connect to Confluent Cloud
-func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error) {
+func NewConfluentCloud(addresses []string, key, secret string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     key,
@@ -82,11 +82,11 @@ func NewConfluentCloud(address, key, secret string, conf Config) (*Client, error
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", []string{address}, conf)
+	return New("tcp", addresses, conf)
 }
 
 // NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
-func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, error) {
+func NewAzureEventHubs(addresses []string, connectionString string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
 		Username:     "$ConnectionString",
@@ -95,21 +95,24 @@ func NewAzureEventHubs(address, connectionString string, conf Config) (*Client, 
 	conf.TLS = &TLS{
 		WithSystemCertPool: true,
 	}
-	return New("tcp", []string{address}, conf)
+	return New("tcp", addresses, conf)
 }
 
 // Ping is used to check the connectivity only, then it discards the connection
+// Ping ensures that at least one of the provided addresses is reachable.
 func (c *Client) Ping(ctx context.Context) error {
-	address := kafka.TCP(c.addresses...).String()
-	conn, err := c.dialer.DialContext(ctx, c.network, address)
-	if err != nil {
-		return fmt.Errorf("could not dial %s/%s: %w", c.network, address, err)
+	var lastErr error
+	for _, addr := range c.addresses {
+		conn, err := c.dialer.DialContext(ctx, c.network, kafka.TCP(addr).String())
+		if err == nil {
+			go func() { _ = conn.Close() }()
+			// we can connect to at least one address, no need to check all of them
+			return nil
+		}
+		lastErr = err
 	}
 
-	defer func() {
-		// close asynchronously, if we block we might not respect the context
-		go func() { _ = conn.Close() }()
-	}()
-
-	return nil
+	return fmt.Errorf(
+		"could not dial any of the addresses %s/%s: %w", c.network, kafka.TCP(c.addresses...).String(), lastErr,
+	)
 }

@@ -1332,6 +1332,11 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	app.HealthHandler(w, r, gateway.jobsDB)
 }
 
+// Robots prevents robots from crawling the gateway endpoints
+func (gateway *HandleT) robots(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
+}
+
 func reflectOrigin(origin string) bool {
 	return true
 }
@@ -1367,9 +1372,11 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
-	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
+
+	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
+	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")

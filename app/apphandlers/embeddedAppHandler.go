@@ -234,13 +234,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		MultiTenantStat: multitenantStats,
 	}
 
-	if enableReplay && embedded.App.Features().Replay != nil {
-		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
-		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
-	}
-
 	if enableGateway {
 		rateLimiter := ratelimiter.HandleT{}
 		rateLimiter.SetUp()
@@ -274,6 +267,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		g.Go(func() error {
 			return gw.StartWebHandler(ctx)
 		})
+	}
+
+	if enableReplay && embedded.App.Features().Replay != nil {
+		var replayDB jobsdb.HandleT
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
+		defer replayDB.TearDown()
+		embedded.App.Features().Replay.Setup(&replayDB, gatewayDB, routerDB, batchRouterDB)
 	}
 
 	g.Go(func() error {
