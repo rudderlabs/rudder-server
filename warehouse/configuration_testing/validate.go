@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
@@ -72,7 +73,9 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		} else {
 			resp.Steps[idx].Success = true
 		}
-
+		if ct.manager != nil {
+			ct.manager.Cleanup()
+		}
 		// if any of steps fails, the whole validation fails
 		if !resp.Steps[idx].Success {
 			resp.Error = resp.Steps[idx].Error

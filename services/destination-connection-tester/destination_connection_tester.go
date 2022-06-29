@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -27,8 +28,10 @@ var (
 	pkgLogger                     logger.LoggerI
 )
 
-const destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
-const testPayload = "ok"
+const (
+	destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
+	testPayload                         = "ok"
+)
 
 type DestinationConnectionTesterResponse struct {
 	DestinationId string    `json:"destinationId"`
@@ -48,10 +51,9 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(100, &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
 	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-
 }
 
-func UploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {
+func UploadDestinationConnectionTesterResponse(testResponse, destinationId string) {
 	payload := DestinationConnectionTesterResponse{
 		Error:         testResponse,
 		TestedAt:      time.Now(),
@@ -73,7 +75,7 @@ func makePostRequest(url string, payload interface{}) error {
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	retryCount := 0
 	var resp *http.Response
-	//Sending destination connection test response to Config Backend
+	// Sending destination connection test response to Config Backend
 	for {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
@@ -120,18 +122,23 @@ func createTestFileForBatchDestination(destinationID string) string {
 		pkgLogger.Errorf("DCT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
-	gzWriter.WriteGZ(testPayload)
-	gzWriter.CloseGZ()
+	if err = gzWriter.WriteGZ(testPayload); err != nil {
+		panic(err)
+	}
+	if err = gzWriter.CloseGZ(); err != nil {
+		panic(err)
+	}
 	return gzipFilePath
 }
 
 func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (objectName string, err error) {
-	uploader, err := filemanager.New(&filemanager.SettingsT{
+	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
 			Config:           destination.Config,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+		}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
@@ -143,7 +150,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		panic(err)
 	}
 	defer misc.RemoveFilePaths(filename)
-	defer uploadFile.Close()
+	defer func() { _ = uploadFile.Close() }()
 	uploadOutput, err := uploader.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
@@ -155,9 +162,8 @@ func TestBatchDestinationConnection(destination backendconfig.DestinationT) stri
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
-	var error string
 	if err != nil {
-		error = err.Error()
+		return err.Error()
 	}
-	return error
+	return ""
 }

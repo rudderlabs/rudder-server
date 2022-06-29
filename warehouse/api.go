@@ -255,7 +255,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
 	upload.IsArchivedUpload = isUploadArchived.Bool
-	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+	gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
 	})
@@ -263,9 +263,9 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if upload.Status != ExportedData {
 		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-		errors := gjson.Get(uploadError, errorPath).Array()
-		if len(errors) > 0 {
-			upload.Error = errors[len(errors)-1].String()
+		errs := gjson.Get(uploadError, errorPath).Array()
+		if len(errs) > 0 {
+			upload.Error = errs[len(errs)-1].String()
 		}
 	}
 	// set nextRetryTime for non-aborted failed uploads
@@ -388,10 +388,10 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 
 func (tableUploadReq TableUploadReqT) validateReq() error {
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
-		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+		return errors.New("warehouse api's are not initialized")
 	}
 	if tableUploadReq.UploadID == 0 {
-		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+		return errors.New("upload_id is empty or should be greater than 0")
 	}
 	return nil
 }
@@ -402,7 +402,7 @@ func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 
 func (uploadReq UploadReqT) validateReq() error {
 	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
-		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+		return errors.New("warehouse api's are not initialized")
 	}
 	if uploadReq.UploadId < 1 {
 		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
@@ -473,7 +473,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
-		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+		gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
 		})

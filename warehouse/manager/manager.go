@@ -2,6 +2,8 @@ package manager
 
 import (
 	"fmt"
+	"time"
+
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -12,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -24,8 +25,8 @@ type ManagerI interface {
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
-	AddColumn(tableName string, columnName string, columnType string) (err error)
-	AlterColumn(tableName string, columnName string, columnType string) (err error)
+	AddColumn(tableName, columnName, columnType string) (err error)
+	AlterColumn(tableName, columnName, columnType string) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
 	LoadIdentityMergeRulesTable() error
@@ -36,7 +37,7 @@ type ManagerI interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
-	LoadTestTable(location string, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
+	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
 }
 
@@ -49,7 +50,7 @@ type WarehouseOperations interface {
 	WarehouseDelete
 }
 
-//New is a Factory function that returns a ManagerI of a given destination-type
+// New is a Factory function that returns a ManagerI of a given destination-type
 func New(destType string) (ManagerI, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -83,7 +84,7 @@ func New(destType string) (ManagerI, error) {
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }
 
-//NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
+// NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:

@@ -3,15 +3,15 @@ package metric
 import "sync"
 
 const (
-	// By default, we average over a one-minute period, which means the average
+	// AVG_METRIC_AGE By default, we average over a one-minute period, which means the average
 	// age of the metrics in the period is 30 seconds.
 	AVG_METRIC_AGE float64 = 30.0
 
-	// The formula for computing the decay factor from the average age comes
+	// DECAY The formula for computing the decay factor from the average age comes
 	// from "Production and Operations Analysis" by Steven Nahmias.
-	DECAY float64 = 2 / (float64(AVG_METRIC_AGE) + 1)
+	DECAY = 2 / (AVG_METRIC_AGE + 1)
 
-	// For best results, the moving average should not be initialized to the
+	// WARMUP_SAMPLES For best results, the moving average should not be initialized to the
 	// samples it sees immediately. The book "Production and Operations
 	// Analysis" by Steven Nahmias suggests initializing the moving average to
 	// the mean of the first 10 samples. Until the VariableEwma has seen this

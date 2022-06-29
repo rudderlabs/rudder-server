@@ -20,7 +20,7 @@ type Gauge interface {
 	Dec()
 	// Add adds the given value to the counter.
 	Add(val float64)
-	// Sub substracts the given value from the counter.
+	// Sub subtracts the given value from the counter.
 	Sub(float64)
 	// SetToCurrentTime sets the current UNIX time as the gauge's value
 	SetToCurrentTime()

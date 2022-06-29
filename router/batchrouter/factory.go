@@ -4,6 +4,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -15,11 +16,12 @@ type Factory struct {
 	RouterDB         jobsdb.JobsDB
 	ProcErrorDB      jobsdb.JobsDB
 	TransientSources transientsource.Service
+	RsourcesService  rsources.JobService
 }
 
 func (f *Factory) New(destType string) *HandleT {
 	r := &HandleT{}
 
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources)
+	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources, f.RsourcesService)
 	return r
 }

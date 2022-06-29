@@ -11,12 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var abortableErrors = []string{}
-var pkgLogger logger.LoggerI
+var (
+	abortableErrors = []string{}
+	pkgLogger       logger.LoggerI
+)
 
 // Config is the config that is required to send data to Kinesis
 type Config struct {
@@ -32,10 +35,12 @@ type Opts struct {
 }
 
 func init() {
-	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
+	abortableErrors = []string{
+		"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
 		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
 		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
-		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
+		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError",
+	}
 
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kinesis")
 }
@@ -66,15 +71,15 @@ func NewProducer(destinationConfig interface{}, o Opts) (kinesis.Kinesis, error)
 		s = session.Must(session.NewSession(&aws.Config{
 			HTTPClient:  httpClient,
 			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
+		}))
 	}
 	var kc *kinesis.Kinesis = kinesis.New(s)
 	return *kc, err
 }
 
 // Produce creates a producer and send data to Kinesis.
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 	kc, ok := producer.(kinesis.Kinesis)
@@ -97,7 +102,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	streamName := aws.String(config.Stream)
 
-	data := parsedJSON.Get("message").Value().(interface{})
+	data := parsedJSON.Get("message").Value()
 	value, err := json.Marshal(data)
 	if err != nil {
 		return GetStatusCodeFromError(err), err.Error(), err.Error()
@@ -115,7 +120,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 
 	putOutput, err := kc.PutRecord(&kinesis.PutRecordInput{
-		Data:         []byte(value),
+		Data:         value,
 		StreamName:   streamName,
 		PartitionKey: partitionKey,
 	})

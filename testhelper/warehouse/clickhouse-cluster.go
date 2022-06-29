@@ -133,7 +133,8 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var chSetupError error
 	if chClusterTest.Network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-network"}); err != nil {
+		Name: "clickhouse-network",
+	}); err != nil {
 		chSetupError = err
 		log.Println(fmt.Errorf("could not create clickhouse cluster network: %s", err.Error()))
 	}
@@ -201,7 +202,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		}
 		for i, chResource := range chClusterTest.Resources {
 			if chResource.Resource != nil {
-				log.Println(fmt.Sprintf("Purging clickhouse cluster %d resource", i))
+				log.Printf("Purging clickhouse cluster %d resource \n", i)
 				if err := pool.Purge(chResource.Resource); err != nil {
 					log.Println(fmt.Errorf("could not purge clickhouse cluster %d resource: %s", i, err.Error()))
 				}

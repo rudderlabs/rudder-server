@@ -33,7 +33,7 @@ type MultiTenantJobsDB interface {
 func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
 	var sqlStatement string
 
-	//some stats
+	// some stats
 	orderQuery := " ORDER BY jobs.job_id"
 	limitQuery := fmt.Sprintf(" LIMIT %d ", jobsLimit)
 
@@ -58,13 +58,12 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 	return sqlStatement
 }
 
-//All Jobs
+// All Jobs
 
 func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
-
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
 	mj.dsMigrationLock.RLock()
 	mj.dsListLock.RLock()
 	defer mj.dsMigrationLock.RUnlock()
@@ -161,7 +160,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 		var _nullEC sql.NullString
 		// TODO: Last two columns in the data are not supposed to be of type string,
 		// they are supposed to be of type RAWJSON but SQL does not give a nullable RAWJSON type.
-		//So look for the possible scenarios
+		// So look for the possible scenarios
 		var _nullER sql.NullString
 		var _nullSP sql.NullString
 		err = rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
@@ -216,7 +215,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, workspaceCount map[string]
 		mj.assertError(err)
 	}
 
-	//do cache stuff here
+	// do cache stuff here
 	_willTryToSet := willTryToSet
 	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
 		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
@@ -251,7 +250,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 	stateFilters := conditions.StateFilters
 	var sqlStatement string
 
-	//some stats
+	// some stats
 	workspaceArray := make([]string, 0)
 	for workspace := range workspaceCount {
 		workspaceArray = append(workspaceArray, "'"+workspace+"'")

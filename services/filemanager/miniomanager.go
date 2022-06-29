@@ -13,7 +13,7 @@ import (
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
-	var protocol = "http"
+	protocol := "http"
 	if manager.Config.UseSSL {
 		protocol = "https"
 	}
@@ -103,7 +103,6 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 }
 
 func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
-
 	objectChannel := make(chan string, len(keys))
 	for _, key := range keys {
 		objectChannel <- key

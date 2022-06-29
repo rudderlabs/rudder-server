@@ -37,7 +37,8 @@ var testCases = []testCase{
 				Out:    4,
 				Failed: 6,
 			},
-		}, JobStatus{
+		},
+		JobStatus{
 			ID: "jobRunId",
 			TasksStatus: []TaskStatus{
 				{
@@ -58,7 +59,8 @@ var testCases = []testCase{
 					},
 				},
 			},
-		}},
+		},
+	},
 	{
 		"one task with one source with one destination, destination not completed",
 		map[JobTargetKey]Stats{
@@ -71,7 +73,8 @@ var testCases = []testCase{
 				Out:    3,
 				Failed: 6,
 			},
-		}, JobStatus{
+		},
+		JobStatus{
 			ID: "jobRunId",
 			TasksStatus: []TaskStatus{
 				{
@@ -114,7 +117,8 @@ var testCases = []testCase{
 				Out:    3,
 				Failed: 6,
 			},
-		}, JobStatus{
+		},
+		JobStatus{
 			ID: "jobRunId",
 			TasksStatus: []TaskStatus{
 				{
@@ -158,7 +162,8 @@ var testCases = []testCase{
 				Out:    3,
 				Failed: 6,
 			},
-		}, JobStatus{
+		},
+		JobStatus{
 			ID: "jobRunId",
 			TasksStatus: []TaskStatus{
 				{

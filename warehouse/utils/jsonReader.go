@@ -17,7 +17,7 @@ func (js *jsonReader) Read(columnNames []string) (record []string, err error) {
 	if !ok {
 		err = js.scanner.Err()
 		if err != nil {
-			pkgLogger.Errorf("WH: Error in scanner reading line from staging file: %v", err) //TODO: change log
+			pkgLogger.Errorf("WH: Error in scanner reading line from staging file: %v", err) // TODO: change log
 			return
 		}
 		return []string{}, io.EOF

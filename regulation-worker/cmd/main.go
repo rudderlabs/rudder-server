@@ -26,7 +26,6 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
-
 	initialize.Init()
 	backendconfig.Init()
 
@@ -42,11 +41,9 @@ func main() {
 		close(c)
 	}()
 	Run(ctx)
-
 }
 
 func Run(ctx context.Context) {
-
 	dest := &destination.DestMiddleware{
 		Dest: &backendconfig.SingleWorkspaceConfig{},
 	}
@@ -81,7 +78,6 @@ func Run(ctx context.Context) {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}
-
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {
