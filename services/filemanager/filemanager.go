@@ -96,9 +96,14 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 }
 
 // GetProviderConfigFromEnv returns the provider config
-func GetProviderConfigFromEnv() map[string]interface{} {
+func GetProviderConfigFromEnv(providerString ...string) map[string]interface{} {
+	var provider string
 	providerConfig := make(map[string]interface{})
-	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	if len(providerString) == 0 {
+		provider = config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	} else {
+		provider = providerString[0]
+	}
 	switch provider {
 	case "S3":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
