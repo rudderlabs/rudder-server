@@ -6,19 +6,31 @@ import (
 	"strings"
 )
 
-type QueryExecution struct {
+type QueryParams struct {
 	txn                 *sql.Tx
 	db                  *sql.DB
 	query               string
 	enableWithQueryPlan bool
 }
 
-// handleQueryExecution
+func (q *QueryParams) validate() (err error) {
+	if q.txn == nil && q.db == nil {
+		return fmt.Errorf("both txn and db are nil")
+	}
+	return
+}
+
+// handleExec
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
-// Currently, these statements are supported by EXPLAIN ANALYZE
-// Any SELECT, INSERT, UPDATE, DELETE, VALUES, EXECUTE, DECLARE, CREATE TABLE AS, or CREATE MATERIALIZED VIEW AS statement, whose execution plan you wish to see.
-func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
+// Currently, these statements are supported by EXPLAIN
+// Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
+func handleExec(e *QueryParams) (result sql.Result, err error) {
 	sqlStatement := e.query
+
+	if err = e.validate(); err != nil {
+		err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s as both txn and db are nil", sqlStatement)
+		return
+	}
 
 	if e.enableWithQueryPlan {
 		sqlStatement := "EXPLAIN " + e.query
@@ -28,9 +40,6 @@ func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
 			rows, err = e.txn.Query(sqlStatement)
 		} else if e.db != nil {
 			rows, err = e.db.Query(sqlStatement)
-		} else {
-			err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s as both txn and db are nil", sqlStatement)
-			return
 		}
 		if err != nil {
 			err = fmt.Errorf("[WH][POSTGRES] error occurred while handling transaction for query: %s with err: %w", sqlStatement, err)
@@ -54,9 +63,6 @@ func handleQueryExecution(e *QueryExecution) (result sql.Result, err error) {
 		result, err = e.txn.Exec(sqlStatement)
 	} else if e.db != nil {
 		result, err = e.db.Exec(sqlStatement)
-	} else {
-		err = fmt.Errorf("[WH][POSTGRES] Not able to handle query execution for statement: %s as both txn and db are nil", sqlStatement)
-		return
 	}
 	return
 }
