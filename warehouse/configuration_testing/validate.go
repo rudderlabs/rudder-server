@@ -109,6 +109,10 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 }
 
 func (ct *CTHandleT) initManager() (err error) {
+	if ct.manager != nil {
+		return
+	}
+
 	ct.warehouse = warehouse(ct.infoRequest)
 
 	// Initializing manager
