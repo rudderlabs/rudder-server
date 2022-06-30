@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -305,8 +306,24 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		jobList := make([]*jobsdb.JobT, 0)
 		var errorMessagesMap map[uuid.UUID]string
 
+		userIDOccurenceMap := make(map[string]int)
+		maxEventsForOneUser := 0
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
+			for i := range jobList {
+				userIDOccurenceMap[jobList[i].UserID]++
+				if userIDOccurenceMap[jobList[i].UserID] > maxEventsForOneUser {
+					maxEventsForOneUser = userIDOccurenceMap[jobList[i].UserID]
+				}
+			}
+		}
+		if maxEventsForOneUser > len(jobList)/4 {
+			sort.Slice(jobList, func(i, j int) bool {
+				if jobList[i].UserID != jobList[j].UserID {
+					return userIDOccurenceMap[jobList[i].UserID] < userIDOccurenceMap[jobList[j].UserID]
+				}
+				return jobList[i].JobID < jobList[j].JobID
+			})
 		}
 		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
