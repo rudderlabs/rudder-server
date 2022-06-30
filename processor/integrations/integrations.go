@@ -52,7 +52,7 @@ type PostParametersT struct {
 	URL           string `json:"endpoint"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID      string                 `json:"userId,,optional"`
+	UserID      string                 `json:"userId,,optional"` //nolint:staticcheck
 	Headers     map[string]interface{} `json:"headers"`
 	QueryParams map[string]interface{} `json:"params"`
 	Body        map[string]interface{} `json:"body"`

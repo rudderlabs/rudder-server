@@ -12,13 +12,14 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -269,7 +270,7 @@ var _ = Describe("tenantStats", func() {
 				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
 				// Jobs are picked from Input Loop
 				// workspaceID1 has the least latency but also the least priority
-				// as it has draining jobs withing the last minute
+				// as it has draining jobs within the last minute
 				// The algorithm tries to pick the jobs likely to succeed
 				// So the other two workspaces had the maximum picked up jobs(1000)
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(6019))

@@ -3,6 +3,7 @@ package stats
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +67,30 @@ func Init() {
 }
 
 type Tags map[string]string
+
+// Strings returns all key value pairs as an ordered list of strings, sorted by increasing key order
+func (t Tags) Strings() []string {
+	if len(t) == 0 {
+		return nil
+	}
+	res := make([]string, 0, len(t)*2)
+	// sorted by tag name (!important for consistent map iteration order)
+	tagNames := make([]string, 0, len(t))
+	for n := range t {
+		tagNames = append(tagNames, n)
+	}
+	sort.Strings(tagNames)
+	for _, tagName := range tagNames {
+		tagVal := t[tagName]
+		res = append(res, strings.ReplaceAll(tagName, ":", "-"), strings.ReplaceAll(tagVal, ":", "-"))
+	}
+	return res
+}
+
+// String returns all key value pairs as a single string, separated by commas, sorted by increasing key order
+func (t Tags) String() string {
+	return strings.Join(t.Strings(), ",")
+}
 
 // Stats manages provisioning of RudderStats
 type Stats interface {
@@ -202,34 +227,27 @@ func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rSta
 			dontProcess: true,
 		}
 	}
-
-	tagStr := StatType
-	for tagName, tagVal := range tags {
-		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
+	if tags == nil {
+		tags = make(Tags)
 	}
+	// key comprises of the measurement name plus all tag-value pairs
+	taggedClientKey := StatType + tags.String()
 
 	taggedClientsMapLock.RLock()
-	taggedClient, found := taggedClientsMap[tagStr]
+	taggedClient, found := taggedClientsMap[taggedClientKey]
 	taggedClientsMapLock.RUnlock()
 
 	if !found {
-
-		tagVals := make([]string, 0, len(tags)*2)
-		for tagName, tagVal := range tags {
-			tagName = strings.ReplaceAll(tagName, ":", "-")
-			tagVal = strings.ReplaceAll(tagVal, ":", "-")
-			tagVals = append(tagVals, tagName, tagVal)
-		}
-
 		taggedClientsMapLock.Lock()
-		if !connEstablished {
-			taggedClientPendingTags = append(taggedClientPendingTags, tagStr)
-			taggedClientPendingKeys = append(taggedClientPendingKeys, tagVals)
+		if taggedClient, found = taggedClientsMap[taggedClientKey]; !found { // double check for race
+			tagVals := tags.Strings()
+			if !connEstablished {
+				taggedClientPendingTags = append(taggedClientPendingTags, taggedClientKey)
+				taggedClientPendingKeys = append(taggedClientPendingKeys, tagVals)
+			}
+			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+			taggedClientsMap[taggedClientKey] = taggedClient
 		}
-		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-
-		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
 

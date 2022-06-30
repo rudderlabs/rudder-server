@@ -237,7 +237,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-	uploader, _ := filemanager.New(&filemanager.SettingsT{
+	uploader, _ := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         "S3",

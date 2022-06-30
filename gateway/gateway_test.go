@@ -516,8 +516,22 @@ var _ = Describe("Gateway", func() {
 		}
 
 		for handlerType, handler := range allHandlers(gateway) {
-			assertHandler(handlerType, handler)
+			Context(handlerType, func() {
+				assertHandler(handlerType, handler)
+			})
 		}
+	})
+
+	Context("Robots", func() {
+		gateway := &HandleT{}
+
+		BeforeEach(func() {
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+		})
+
+		It("should return a robots.txt", func() {
+			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
+		})
 	})
 })
 

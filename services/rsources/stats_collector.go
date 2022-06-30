@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	uuid "github.com/gofrs/uuid"
-	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/gofrs/uuid"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 // StatsCollector collects and publishes stats as jobs are
@@ -24,8 +25,8 @@ type StatsCollector interface {
 	BeginProcessing(jobs []*jobsdb.JobT)
 
 	// JobStatusesUpdated captures outgoing job statistics.
-	// A call to BeginProcessing must preceed a call to this method,
-	// so that all necessary indices can been created, since a JobStatus
+	// A call to BeginProcessing must precede a call to this method,
+	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
 	JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT)
 

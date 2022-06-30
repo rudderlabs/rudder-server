@@ -406,7 +406,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	if config, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
-	fm, err := filemanager.New(&filemanager.SettingsT{
+	fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: objectProvider,
 		Config:   config,
 	})

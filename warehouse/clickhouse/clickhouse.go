@@ -338,7 +338,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	defer pkgLogger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
 	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
-	downloader, err := filemanager.New(&filemanager.SettingsT{
+	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -1042,7 +1042,7 @@ func (ch *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ch.Namespace,
 		tableName,
-		fmt.Sprintf(`%s`, strings.Join(columns, ",")),
+		strings.Join(columns, ","),
 		generateArgumentString("?", len(columns)),
 	)
 	txn, err := ch.Db.Begin()

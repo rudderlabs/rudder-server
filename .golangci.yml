@@ -1,0 +1,38 @@
+run:
+  timeout: 5m
+  go: '1.18'
+  skip-dirs:
+    - warehouse
+    - enterprise
+    - event-schema
+
+linters:
+  enable:
+    - deadcode
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck
+    - bodyclose
+    - decorder
+    - makezero
+    - nilnil
+    - nilerr
+    - rowserrcheck
+    - tenv
+    - wastedassign
+    - unparam
+    - misspell
+    - unconvert
+
+issues:
+  exclude-use-default: true
+  exclude-case-sensitive: false
+  max-issues-per-linter: 50
+  max-same-issues: 10
+  new: false

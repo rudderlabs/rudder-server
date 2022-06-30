@@ -243,7 +243,7 @@ func TestFileManager(t *testing.T) {
 				"containerName":  bucket,
 				"prefix":         "some-prefix",
 				"accountName":    accessKeyId,
-				"accountKey":     string(base64Secret),
+				"accountKey":     base64Secret,
 				"endPoint":       AzuriteEndpoint,
 				"forcePathStyle": true,
 				"disableSSL":     true,

@@ -105,7 +105,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	var resp *http.Response
 	// Sending event schema to Config Backend
 	for {
-		req, err := Http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
+		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
 			return

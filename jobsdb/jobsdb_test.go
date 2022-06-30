@@ -1,5 +1,3 @@
-//go:build integration
-
 package jobsdb
 
 import (
@@ -10,12 +8,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -344,6 +344,98 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 
 			Expect(jd.getDSList()).To(Equal(dsListInMemory))
+		})
+	})
+
+	Context("Start & Stop", Ordered, func() {
+		var jd *HandleT
+
+		BeforeEach(func() {
+			jd = &HandleT{}
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
+		})
+
+		It("can call Stop before Start without side-effects", func() {
+			jd.Stop()
+			jd.Start()
+			Expect(jd.lifecycle.started).To(Equal(true))
+		})
+
+		It("can call Start twice without side-effects", func() {
+			jd.Start()
+			group1 := jd.backgroundGroup
+			jd.Start()
+			group2 := jd.backgroundGroup
+			Expect(group1).To(Equal(group2))
+			Expect(jd.lifecycle.started).To(Equal(true))
+		})
+
+		It("can call Start in parallel without side-effects", func() {
+			var wg sync.WaitGroup
+			var bgGroups []*errgroup.Group
+			wg.Add(10)
+			for i := 0; i < 10; i++ {
+				go func() {
+					jd.Start()
+					bgGroups = append(bgGroups, jd.backgroundGroup)
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			for i := 1; i < 10; i++ {
+				Expect(bgGroups[i-1]).To(Equal(bgGroups[i]))
+			}
+			Expect(jd.lifecycle.started).To(Equal(true))
+		})
+
+		It("can call Stop twice without side-effects", func() {
+			jd.Start()
+			Expect(jd.lifecycle.started).To(Equal(true))
+			Expect(jd.backgroundGroup).ToNot(BeNil())
+			jd.Stop()
+			Expect(jd.backgroundGroup).ToNot(BeNil())
+			Expect(jd.lifecycle.started).To(Equal(false))
+			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+			jd.Stop()
+			Expect(jd.backgroundGroup).ToNot(BeNil())
+			Expect(jd.lifecycle.started).To(Equal(false))
+			Expect(jd.backgroundGroup.Wait()).To(BeNil())
+		})
+
+		It("can call Stop in parallel without side-effects", func() {
+			jd.Start()
+
+			var wg sync.WaitGroup
+			wg.Add(10)
+			for i := 0; i < 10; i++ {
+				go func() {
+					jd.Stop()
+					Expect(jd.backgroundGroup.Wait()).To(BeNil())
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+		})
+
+		It("can call Start & Stop in parallel without problems", func() {
+			jd.Start()
+
+			var wg sync.WaitGroup
+			wg.Add(10)
+			for i := 0; i < 10; i++ {
+				go func() {
+					jd.Start()
+					jd.Stop()
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			Expect(jd.lifecycle.started).To(Equal(false))
 		})
 	})
 })

@@ -799,7 +799,6 @@ func GetReleaseName() string {
 func GetInstanceID() string {
 	instance := GetEnv("INSTANCE_ID", "")
 	if instance == "" {
-		fmt.Println("wrong INSTANCE_ID provided")
 		return ""
 	}
 	instanceArr := strings.Split(instance, "-")
