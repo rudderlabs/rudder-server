@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -96,7 +97,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (Conf
 	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
+		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
 		return ConfigT{}, false
 	}
 

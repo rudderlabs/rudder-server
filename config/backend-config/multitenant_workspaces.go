@@ -89,10 +89,23 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 			url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 		}
 	} else {
-		wIds := strings.Split(workspaceArr, ",")
-		for i := range wIds {
-			wIds[i] = strings.Trim(wIds[i], " ")
+		var (
+			rawWorkspaceIDs = strings.Split(workspaceArr, ",")
+			wIds            = make([]string, 0, len(rawWorkspaceIDs))
+		)
+		for _, wId := range rawWorkspaceIDs {
+			trimmed := strings.Trim(wId, " ")
+			if trimmed == "" {
+				pkgLogger.Warn("empty workspace ID provided")
+				continue
+			}
+			wIds = append(wIds, trimmed)
 		}
+		if len(wIds) == 0 {
+			pkgLogger.Warn("no workspace IDs provided, skipping backend config fetch")
+			return ConfigT{}, false
+		}
+
 		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
 		if err != nil {
 			pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
@@ -106,6 +119,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 
 	operation := func() error {
 		var fetchError error
+		pkgLogger.Debugf("Fetching config from %s", url)
 		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
 		return fetchError
 	}
@@ -125,7 +139,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
+		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
 		return ConfigT{}, false
 	}
 	writeKeyToWorkspaceIDMap := make(map[string]string)

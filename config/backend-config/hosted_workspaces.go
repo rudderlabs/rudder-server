@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/config"
-
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 // HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
@@ -106,7 +106,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
+		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
 		return ConfigT{}, false
 	}
 
