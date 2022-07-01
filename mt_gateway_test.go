@@ -129,6 +129,10 @@ func TestMultiTenantGateway(t *testing.T) {
 		})
 	}
 	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Unexpected call to /hostedWorkspaceConfig given that hosted=false")
+	}).Methods("GET")
+	backendConfRouter.HandleFunc("/multitenantWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, `["`+workspaceID+`"]`, r.FormValue("workspaceIds"))
 		_, _ = w.Write(marshalledWorkspaces)
 	}).Methods("GET")
 
@@ -157,6 +161,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	require.NoError(t, os.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort)))
 	require.NoError(t, os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort)))
 	require.NoError(t, os.Setenv("RSERVER_ENABLE_STATS", "false"))
+	require.NoError(t, os.Setenv("RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG", "false"))
 	require.NoError(t, os.Setenv("RUDDER_TMPDIR", rudderTmpDir))
 	require.NoError(t, os.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "so-secret"))
 	require.NoError(t, os.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType)))
@@ -229,6 +234,25 @@ func TestMultiTenantGateway(t *testing.T) {
 
 	// Only the Gateway is running, so we don't expect any destinations to be hit.
 	require.EqualValues(t, 0, webhook.RequestsCount(), "webhook should have no requests because there is no processor")
+
+	{ // TODO bad workspace change
+		_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
+		require.NoError(t, err)
+		require.Eventually(t, func() bool {
+			t.Log("Waiting for test-ack/2...")
+			ack1, err := etcdContainer.Client.Get(ctx, "test-ack/2")
+			if err != nil {
+				t.Logf("Error while checking test-ack/1: %s", err)
+				return false
+			}
+			if len(ack1.Kvs) == 0 {
+				return false
+			}
+			return string(ack1.Kvs[0].Value) == `{"status":"RELOADED"}`
+		}, 10*time.Second, 500*time.Millisecond)
+	}
+
+	// TODO trigger degraded mode, the GW should still work
 
 	cancel()
 	<-done
