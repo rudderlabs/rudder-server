@@ -19,13 +19,6 @@ type MigratorFeature interface {
 // MigratorFeatureSetup is a function that initializes a Migrator feature, based on application instance
 type MigratorFeatureSetup func(Interface) MigratorFeature
 
-var migratorFeatureSetup MigratorFeatureSetup
-
-// RegisterMigratorFeature registers a Migration implementation
-func RegisterMigratorFeature(f MigratorFeatureSetup) {
-	migratorFeatureSetup = f
-}
-
 // SuppressUserFeature handles webhook event requests
 type SuppressUserFeature interface {
 	Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI
@@ -61,13 +54,6 @@ type ReplayFeature interface {
 
 // ReplayFeatureSetup is a function that initializes a Replay feature
 type ReplayFeatureSetup func(Interface) ReplayFeature
-
-var replayFeatureSetup ReplayFeatureSetup
-
-// RegisterReplayFeature registers a config env feature implementation
-func RegisterReplayFeature(f ReplayFeatureSetup) {
-	replayFeatureSetup = f
-}
 
 // Features contains optional implementations of Enterprise only features.
 type Features struct {

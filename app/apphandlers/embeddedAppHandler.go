@@ -30,9 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 // EmbeddedApp is the type for embedded type implemention
@@ -61,15 +58,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
-	// Setting up reporting client
-	if embedded.App.Features().Reporting != nil {
-		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-		g.Go(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
-			return nil
-		})
-	}
+	g.Go(func() error {
+		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		return nil
+	})
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
@@ -269,7 +263,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		})
 	}
 
-	if enableReplay && embedded.App.Features().Replay != nil {
+	if enableReplay {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
 		defer replayDB.TearDown()

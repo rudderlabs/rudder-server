@@ -1738,16 +1738,14 @@ func Start(ctx context.Context, app app.Interface) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Setting up reporting client
-	// only if standalone or embeded connecting to diff DB for warehouse
+	// only if standalone or embedded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
-		if application.Features().Reporting != nil {
-			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-			g.Go(misc.WithBugsnagForWarehouse(func() error {
-				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
-				return nil
-			}))
-		}
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+			return nil
+		}))
 	}
 
 	if isStandAlone() && isMaster() {

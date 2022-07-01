@@ -29,11 +29,13 @@ func loadConfig() {
 
 // Setup initializes Suppress User feature
 func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI {
+	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
+
 	if m.EnterpriseToken == "" {
+		pkgLogger.Info("Suppress User feature is enterprise only")
 		return &NOOP{}
 	}
 
-	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 	pkgLogger.Info("[[ SuppressUser ]] Setting up Suppress User Feature")
 	loadConfig()
 	ctx := context.Background()
