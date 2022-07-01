@@ -20,14 +20,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-type migratorFeatureImpl struct {
+type Migrator struct {
 	migrationMode string
 }
 
 var migratorPort int
 
 // Run Migrator feature
-func (m *migratorFeatureImpl) Run(ctx context.Context, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT,
+func (m *Migrator) Run(ctx context.Context, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT,
 	startProcessor, startRouter func(),
 ) {
 	loadConfig()
@@ -80,7 +80,7 @@ func (m *migratorFeatureImpl) Run(ctx context.Context, gatewayDB, routerDB, batc
 }
 
 // Setup initializes Migrator feature
-func (m *migratorFeatureImpl) PrepareJobsdbsForImport(gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+func (m *Migrator) PrepareJobsdbsForImport(gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
 	switch m.migrationMode {
 	case db.IMPORT:
 		seqNoForNewDS := int64(GetMigratingToVersion())*int64(math.Pow10(13)) + 1
@@ -107,7 +107,7 @@ type StatusResponseT struct {
 }
 
 // StartWebHandler starts the webhandler for internal communication and status
-func (m *migratorFeatureImpl) StartWebHandler(ctx context.Context, gatewayMigrator, routerMigrator, batchRouterMigrator *MigratorT, failedKeysMigrator *FailedKeysMigratorT, startProcessor, startRouter func()) {
+func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerMigrator, batchRouterMigrator *MigratorT, failedKeysMigrator *FailedKeysMigratorT, startProcessor, startRouter func()) {
 	pkgLogger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 	srvMux := http.NewServeMux()
 	srvMux.HandleFunc("/gw"+notificationURI, m.importRequestHandler((*gatewayMigrator).importer.importHandler))
@@ -188,7 +188,7 @@ func (m *migratorFeatureImpl) StartWebHandler(ctx context.Context, gatewayMigrat
 	}
 }
 
-func (m *migratorFeatureImpl) importRequestHandler(importHandler func(jobsdb.MigrationCheckpointT) error) func(http.ResponseWriter, *http.Request) {
+func (m *Migrator) importRequestHandler(importHandler func(jobsdb.MigrationCheckpointT) error) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, _ := ioutil.ReadAll(r.Body)
 		r.Body.Close()

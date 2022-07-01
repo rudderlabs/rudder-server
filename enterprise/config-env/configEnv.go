@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/jeremywohl/flatten"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
@@ -22,12 +21,6 @@ var (
 
 func loadConfig() {
 	configEnvReplacer = config.GetString("BackendConfig.configEnvReplacer", "env.")
-}
-
-func init() {
-	app.RegisterConfigEnvFeature(func(a app.Interface) app.ConfigEnvFeature {
-		return &configEnvFeatureImpl{}
-	})
 }
 
 // ReplaceConfigWithEnvVariables : Replaces all env variables in the config

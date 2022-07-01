@@ -10,7 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type reportingFeatureImpl struct {
+type Factory struct {
+	EnterpriseToken string
+
 	once              sync.Once
 	reportingInstance types.ReportingI
 
@@ -19,10 +21,15 @@ type reportingFeatureImpl struct {
 }
 
 // Setup initializes Suppress User feature
-func (m *reportingFeatureImpl) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
 	m.once.Do(func() {
 		reportingEnabled := config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED)
 		if !reportingEnabled {
+			m.reportingInstance = &NOOP{}
+			return
+		}
+
+		if m.EnterpriseToken == "" {
 			m.reportingInstance = &NOOP{}
 			return
 		}
@@ -37,7 +44,7 @@ func (m *reportingFeatureImpl) Setup(backendConfig backendconfig.BackendConfig) 
 	return m.reportingInstance
 }
 
-func (m *reportingFeatureImpl) GetReportingInstance() types.ReportingI {
+func (m *Factory) GetReportingInstance() types.ReportingI {
 	if m.reportingInstance == nil {
 		panic(fmt.Errorf("Reporting instance not initialised. You should call Setup before GetReportingInstance"))
 	}

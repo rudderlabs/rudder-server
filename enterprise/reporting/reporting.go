@@ -16,7 +16,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -42,12 +41,6 @@ const (
 	STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME = "reporting_client_get_min_reported_at_query_time"
 	STAT_REPORTING_GET_REPORTS_QUERY_TIME         = "reporting_client_get_reports_query_time"
 )
-
-func init() {
-	app.RegisterReportingFeature(func(a app.Interface) app.ReportingFeature {
-		return &reportingFeatureImpl{}
-	})
-}
 
 type HandleT struct {
 	clients                       map[string]*types.Client

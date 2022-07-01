@@ -4,8 +4,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
-	"sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -33,16 +31,6 @@ type SuppressUserFeature interface {
 	Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI
 }
 
-// SuppressUserFeatureSetup is a function that initializes a Webhook feature, based on application instance
-type SuppressUserFeatureSetup func(Interface) SuppressUserFeature
-
-var suppressUserFeatureSetup SuppressUserFeatureSetup
-
-// RegisterSuppressUserFeature registers a suppress user feature implementation
-func RegisterSuppressUserFeature(f SuppressUserFeatureSetup) {
-	suppressUserFeatureSetup = f
-}
-
 /*********************************
 DestinationConfig Env Support
 *********************************/
@@ -50,16 +38,6 @@ DestinationConfig Env Support
 // ConfigEnvFeature handles override of config from ENV variables.
 type ConfigEnvFeature interface {
 	Setup() types.ConfigEnvI
-}
-
-// ConfigEnvFeatureSetup is a function that initializes a ConfigEnv feature
-type ConfigEnvFeatureSetup func(Interface) ConfigEnvFeature
-
-var configEnvFeatureSetup ConfigEnvFeatureSetup
-
-// RegisterConfigEnvFeature registers a config env feature implementation
-func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
-	configEnvFeatureSetup = f
 }
 
 /*********************************
@@ -70,50 +48,6 @@ Reporting Feature
 type ReportingFeature interface {
 	Setup(backendConfig backendconfig.BackendConfig) types.ReportingI
 	GetReportingInstance() types.ReportingI
-}
-
-// ReportingFeatureSetup is a function that initializes a Reporting feature
-type ReportingFeatureSetup func(Interface) ReportingFeature
-
-var (
-	reportingFallback                           = &reportingFactoryFallback{}
-	reportingFeatureSetup ReportingFeatureSetup = func(a Interface) ReportingFeature {
-		return reportingFallback
-	}
-)
-
-// RegisterReportingFeature registers a config env feature implementation
-func RegisterReportingFeature(f ReportingFeatureSetup) {
-	reportingFeatureSetup = f
-}
-
-type reportingFactoryFallback struct {
-	once     sync.Once
-	instance types.ReportingI
-}
-
-func (f *reportingFactoryFallback) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
-	f.once.Do(func() {
-		f.instance = &reportingNOOP{}
-	})
-	return f.instance
-}
-
-func (f *reportingFactoryFallback) GetReportingInstance() types.ReportingI {
-	return f.instance
-}
-
-type reportingNOOP struct{}
-
-func (n *reportingNOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {}
-func (n *reportingNOOP) WaitForSetup(ctx context.Context, clientName string)   {}
-func (n *reportingNOOP) AddClient(ctx context.Context, c types.Config)         {}
-func (n *reportingNOOP) GetClient(clientName string) *types.Client {
-	return nil
-}
-
-func (n *reportingNOOP) Enabled() bool {
-	return false
 }
 
 /*********************************

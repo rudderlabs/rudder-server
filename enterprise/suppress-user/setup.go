@@ -11,7 +11,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type suppressUserFeatureImpl struct{}
+type Factory struct {
+	EnterpriseToken string
+}
 
 var (
 	regulationsPollInterval time.Duration
@@ -19,8 +21,18 @@ var (
 	suppressionApiPageSize  int
 )
 
+func loadConfig() {
+	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
+	config.RegisterIntConfigVariable(50, &suppressionApiPageSize, false, 1, "BackendConfig.Regulations.pageSize")
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+}
+
 // Setup initializes Suppress User feature
-func (m *suppressUserFeatureImpl) Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI {
+	if m.EnterpriseToken == "" {
+		return &NOOP{}
+	}
+
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 	pkgLogger.Info("[[ SuppressUser ]] Setting up Suppress User Feature")
 	loadConfig()
@@ -39,10 +51,4 @@ func (m *suppressUserFeatureImpl) Setup(backendConfig backendconfig.BackendConfi
 	suppressUser.setup(ctx)
 
 	return suppressUser
-}
-
-func loadConfig() {
-	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
-	config.RegisterIntConfigVariable(50, &suppressionApiPageSize, false, 1, "BackendConfig.Regulations.pageSize")
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }

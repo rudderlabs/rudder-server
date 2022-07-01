@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -51,12 +50,6 @@ type sourceRegulation struct {
 	Canceled  bool     `json:"canceled"`
 	UserID    string   `json:"userId"`
 	SourceIDs []string `json:"sourceIds"`
-}
-
-func init() {
-	app.RegisterSuppressUserFeature(func(a app.Interface) app.SuppressUserFeature {
-		return &suppressUserFeatureImpl{}
-	})
 }
 
 func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {

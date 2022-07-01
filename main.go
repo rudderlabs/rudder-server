@@ -98,8 +98,8 @@ var (
 )
 
 var (
-	version                                                 = "Not an official release. Get the latest release from the github repo."
-	major, minor, commit, buildDate, builtBy, gitURL, patch string
+	version                                                                  = "Not an official release. Get the latest release from the github repo."
+	major, minor, commit, buildDate, builtBy, gitURL, patch, enterpriseToken string
 )
 
 func loadConfig() {
@@ -111,6 +111,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+
+	config.RegisterStringConfigVariable(enterpriseToken, &enterpriseToken, false, "enterpriseToken")
 }
 
 func Init() {

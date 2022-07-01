@@ -1,7 +1,6 @@
 package replay
 
 import (
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -20,12 +19,6 @@ func loadConfig() {
 	InstanceID = config.GetEnv("INSTANCE_ID", "1")
 	replayEnabled = config.GetBool("Replay.enabled", types.DEFAULT_REPLAY_ENABLED)
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-}
-
-func init() {
-	app.RegisterReplayFeature(func(a app.Interface) app.ReplayFeature {
-		return &replayFeatureImpl{}
-	})
 }
 
 func setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
@@ -51,10 +44,16 @@ func setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
 	replayer.Setup(&dumpsLoader, replayDB, toDB, tablePrefix)
 }
 
-type replayFeatureImpl struct{}
+type Factory struct {
+	EnterpriseToken string
+}
 
 // Setup initializes Replay feature
-func (m *replayFeatureImpl) Setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+func (m *Factory) Setup(replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+	if m.EnterpriseToken == "" {
+		return
+	}
+
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay")
 

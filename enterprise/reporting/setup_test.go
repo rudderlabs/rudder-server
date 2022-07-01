@@ -13,7 +13,9 @@ func TestFeatureSetup(t *testing.T) {
 	config.Load()
 	logger.Init()
 
-	f := &reportingFeatureImpl{}
+	f := &Factory{
+		EnterpriseToken: "dummy-token",
+	}
 	instanceA := f.Setup(&NOOPConfig{})
 	instanceB := f.GetReportingInstance()
 

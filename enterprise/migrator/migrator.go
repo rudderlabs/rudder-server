@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/enterprise/pathfinder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -66,14 +65,6 @@ func loadConfig() {
 	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 10000)
 	config.RegisterDurationConfigVariable(20, &exportDoneCheckSleepDuration, false, time.Second, []string{"Migrator.exportDoneCheckSleepDuration", "Migrator.exportDoneCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(1, &workLoopSleepDuration, false, time.Second, []string{"Migrator.workLoopSleepDuration,Migrator.workLoopSleepDurationIns"}...)
-}
-
-func init() {
-	app.RegisterMigratorFeature(func(a app.Interface) app.MigratorFeature {
-		return &migratorFeatureImpl{
-			migrationMode: a.Options().MigrationMode, // TODO: Remove from options
-		}
-	})
 }
 
 // Setup initializes the module
