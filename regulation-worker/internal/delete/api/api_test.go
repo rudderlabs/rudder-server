@@ -147,7 +147,7 @@ type deleteAPI struct {
 	payload        string
 	respStatusCode int
 	respBodyStatus model.JobStatus
-	respBodyErr    error
+	respBodyErr    string
 }
 
 func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
