@@ -17,7 +17,7 @@ type DataChannel <-chan DataEvent
 
 // PublishSubscriber stores the information about subscribers interested for a particular topic
 type PublishSubscriber struct {
-	noCopy.NoCopy
+	noCopy.CopyRestrictor
 	lastEventMutex sync.RWMutex
 	// lastEvent holds the last event for each topic so that we can send it to new subscribers
 	lastEvent map[string]*DataEvent

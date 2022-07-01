@@ -1,9 +1,9 @@
 package noCopy
 
-type NoCopy struct{}
+type CopyRestrictor struct{}
 
 // Lock ...
-func (*NoCopy) Lock() {}
+func (*CopyRestrictor) Lock() {}
 
 // Unlock ...
-func (*NoCopy) Unlock() {}
+func (*CopyRestrictor) Unlock() {}
