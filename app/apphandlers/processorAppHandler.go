@@ -263,6 +263,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return dm.Run(ctx)
 	})
 
+	g.Go(func() error {
+		return rsourcesService.CleanupLoop(ctx)
+	})
+
 	return g.Wait()
 }
 

@@ -433,13 +433,12 @@ var _ = Describe("Using sources handler", func() {
 					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&statCount)
 					Expect(err).NotTo(HaveOccurred())
 
-					// sqlStatement = `select count(*) from "rsources_failed_keys" where job_run_id = $1`
-					// var failedRecordCount int
-					// err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
-					// Expect(err).NotTo(HaveOccurred())
+					sqlStatement = `select count(*) from "rsources_failed_keys" where job_run_id = $1`
+					var failedRecordCount int
+					err = resource.db.QueryRow(sqlStatement, jobRunId).Scan(&failedRecordCount)
+					Expect(err).NotTo(HaveOccurred())
 
-					// if statCount == 0 && failedRecordCount == 0 {
-					if statCount == 0 {
+					if statCount == 0 && failedRecordCount == 0 {
 						return
 					}
 				}
@@ -661,7 +660,7 @@ var _ = Describe("Using sources handler", func() {
 		It("should be able to add rsources_failed_keys table to the publication and subscription seamlessly", func() {
 			pool, err := dockertest.NewPool("")
 			Expect(err).NotTo(HaveOccurred())
-			const networkId = "TestMultitenantSourcesHandler"
+			const networkId = "TestMultitenantSourcesHandlerMigration"
 			network, _ := pool.Client.NetworkInfo(networkId)
 			if network == nil {
 				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
@@ -710,11 +709,11 @@ var _ = Describe("Using sources handler", func() {
 			defer databaseC.Close()
 
 			// create tables
-			err = setupStatsTable(context.TODO(), databaseA, configA.LocalHostname)
+			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
 			Expect(err).NotTo(HaveOccurred())
-			err = setupStatsTable(context.TODO(), databaseB, configB.LocalHostname)
+			err = setupStatsTable(context.Background(), databaseB, configB.LocalHostname)
 			Expect(err).NotTo(HaveOccurred())
-			err = setupStatsTable(context.TODO(), databaseC, "shared")
+			err = setupStatsTable(context.Background(), databaseC, "shared")
 			Expect(err).NotTo(HaveOccurred())
 
 			// setup logical replication(only stats tables as previously done)
@@ -730,9 +729,9 @@ var _ = Describe("Using sources handler", func() {
 			subscriptionBName := fmt.Sprintf("%s_rsources_stats_sub", normalizedHostnameB)
 			subscriptionQuery := `CREATE SUBSCRIPTION "%s" CONNECTION '%s' PUBLICATION "rsources_stats_pub"`
 
-			_, err = databaseC.ExecContext(context.TODO(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
+			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionAName, pgA.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
-			_, err = databaseC.ExecContext(context.TODO(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
+			_, err = databaseC.ExecContext(context.Background(), fmt.Sprintf(subscriptionQuery, subscriptionBName, pgB.internalDSN))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Now setup the handlers

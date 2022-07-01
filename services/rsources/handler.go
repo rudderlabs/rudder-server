@@ -117,7 +117,7 @@ func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunI
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for i := range records {
 		_, err = stmt.ExecContext(
@@ -165,7 +165,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	if err != nil {
 		return FailedRecords{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var failedRecord FailedRecord
 		err := rows.Scan(
@@ -316,7 +316,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string)
 		_ = tx.Rollback()
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `create index if not exists failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`)
+	_, err = tx.ExecContext(ctx, `create index if not exists rsources_failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
