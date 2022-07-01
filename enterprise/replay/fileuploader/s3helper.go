@@ -51,11 +51,17 @@ func ListFilesWithPrefix(prefix, bucket, startAfter string, continuationToken *s
 	if err != nil {
 		return nil, fmt.Errorf("GetBucketRegion failed with err : %w", err)
 	}
-	uploadSession := session.Must(session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(config.GetEnv("AWS_ACCESS_KEY_ID", ""), config.GetEnv("AWS_SECRET_ACCESS_KEY", ""), ""),
-	}))
+	awsAccessKeyId := config.GetEnv("AWS_ACCESS_KEY_ID", "")
+	awsSecretAccessKey := config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 
+	config := &aws.Config{
+		Region:                        aws.String(region),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+	}
+	if awsAccessKeyId != "" && awsSecretAccessKey != "" {
+		config.Credentials = credentials.NewStaticCredentials(awsAccessKeyId, awsSecretAccessKey, "")
+	}
+	uploadSession := session.Must(session.NewSession(config))
 	// Create S3 service client
 	svc := s3.New(uploadSession)
 

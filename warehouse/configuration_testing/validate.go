@@ -73,7 +73,9 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		} else {
 			resp.Steps[idx].Success = true
 		}
-
+		if ct.manager != nil {
+			ct.manager.Cleanup()
+		}
 		// if any of steps fails, the whole validation fails
 		if !resp.Steps[idx].Success {
 			resp.Error = resp.Steps[idx].Error
