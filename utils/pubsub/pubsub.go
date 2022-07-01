@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/savsgio/gotils/nocopy"
+	"github.com/rudderlabs/rudder-server/utils/noCopy"
 )
 
 type DataEvent struct {
@@ -17,7 +17,7 @@ type DataChannel <-chan DataEvent
 
 // PublishSubscriber stores the information about subscribers interested for a particular topic
 type PublishSubscriber struct {
-	nocopy.NoCopy
+	noCopy.NoCopy
 	lastEventMutex sync.RWMutex
 	// lastEvent holds the last event for each topic so that we can send it to new subscribers
 	lastEvent map[string]*DataEvent
