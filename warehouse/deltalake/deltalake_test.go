@@ -1,6 +1,3 @@
-//go:build whintegration
-// +build whintegration
-
 package deltalake_test
 
 import (
@@ -99,32 +96,28 @@ func TestDeltalakeIntegration(t *testing.T) {
 
 	// Merge mode
 	t.Run("With Merge Mode With Partition", func(t *testing.T) {
-		config.SetString("Warehouse.deltalake.loadTableStrategy", "MERGE")
-		config.SetBool("Warehouse.deltalake.enablePartition", true)
-		deltalake.Init()
+		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "MERGE")
+		config.SetAndWrite("Warehouse.deltalake.enablePartition", true)
 
 		verify()
 	})
 	t.Run("With Merge Mode Without Partition", func(t *testing.T) {
-		config.SetString("Warehouse.deltalake.loadTableStrategy", "MERGE")
-		config.SetBool("Warehouse.deltalake.enablePartition", false)
-		deltalake.Init()
+		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "MERGE")
+		config.SetAndWrite("Warehouse.deltalake.enablePartition", false)
 
 		verify()
 	})
 
 	// Append mode
 	t.Run("With Append Mode With Partition", func(t *testing.T) {
-		config.SetString("Warehouse.deltalake.loadTableStrategy", "APPEND")
-		config.SetBool("Warehouse.deltalake.enablePartition", true)
-		deltalake.Init()
+		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "APPEND")
+		config.SetAndWrite("Warehouse.deltalake.enablePartition", true)
 
 		verify()
 	})
 	t.Run("With Append Mode Without Partition", func(t *testing.T) {
-		config.SetString("Warehouse.deltalake.loadTableStrategy", "APPEND")
-		config.SetBool("Warehouse.deltalake.enablePartition", false)
-		deltalake.Init()
+		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "APPEND")
+		config.SetAndWrite("Warehouse.deltalake.enablePartition", false)
 
 		verify()
 	})

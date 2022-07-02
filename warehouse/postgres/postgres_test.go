@@ -1,6 +1,3 @@
-//go:build whintegration
-// +build whintegration
-
 package postgres_test
 
 import (

@@ -1,6 +1,3 @@
-//go:build whintegration
-// +build whintegration
-
 package clickhouse_test
 
 import (

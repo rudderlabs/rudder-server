@@ -1,6 +1,3 @@
-//go:build whintegration
-// +build whintegration
-
 package snowflake_test
 
 import (

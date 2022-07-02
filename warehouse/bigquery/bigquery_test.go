@@ -1,6 +1,3 @@
-//go:build whintegration
-// +build whintegration
-
 package bigquery_test
 
 import (
@@ -104,8 +101,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	t.Skip()
 
 	// Disabling big query dedup
-	config.SetBool("Warehouse.bigquery.isDedupEnabled", false)
-	bigquery2.Init()
+	config.SetAndWrite("Warehouse.bigquery.isDedupEnabled", false)
 
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
@@ -145,8 +141,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	testhelper.VerifyingDestination(t, whDestTest)
 
 	// Enabling big query dedup
-	config.SetBool("Warehouse.bigquery.isDedupEnabled", true)
-	bigquery2.Init()
+	config.SetAndWrite("Warehouse.bigquery.isDedupEnabled", true)
 
 	whDestTest.EventsCountMap = testhelper.EventsCountMap{
 		"identifies": 2,
