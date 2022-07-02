@@ -254,7 +254,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	if convertToAvro {
 		codecs = make(map[string]goavro.Codec, len(avroSchemas))
 		for i, avroSchema := range avroSchemas {
-			if len(avroSchema.SchemaId) == 0 {
+			if avroSchema.SchemaId == "" {
 				return nil, fmt.Errorf("length of a schemaId is 0, of index: %d", i)
 			}
 			newCodec, err := goavro.NewCodec(avroSchema.Schema)
