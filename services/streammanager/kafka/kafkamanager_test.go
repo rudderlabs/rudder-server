@@ -633,7 +633,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: schemaId is not available for the event of index:0", err)
+		require.Equal(t, "Error while preparing batched message: schemaId is not available for the event with index:0", err)
 	})
 
 	t.Run("wrong codec", func(t *testing.T) {

@@ -254,15 +254,14 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	if convertToAvro {
 		codecs = make(map[string]goavro.Codec, len(avroSchemas))
 		for i, avroSchema := range avroSchemas {
-			if len(avroSchema.SchemaId) > 0 {
-				newCodec, err := goavro.NewCodec(avroSchema.Schema)
-				if err != nil {
-					return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
-				}
-				codecs[avroSchema.SchemaId] = *newCodec
-			} else {
+			if len(avroSchema.SchemaId) == 0 {
 				return nil, fmt.Errorf("length of a schemaId is 0, of index: %d", i)
 			}
+			newCodec, err := goavro.NewCodec(avroSchema.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
+			}
+			codecs[avroSchema.SchemaId] = *newCodec
 		}
 	}
 
@@ -435,7 +434,7 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 // It iterates over the schemas provided by the customer and tries to serialize the data.
 // If it's able to serialize the data then it returns the converted data otherwise it returns an error.
 // We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
-func serialize(value []byte, codec goavro.Codec) ([]byte, error) {
+func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
 	native, _, err := codec.NativeFromTextual(value)
 	if err != nil {
 		return nil, fmt.Errorf("unable convert the event to native from textual, with error: %s", err)
@@ -475,17 +474,16 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		if len(codecs) > 0 {
 			schemaId, _ := data["schemaId"].(string)
 			if schemaId == "" {
-				return nil, fmt.Errorf("schemaId is not available for the event of index:%d", i)
+				return nil, fmt.Errorf("schemaId is not available for the event with index:%d", i)
 			}
-			if codec, ok := codecs[schemaId]; ok {
-				marshalledMsg, err = serialize(marshalledMsg, codec)
-				if err != nil {
-					return nil, fmt.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
-				}
-			} else {
+			codec, ok := codecs[schemaId]
+			if !ok {
 				return nil, fmt.Errorf("unable to find schema with schemaId: %v", schemaId)
 			}
-
+			marshalledMsg, err = serializeAvroMessage(marshalledMsg, codec)
+			if err != nil {
+				return nil, fmt.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
+			}
 		}
 		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
 	}
@@ -586,13 +584,13 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 		if schemaId == "" {
 			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
 		}
-		if codec, ok := codecs[schemaId]; ok {
-			value, err = serialize(value, codec)
-			if err != nil {
-				return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
-			}
-		} else {
+		codec, ok := codecs[schemaId]
+		if !ok {
 			return makeErrorResponse(fmt.Errorf("unable to find schema with schemaId: %v", schemaId))
+		}
+		value, err = serializeAvroMessage(value, codec)
+		if err != nil {
+			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 		}
 	}
 	message := prepareMessage(topic, userID, value, timestamp)
