@@ -1719,7 +1719,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	// Getting distinct destination revision ID from staging files metadata
-	destinationRevisionIDs, err := job.destinationRevisionIDMap()
+	destinationRevisionIDMap, err := job.destinationRevisionIDMap()
 	if err != nil {
 		err = fmt.Errorf("error occurred while populating destination revision ID Map with error: %w", err)
 		return
@@ -1771,7 +1771,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
-			if revisionConfig, ok := destinationRevisionIDs[stagingFile.DestinationRevisionID]; ok {
+			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.DestinationRevisionConfig = revisionConfig.Config
 			}
 
