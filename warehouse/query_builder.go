@@ -38,7 +38,7 @@ func destinationRevisionIDs(d struct {
 		err = nil
 		return
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil {
 		err = fmt.Errorf("error occurred while executing destination revisionID query %+v with err: %w", d, err)
 		return
 	}
