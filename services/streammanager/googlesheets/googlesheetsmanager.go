@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Config struct {
@@ -80,7 +81,6 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 
 	service, err := generateService(opts...)
-
 	// If err is not nil then retrun
 	if err != nil {
 		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
@@ -88,7 +88,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 
 	// ** Preparing the Header Data **
-	// Creating the array of string which are then coverted in to an array of interface which are to
+	// Creating the array of string which are then converted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
 	// Example: | First Name | Last Name | Birth Day | Item Purchased | ..
 	// Here messageId is by default the first column
@@ -106,8 +106,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	return client, err
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, _ interface{}) (statusCode int, respStatus string, responseMessage string) {
-
+func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.(*Client)
 	if client == nil {
 		respStatus = "Failure"
@@ -153,7 +152,7 @@ func generateService(opts ...option.ClientOption) (*sheets.Service, error) {
 
 // insertHeaderDataToSheet inserts header data.
 // Returns error for failure cases of API calls otherwise returns nil
-func insertHeaderDataToSheet(client *Client, spreadSheetId string, spreadSheetTab string, data []interface{}) error {
+func insertHeaderDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, data []interface{}) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -171,7 +170,7 @@ func insertHeaderDataToSheet(client *Client, spreadSheetId string, spreadSheetTa
 
 // insertRowDataToSheet appends row data list.
 // Returns error for failure cases of API calls otherwise returns nil
-func insertRowDataToSheet(client *Client, spreadSheetId string, spreadSheetTab string, dataList [][]interface{}) error {
+func insertRowDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, dataList [][]interface{}) error {
 	// Creating value range for inserting row into sheet
 	vr := sheets.ValueRange{
 		MajorDimension: "ROWS",

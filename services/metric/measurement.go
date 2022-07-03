@@ -12,25 +12,27 @@ type Measurement interface {
 	GetTags() map[string]string
 }
 
-const JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
-const ALL = "ALL"
+const (
+	JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
+	ALL                         = "ALL"
+)
 
 // IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-func IncreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
+func IncreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Add(value)
 	PendingEvents(tablePrefix, ALL, destType).Add(value)
 	PendingEvents(tablePrefix, ALL, ALL).Add(value)
 }
 
 // DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-func DecreasePendingEvents(tablePrefix string, workspace string, destType string, value float64) {
+func DecreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Sub(value)
 	PendingEvents(tablePrefix, ALL, destType).Sub(value)
 	PendingEvents(tablePrefix, ALL, ALL).Sub(value)
 }
 
 // PendingEvents gets the measurement for pending events metric
-func PendingEvents(tablePrefix string, workspace string, destType string) Gauge {
+func PendingEvents(tablePrefix, workspace, destType string) Gauge {
 	return GetManager().GetRegistry(PUBLISHED_METRICS).MustGetGauge(pendingEventsMeasurement{tablePrefix, workspace, destType})
 }
 
@@ -43,6 +45,7 @@ type pendingEventsMeasurement struct {
 func (r pendingEventsMeasurement) GetName() string {
 	return fmt.Sprintf(JOBSDB_PENDING_EVENTS_COUNT, r.tablePrefix)
 }
+
 func (r pendingEventsMeasurement) GetTags() map[string]string {
 	res := map[string]string{
 		"workspace": r.workspace,

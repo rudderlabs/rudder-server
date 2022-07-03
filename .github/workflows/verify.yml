@@ -37,6 +37,13 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
+
+      - run: make fmt
+      - run: git diff --exit-code
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
+
   enterprise:
     name: Check .enterprise-commit
     runs-on: ubuntu-latest
@@ -47,3 +54,16 @@ jobs:
 
       - run: git config --global url."https://${{secrets.GH_PAT}}:x-oauth-basic@github.com/rudderlabs/".insteadOf "git@github.com:rudderlabs/"
       - run: make enterprise-is-at-master
+
+  linting:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+      - uses: actions/checkout@v3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.46.2

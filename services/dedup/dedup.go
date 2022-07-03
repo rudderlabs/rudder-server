@@ -7,8 +7,9 @@ import (
 	"sort"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/badger/v2/options"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -18,7 +19,7 @@ import (
 
 type DedupI interface {
 	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
-	MarkProcessed(messageIDs []string)
+	MarkProcessed(messageIDs []string) error
 	PrintHistogram()
 	Close()
 }
@@ -64,12 +65,13 @@ func FromConfig() OptFn {
 		dht.window = &dedupWindow
 	}
 }
+
 func WithWindow(d time.Duration) OptFn {
 	return func(dht *DedupHandleT) {
 		dht.window = &d
 	}
-
 }
+
 func WithClearDB() OptFn {
 	return func(dht *DedupHandleT) {
 		dht.clearDB = true
@@ -153,7 +155,7 @@ func (d *DedupHandleT) gcBadgerDB() {
 	for {
 		select {
 		case <-d.close:
-			d.badgerDB.RunValueLogGC(0.5)
+			_ = d.badgerDB.RunValueLogGC(0.5)
 			return
 		case <-time.After(5 * time.Minute):
 		}
@@ -168,41 +170,44 @@ func (d *DedupHandleT) gcBadgerDB() {
 	}
 }
 
-func (d *DedupHandleT) writeToBadger(messageIDs []string) {
-	err := d.badgerDB.Update(func(txn *badger.Txn) error {
-		for _, messageID := range messageIDs {
-			e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
-			if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-				_ = txn.Commit()
-				txn = d.badgerDB.NewTransaction(true)
-				_ = txn.SetEntry(e)
+func (d *DedupHandleT) writeToBadger(messageIDs []string) error {
+	txn := d.badgerDB.NewTransaction(true)
+	for _, messageID := range messageIDs {
+		e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
+		err := txn.SetEntry(e)
+		if err == badger.ErrTxnTooBig {
+			if err = txn.Commit(); err != nil {
+				return err
 			}
+			txn = d.badgerDB.NewTransaction(true)
+			if err = txn.SetEntry(e); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
 		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
 	}
+	return txn.Commit()
 }
 
 // MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
 // Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
-func (d *DedupHandleT) MarkProcessed(messageIDs []string) {
-	d.writeToBadger(messageIDs)
+func (d *DedupHandleT) MarkProcessed(messageIDs []string) error {
+	return d.writeToBadger(messageIDs)
 }
 
 func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int) {
 	toRemoveMessageIndexesSet := make(map[int]struct{})
-	//Dedup within events batch in a web request
+	// Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
 
 	// Eg messageIDs: [m1, m2, m3, m1, m1, m1]
-	//Constructing a set out of messageIDs
+	// Constructing a set out of messageIDs
 	for _, messageID := range messageIDs {
 		messageIDSet[messageID] = struct{}{}
 	}
-	// Eg messagIDSet: [m1, m2, m3]
-	//In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
+	// Eg messageIDSet: [m1, m2, m3]
+	// In this loop it will remove from set for first occurrence and if not found in set it means it's a duplicate
 	for idx, messageID := range messageIDs {
 		if _, ok := messageIDSet[messageID]; ok {
 			delete(messageIDSet, messageID)
@@ -210,14 +215,14 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 			toRemoveMessageIndexesSet[idx] = struct{}{}
 		}
 	}
-	//Dedup within batch of batch jobs
+	// Dedup within batch of batch jobs
 	for idx, messageID := range messageIDs {
 		if _, ok := allMessageIDsSet[messageID]; ok {
 			toRemoveMessageIndexesSet[idx] = struct{}{}
 		}
 	}
 
-	//Dedup with badgerDB
+	// Dedup with badgerDB
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		for idx, messageID := range messageIDs {
 			_, err := txn.Get([]byte(messageID))
@@ -242,5 +247,5 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 func (d *DedupHandleT) Close() {
 	close(d.close)
 	<-d.gcDone
-	d.badgerDB.Close()
+	_ = d.badgerDB.Close()
 }

@@ -55,9 +55,7 @@ type HandleT struct {
 	errorDB         jobsdb.JobsDB
 	errProcessQ     chan []*jobsdb.JobT
 	errFileUploader filemanager.FileManager
-	stats           stats.Stats
 	statErrDBR      stats.RudderStats
-	statErrDBW      stats.RudderStats
 	logger          logger.LoggerI
 	transientSource transientsource.Service
 }
@@ -69,9 +67,7 @@ func New() *HandleT {
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
-	st.stats = stats.DefaultStats
-	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
-	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
 	st.crashRecover()
 }
@@ -246,7 +242,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
-			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
+			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,

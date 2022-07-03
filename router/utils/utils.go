@@ -57,7 +57,7 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
-	//drain if job is older than a day
+	// drain if job is older than a day
 	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
 	if jobReceivedAt.Exists() {
 		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
@@ -82,7 +82,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 	return false, ""
 }
 
-//rawMsg passed must be a valid JSON
+// rawMsg passed must be a valid JSON
 func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	resp, err := sjson.SetBytes(rawMsg, key, val)
 	if err != nil {

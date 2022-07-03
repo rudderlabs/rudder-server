@@ -12,12 +12,12 @@ import (
 )
 
 type MSSQLTest struct {
-	Resource               *dockertest.Resource
-	Credentials            *mssql.CredentialsT
-	DB                     *sql.DB
-	EventsMap              EventsCountMap
-	WriteKey               string
-	TableTestQueryFreq     time.Duration
+	Resource           *dockertest.Resource
+	Credentials        *mssql.CredentialsT
+	DB                 *sql.DB
+	EventsMap          EventsCountMap
+	WriteKey           string
+	TableTestQueryFreq time.Duration
 }
 
 // SetWHMssqlDestination setup warehouse mssql destination

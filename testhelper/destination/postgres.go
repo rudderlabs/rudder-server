@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	_ "encoding/json"
 	"fmt"
-	"log"
 
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -20,7 +19,7 @@ type PostgresResource struct {
 	Port     string
 }
 
-func SetupPostgres(pool *dockertest.Pool, d deferer) (*PostgresResource, error) {
+func SetupPostgres(pool *dockertest.Pool, d cleaner) (*PostgresResource, error) {
 	database := "jobsdb"
 	password := "password"
 	user := "rudder"
@@ -35,11 +34,10 @@ func SetupPostgres(pool *dockertest.Pool, d deferer) (*PostgresResource, error) 
 		return nil, err
 	}
 
-	d.Defer(func() error {
+	d.Cleanup(func() {
 		if err := pool.Purge(postgresContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			d.Log("Could not purge resource:", err)
 		}
-		return nil
 	})
 
 	db_dns := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", postgresContainer.GetPort("5432/tcp"), database)

@@ -15,11 +15,9 @@ var (
 	pkgLogger             = logger.NewLogger().Child("kvstore")
 )
 
-type KVDeleteManager struct {
-}
+type KVDeleteManager struct{}
 
 func (kv *KVDeleteManager) GetSupportedDestinations() []string {
-
 	return supportedDestinations
 }
 

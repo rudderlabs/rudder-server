@@ -31,7 +31,6 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
-
 	config := Config{
 		ProjectId: projectId,
 		EventToTopicMap: []map[string]string{
@@ -64,7 +63,6 @@ func Test_Timeout(t *testing.T) {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-
 	config := Config{
 		ProjectId: projectId,
 		EventToTopicMap: []map[string]string{
@@ -77,7 +75,6 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
-
 }
 
 func TestMain(m *testing.M) {
@@ -123,11 +120,12 @@ func blockOnHold() {
 	<-c
 }
 
-type deferer interface {
-	Defer(func() error)
+type cleaner interface {
+	Cleanup(func())
+	Log(...interface{})
 }
 
-func SetupTestGooglePubSub(pool *dockertest.Pool, d deferer) (*TestConfig, error) {
+func SetupTestGooglePubSub(pool *dockertest.Pool, cln cleaner) (*TestConfig, error) {
 	var testConfig TestConfig
 	pubsubContainer, err := pool.Run("messagebird/gcloud-pubsub-emulator", "latest", []string{
 		"PUBSUB_PROJECT1=my-project-id,my-topic1",
@@ -135,11 +133,10 @@ func SetupTestGooglePubSub(pool *dockertest.Pool, d deferer) (*TestConfig, error
 	if err != nil {
 		return nil, fmt.Errorf("Could not start resource: %s", err)
 	}
-	d.Defer(func() error {
+	cln.Cleanup(func() {
 		if err := pool.Purge(pubsubContainer); err != nil {
-			return fmt.Errorf("Could not purge resource: %s \n", err)
+			cln.Log(fmt.Errorf("could not purge resource: %v", err))
 		}
-		return nil
 	})
 	testConfig.Endpoint = fmt.Sprintf("127.0.0.1:%s", pubsubContainer.GetPort("8681/tcp"))
 

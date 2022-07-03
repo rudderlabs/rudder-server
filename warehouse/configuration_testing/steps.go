@@ -2,6 +2,7 @@ package configuration_testing
 
 import (
 	"encoding/json"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )

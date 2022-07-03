@@ -17,7 +17,6 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/sync/errgroup"
 
@@ -25,7 +24,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//GatewayApp is the type for Gateway type implemention
+// GatewayApp is the type for Gateway type implemention
 type GatewayApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -41,6 +40,12 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	rudderCoreDBValidator()
 	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %v", err)
+	}
+	pkgLogger.Infof("Configured deployment type: %w", deploymentType)
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
@@ -73,12 +78,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	var modeProvider cluster.ChangeEventProvider
 
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
-
 	switch deploymentType {
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
@@ -108,8 +107,16 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsources.NewNoOpService())
-		defer gw.Shutdown()
+		rsourcesService, err := NewRsourcesService(deploymentType)
+		if err != nil {
+			return err
+		}
+		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsourcesService)
+		defer func() {
+			if err := gw.Shutdown(); err != nil {
+				pkgLogger.Warnf("Gateway shutdown error: %v", err)
+			}
+		}()
 
 		g.Go(func() error {
 			return gw.StartAdminHandler(ctx)
@@ -118,7 +125,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 			return gw.StartWebHandler(ctx)
 		})
 	}
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 	return g.Wait()
 }
 
