@@ -15,7 +15,6 @@ func (m *Factory) Setup() types.ConfigEnvI {
 		return &NOOP{}
 	}
 
-
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("config-env")
 

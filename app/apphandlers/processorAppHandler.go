@@ -32,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-
 )
 
 // ProcessorApp is the type for Processor type implemention
@@ -89,7 +88,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
 		return nil
 	}))
-	
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
