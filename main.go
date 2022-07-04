@@ -108,7 +108,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 
-	config.RegisterStringConfigVariable(enterpriseToken, &enterpriseToken, false, "enterpriseToken")
+	enterpriseToken = config.GetEnv("ENTERPRISE_TOKEN", enterpriseToken)
 }
 
 func Init() {
@@ -228,6 +228,8 @@ func Run(ctx context.Context) {
 		printVersion()
 		return
 	}
+
+	options.EnterpriseToken = enterpriseToken
 
 	application = app.New(options)
 
