@@ -61,4 +61,5 @@ func TestReportViolations(t *testing.T) {
 	assert.True(t, castOk)
 	assert.Nil(t, eventContext["trackingPlanId"])
 	assert.Nil(t, eventContext["trackingPlanVersion"])
+	assert.Nil(t, eventContext["violationErrors"])
 }
