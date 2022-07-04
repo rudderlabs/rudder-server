@@ -20,7 +20,6 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -3122,52 +3121,27 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
 		stmt = fmt.Sprintf(
 			`SELECT 
-				COALESCE(
-					json_agg(
-						json_build_object(
-							'job_id',
-							failed_jobs.job_id,
-							'workspace_id',
-							failed_jobs.workspace_id,
-							'uuid',
-							failed_jobs.uuid,
-							'user_id',
-							failed_jobs.user_id,
-							'parameters',
-							failed_jobs.parameters,
-							'custom_val',
-							failed_jobs.custom_val,
-							'event_payload',
-							failed_jobs.event_payload,
-							'event_count',
-							failed_jobs.event_count,
-							'created_at',
-							failed_jobs.created_at,
-							'expire_at',
-							failed_jobs.expire_at,
-							'id',
-							failed_jobs.id,
-							'job_id',
-							failed_jobs.status_job_id,
-							'job_state',
-							failed_jobs.job_state,
-							'attempt',
-							failed_jobs.attempt,
-							'exec_time',
-							failed_jobs.exec_time,
-							'retry_time',
-							failed_jobs.retry_time,
-							'error_code',
-							failed_jobs.error_code,
-							'error_response',
-							failed_jobs.error_response,
-							'parameters',
-							failed_jobs.status_parameters
-						)
-					), 
-					'[]' :: json
-				), 
-				count(*) 
+				json_build_object(
+					'job_id', failed_jobs.job_id,
+					'workspace_id',failed_jobs.workspace_id,
+					'uuid',failed_jobs.uuid,
+					'user_id',failed_jobs.user_id,
+					'parameters',failed_jobs.parameters,
+					'custom_val',failed_jobs.custom_val,
+					'event_payload',failed_jobs.event_payload,
+					'event_count',failed_jobs.event_count,
+					'created_at',failed_jobs.created_at,
+					'expire_at',failed_jobs.expire_at,
+					'id',failed_jobs.id,
+					'job_id',failed_jobs.status_job_id,
+					'job_state',failed_jobs.job_state,
+					'attempt',failed_jobs.attempt,
+					'exec_time',failed_jobs.exec_time,
+					'retry_time',failed_jobs.retry_time,
+					'error_co	de',failed_jobs.error_code,
+					'error_response',failed_jobs.error_response,
+					'parameters',failed_jobs.status_parameters
+				)
 			FROM 
 				(
 				SELECT 
@@ -3235,20 +3209,49 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 	} else {
 		if isJobStatusTable {
 
-			stmt = fmt.Sprintf(`SELECT json_agg(dump_table), count(*) FROM (select * from "%[1]s" order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
+			stmt = fmt.Sprintf(`
+			SELECT
+			 	json_build_object(
+					'id', dump_table.id,
+			 		'job_id', dump_table.job_id,
+				 	'job_state', dump_table.job_state,
+				 	'attempt', dump_table.attempt,
+			 		'exec_time', dump_table.exec_time,
+			 		'retry_time', dump_table.retry_time,
+			 		'error_code', dump_table.error_code,
+			 		'error_response', dump_table.error_response,
+			 		'parameters', dump_table.parameters
+	)
+			FROM 
+				(
+				SELECT 
+					*
+				FROM 
+					"%[1]s" 
+				ORDER BY 
+					job_id ASC 
+				LIMIT 
+					%[2]d 
+				OFFSET 
+					%[3]d
+				) 
+				AS dump_table
+			`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
 		} else {
 			stmt = fmt.Sprintf(`
 			SELECT 
-				json_agg(
-				(
-					dump_table.job_id, dump_table.workspace_id, 
-					dump_table.uuid, dump_table.user_id, 
-					dump_table.parameters, dump_table.custom_val, 
-					dump_table.event_payload, dump_table.event_count, 
-					dump_table.created_at, dump_table.expire_at
-				)
-				), 
-				count(*) 
+				jsonb_build_object(
+					'job_id', dump_table.job_id,
+					'workspace_id', dump_table.workspace_id, 
+					'uuid', dump_table.uuid,
+					'user_id', dump_table.user_id, 
+					'parameters', dump_table.parameters,
+					'custom_val', dump_table.custom_val, 
+					'event_payload', dump_table.event_payload,
+					'event_count', dump_table.event_count, 
+					'created_at', dump_table.created_at,
+					'expire_at', dump_table.expire_at
+				) 
 		  	FROM 
 				(
 				SELECT 
@@ -3373,7 +3376,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
-	var totalCount, rowEndPatternMatchCount int64
+	var totalCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -3393,27 +3396,25 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
-	var offset, batchCount, jobCount int64
+	var offset int64
+
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
-		// fmt.Println("stmt:", stmt)
 		var rawJSONRows json.RawMessage
-		row := jd.dbHandle.QueryRow(stmt)
+		rows, err := jd.dbHandle.Query(stmt)
+		jd.assertError(err)
+		defer rows.Close()
 
-		err = row.Scan(&rawJSONRows, &jobCount)
-		if err != nil {
-			panic(fmt.Errorf("Scanning row failed with error : %w", err))
+		for rows.Next() {
+			err = rows.Scan(&rawJSONRows)
+			if err != nil {
+				panic(fmt.Errorf("Scanning row failed with error : %w", err))
+			}
+			rawJSONRows = append(rawJSONRows, '\n') //appending '\n'
+			gzWriter.Write(rawJSONRows)
+			offset++
 		}
-		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
-		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
-		batchCount++
 
-		//Asserting that the first character is '[' and last character is ']'
-		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), "json agg output is not in the expected format. Excepted format: JSON Array [{}]")
-		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
-		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
-		gzWriter.Write(rawJSONRows)
-		offset += jobCount
 		if offset >= totalCount {
 			break
 		}
@@ -3422,7 +3423,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
 
-	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
+	// jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
 
 	fileUploadTimeStat := stats.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	fileUploadTimeStat.Start()

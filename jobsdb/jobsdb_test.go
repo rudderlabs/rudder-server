@@ -1,10 +1,10 @@
 package jobsdb
 
 import (
-	"bytes"
+	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +18,7 @@ import (
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -462,31 +463,41 @@ func TestBackupTable(t *testing.T) {
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
+	goldenFileJobsFileName := "goldenDirectory/backupJobs.json.gz"
+	goldenFileStatusFileName := "goldenDirectory/backupStatus.json.gz"
 
 	jobDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
+	fmt.Println("reading jobs")
+	jobs, err := readGzipJobFile(goldenFileJobsFileName)
+	require.NoError(t, err, "expected no error while reading golden jobs file")
 
-	customVal := "MOCKDS"
+	statusList, err := readGzipStatusFile(goldenFileStatusFileName)
+	require.NoError(t, err, "expected no error while reading golden status file")
 
-	jobs := genJobs("defaultWorkspaceID-1", customVal, 30, 2)
-	require.NoError(t, jobDB.Store(jobs))
-	jobs = jobDB.GetUnprocessed(GetQueryParamsT{JobsLimit: 100})
-	require.Equal(t, 30, len(jobs), "should get all 30 jobs")
-	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(jobs[0:30], Aborted.State), []string{customVal}, []ParameterFilterT{}))
+	ds := newDataSet("batch_rt", "1")
+	err = jobDB.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB.copyJobsDS(tx, ds, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
 
-	triggerAddNewDS <- time.Now()
-	jobs2 := genJobs("defaultWorkspaceID-2", customVal, 30, 2)
-	require.NoError(t, jobDB.Store(jobs2))
-	jobs2 = jobDB.GetUnprocessed(GetQueryParamsT{JobsLimit: 100})
-	require.Equal(t, 30, len(jobs2), "should get all 30 jobs")
-	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(jobs2[0:30], Aborted.State), []string{customVal}, []ParameterFilterT{}))
+		return jobDB.copyJobStatusDS(tx, ds, statusList, []string{}, nil)
+	})
+	require.NoError(t, err, "expected no error while coping jobs & status to DS")
 
-	triggerAddNewDS <- time.Now()
-	jobs3 := genJobs("defaultWorkspaceID-3", customVal, 30, 2)
-	require.NoError(t, jobDB.Store(jobs3))
-	jobs3 = jobDB.GetUnprocessed(GetQueryParamsT{JobsLimit: 100})
-	require.Equal(t, 30, len(jobs3), "should get all 30 jobs")
-	require.NoError(t, jobDB.UpdateJobStatus(genJobStatuses(jobs3[0:30], Aborted.State), []string{customVal}, []ParameterFilterT{}))
+	ds2 := newDataSet("batch_rt", "2")
+	jobDB.addNewDS(ds2)
+
+	err = jobDB.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB.copyJobsDS(tx, ds2, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
+
+		return jobDB.copyJobStatusDS(tx, ds2, statusList, []string{}, nil)
+	})
+	require.NoError(t, err, "expected no error while coping jobs & status to DS")
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
@@ -529,100 +540,27 @@ func TestBackupTable(t *testing.T) {
 		}
 	}
 
-	//reading golden files
-	originalJobsFile, err := readGzipFile("goldenDirectory/backupJobs.json.gz")
-	require.NoError(t, err, "expected no error while reading golden jobs file")
-	originalJobsFile = bytes.Replace(originalJobsFile, []byte("}\n{"), []byte("}, \n {"), -1) //replacing ", \n " with "\n"
-	originalJobsFile = []byte("[" + string(originalJobsFile) + "]")
-
-	var originalJobs []*JobT
-	err = json.Unmarshal(originalJobsFile, &originalJobs)
-	require.NoError(t, err, "expected no error while unmarshalling downloaded file")
-
-	originalStatusFile, err := readGzipFile("goldenDirectory/backupStatus.json.gz")
-	require.NoError(t, err, "expected no error while reading golden jobs file")
-
 	//downloading backed-up files
 	DownloadedStausFileName := "downloadedStatus.json.gz"
 	err = downloadBackedupFiles(fm, backedupStatusFileName, DownloadedStausFileName)
 	require.NoError(t, err, "expected no error")
+	downloadedStatusFile, err := readGzipFile(DownloadedStausFileName)
+	require.NoError(t, err, "expected no error")
+	backupStatusFile, err := readGzipFile(goldenFileStatusFileName)
+	require.NoError(t, err, "expected no error")
+	require.Equal(t, backupStatusFile, downloadedStatusFile, "expected status files to be same")
 	defer os.Remove(DownloadedStausFileName)
 
 	DownloadedJobsFileName := "downloadedJobs.json.gz"
 	err = downloadBackedupFiles(fm, backedupJobsFileName, DownloadedJobsFileName)
 	require.NoError(t, err, "expected no error")
+	downloadedJobsFile, err := readGzipFile(DownloadedJobsFileName)
+	require.NoError(t, err, "expected no error")
+	backupJobsFile, err := readGzipFile(goldenFileJobsFileName)
+	require.NoError(t, err, "expected no error")
+	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
 	defer os.Remove(DownloadedJobsFileName)
 
-	//reading downloaded backedup file to verify
-	downloadedJobsFileContent, err := readGzipFile(DownloadedJobsFileName)
-	require.NoError(t, err, "expected no error while reading golden jobs file")
-
-	downloadedStatusFileContent, err := readGzipFile(DownloadedStausFileName)
-	require.NoError(t, err, "expected no error while reading golden jobs file")
-
-	ans := strings.Compare(string(originalStatusFile), string(downloadedStatusFileContent))
-	require.Equal(t, 0, ans, "downloaded status file different than actual file")
-	downloadedJobsFileContent = bytes.Replace(downloadedJobsFileContent, []byte("}\n{"), []byte("}, \n {"), -1) //replacing ", \n " with "\n"
-	downloadedJobsFileContent = []byte("[" + string(downloadedJobsFileContent) + "]")
-
-	var backedupJobs []*JobT
-	err = json.Unmarshal(downloadedJobsFileContent, &backedupJobs)
-	require.NoError(t, err, "expected no error while unmarshalling downloaded file")
-
-	ok := checkJobsEqual(originalJobs[0], backedupJobs[0])
-	require.Equal(t, true, ok, "original jobs in not equal to backedup jobs")
-}
-
-func checkJobsEqual(originalJobs, backedupJobs *JobT) bool {
-
-	if strings.Compare(originalJobs.UUID.String(), backedupJobs.UUID.String()) != 0 {
-		return false
-	}
-	if originalJobs.JobID != backedupJobs.JobID {
-		return false
-	}
-	if strings.Compare(originalJobs.UserID, backedupJobs.UserID) != 0 {
-		return false
-	}
-	if strings.Compare(originalJobs.CustomVal, backedupJobs.CustomVal) != 0 {
-		return false
-	}
-	if originalJobs.EventCount != backedupJobs.EventCount {
-		return false
-	}
-
-	originalEventPayload, err := json.Marshal(originalJobs.EventPayload)
-	if err != nil {
-		return false
-	}
-	backedupEventPayload, err := json.Marshal(backedupJobs.EventPayload)
-	if err != nil {
-		return false
-	}
-	if strings.Compare(string(originalEventPayload), string(backedupEventPayload)) != 0 {
-		return false
-	}
-
-	if originalJobs.PayloadSize != backedupJobs.PayloadSize {
-		return false
-	}
-
-	originalParameters, err := json.Marshal(originalJobs.Parameters)
-	if err != nil {
-		return false
-	}
-	backedupParameters, err := json.Marshal(backedupJobs.Parameters)
-	if err != nil {
-		return false
-	}
-	if strings.Compare(string(originalParameters), string(backedupParameters)) != 0 {
-		return false
-	}
-
-	if strings.Compare(originalJobs.WorkspaceId, backedupJobs.WorkspaceId) != 0 {
-		return false
-	}
-	return true
 }
 
 func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload string, downloadedFileName string) error {
@@ -640,15 +578,93 @@ func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload string, do
 func readGzipFile(filename string) ([]byte, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 	defer file.Close()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 	defer gz.Close()
 
 	return io.ReadAll(gz)
+}
+
+func readGzipJobFile(filename string) ([]*JobT, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return []*JobT{}, err
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return []*JobT{}, err
+	}
+	defer gz.Close()
+
+	sc := bufio.NewScanner(gz)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := 10240 * 1024 // 10MB
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
+
+	jobs := []*JobT{}
+	for sc.Scan() {
+		lineByte := sc.Bytes()
+		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
+		if err != nil {
+			return []*JobT{}, err
+		}
+		job := &JobT{
+			UUID:         uuid,
+			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
+			UserID:       gjson.GetBytes(lineByte, "user_id").String(),
+			CustomVal:    gjson.GetBytes(lineByte, "custom_val").String(),
+			Parameters:   []byte(gjson.GetBytes(lineByte, "parameters").String()),
+			EventCount:   int(gjson.GetBytes(lineByte, "event_count").Int()),
+			WorkspaceId:  gjson.GetBytes(lineByte, "workspace_id").String(),
+			EventPayload: []byte(gjson.GetBytes(lineByte, "event_payload").String()),
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func readGzipStatusFile(fileName string) ([]*JobStatusT, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return []*JobStatusT{}, err
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return []*JobStatusT{}, err
+	}
+	defer gz.Close()
+
+	sc := bufio.NewScanner(gz)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := 10240 * 1024 // 10MB
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
+
+	statusList := []*JobStatusT{}
+	for sc.Scan() {
+		lineByte := sc.Bytes()
+		jobStatus := &JobStatusT{
+			JobID:         gjson.GetBytes(lineByte, "job_id").Int(),
+			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
+			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
+			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
+			ErrorResponse: []byte(gjson.GetBytes(lineByte, "error_response").String()),
+			Parameters:    []byte(gjson.GetBytes(lineByte, "parameters").String()),
+		}
+		statusList = append(statusList, jobStatus)
+	}
+	return statusList, nil
 }
