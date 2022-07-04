@@ -90,8 +90,7 @@ func TestGetStatus(t *testing.T) {
 			expectedResponseCode: 200,
 			filter: map[string][]string{
 				"task_run_id": {"t1", "t2"},
-
-				"source_id": {"s1"},
+				"source_id":   {"s1"},
 			},
 			jobStatus: rsources.JobStatus{
 				ID: "123",
@@ -174,6 +173,61 @@ func TestGetStatus(t *testing.T) {
 			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
 		})
 	}
+}
+
+func TestGetFailedRecords(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	service := rsources.NewMockJobService(mockCtrl)
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+
+	tests := []struct {
+		name                 string
+		jobID                string
+		endpoint             string
+		method               string
+		expectedResponseCode int
+		filter               map[string][]string
+		failedRecords        rsources.FailedRecords
+		respBody             string
+	}{
+		{
+			name:                 "get failed records basic test",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: 200,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecords: rsources.FailedRecords{},
+			respBody:      `{}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log("endpoint tested:", tt.endpoint)
+
+			filterArg := getArgumentFilter(tt.filter)
+			service.EXPECT().GetFailedRecords(gomock.Any(), tt.jobID, filterArg).Return(tt.failedRecords, nil).Times(1)
+
+			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			url := withFilter(basicUrl, tt.filter)
+			req, err := http.NewRequest(tt.method, url, nil)
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
+			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
+		})
+	}
+
 }
 
 func getArgumentFilter(filter map[string][]string) rsources.JobFilter {

@@ -18,6 +18,7 @@ func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.getStatus).Methods("GET")
 	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.delete).Methods("DELETE")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.getFailedRecords).Methods("GET")
 	return srvMux
 }
 
@@ -49,23 +50,9 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	var taskRunId, sourceId []string
 	var ok bool
 
-	jobRunId, ok = mux.Vars(r)["job_run_id"]
+	jobRunId, taskRunId, sourceId, ok = getQueryParams(r)
 	if !ok {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
-	}
-
-	tId, ok := r.URL.Query()["task_run_id"]
-	if ok {
-		if len(tId) > 0 {
-			taskRunId = tId
-		}
-	}
-
-	sId, ok := r.URL.Query()["source_id"]
-	if ok {
-		if len(sId) > 0 {
-			sourceId = sId
-		}
 	}
 
 	jobStatus, err := h.service.GetStatus(
@@ -86,14 +73,64 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 
-	body, err := jsoniter.Marshal(jobStatus)
+	err = marshalAndWriteResponse(w, jobStatus)
+	if err != nil {
+		h.logger.Errorf("error while marshalling and writing response body: %v", err)
+	}
+}
+
+func (h *handler) getFailedRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var jobRunId string
+	var taskRunId, sourceId []string
+	var ok bool
+
+	jobRunId, taskRunId, sourceId, ok = getQueryParams(r)
+	if !ok {
+		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+	}
+
+	failedRecords, err := h.service.GetFailedRecords(
+		ctx, jobRunId, rsources.JobFilter{
+			TaskRunID: taskRunId,
+			SourceID:  sourceId,
+		},
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	err = marshalAndWriteResponse(w, failedRecords)
+	if err != nil {
+		h.logger.Errorf("error while marshalling and writing response body: %v", err)
+	}
+}
+
+func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string, ok bool) {
+	jobRunID, ok = mux.Vars(r)["job_run_id"]
+	tID, okTID := r.URL.Query()["task_run_id"]
+	if okTID {
+		if len(tID) > 0 {
+			taskRunID = tID
+		}
+	}
+
+	sID, okSID := r.URL.Query()["source_id"]
+	if okSID {
+		if len(sID) > 0 {
+			sourceID = sID
+		}
+	}
+
+	return jobRunID, taskRunID, sourceID, ok
+}
+
+func marshalAndWriteResponse(w http.ResponseWriter, response interface{}) (err error) {
+	body, err := jsoniter.Marshal(response)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+		return err
 	}
 	_, err = w.Write(body)
-	if err != nil {
-		h.logger.Errorf("error while writing response body: %v", err)
-		return
-	}
+	return err
 }
