@@ -1,9 +1,10 @@
 package processor
 
 import (
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestReportViolations(t *testing.T) {
