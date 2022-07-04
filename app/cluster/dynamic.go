@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	controller     string = "ETCD"
-	controllertype string = "Dynamic"
+	controller     = "ETCD"
+	controllerType = "Dynamic"
 )
 
 type ChangeEventProvider interface {
@@ -70,7 +70,7 @@ func (d *Dynamic) init() {
 	d.logger = logger.NewLogger().Child("cluster")
 	tag := stats.Tags{
 		"controlled_by":   controller,
-		"controller_type": controllertype,
+		"controller_type": controllerType,
 	}
 	d.serverStartTimeStat = stats.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
 	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
@@ -126,10 +126,14 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
 			err := d.handleWorkspaceChange(ctx, ids)
 			if err != nil {
+				d.logger.Debugf("Could not handle workspaceIDs change: %v", err)
+				if ackErr := req.AckWithError(ctx, err); ackErr != nil {
+					return fmt.Errorf("ack workspaceIDs change with error: %v: %w", err, ackErr)
+				}
 				return err
 			}
-			d.logger.Debugf("Acknowledging the workspaceIDs change")
 
+			d.logger.Debugf("Acknowledging the workspaceIDs change")
 			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack workspaceIDs change: %w", err)
 			}

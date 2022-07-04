@@ -20,6 +20,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -198,10 +199,12 @@ func TestMultiTenantGateway(t *testing.T) {
 			t.Logf("Error while checking test-ack/1: %s", err)
 			return false
 		}
-		if len(ack1.Kvs) == 0 {
+		v, err := unmarshalWorkspaceAckValue(t, ack1)
+		if err != nil {
+			t.Logf("Error while checking test-ack/1: %s", err)
 			return false
 		}
-		return string(ack1.Kvs[0].Value) == `{"status":"RELOADED"}`
+		return v.Status == "RELOADED" && v.Error == ""
 	}, 10*time.Second, 500*time.Millisecond)
 
 	require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
@@ -235,8 +238,8 @@ func TestMultiTenantGateway(t *testing.T) {
 	// Only the Gateway is running, so we don't expect any destinations to be hit.
 	require.EqualValues(t, 0, webhook.RequestsCount(), "webhook should have no requests because there is no processor")
 
-	{ // TODO bad workspace change
-		_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
+	{ // Checking that Workspace Changes errors are handled
+		_, err := etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
 		require.NoError(t, err)
 		require.Eventually(t, func() bool {
 			t.Log("Waiting for test-ack/2...")
@@ -245,10 +248,13 @@ func TestMultiTenantGateway(t *testing.T) {
 				t.Logf("Error while checking test-ack/1: %s", err)
 				return false
 			}
-			if len(ack1.Kvs) == 0 {
+			v, err := unmarshalWorkspaceAckValue(t, ack1)
+			if err != nil {
+				t.Logf("Error while checking test-ack/1: %s", err)
 				return false
 			}
-			return string(ack1.Kvs[0].Value) == `{"status":"RELOADED"}`
+			t.Logf("TODO: %+v", v)
+			return v.Status == "ERROR" // && v.Error == ""
 		}, 10*time.Second, 500*time.Millisecond)
 	}
 
@@ -325,4 +331,21 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	}
 
 	t.Logf("Event Sent Successfully: (%s)", body)
+}
+
+type workspaceAckValue struct {
+	Status string `json:"status"`
+	Error  string `json:"error"`
+}
+
+func unmarshalWorkspaceAckValue(t *testing.T, res *clientv3.GetResponse) (workspaceAckValue, error) {
+	t.Helper()
+	var v workspaceAckValue
+	if len(res.Kvs) == 0 {
+		return v, fmt.Errorf("empty key value response")
+	}
+	if err := json.Unmarshal(res.Kvs[0].Value, &v); err != nil {
+		return v, fmt.Errorf("could not unmarshal key value response: %v", err)
+	}
+	return v, nil
 }

@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-
-	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
-	"github.com/stretchr/testify/require"
 )
 
 type mockModeProvider struct {
@@ -194,15 +194,23 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("Update workspaceIDs", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendWorkspaceIDs(workspace.NewWorkspacesRequest([]string{"a", "b", "c"}, func(_ context.Context) error {
-			close(chACK)
-			return nil
-		}))
+		provider.SendWorkspaceIDs(
+			workspace.NewWorkspacesRequest([]string{"a", "b", "c"},
+				func(_ context.Context) error {
+					close(chACK)
+					return nil
+				},
+				func(ctx context.Context, err error) error {
+					t.Fatalf("unexpected error: %v", err)
+					return nil
+				}),
+		)
 
-		require.Eventually(t, func() bool {
-			<-chACK
-			return true
-		}, time.Second, time.Millisecond)
+		select {
+		case <-chACK:
+		case <-time.After(time.Second):
+			t.Fatal("Did not get acknowledgement within 1 second")
+		}
 
 		require.True(t, backendConfig.stopPollingCalled)
 		require.True(t, backendConfig.waitForConfigCalled)
