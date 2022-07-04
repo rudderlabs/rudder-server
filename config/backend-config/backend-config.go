@@ -61,9 +61,8 @@ const (
 	/*RegulationSuppress refers to Suppress Regulation */
 	RegulationSuppress Regulation = "Suppress"
 
-	//TODO Will add support soon.
 	/*RegulationDelete refers to Suppress and Delete Regulation */
-	RegulationDelete Regulation = "Delete"
+	RegulationDelete Regulation = "Delete" // TODO Will add support soon.
 
 	/*RegulationSuppressAndDelete refers to Suppress and Delete Regulation */
 	RegulationSuppressAndDelete Regulation = "Suppress_With_Delete"
@@ -281,6 +280,7 @@ func configUpdate(eb *pubsub.PublishSubscriber, statConfigBackendError stats.Rud
 	sourceJSON, ok := backendConfig.Get(workspaces)
 	if !ok {
 		statConfigBackendError.Increment()
+		return
 	}
 
 	// sorting the sourceJSON.
@@ -289,7 +289,7 @@ func configUpdate(eb *pubsub.PublishSubscriber, statConfigBackendError stats.Rud
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
-	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+	if !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 		pkgLogger.Info("Workspace Config changed")
 		curSourceJSONLock.Lock()
 		trackConfig(curSourceJSON, sourceJSON)
@@ -349,7 +349,7 @@ Data of the DataEvent should be a backendconfig.ConfigT struct.
 Available topics are:
 - TopicBackendConfig: Will receive complete backend configuration
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
-- TopicRegulations: Will receeive all regulations
+- TopicRegulations: Will receive all regulations
 */
 func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
