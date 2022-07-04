@@ -30,10 +30,10 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
-    - name: set enterprise token
-      run: |
-        echo "ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}" >> $GITHUB_ENV
-      if: ${{FEATURES}} == enterprise
+    # - name: set enterprise token
+    #   run: |
+    #     echo "ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}" >> $GITHUB_ENV
+    #   if: "${{FEATURES}} == enterprise"
 
     - name: Integration test
       run: go test -v ./docker_test.go -tags=integration -count 1
