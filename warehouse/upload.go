@@ -246,7 +246,7 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 }
 
 // exceeded columns are included in excluded schema
-func (job *UploadJobT) generateExcludedSchema() {
+func (job *UploadJobT) generateExcludedSchema(schemaHandle *SchemaHandleT) error {
 	uploadSchema := job.upload.UploadSchema
 	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		uploadSchema = job.upload.MergedSchema
@@ -257,7 +257,8 @@ func (job *UploadJobT) generateExcludedSchema() {
 		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
 	}
 	// set excluded schema
-	job.upload.ExcludedSchema = excludedSchema
+	err := job.setExcludedSchema(excludedSchema, schemaHandle)
+	return err
 }
 
 func (job *UploadJobT) initTableUploads() error {
@@ -423,7 +424,7 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
-			job.generateExcludedSchema()
+			job.generateExcludedSchema(schemaHandle)
 			newStatus = nextUploadState.completed
 
 		case CreatedTableUploads:
@@ -1301,6 +1302,12 @@ func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) erro
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
+func (job *UploadJobT) setExcludedSchema(excludedSchema warehouseutils.SchemaT, schemaHandle *SchemaHandleT) (err error) {
+	job.upload.ExcludedSchema = excludedSchema
+	// TODO: extend wh_uploads to include excluded schema
+	return
+}
+
 // Set LoadFileIDs
 func (job *UploadJobT) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error {
 	job.upload.StartLoadFileID = startLoadFileID
@@ -2044,7 +2051,12 @@ func (job *UploadJobT) GetTableSchemaInWarehouse(tableName string) warehouseutil
 }
 
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
-	return job.schemaHandle.uploadSchema[tableName]
+	uploadTableSchema := job.schemaHandle.uploadSchema[tableName]
+	excludedSchema := job.upload.ExcludedSchema
+	for k, _ := range excludedSchema[tableName] {
+		delete(uploadTableSchema, k)
+	}
+	return uploadTableSchema
 }
 
 func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {

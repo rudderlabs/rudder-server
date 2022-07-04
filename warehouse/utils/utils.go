@@ -105,6 +105,7 @@ var RudderReservedColumns = []string{
 	"sent_at",
 	"timestamp",
 	"user_id",
+	"uuid_ts",
 }
 
 var (

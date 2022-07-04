@@ -240,7 +240,8 @@ var _ = Describe("Schema", func() {
 				"record_id":          "string",
 				"sent_at":            "datetime",
 				"timestamp":          "datetime",
-				"user_id":            "string", // end of 16 rudder columns
+				"user_id":            "string",
+				"uuid_ts":            "datetime", // end of 17 rudder columns
 				"ad_name":            "string",
 				"blendo_id":          "string",
 				"clicks":             "int",
@@ -267,7 +268,8 @@ var _ = Describe("Schema", func() {
 				"record_id":          "string",
 				"sent_at":            "datetime",
 				"timestamp":          "datetime",
-				"user_id":            "string", // end of 16 rudder columns
+				"user_id":            "string",
+				"uuid_ts":            "datetime", // end of 17 rudder columns
 				"ad_name":            "string",
 				"blendo_id":          "string",
 			},
@@ -286,13 +288,13 @@ var _ = Describe("Schema", func() {
 		})
 
 		It("Should contain excluded schema if max column count is reached and picked in sorted order", func() {
-			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 20)
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 21)
 			Expect(excludedSchema).To(Equal(ExcludedSchema))
 		})
 
 		It("Should contain rudder reserved columns in included column list if it is a new event and max limit is reached", func() {
 			delete(schemaInWarehouse, "demo_event")
-			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 20)
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 21)
 			Expect(excludedSchema).To(Equal(ExcludedSchema))
 		})
 	})
