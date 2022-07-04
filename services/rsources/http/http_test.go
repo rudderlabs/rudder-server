@@ -202,7 +202,7 @@ func TestGetFailedRecords(t *testing.T) {
 				"source_id":   {"s1"},
 			},
 			failedRecords: rsources.FailedRecords{},
-			respBody:      `{}`,
+			respBody:      `[]`,
 		},
 	}
 	for _, tt := range tests {
