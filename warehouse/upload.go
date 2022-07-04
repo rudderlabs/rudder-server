@@ -246,7 +246,7 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 }
 
 // exceeded columns are included in excluded schema
-func (job *UploadJobT) generateExcludedSchema(schemaHandle *SchemaHandleT) error {
+func (job *UploadJobT) generateExcludedSchema() error {
 	uploadSchema := job.upload.UploadSchema
 	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		uploadSchema = job.upload.MergedSchema
@@ -257,7 +257,7 @@ func (job *UploadJobT) generateExcludedSchema(schemaHandle *SchemaHandleT) error
 		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
 	}
 	// set excluded schema
-	err := job.setExcludedSchema(excludedSchema, schemaHandle)
+	err := job.setExcludedSchema(excludedSchema)
 	return err
 }
 
@@ -424,7 +424,7 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
-			job.generateExcludedSchema(schemaHandle)
+			job.generateExcludedSchema()
 			newStatus = nextUploadState.completed
 
 		case CreatedTableUploads:
@@ -1302,7 +1302,7 @@ func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) erro
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
-func (job *UploadJobT) setExcludedSchema(excludedSchema warehouseutils.SchemaT, schemaHandle *SchemaHandleT) (err error) {
+func (job *UploadJobT) setExcludedSchema(excludedSchema warehouseutils.SchemaT) (err error) {
 	job.upload.ExcludedSchema = excludedSchema
 	// TODO: extend wh_uploads to include excluded schema
 	return
