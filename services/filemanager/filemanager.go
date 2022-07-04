@@ -111,11 +111,6 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
-		providerConfig["endPoint"] = config.GetEnv("AWS_ENDPOINT", "")
-		providerConfig["s3ForcePathStyle"] = config.GetEnvAsBool("AWS_S3_FORCE_PATH_STYLE", false)
-		providerConfig["disableSSL"] = config.GetEnvAsBool("AWS_DISABLE_SSL", false)
-		providerConfig["region"] = config.GetEnv("AWS_REGION", "")
-		providerConfig["useGlue"] = config.GetEnvAsBool("AWS_USE_GLUE", true)
 
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")

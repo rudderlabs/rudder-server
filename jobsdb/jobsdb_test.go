@@ -36,6 +36,7 @@ var (
 
 	minioEndpoint   string
 	bucket          = "backup-test"
+	prefix          = "some-prefix"
 	region          = "us-east-1"
 	accessKeyId     = "MYACCESSKEY"
 	secretAccessKey = "MYSECRETKEY"
@@ -370,20 +371,18 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 }
 func setTestEnvs(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
+	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_BATCH_RT_ENABLED", "true")
 	t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 	t.Setenv("RUDDER_TMPDIR", "/tmp")
 	t.Setenv(config.TransformKey("JobsDB.maxDSSize"), "10")
 	t.Setenv(config.TransformKey("JobsDB.migrateDSLoopSleepDuration"), "3")
 	t.Setenv("JOBS_BACKUP_BUCKET", bucket)
-	t.Setenv("JOBS_BACKUP_PREFIX", "some-prefix")
-	t.Setenv("AWS_ACCESS_KEY_ID", accessKeyId)
-	t.Setenv("AWS_SECRET_ACCESS_KEY", secretAccessKey)
-	t.Setenv("AWS_ENABLE_SSE", "false")
-	t.Setenv("AWS_ENDPOINT", minioEndpoint)
-	t.Setenv("AWS_S3_FORCE_PATH_STYLE", "true")
-	t.Setenv("AWS_DISABLE_SSL", "true")
-	t.Setenv("AWS_REGION", region)
+	t.Setenv("JOBS_BACKUP_PREFIX", prefix)
+	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyId)
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
+	t.Setenv("MINIO_ENDPOINT", minioEndpoint)
+	t.Setenv("MINIO_SSL", "false")
 }
 
 func TestBackupTable(t *testing.T) {
@@ -501,18 +500,14 @@ func TestBackupTable(t *testing.T) {
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: "MINIO",
 		Config: map[string]interface{}{
-			"bucketName":       bucket,
-			"accessKeyID":      accessKeyId,
-			"accessKey":        secretAccessKey,
-			"enableSSE":        false,
-			"prefix":           "some-prefix",
-			"endPoint":         minioEndpoint,
-			"s3ForcePathStyle": true,
-			"disableSSL":       true,
-			"region":           region,
-			"useGlue":          true,
+			"bucketName":      bucket,
+			"prefix":          prefix,
+			"endPoint":        minioEndpoint,
+			"accessKeyID":     accessKeyId,
+			"secretAccessKey": secretAccessKey,
+			"useSSL":          false,
 		},
 	})
 	if err != nil {
