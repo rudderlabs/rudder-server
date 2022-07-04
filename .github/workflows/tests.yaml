@@ -8,7 +8,7 @@ on:
   pull_request:
 jobs:
   integration:
-    name: Service Integration
+    name: Integrations
     runs-on: 'ubuntu-18.04'
     strategy:
       matrix:
@@ -43,9 +43,8 @@ jobs:
         ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
 
   unit:
-    name: Unit & Component Integration
+    name: Unit
     runs-on: 'ubuntu-18.04'
-
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
