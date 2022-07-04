@@ -1505,16 +1505,9 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
-	// In case of a migration, we don't yet update the in-memory list till
-	// we finish the migration
-	jd.logger.Info(l)
-	if l != nil {
-		jd.setSequenceNumber(l, newDS.Index)
-	}
-
 	// Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%s" (
-                                      job_id BIGINT PRIMARY KEY default nextval('%s'),
+                                      job_id BIGINT PRIMARY KEY,
 									  workspace_id TEXT NOT NULL DEFAULT '',
 									  uuid UUID NOT NULL,
 									  user_id TEXT NOT NULL,
@@ -1523,13 +1516,9 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable, newDS.JobTable+"_job_id_seq")
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	ownSequenceQuery := fmt.Sprintf(`ALTER SEQUENCE "%[1]s_job_id_seq" OWNED BY "%[1]s".job_id;`, newDS.JobTable)
-	_, err = jd.dbHandle.Exec(ownSequenceQuery)
 	jd.assertError(err)
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
@@ -1553,14 +1542,17 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	if l != nil {
-		jd.previousAssert(l)
-	}
+	// In case of a migration, we don't yet update the in-memory list till
+	// we finish the migration
 
+	jd.logger.Info(l, l != nil)
+	if l != nil {
+		jd.setSequenceNumber(l, newDS.Index)
+	}
 	jd.JournalMarkDone(opID)
 }
 
-func (jd *HandleT) previousAssert(l lock.DSListLockToken) {
+func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) dataSetT {
 	// Refresh the in-memory list. We only need to refresh the
 	// last DS, not the entire but we do it anyway.
 	// For the range list, we use the cached data. Internally
@@ -1571,33 +1563,41 @@ func (jd *HandleT) previousAssert(l lock.DSListLockToken) {
 	// We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
 	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
 
-}
-
-func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) {
-	// Refresh the in-memory list. We only need to refresh the
-	// last DS, not the entire but we do it anyway.
-	// For the range list, we use the cached data. Internally
-	// it queries the new dataset which was added.
-	// dList := jd.refreshDSList(l)
-	dRangeList := jd.refreshDSRangeList(l)
-
-	// // We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
-	// jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
-
-	// drop existing sequence
-	dropSequenceQuery := fmt.Sprintf(`DROP SEQUENCE IF EXISTS "%s_jobs_%s_job_id_seq"`, jd.tablePrefix, newDSIdx)
-	_, err := jd.dbHandle.Exec(dropSequenceQuery)
+	// Now set the min JobID for the new DS just added to be 1 more than previous max
+	var newDSMin int64
+	if len(dRangeList) > 0 {
+		newDSMin = dRangeList[len(dRangeList)-1].maxJobID + 1
+	} else {
+		newDSMin = 1
+	}
+	tableName := jd.tablePrefix + `_jobs_` + newDSIdx
+	sequenceName := tableName + `_job_id_seq`
+	// drop sequence
+	sqlStatement := fmt.Sprintf(`DROP SEQUENCE IF EXISTS "%s"`, sequenceName)
+	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	// Now set the min JobID for the new DS just added to be 1 more than previous max
-	if len(dRangeList) > 0 {
-		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
-		job_id_set_sequence_query := fmt.Sprintf(`create sequence "%[1]s_jobs_%[2]s_job_id_seq" start %[3]d minvalue %[3]d increment 1;`,
-			jd.tablePrefix, newDSIdx, newDSMin)
-		_, err = jd.dbHandle.Exec(job_id_set_sequence_query)
-		jd.assertError(err)
-	}
-	// return dList[len(dList)-1]
+	// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
+	sqlStatement = fmt.Sprintf(`CREATE SEQUENCE "%[1]s" start %[2]d MINVALUE %[2]d INCREMENT 1`,
+		sequenceName,
+		newDSMin)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	// set job_id default to nextval('seq_name')
+	sqlStatement = fmt.Sprintf(`ALTER TABLE "%[1]s" ALTER COLUMN job_id SET DEFAULT nextval('%[2]s')`,
+		tableName,
+		sequenceName)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	// assign sequence
+	sqlStatement = fmt.Sprintf(`ALTER SEQUENCE "%[1]s" OWNED BY "%[2]s"."job_id"`,
+		sequenceName,
+		tableName)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+	return dList[len(dList)-1]
 }
 
 /*
