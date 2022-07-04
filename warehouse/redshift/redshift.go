@@ -28,9 +28,10 @@ import (
 )
 
 var (
-	setVarCharMax      bool
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	setVarCharMax                 bool
+	stagingTablePrefix            string
+	pkgLogger                     logger.LoggerI
+	skipComputingUserLatestTraits bool
 )
 
 func Init() {
@@ -41,6 +42,7 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 }
 
 type HandleT struct {
@@ -400,6 +402,14 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
+
+	if skipComputingUserLatestTraits {
+		_, err := rs.loadTable(warehouseutils.UsersTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable), false)
+		if err != nil {
+			errorMap[warehouseutils.UsersTable] = err
+		}
+		return
+	}
 
 	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
