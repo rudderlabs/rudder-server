@@ -1404,7 +1404,7 @@ type transformExpectation struct {
 
 func createMessagePayload(e mockEventData) string {
 	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s","recordId":{"id":"record_id_1"},"context":{"sources": {"task_run_id":"task_run_id_1","batch_id":"batch_id_1","job_run_id":"job_run_id_1"}}}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
+	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s","recordId":{"id":"record_id_1"},"context":{"sources": {"task_run_id":"task_run_id_1","batch_id":"batch_id_1","job_run_id":"job_run_id_1","task_id":"task_id_1","job_id":"job_id_1"}}}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
 func createMessagePayloadWithSameMessageId(e mockEventData) string {
@@ -1516,6 +1516,10 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 				Expect(event.Metadata.SourceJobRunID).To(Equal(jobRunID))
 				taskRunID := gjson.GetBytes(rawEvent, "message.context.sources.task_run_id").String()
 				Expect(event.Metadata.SourceTaskRunID).To(Equal(taskRunID))
+				taskID := gjson.GetBytes(rawEvent, "message.context.sources.task_id").String()
+				Expect(event.Metadata.SourceTaskID).To(Equal(taskID))
+				sourcesJobID := gjson.GetBytes(rawEvent, "message.context.sources.job_id").String()
+				Expect(event.Metadata.SourceJobID).To(Equal(sourcesJobID))
 			} else {
 				// Expect(event.Metadata.DestinationType).To(Equal(""))
 				Expect(event.Metadata.JobID).To(Equal(int64(0)))
