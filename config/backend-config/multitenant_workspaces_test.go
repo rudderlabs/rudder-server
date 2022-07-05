@@ -66,7 +66,7 @@ var _ = Describe("workspace-config", func() {
 			defer server.Close()
 
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET",
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).Times(1)
 
@@ -88,7 +88,7 @@ var _ = Describe("workspace-config", func() {
 			defer server.Close()
 
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET",
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).Times(1)
 
@@ -98,7 +98,7 @@ var _ = Describe("workspace-config", func() {
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to create the request: Multitenant", func() {
-			mockHttp.EXPECT().NewRequest("GET",
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
 			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
@@ -109,7 +109,7 @@ var _ = Describe("workspace-config", func() {
 		})
 		It("Expect to make the correct actions if fail to send the request: Multitenant", func() {
 			testRequest, _ := http.NewRequest("GET", "", nil)
-			mockHttp.EXPECT().NewRequest("GET",
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
