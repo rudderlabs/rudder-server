@@ -78,13 +78,12 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var destConf backendconfig.ConfigT
-	var ok bool
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
 		destConf, err = d.Dest.Get(ctx, config.GetWorkspaceToken())
-		if !ok {
-			return fmt.Errorf("error while getting destination details")
+		if err != nil {
+			return fmt.Errorf("error while getting destination details: %v", err)
 		}
 		return nil
 	}, boCtx); err != nil {

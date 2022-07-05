@@ -2,6 +2,7 @@ package destination_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -14,6 +15,9 @@ import (
 )
 
 func TestGetDestDetails(t *testing.T) {
+	if testing.Verbose() {
+		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+	}
 	initialize.Init()
 	ctx := context.Background()
 	config := map[string]interface{}{
