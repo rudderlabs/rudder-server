@@ -1545,7 +1545,6 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	// In case of a migration, we don't yet update the in-memory list till
 	// we finish the migration
 
-	jd.logger.Info(l, l != nil)
 	if l != nil {
 		jd.setSequenceNumber(l, newDS.Index)
 	}
