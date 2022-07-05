@@ -283,7 +283,7 @@ func Test_Workspaces(t *testing.T) {
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -304,7 +304,7 @@ func Test_Workspaces(t *testing.T) {
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("update should be received")
