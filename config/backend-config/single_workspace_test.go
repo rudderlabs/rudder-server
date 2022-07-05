@@ -113,9 +113,9 @@ var (
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 				mockLogger.EXPECT().Errorf("Unable to parse backend config from file: %s", configJSONPath).Times(1)
-				config, ok := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 			It("Expect to make the correct actions in case of successful reading of the config file and return the correct value", func() {
 				configFromFile = true

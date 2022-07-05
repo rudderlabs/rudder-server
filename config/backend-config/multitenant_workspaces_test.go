@@ -92,10 +92,14 @@ var _ = Describe("workspace-config", func() {
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
-			config, ok := backendConfig.Get(ctx, "testToken")
+			mockLogger.EXPECT().Debugf(
+				"Fetching config from %s",
+				gomock.Any(),
+			).Times(1)
+			mockLogger.EXPECT().Errorf("Error while parsing request [%d]: %v", http.StatusNoContent, gomock.Any()).Times(1)
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
+			Expect(err).NotTo(BeNil())
 		})
 		It("Expect to make the correct actions if fail to create the request: Multitenant", func() {
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
