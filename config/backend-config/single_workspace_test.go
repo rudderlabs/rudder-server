@@ -56,8 +56,8 @@ var (
 				testRequest, _ := http.NewRequest("GET", server.URL, nil)
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-				config, ok := backendConfig.Get(ctx, "testToken")
-				Expect(ok).To(BeTrue())
+				config, err := backendConfig.Get(ctx, "testToken")
+				Expect(err).To(BeNil())
 				Expect(config).To(Equal(SampleBackendConfig))
 			})
 			It("Expect to make the correct actions if fail to create the request", func() {
@@ -66,9 +66,9 @@ var (
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-				config, ok := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 
 			It("Expect to make the correct actions if fail to send the request", func() {
@@ -79,9 +79,9 @@ var (
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-				config, ok := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 		})
 
@@ -102,9 +102,9 @@ var (
 				fileErr := errors.New("TestError")
 				mockLogger.EXPECT().Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, fileErr.Error()).Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, fileErr).Times(1)
-				config, ok := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 
 			It("Expect to make the correct actions in case of successful reading but failed parsing", func() {
@@ -147,9 +147,9 @@ var (
 		}`)
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
-				config, ok := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(SampleBackendConfig))
-				Expect(ok).To(BeTrue())
+				Expect(err).NotTo(BeNil())
 			})
 		})
 	})
