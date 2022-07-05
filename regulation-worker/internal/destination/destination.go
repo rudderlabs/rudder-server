@@ -82,7 +82,7 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
-		destConf, ok = d.Dest.Get(config.GetWorkspaceToken())
+		destConf, err = d.Dest.Get(ctx, config.GetWorkspaceToken())
 		if !ok {
 			return fmt.Errorf("error while getting destination details")
 		}
