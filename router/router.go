@@ -1589,8 +1589,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				}
 
 				rt.failureMetricLock.Lock()
-				_, ok := rt.failuresMetric[event][string(resp.status.ErrorResponse)]
-				if !ok {
+				if _, ok := rt.failuresMetric[event][string(resp.status.ErrorResponse)]; !ok {
 					rt.failuresMetric[event] = make(map[string]int)
 				}
 				rt.failuresMetric[event][string(resp.status.ErrorResponse)] += 1
@@ -2349,7 +2348,8 @@ func (rt *HandleT) backendConfigSubscriber() {
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
-		for _, source := range allSources.Sources {
+		for i := range allSources.Sources {
+			source := &allSources.Sources[i]
 			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.workspaceSet[workspaceID]; !ok {
@@ -2357,12 +2357,13 @@ func (rt *HandleT) backendConfigSubscriber() {
 				rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
 			}
 			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
+				for i := range source.Destinations {
+					destination := &source.Destinations[i]
 					if destination.DestinationDefinition.Name == rt.destName {
 						if _, ok := rt.destinationsMap[destination.ID]; !ok {
-							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: *destination, Sources: []backendconfig.SourceT{}}
 						}
-						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, source)
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
@@ -2403,7 +2404,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
-			return rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
+			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceId, trRespBody, rudderAccountId)
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -2421,10 +2422,10 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
+				disableStCd, _ := rt.ExecDisableDestination(&destinationJob.Destination, workspaceId, trRespBody, rudderAccountId)
 				stats.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
-					"worspaceId":    refTokenParams.WorkspaceId,
+					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destName":      refTokenParams.DestDefName,
 				}).Increment()
@@ -2439,17 +2440,17 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 			return http.StatusInternalServerError, trRespBody
 		}
 	}
-	// By default send the status code & response from transformed response directly
+	// By default, send the status code & response from transformed response directly
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId, destResBody, rudderAccountId string) (int, string) {
+func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
-		"id":          destinationJob.Destination.ID,
+		"id":          destination.ID,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId, rudderAccountId)
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceId, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
 		// Error while disabling a destination
 		// High-Priority notification to rudderstack needs to be sent
@@ -2459,7 +2460,7 @@ func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, 
 	}
 	// High-Priority notification to workspace(&rudderstack) needs to be sent
 	stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-	// Abort the jobs as the destination is disable
+	// Abort the jobs as the destination is disabled
 	return http.StatusBadRequest, destResBody
 }
 
