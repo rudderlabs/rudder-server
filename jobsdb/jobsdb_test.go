@@ -499,7 +499,6 @@ func setTestEnvs(t *testing.T) {
 }
 
 func TestBackupTable(t *testing.T) {
-
 	// running minio container on docker
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -527,7 +526,7 @@ func TestBackupTable(t *testing.T) {
 
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 
-	//check if minio server is up & running.
+	// check if minio server is up & running.
 	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
@@ -550,7 +549,7 @@ func TestBackupTable(t *testing.T) {
 	}
 	fmt.Println("minioClient created successfully")
 
-	//creating bucket inside minio where testing will happen.
+	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(bucket, "us-east-1")
 	if err != nil {
 		panic(err)
@@ -649,7 +648,7 @@ func TestBackupTable(t *testing.T) {
 		}
 	}
 
-	//downloading backed-up files
+	// downloading backed-up files
 	DownloadedStausFileName := "downloadedStatus.json.gz"
 	err = downloadBackedupFiles(fm, backedupStatusFileName, DownloadedStausFileName)
 	require.NoError(t, err, "expected no error")
@@ -669,11 +668,10 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error")
 	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
 	defer os.Remove(DownloadedJobsFileName)
-
 }
 
-func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload string, downloadedFileName string) error {
-	filePtr, err := os.OpenFile(downloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload, downloadedFileName string) error {
+	filePtr, err := os.OpenFile(downloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		fmt.Println("error while Creating file to download data: ", err)
 	}
@@ -777,6 +775,7 @@ func readGzipStatusFile(fileName string) ([]*JobStatusT, error) {
 	}
 	return statusList, nil
 }
+
 func BenchmarkSanitizeJson(b *testing.B) {
 	size := 4_000
 	nulls := 100

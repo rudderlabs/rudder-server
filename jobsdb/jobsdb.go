@@ -3300,10 +3300,8 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					subquery.running_payload_size <= %[7]d OR subquery.row_num = 1
 				) AS failed_jobs
 		  `, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
-
 	} else {
 		if isJobStatusTable {
-
 			stmt = fmt.Sprintf(`
 			SELECT
 			 	json_build_object(
@@ -3506,7 +3504,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 			if err != nil {
 				panic(fmt.Errorf("Scanning row failed with error : %w", err))
 			}
-			rawJSONRows = append(rawJSONRows, '\n') //appending '\n'
+			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
 			gzWriter.Write(rawJSONRows)
 			offset++
 		}
