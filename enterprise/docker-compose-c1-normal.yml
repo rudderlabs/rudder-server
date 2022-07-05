@@ -1,0 +1,42 @@
+version: "3.7"
+
+services:
+  db-10:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "4010:5432"
+  backend-10:
+    depends_on:
+      - db-10
+      - d-transformer
+    build:
+      context: ../
+      dockerfile: build/Dockerfile
+    entrypoint: sh -c './build/wait-for db-10:5432 -- go run main.go --normal-mode'
+    ports:
+      - "5010:8080"
+    env_file:
+      - build/docker.env
+    volumes:
+      - ./backendConfig.json:/etc/rudderstack/workspaceConfig.json
+    environment:
+      - JOBS_DB_HOST=db-10
+      - INSTANCE_ID=hosted-v1-rudderstack-0
+      - CLUSTER_VERSION=1
+      - INSTANCE_ID_PATTERN=hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>
+      - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+  d-transformer:
+    build:
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    env_file:
+      - build/docker.env
+    command: server /data

@@ -1,0 +1,84 @@
+version: "3.7"
+
+services:
+  db-20:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "4020:5432"
+  backend-20:
+    depends_on:
+      - db-20
+      - d-transformer
+    build:
+      context: ../
+      dockerfile: build/Dockerfile
+    entrypoint: sh -c './build/wait-for db-20:5432 -- go run main.go'
+    ports:
+      - "5020:8080"
+    env_file:
+      - build/docker.env
+    volumes:
+      - ./backendConfig.json:/etc/rudderstack/workspaceConfig.json
+    environment:
+      - JOBS_DB_HOST=db-20
+      - INSTANCE_ID=hosted-v2-rudderstack-0
+      - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+      - MIGRATING_FROM_CLUSTER_VERSION=1
+      - MIGRATING_TO_CLUSTER_VERSION=2
+      - INSTANCE_ID_PATTERN=hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>
+      - URL_PATTERN=http://backend-<CLUSTER_VERSION><NODENUM>
+      - MIGRATION_MODE=import
+      - MIGRATOR_BUCKET=jobsdb-migrator
+      - MIGRATOR_BUCKET_PREFIX=hosted
+      - MIGRATOR_ACCESS_KEY_ID=REPLACE_WITH_YOUR_ACCESS_KEY_ID
+      - MIGRATOR_SECRET_ACCESS_KEY=REPLACE_WITH_YOUR_ACCESS_KEY_SECRET
+      - MIGRATOR_PORT=8084
+  db-21:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "4021:5432"
+  backend-21:
+    depends_on:
+      - db-21
+      - d-transformer
+    build:
+      context: ../
+      dockerfile: build/Dockerfile
+    entrypoint: sh -c './build/wait-for db-21:5432 -- go run main.go'
+    ports:
+      - "5021:8080"
+    env_file:
+      - build/docker.env
+    volumes:
+      - ./backendConfig.json:/etc/rudderstack/workspaceConfig.json
+    environment:
+      - JOBS_DB_HOST=db-21
+      - INSTANCE_ID=hosted-v2-rudderstack-1
+      - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+      - MIGRATING_FROM_CLUSTER_VERSION=1
+      - MIGRATING_TO_CLUSTER_VERSION=2
+      - INSTANCE_ID_PATTERN=hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>
+      - URL_PATTERN=http://backend-<CLUSTER_VERSION><NODENUM>
+      - MIGRATION_MODE=import
+      - MIGRATOR_BUCKET=jobsdb-migrator
+      - MIGRATOR_BUCKET_PREFIX=hosted
+      - MIGRATOR_ACCESS_KEY_ID=REPLACE_WITH_YOUR_ACCESS_KEY_ID
+      - MIGRATOR_SECRET_ACCESS_KEY=REPLACE_WITH_YOUR_ACCESS_KEY_SECRET
+      - MIGRATOR_PORT=8084
+  d-transformer:
+    build:
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    env_file:
+      - build/docker.env
+    command: server /data
