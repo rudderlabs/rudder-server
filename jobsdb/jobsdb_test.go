@@ -377,12 +377,13 @@ var _ = Describe("jobsdb", func() {
 
 		It("can call Start in parallel without side-effects", func() {
 			var wg sync.WaitGroup
-			var bgGroups []*errgroup.Group
+			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
+				idx := i
 				go func() {
 					jd.Start()
-					bgGroups = append(bgGroups, jd.backgroundGroup)
+					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
 			}
