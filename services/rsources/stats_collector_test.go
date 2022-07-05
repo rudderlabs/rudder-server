@@ -179,7 +179,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						})
 
 						It("can publish without error all statuses but with updating all stats as Failed stats and without adding failed records", func() {
-
 							js.EXPECT().
 								IncrementStats(
 									gomock.Any(),
@@ -287,7 +286,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					})
 
 					It("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func() {
-
 						js.EXPECT().
 							IncrementStats(
 								gomock.Any(),
