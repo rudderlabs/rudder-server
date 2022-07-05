@@ -48,11 +48,11 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
 	var taskRunId, sourceId []string
-	var ok bool
 
-	jobRunId, taskRunId, sourceId, ok = getQueryParams(r)
-	if !ok {
+	jobRunId, taskRunId, sourceId = getQueryParams(r)
+	if jobRunId == "" {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+		return
 	}
 
 	jobStatus, err := h.service.GetStatus(
@@ -83,11 +83,11 @@ func (h *handler) getFailedRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
 	var taskRunId, sourceId []string
-	var ok bool
 
-	jobRunId, taskRunId, sourceId, ok = getQueryParams(r)
-	if !ok {
+	jobRunId, taskRunId, sourceId = getQueryParams(r)
+	if jobRunId == "" {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+		return
 	}
 
 	failedRecords, err := h.service.GetFailedRecords(
@@ -106,8 +106,12 @@ func (h *handler) getFailedRecords(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string, ok bool) {
+func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string) {
+	var ok bool
 	jobRunID, ok = mux.Vars(r)["job_run_id"]
+	if !ok {
+		return
+	}
 	tID, okTID := r.URL.Query()["task_run_id"]
 	if okTID {
 		if len(tID) > 0 {
@@ -122,7 +126,7 @@ func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []str
 		}
 	}
 
-	return jobRunID, taskRunID, sourceID, ok
+	return jobRunID, taskRunID, sourceID
 }
 
 func marshalAndWriteResponse(w http.ResponseWriter, response interface{}) (err error) {

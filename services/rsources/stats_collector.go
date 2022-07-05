@@ -177,7 +177,7 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 			}
 			if incrementIn {
 				stats.In++
-			} else if recordId != "" && recordId != "null" && recordId != `""` && json.Valid(json.RawMessage(recordId)) {
+			} else if recordId != "" && recordId != "null" && recordId != `""` {
 				recordIdJson := json.RawMessage(recordId)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson
