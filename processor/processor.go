@@ -2079,10 +2079,12 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 
+		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
+		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
 			// TODO: error propagation
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
-			return nil
+			return rsourcesStats.Publish(context.TODO(), tx)
 		})
 
 	}

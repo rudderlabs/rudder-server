@@ -77,7 +77,7 @@ type FailedRecord struct {
 	SourceID      string          `json:"source_id"`
 	DestinationID string          `json:"destination_id"`
 	RecordID      json.RawMessage `json:"record_id"`
-	CreatedAt     time.Time       `json:"createdAt"`
+	CreatedAt     time.Time       `json:"-"`
 }
 
 var StatusNotFoundError = errors.New("Status not found")
