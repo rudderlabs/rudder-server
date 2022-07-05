@@ -79,7 +79,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 // Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(ctx context.Context, _ string) (ConfigT, *Error) {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(ctx context.Context, _ string) (ConfigT, error) {
 	var url string
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
 		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)

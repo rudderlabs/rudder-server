@@ -36,11 +36,11 @@ func (m *MockdestinationMiddleware) EXPECT() *MockdestinationMiddlewareMockRecor
 }
 
 // Get mocks base method.
-func (m *MockdestinationMiddleware) Get(ctx context.Context, workspace string) (backendconfig.ConfigT, *backendconfig.Error) {
+func (m *MockdestinationMiddleware) Get(ctx context.Context, workspace string) (backendconfig.ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", ctx, workspace)
 	ret0, _ := ret[0].(backendconfig.ConfigT)
-	ret1, _ := ret[1].(*backendconfig.Error)
+	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 

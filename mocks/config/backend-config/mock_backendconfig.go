@@ -51,11 +51,11 @@ func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (backendconfig.ConfigT, *backendconfig.Error) {
+func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (backendconfig.ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0, arg1)
 	ret0, _ := ret[0].(backendconfig.ConfigT)
-	ret1, _ := ret[1].(*backendconfig.Error)
+	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 

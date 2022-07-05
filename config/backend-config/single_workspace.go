@@ -57,7 +57,7 @@ func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceI
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, *Error) {
+func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
@@ -66,7 +66,7 @@ func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, workspace string) (ConfigT, *Error) {
+func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, workspace string) (ConfigT, error) {
 	if workspace == "" {
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace token provided, skipping backend config fetch"))
 	}

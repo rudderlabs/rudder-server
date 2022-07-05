@@ -70,14 +70,14 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, *Error) {
+func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
 	return workspaceConfig.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 	ctx context.Context, workspaceArr string,
-) (ConfigT, *Error) {
+) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
 	if workspaceArr == workspaceConfig.Token {
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))

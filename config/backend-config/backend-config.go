@@ -46,7 +46,7 @@ var (
 type BackendConfig interface {
 	SetUp()
 	AccessToken() string
-	Get(context.Context, string) (ConfigT, *Error)
+	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
@@ -62,7 +62,7 @@ type CommonBackendConfig struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	blockChan        chan struct{}
-	pollingErrors    chan *Error
+	pollingErrors    chan error
 	initializedLock  sync.RWMutex
 	initialized      bool
 }
@@ -275,7 +275,7 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.pollingErrors = make(chan *Error, 1)
+	bc.pollingErrors = make(chan error, 1)
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -309,7 +309,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-bc.pollingErrors:
 			pkgLogger.Errorf("BackendConfig WaitForConfig error: %v", err)
-			if !err.IsRetryable() {
+			if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
 				return err
 			}
 		case <-time.After(pollInterval):
