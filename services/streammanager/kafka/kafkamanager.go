@@ -113,12 +113,14 @@ func (p *producerImpl) getTimeout() time.Duration {
 	}
 	return p.timeout
 }
+
 func (p *producerImpl) Close(ctx context.Context) error {
 	if p == nil || p.p == nil {
 		return nil
 	}
 	return p.p.Close(ctx)
 }
+
 func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
@@ -129,8 +131,15 @@ type logger interface {
 }
 
 type managerStats struct {
-	missingUserID  stats.RudderStats
-	missingMessage stats.RudderStats
+	creationTime               stats.RudderStats
+	creationTimeConfluentCloud stats.RudderStats
+	creationTimeAzureEventHubs stats.RudderStats
+	missingUserID              stats.RudderStats
+	missingMessage             stats.RudderStats
+	publishTime                stats.RudderStats
+	produceTime                stats.RudderStats
+	prepareBatchTime           stats.RudderStats
+	closeProducerTime          stats.RudderStats
 }
 
 const (
@@ -149,6 +158,9 @@ var (
 
 	kafkaStats managerStats
 	pkgLogger  logger
+
+	now   = func() time.Time { return time.Now() }                   // skipcq: CRT-A0018
+	since = func(t time.Time) time.Duration { return time.Since(t) } // skipcq: CRT-A0018
 )
 
 func Init() {
@@ -185,14 +197,24 @@ func Init() {
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 	kafkaStats = managerStats{
-		missingUserID:  stats.DefaultStats.NewStat("router.kafka.missing_user_id", stats.CountType),
-		missingMessage: stats.DefaultStats.NewStat("router.kafka.missing_message", stats.CountType),
+		creationTime:               stats.DefaultStats.NewStat("router.kafka.creation_time", stats.TimerType),
+		creationTimeConfluentCloud: stats.DefaultStats.NewStat("router.kafka.creation_time_confluent_cloud", stats.TimerType),
+		creationTimeAzureEventHubs: stats.DefaultStats.NewStat("router.kafka.creation_time_azure_event_hubs", stats.TimerType),
+		missingUserID:              stats.DefaultStats.NewStat("router.kafka.missing_user_id", stats.CountType),
+		missingMessage:             stats.DefaultStats.NewStat("router.kafka.missing_message", stats.CountType),
+		publishTime:                stats.DefaultStats.NewStat("router.kafka.publish_time", stats.TimerType),
+		produceTime:                stats.DefaultStats.NewStat("router.kafka.produce_time", stats.TimerType),
+		prepareBatchTime:           stats.DefaultStats.NewStat("router.kafka.prepare_batch_time", stats.TimerType),
+		closeProducerTime:          stats.DefaultStats.NewStat("router.kafka.close_producer_time", stats.TimerType),
 	}
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
-	var destConfig = configuration{}
+	start := now()
+	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
+
+	destConfig := configuration{}
 	jsonConfig, err := json.Marshal(destConfigJSON)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -266,7 +288,10 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
 func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
-	var destConfig = azureEventHubConfig{}
+	start := now()
+	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
+
+	destConfig := azureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -286,8 +311,9 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewAzureEventHubs(
-		destConfig.BootstrapServer, destConfig.EventHubsConnectionString, client.Config{
+		addresses, destConfig.EventHubsConnectionString, client.Config{
 			DialTimeout: kafkaDialTimeout,
 		},
 	)
@@ -313,7 +339,10 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
 func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
-	var destConfig = confluentCloudConfig{}
+	start := now()
+	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
+
+	destConfig := confluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -334,8 +363,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewConfluentCloud(
-		destConfig.BootstrapServer, destConfig.APIKey, destConfig.APISecret, client.Config{
+		addresses, destConfig.APIKey, destConfig.APISecret, client.Config{
 			DialTimeout: kafkaDialTimeout,
 		},
 	)
@@ -371,6 +401,9 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time) (
 	[]client.Message, error,
 ) {
+	start := now()
+	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
+
 	var messages []client.Message
 	for _, data := range batch {
 		message, ok := data["message"]
@@ -397,6 +430,9 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 
 // CloseProducer closes a given producer
 func CloseProducer(ctx context.Context, pi interface{}) error {
+	start := now()
+	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
+
 	p, ok := pi.(producer)
 	if !ok {
 		return fmt.Errorf("error while closing producer")
@@ -412,20 +448,23 @@ func CloseProducer(ctx context.Context, pi interface{}) error {
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, pi interface{}, destConfig interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string, string) {
+	start := now()
+	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
+
 	p, ok := pi.(producer)
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	var conf = configuration{}
+	conf := configuration{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
 	err = json.Unmarshal(jsonConfig, &conf)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad configuration
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
 
 	if conf.Topic == "" {
@@ -454,7 +493,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
 
-	err = p.Publish(ctx, batchOfMessages...)
+	err = publish(ctx, p, batchOfMessages...)
 	if err != nil {
 		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 	}
@@ -470,8 +509,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 		return 400, "Failure", "Invalid message"
 	}
 
-	data := messageValue.(interface{})
-	value, err := json.Marshal(data)
+	value, err := json.Marshal(messageValue)
 	if err != nil {
 		return makeErrorResponse(err)
 	}
@@ -479,12 +517,18 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value, timestamp)
-	if err = p.Publish(ctx, message); err != nil {
+	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(err)
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
 	return 200, returnMessage, returnMessage
+}
+
+func publish(ctx context.Context, p producer, msgs ...client.Message) error {
+	start := now()
+	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
+	return p.Publish(ctx, msgs...)
 }
 
 func makeErrorResponse(err error) (int, string, string) {

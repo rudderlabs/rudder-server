@@ -20,7 +20,7 @@ type MINIOResource struct {
 	Port            string
 }
 
-func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
+func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -44,11 +44,10 @@ func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.Defer(func() error {
+	d.Cleanup(func() {
 		if err := pool.Purge(minioContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			d.Log("Could not purge resource:", err)
 		}
-		return nil
 	})
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", minioContainer.GetPort("9000/tcp"))

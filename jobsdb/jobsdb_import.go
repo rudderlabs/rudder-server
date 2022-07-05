@@ -5,48 +5,47 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//SetupForImport is used to setup jobsdb for export or for import or for both
+// SetupForImport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForImport() {
 	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
-func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
-	ds := newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
+func (jd *HandleT) getDsForImport(l lock.DSListLockToken) dataSetT {
+	ds := newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(l, jd.migrationState.dsForNewEvents))
 	jd.addDS(ds)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
 
-//GetLastJobIDBeforeImport should return the largest job id stored so far
+// GetLastJobIDBeforeImport should return the largest job id stored so far
 func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	jd.assert(jd.migrationState.dsForNewEvents.Index != "", "dsForNewEvents must be setup before calling this")
-	jd.dsListLock.Lock()
-	defer jd.dsListLock.Unlock()
-
-	dsList := jd.getDSList(true)
 	var lastJobIDBeforeNewImports int64
-	for idx, dataSet := range dsList {
-		if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
-			if idx > 0 {
-				lastJobIDBeforeNewImports = jd.GetMaxIDForDs(dsList[idx-1])
+	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		dsList := jd.refreshDSList(l)
+		for idx, dataSet := range dsList {
+			if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
+				if idx > 0 {
+					lastJobIDBeforeNewImports = jd.GetMaxIDForDs(dsList[idx-1])
+				}
 			}
 		}
-	}
-
+	})
 	return lastJobIDBeforeNewImports
 }
 
-//getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
-//In place migration is not supported anymore, so this should suffice.
+// getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
+// In place migration is not supported anymore, so this should suffice.
 func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	return dataSetT{JobTable: fmt.Sprintf("%s_jobs_1", jd.tablePrefix), JobStatusTable: fmt.Sprintf("%s_job_status_1", jd.tablePrefix), Index: "1"}
 }
 
-//StoreJobsAndCheckpoint is used to write the jobs to _tables
+// StoreJobsAndCheckpoint is used to write the jobs to _tables
 func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
 	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -70,14 +69,14 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		jd.dsListLock.Lock()
-		jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(jd.migrationState.dsForNewEvents))
-		jd.addDS(jd.migrationState.dsForImport)
-		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
-		jd.assert(found, "There should be a setup checkpoint at this point. If not something went wrong. Go debug")
-		setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
-		jd.Checkpoint(setupCheckpoint)
-		jd.dsListLock.Unlock()
+		jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+			jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(l, jd.migrationState.dsForNewEvents))
+			jd.addDS(jd.migrationState.dsForImport)
+			setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
+			jd.assert(found, "There should be a setup checkpoint at this point. If not something went wrong. Go debug")
+			setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
+			jd.Checkpoint(setupCheckpoint)
+		})
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
@@ -104,7 +103,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
-	_, err = jd.updateJobStatusDSInTx(txn, jd.migrationState.dsForImport, statusList, statTags{}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
+	_, err = jd.updateJobStatusDSInTx(txn, jd.migrationState.dsForImport, statusList, statTags{}) // Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported
@@ -119,7 +118,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	err = txn.Commit()
 	jd.assertError(err)
 
-	//Clear ds from cache
+	// Clear ds from cache
 	jd.dropDSFromCache(jd.migrationState.dsForImport)
 }
 
@@ -136,28 +135,33 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
-	row.Scan(&maxID)
+	err := row.Scan(&maxID)
+	if err != nil {
+		panic(fmt.Errorf("query for max job_id: %q", err))
+	}
 
 	if maxID.Valid {
-		return int64(maxID.Int64)
+		return maxID.Int64
 	}
-	return int64(0)
-
+	return 0
 }
 
-//UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
+	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jd.updateSequenceNumberOfLatestDSWithLock(l, seqNoForNewDS)
+	})
+}
 
-	dsList := jd.getDSList(false)
+// UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
+func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.DSListLockToken, seqNoForNewDS int64) {
+	dsList := jd.getDSList()
 	dsListLen := len(dsList)
 	var ds dataSetT
 	if jd.isEmpty(dsList[dsListLen-1]) {
 		ds = dsList[dsListLen-1]
 	} else {
-		ds = newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend())
-		jd.addNewDS(ds)
+		ds = newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l))
+		jd.addNewDS(l, ds)
 	}
 
 	var serialInt sql.NullInt64

@@ -25,13 +25,12 @@ type JobAPI struct {
 	WorkspaceToken string
 }
 
-//Get sends http request with workspaceID in the url and receives a json payload
-//which is decoded using schema and then mapped from schema to internal model.Job struct,
-//which is actually returned.
+// Get sends http request with workspaceID in the url and receives a json payload
+// which is decoded using schema and then mapped from schema to internal model.Job struct,
+// which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
-
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	method := "GET"
@@ -62,12 +61,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}()
 	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
-	//if successful
+	// if successful
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
-			pkgLogger.Errorf("error while decoding reponse body: %v", err)
+			pkgLogger.Errorf("error while decoding response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
@@ -97,14 +96,13 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
-
 }
 
-//marshals status into appropriate status schema, and sent as payload
-//checked for returned status code.
+// UpdateStatus marshals status into appropriate status schema, and sent as payload
+// checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	method := "PATCH"
@@ -134,7 +132,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 		pkgLogger.Errorf("error while making http request: %v", err)
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -146,12 +144,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 }
 
 func prepURL(url string, params ...string) string {
-	var re = regexp.MustCompile(`{.*?}`)
+	re := regexp.MustCompile(`{.*?}`)
 	i := 0
 	return string(re.ReplaceAllFunc([]byte(url), func(matched []byte) []byte {
 		if i >= len(params) {
 			pkgLogger.Errorf("value for %v not provided", matched)
-
 		}
 		v := params[i]
 		i++

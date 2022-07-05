@@ -1,3 +1,5 @@
+//go:build integration
+
 package cluster_test
 
 import (
@@ -12,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -122,8 +125,10 @@ type reportingNOOP struct{}
 
 func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
 }
+
 func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
 }
+
 func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
 }
 
@@ -136,8 +141,10 @@ const (
 
 var (
 	workspaceID             = uuid.Must(uuid.NewV4()).String()
-	gaDestinationDefinition = backendConfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA",
-		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
+	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
+		ID: GADestinationDefinitionID, Name: "GA",
+		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+	}
 	sampleBackendConfig = backendConfig.ConfigT{
 		Sources: []backendConfig.SourceT{
 			{
@@ -145,8 +152,10 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{ID: GADestinationID, Name: "ga dest",
-					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+				Destinations: []backendConfig.DestinationT{{
+					ID: GADestinationID, Name: "ga dest",
+					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
+				}},
 			},
 		},
 	}
@@ -179,6 +188,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
 	defer gwDB.Close()
@@ -192,18 +202,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	clearDb := false
 	ctx := context.Background()
 
-	mtStat := &multitenant.MultitenantStatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
 			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockTransformer.EXPECT().Setup().Times(1)
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
@@ -214,6 +223,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         tDb,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reportingNOOP{},
@@ -222,13 +232,22 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:         brtDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientsource.NewEmptyService(),
+		RsourcesService:  mockRsourcesService,
 	}
 	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Do(func(
-		channel chan pubsub.DataEvent, topic backendConfig.Topic) {
-		// on Subscribe, emulate a backend configuration event
-		go func() { channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(
+		ctx context.Context, topic backendConfig.Topic,
+	) pubsub.DataChannel {
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+
+		go func() {
+			<-ctx.Done()
+			close(ch)
+		}()
+
+		return ch
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
@@ -260,9 +279,18 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	chACK := make(chan bool)
 	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
+		return nil
+	}))
+	require.Eventually(t, func() bool {
+		return dCM.Mode() == servermode.NormalMode
+	}, time.Second, time.Millisecond)
+	provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
 	}))
+	require.Eventually(t, func() bool {
+		return dCM.Mode() == servermode.DegradedMode
+	}, time.Second, time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		<-chACK

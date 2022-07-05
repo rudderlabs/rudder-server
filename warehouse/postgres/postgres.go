@@ -24,23 +24,21 @@ import (
 )
 
 var (
-	stagingTablePrefix            string
-	pkgLogger                     logger.LoggerI
-	skipComputingUserLatestTraits bool
-	txnRollbackTimeout            time.Duration
+	stagingTablePrefix              string
+	pkgLogger                       logger.LoggerI
+	skipComputingUserLatestTraits   bool
+	enableSQLStatementExecutionPlan bool
+	txnRollbackTimeout              time.Duration
 )
 
 const (
-	host          = "host"
-	dbName        = "database"
-	user          = "user"
-	password      = "password"
-	port          = "port"
-	sslMode       = "sslMode"
-	serverCAPem   = "serverCA"
-	clientSSLCert = "clientCert"
-	clientSSLKey  = "clientKey"
-	verifyCA      = "verify-ca"
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
+	verifyCA = "verify-ca"
 )
 
 // load table transaction stages
@@ -109,6 +107,7 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id",
 }
+
 var partitionKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
@@ -147,6 +146,7 @@ func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
+	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -178,7 +178,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
-	downloader, err := filemanager.New(&filemanager.SettingsT{
+	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -227,7 +227,6 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		fileNames = append(fileNames, fileName)
 	}
 	return fileNames, nil
-
 }
 
 func handleRollbackTimeout(tags map[string]string) {
@@ -390,7 +389,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -399,7 +398,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into original table: %v\n", err)
@@ -524,7 +523,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		"destId":    pg.Warehouse.Destination.ID,
 		"tableName": warehouseutils.UsersTable,
 	}
-	_, err = tx.Exec(sqlStatement)
+	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -535,7 +534,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
@@ -594,7 +593,7 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -620,7 +619,7 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (pg *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -632,7 +631,7 @@ func (pg *HandleT) AddColumn(tableName string, columnName string, columnType str
 	return err
 }
 
-func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (pg *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -663,7 +662,6 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	}
 
 	return nil
-
 }
 
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
@@ -689,7 +687,6 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (pg *HandleT) dropDanglingStagingTables() bool {
-
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, pg.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
@@ -822,7 +819,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

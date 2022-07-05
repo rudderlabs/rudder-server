@@ -68,6 +68,7 @@ func (s *configMock) StartWithIDs(workspaces string) {
 func (s *configMock) Stop() {
 	s.stopPollingCalled = true
 }
+
 func (s *configMock) WaitForConfig(_ context.Context) error {
 	s.waitForConfigCalled = true
 	return nil
@@ -97,7 +98,7 @@ func TestDynamicCluster(t *testing.T) {
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
 
-	mtStat := &multitenant.MultitenantStatsT{
+	mtStat := &multitenant.Stats{
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
 
@@ -121,7 +122,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	wait := make(chan struct{})
 	go func() {
-		dc.Run(ctx)
+		_ = dc.Run(ctx)
 		close(wait)
 	}()
 
@@ -231,7 +232,5 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
 		require.True(t, errorDB.callOrder > router.callOrder)
-
 	})
-
 }

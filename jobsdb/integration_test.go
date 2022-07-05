@@ -1,3 +1,5 @@
+//go:build integration
+
 package jobsdb_test
 
 import (
@@ -148,8 +150,8 @@ func genJobStatuses(jobs []*jobsdb.JobT, state string) []*jobsdb.JobStatusT {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     "999",
-			ErrorResponse: []byte(`{}`),
-			Parameters:    []byte(`{}`),
+			ErrorResponse: []byte(`\u0000{"status": "status"}`),
+			Parameters:    []byte(``),
 			WorkspaceId:   job.WorkspaceId,
 		})
 	}
@@ -179,7 +181,7 @@ func TestJobsDB(t *testing.T) {
 	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
-	var sampleTestJob = jobsdb.JobT{
+	sampleTestJob := jobsdb.JobT{
 		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
@@ -187,21 +189,22 @@ func TestJobsDB(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
-	unprocessedListEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJobEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-
+	unprocessedListEmpty := unprocessedJobEmpty.Jobs
 	require.Equal(t, 0, len(unprocessedListEmpty))
 	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
-	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
 	status := jobsdb.JobStatusT{
@@ -219,12 +222,12 @@ func TestJobsDB(t *testing.T) {
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 
-	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	uj := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
-
+	unprocessedList = uj.Jobs
 	require.Equal(t, 0, len(unprocessedList))
 
 	t.Run("multi events per job", func(t *testing.T) {
@@ -238,24 +241,26 @@ func TestJobsDB(t *testing.T) {
 		for i := 0; i < dsCount; i++ {
 			require.NoError(t, jobDB.Store(genJobs(defaultWorkspaceID, customVal, jobCountPerDS, eventsPerJob)))
 			triggerAddNewDS <- time.Now()
-			triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 		}
 
 		t.Log("GetUnprocessed with job count limit")
-		JobLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		JobLimitJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		JobLimitList := JobLimitJob.Jobs
 		require.Equal(t, jobCount, len(JobLimitList))
 
 		t.Log("GetUnprocessed with event count limit")
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		eventLimitList := eventLimitJob.Jobs
 		require.Equal(t, 20, len(eventLimitList))
 		t.Log("GetUnprocessed jobs should have the expected event count")
 		for _, j := range eventLimitList {
@@ -269,8 +274,8 @@ func TestJobsDB(t *testing.T) {
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		require.Equal(t, 20, len(eventLimitListRepeat))
-		require.Equal(t, eventLimitList, eventLimitListRepeat)
+		require.Equal(t, 20, len(eventLimitListRepeat.Jobs))
+		require.Equal(t, eventLimitList, eventLimitListRepeat.Jobs)
 
 		statuses := make([]*jobsdb.JobStatusT, len(JobLimitList))
 
@@ -296,7 +301,7 @@ func TestJobsDB(t *testing.T) {
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 		})
-		require.Equal(t, jobCount, len(retryJobLimitList))
+		require.Equal(t, jobCount, len(retryJobLimitList.Jobs))
 
 		t.Log("GetToRetry with event count limit")
 		retryEventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
@@ -304,12 +309,11 @@ func TestJobsDB(t *testing.T) {
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 		})
-		require.Equal(t, 20, len(retryEventLimitList))
+		require.Equal(t, 20, len(retryEventLimitList.Jobs))
 		t.Log("GetToRetry jobs should have the expected event count")
 		for _, j := range eventLimitList {
 			require.Equal(t, eventsPerJob, j.EventCount)
 		}
-
 	})
 
 	t.Run("DSoverflow", func(t *testing.T) {
@@ -335,11 +339,11 @@ func TestJobsDB(t *testing.T) {
 		t.Log("First jobs table with jobs of 60 events, second with jobs of 20 events")
 		require.NoError(t, jobDB.Store(genJobs(defaultWorkspaceID, customVal, jobCountPerDS, eventsPerJob_ds1)))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		require.NoError(t, jobDB.Store(genJobs(defaultWorkspaceID, customVal, jobCountPerDS, eventsPerJob_ds2)))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		t.Log("GetUnprocessed with event count limit")
 		t.Log("Using event count that will cause spill-over, not exact for ds1, but remainder suitable for ds2")
@@ -351,8 +355,8 @@ func TestJobsDB(t *testing.T) {
 			EventsLimit:      trickyEventCount,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-		requireSequential(t, eventLimitList)
-		require.Equal(t, jobCountPerDS-1, len(eventLimitList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 
 		t.Log("Prepare GetToRetry")
 		{
@@ -362,11 +366,11 @@ func TestJobsDB(t *testing.T) {
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
 
-			statuses := make([]*jobsdb.JobStatusT, len(allJobs))
+			statuses := make([]*jobsdb.JobStatusT, len(allJobs.Jobs))
 			n := time.Now().Add(time.Hour * -1)
 			for i := range statuses {
 				statuses[i] = &jobsdb.JobStatusT{
-					JobID:         allJobs[i].JobID,
+					JobID:         allJobs.Jobs[i].JobID,
 					JobState:      jobsdb.Failed.State,
 					AttemptNum:    1,
 					ExecTime:      n,
@@ -389,10 +393,9 @@ func TestJobsDB(t *testing.T) {
 				EventsLimit:      trickyEventCount,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
-			requireSequential(t, eventLimitList)
-			require.Equal(t, jobCountPerDS-1, len(eventLimitList))
+			requireSequential(t, eventLimitList.Jobs)
+			require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 		}
-
 	})
 
 	t.Run("limit by total payload size", func(t *testing.T) {
@@ -416,11 +419,11 @@ func TestJobsDB(t *testing.T) {
 		payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
 		require.NoError(t, err)
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		require.NoError(t, jobDB.Store(genJobs(defaultWorkspaceID, customVal, 2, 1)))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		payloadLimit := 3 * payloadSize
 		payloadLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -430,8 +433,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, payloadLimitList)
-		require.Equal(t, 3, len(payloadLimitList))
+		requireSequential(t, payloadLimitList.Jobs)
+		require.Equal(t, 3, len(payloadLimitList.Jobs))
 	})
 
 	t.Run("querying with an payload size limit should return at least one job even if limit is exceeded", func(t *testing.T) {
@@ -461,8 +464,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, payloadLimitList)
-		require.Equal(t, 1, len(payloadLimitList))
+		requireSequential(t, payloadLimitList.Jobs)
+		require.Equal(t, 1, len(payloadLimitList.Jobs))
 	})
 
 	t.Run("querying with an event count limit should return at least one job even if limit is exceeded", func(t *testing.T) {
@@ -490,8 +493,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, eventLimitList)
-		require.Equal(t, 1, len(eventLimitList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, 1, len(eventLimitList.Jobs))
 	})
 
 	t.Run("should stay within event count limits", func(t *testing.T) {
@@ -516,11 +519,11 @@ func TestJobsDB(t *testing.T) {
 		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 10)...)
 		require.NoError(t, jobDB.Store(jobs))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		require.NoError(t, jobDB.Store(jobs))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		eventCountLimit := 10
 		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -530,8 +533,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 
-		requireSequential(t, eventLimitList)
-		require.Equal(t, 3, len(eventLimitList))
+		requireSequential(t, eventLimitList.Jobs)
+		require.Equal(t, 3, len(eventLimitList.Jobs))
 	})
 }
 
@@ -565,7 +568,8 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	require.NoError(t, jobDB.Store(jobs))
 	payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
 	require.NoError(t, err)
-	jobs = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 100}) // read to get Ids
+	j := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 100}) // read to get Ids
+	jobs = j.Jobs
 	require.Equal(t, 30, len(jobs), "should get all 30 jobs")
 
 	// Mark 1-10 as failed
@@ -578,7 +582,6 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 		params := jobsdb.GetQueryParamsT{JobsLimit: 30}
 		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: 30}, params, 0)
 		require.Equal(t, 30, len(allJobs), "should get all 30 jobs")
-
 	})
 
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
@@ -615,7 +618,6 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
 		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
 	})
-
 }
 
 func TestMultiTenantGetAllJobs(t *testing.T) {
@@ -659,7 +661,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	jobs = genJobs(workspaceC, customVal, 30, eventsPerJob)
 	require.NoError(t, jobDB.Store(jobs))
 
-	allJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 90}) // read to get all Ids
+	unprocessedJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 90}) // read to get all Ids
+	allJobs := unprocessedJobs.Jobs
 	require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
 	workspaceAJobs := filterWorkspaceJobs(allJobs, workspaceA)
 	workspaceBJobs := filterWorkspaceJobs(allJobs, workspaceB)
@@ -684,7 +687,6 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 		params := jobsdb.GetQueryParamsT{JobsLimit: 90}
 		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
 		require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
-
 	})
 
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
@@ -720,7 +722,56 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
 		require.Equal(t, 3, len(allJobs), "should get limit+1 jobs")
 	})
+}
 
+func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
+	t.Setenv("RSERVER_JOBS_DB_ANALYZE_THRESHOLD", "0")
+	initJobsDB()
+	stats.Setup()
+
+	maxDSSize := 10
+	jobDB := jobsdb.HandleT{
+		MaxDSSize: &maxDSSize,
+	}
+	queryFilters := jobsdb.QueryFiltersT{
+		CustomVal: true,
+	}
+
+	jobDB.Setup(jobsdb.ReadWrite, false, "gw", 5*time.Minute, "", true, queryFilters, []prebackup.Handler{})
+	defer jobDB.TearDown()
+	customVal := "MOCKDS"
+	sampleTestJob := jobsdb.JobT{
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  defaultWorkspaceID,
+		EventCount:   1,
+	}
+	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
+	require.NoError(t, err)
+	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{customVal},
+		JobsLimit:        1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
+	})
+	unprocessedList := unprocessedJob.Jobs
+	require.Equal(t, 1, len(unprocessedList))
+	j := unprocessedList[0]
+	jobStatus := &jobsdb.JobStatusT{
+		JobID:         j.JobID,
+		JobState:      "succeeded",
+		AttemptNum:    1,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		ErrorCode:     "202",
+		ErrorResponse: []byte(`{"success":"OK"}`),
+		Parameters:    []byte(`{}`),
+		WorkspaceId:   defaultWorkspaceID,
+	}
+	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{jobStatus}, []string{customVal}, []jobsdb.ParameterFilterT{})
+	require.NoError(t, err)
 }
 
 func filterWorkspaceJobs(jobs []*jobsdb.JobT, workspaceId string) []*jobsdb.JobT {
@@ -764,7 +815,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
-	var sampleTestJob = jobsdb.JobT{
+	sampleTestJob := jobsdb.JobT{
 		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
@@ -777,11 +828,12 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	for _, val := range err {
 		require.Equal(t, "", val)
 	}
-	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
 	t.Run("validate fetched event", func(t *testing.T) {
@@ -792,7 +844,6 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 
 // BenchmarkJobsdb takes time... keep waiting
 func BenchmarkJobsdb(b *testing.B) {
-
 	// We are intentionally not using b.N, since we want to have a testbench for stress testing jobsdb's behaviour for longer periods of time (5-15 seconds)
 	const (
 		// totalJobs is the total number of jobs we want our workers to send to the jobsdb, regardless of concurrency
@@ -839,7 +890,6 @@ func BenchmarkJobsdb(b *testing.B) {
 		})
 		jobsDb2.TearDown()
 	}
-
 }
 
 func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *jobsdb.HandleT, totalJobs, pageSize, concurrency int) {
@@ -883,11 +933,11 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *jobsdb.HandleT, totalJobs
 			g.Go(func() error {
 				start.Wait()
 				for {
-					unprocessedList := jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+					unprocessedJob := jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 						CustomValFilters: []string{customVal},
 						JobsLimit:        pageSize,
 					})
-
+					unprocessedList := unprocessedJob.Jobs
 					status := make([]*jobsdb.JobStatusT, len(unprocessedList))
 					for i, j := range unprocessedList {
 						status[i] = &jobsdb.JobStatusT{
@@ -956,6 +1006,7 @@ func chunkJobs(slice []jobsdb.JobT, chunkSize int) [][]*jobsdb.JobT {
 
 	return chunks
 }
+
 func BenchmarkLifecycle(b *testing.B) {
 	initJobsDB()
 	stats.Setup()
@@ -1003,8 +1054,8 @@ func consume(t testing.TB, db *jobsdb.HandleT, count int) {
 		JobsLimit: count,
 	})
 
-	status := make([]*jobsdb.JobStatusT, len(unprocessedList))
-	for i, j := range unprocessedList {
+	status := make([]*jobsdb.JobStatusT, len(unprocessedList.Jobs))
+	for i, j := range unprocessedList.Jobs {
 		status[i] = &jobsdb.JobStatusT{
 			JobID:         j.JobID,
 			JobState:      "succeeded",

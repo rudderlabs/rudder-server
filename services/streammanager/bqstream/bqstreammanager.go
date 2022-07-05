@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	gbq "google.golang.org/api/bigquery/v2"
@@ -67,7 +68,10 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 	var confCreds []byte
 	if config.Credentials == "" {
-		return nil, createErr(err, "Credentials not being sent")
+		return nil, createErr(err, "credentials not being sent")
+	}
+	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
+		return nil, createErr(err, "incompatible credentials")
 	}
 	confCreds = []byte(config.Credentials)
 	err = json.Unmarshal(confCreds, &credentialsFile)
@@ -87,8 +91,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	return &Client{bqClient: bqClient, opts: o}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
-
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.(*Client)
 	bqClient := client.bqClient
 	o := client.opts

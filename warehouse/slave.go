@@ -44,7 +44,6 @@ type JobRunT struct {
 }
 
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
-
 	job := jobRun.job
 	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
 	rawf, err := os.Open(jobRun.stagingFilePath)
@@ -88,7 +87,7 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 // Get fileManager
 func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage)
-	fileManager, err := filemanager.New(&filemanager.SettingsT{
+	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
@@ -177,7 +176,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 
 	// take the first staging file id in upload
 	// TODO: support multiple staging files in one upload
-	var stagingFileId = jobRun.job.StagingFileID
+	stagingFileId := jobRun.job.StagingFileID
 
 	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
 	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
@@ -216,7 +215,6 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						StagingFileID: stagingFileId,
 					}
 				}
-
 			}
 		}(ctx)
 	}
@@ -442,7 +440,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
-				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
+				newColumnVal, ok := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
 				if !ok || violatedConstraints.isViolated {
 					if violatedConstraints.isViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
@@ -735,7 +733,7 @@ func setupSlave(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]

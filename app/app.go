@@ -67,7 +67,6 @@ func (a *App) initCPUProfiling() {
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 func (a *App) initEnterpriseFeatures() {
@@ -133,7 +132,7 @@ func New(options *Options) Interface {
 	}
 }
 
-//HealthHandler is the http handler for health endpoint
+// HealthHandler is the http handler for health endpoint
 func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
@@ -149,6 +148,6 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 	}
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
-	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
-	w.Write([]byte(healthVal))
+	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
+	_, _ = w.Write([]byte(healthVal))
 }

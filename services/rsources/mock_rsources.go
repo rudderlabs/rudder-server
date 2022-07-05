@@ -13,6 +13,43 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
+// MockStatsIncrementer is a mock of StatsIncrementer interface.
+type MockStatsIncrementer struct {
+	ctrl     *gomock.Controller
+	recorder *MockStatsIncrementerMockRecorder
+}
+
+// MockStatsIncrementerMockRecorder is the mock recorder for MockStatsIncrementer.
+type MockStatsIncrementerMockRecorder struct {
+	mock *MockStatsIncrementer
+}
+
+// NewMockStatsIncrementer creates a new mock instance.
+func NewMockStatsIncrementer(ctrl *gomock.Controller) *MockStatsIncrementer {
+	mock := &MockStatsIncrementer{ctrl: ctrl}
+	mock.recorder = &MockStatsIncrementerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockStatsIncrementer) EXPECT() *MockStatsIncrementerMockRecorder {
+	return m.recorder
+}
+
+// IncrementStats mocks base method.
+func (m *MockStatsIncrementer) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, stats Stats) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementStats", ctx, tx, jobRunId, key, stats)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IncrementStats indicates an expected call of IncrementStats.
+func (mr *MockStatsIncrementerMockRecorder) IncrementStats(ctx, tx, jobRunId, key, stats interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementStats", reflect.TypeOf((*MockStatsIncrementer)(nil).IncrementStats), ctx, tx, jobRunId, key, stats)
+}
+
 // MockJobService is a mock of JobService interface.
 type MockJobService struct {
 	ctrl     *gomock.Controller
@@ -48,6 +85,20 @@ func (m *MockJobService) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRu
 func (mr *MockJobServiceMockRecorder) AddFailedRecords(ctx, tx, jobRunId, key, records interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddFailedRecords", reflect.TypeOf((*MockJobService)(nil).AddFailedRecords), ctx, tx, jobRunId, key, records)
+}
+
+// CleanupLoop mocks base method.
+func (m *MockJobService) CleanupLoop(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupLoop", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CleanupLoop indicates an expected call of CleanupLoop.
+func (mr *MockJobServiceMockRecorder) CleanupLoop(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupLoop", reflect.TypeOf((*MockJobService)(nil).CleanupLoop), ctx)
 }
 
 // Delete mocks base method.

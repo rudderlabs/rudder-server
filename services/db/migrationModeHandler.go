@@ -18,7 +18,6 @@ func IsValidMigrationMode(migrationMode string) bool {
 func (handler *MigrationModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.MigrationModeStartTimes = append(handler.recoveryData.MigrationModeStartTimes, currTime)
 	handler.recoveryData.ReadableMigrationModeStartTimes = append(handler.recoveryData.ReadableMigrationModeStartTimes, fmt.Sprint(time.Unix(currTime, 0)))
-
 }
 
 func (handler *MigrationModeHandler) HasThresholdReached() bool {

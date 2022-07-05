@@ -26,6 +26,7 @@ type WarehouseClient interface {
 	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 	Validate(ctx context.Context, in *WHValidationRequest, opts ...grpc.CallOption) (*WHValidationResponse, error)
+	RetryWHUploads(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error)
 }
 
 type warehouseClient struct {
@@ -90,6 +91,15 @@ func (c *warehouseClient) Validate(ctx context.Context, in *WHValidationRequest,
 	return out, nil
 }
 
+func (c *warehouseClient) RetryWHUploads(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error) {
+	out := new(RetryWHUploadsResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/RetryWHUploads", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WarehouseServer is the server API for Warehouse service.
 // All implementations must embed UnimplementedWarehouseServer
 // for forward compatibility
@@ -100,6 +110,7 @@ type WarehouseServer interface {
 	TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error)
 	TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error)
 	Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error)
+	RetryWHUploads(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -124,6 +135,9 @@ func (UnimplementedWarehouseServer) TriggerWHUploads(context.Context, *WHUploads
 }
 func (UnimplementedWarehouseServer) Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Validate not implemented")
+}
+func (UnimplementedWarehouseServer) RetryWHUploads(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RetryWHUploads not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -246,6 +260,24 @@ func _Warehouse_Validate_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_RetryWHUploads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryWHUploadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).RetryWHUploads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Warehouse/RetryWHUploads",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).RetryWHUploads(ctx, req.(*RetryWHUploadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -276,6 +308,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Validate",
 			Handler:    _Warehouse_Validate_Handler,
+		},
+		{
+			MethodName: "RetryWHUploads",
+			Handler:    _Warehouse_RetryWHUploads_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

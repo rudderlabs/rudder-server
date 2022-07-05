@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
 
 	"cloud.google.com/go/storage"
@@ -46,13 +47,18 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 
 	obj := client.Bucket(manager.Config.Bucket).Object(fileName)
 	w := obj.NewWriter(ctx)
-	defer func() error {
-		return w.Close()
-	}()
 	if _, err := io.Copy(w, file); err != nil {
+		err = fmt.Errorf("copying file to GCS: %v", err)
+		if closeErr := w.Close(); closeErr != nil {
+			return UploadOutput{}, fmt.Errorf("closing writer: %q, while: %w", closeErr, err)
+		}
+
 		return UploadOutput{}, err
 	}
-	w.Close()
+	err = w.Close()
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("closing writer: %w", err)
+	}
 
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {
@@ -98,20 +104,22 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
+	if manager.client != nil {
+		return manager.client, err
+	}
+	options := []option.ClientOption{}
 
-	if manager.client == nil {
-		if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
-			manager.client, err = storage.NewClient(ctx, option.WithEndpoint(*manager.Config.EndPoint))
-		} else if manager.Config.Credentials == "" {
-			manager.client, err = storage.NewClient(ctx)
-		} else {
-			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
+		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
+	}
+	if manager.Config.Credentials != "" {
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
+			return manager.client, err
 		}
+		options = append(options, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
 	}
 
-	if manager.client == nil {
-		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
-	}
+	manager.client, err = storage.NewClient(ctx, options...)
 	return manager.client, err
 }
 
@@ -144,7 +152,7 @@ func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, e
 	return object, nil
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
 	splitStr := strings.Split(location, manager.Config.Bucket)
 	key := strings.TrimLeft(splitStr[len(splitStr)-1], "/")

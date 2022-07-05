@@ -15,7 +15,7 @@ func getFirstStagedEventAt(stagingFileID int64) (time.Time, error) {
 	return firstEventAt, err
 }
 
-func getTotalEventsStaged(startFileID int64, endFileID int64) (total int64, err error) {
+func getTotalEventsStaged(startFileID, endFileID int64) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`select sum(total_events) from %[1]s where id >= %[2]v and id <= %[3]v`, warehouseutils.WarehouseStagingFilesTable, startFileID, endFileID)
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&total)

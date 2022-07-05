@@ -24,7 +24,7 @@ func NewStaticProvider(Mode servermode.Mode) *StaticProvider {
 // ServerMode returns a channel with a single message containing this static provider's mode.
 func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.ChangeEvent {
 	ch := make(chan servermode.ChangeEvent, 1)
-	ch <- servermode.NewChangeEvent(servermode.Mode(s.mode), func(ctx context.Context) error {
+	ch <- servermode.NewChangeEvent(s.mode, func(ctx context.Context) error {
 		return nil
 	})
 

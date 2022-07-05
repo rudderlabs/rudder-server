@@ -90,6 +90,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 
 	serverModeChan := d.Provider.ServerMode(ctx)
 	workspaceIDsChan := d.Provider.WorkspaceIDs(ctx)
+	if d.GatewayComponent {
+		d.currentMode = servermode.NormalMode
+	}
 
 	for {
 		select {
@@ -135,6 +138,9 @@ func (d *Dynamic) Run(ctx context.Context) error {
 }
 
 func (d *Dynamic) start() {
+	if d.GatewayComponent {
+		return
+	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
 	d.ErrorDB.Start()
@@ -151,6 +157,10 @@ func (d *Dynamic) start() {
 }
 
 func (d *Dynamic) stop() {
+	if d.GatewayComponent {
+		d.logger.Info("Stopping the gateway")
+		return
+	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
 	d.serverStopTimeStat.Start()
@@ -177,16 +187,16 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
-	if !newMode.Valid() {
-		return fmt.Errorf("unsupported mode: %s", newMode)
-	}
 	if d.GatewayComponent {
 		d.logger.Info("Not transiting the server because this is only Gateway App")
 		return nil
 	}
+	if !newMode.Valid() {
+		return fmt.Errorf("unsupported mode: %s", newMode)
+	}
 
 	if d.currentMode == newMode {
-		// TODO add logging
+		d.logger.Info("New mode is same as old mode: %s, not switching the mode.", string(newMode))
 		return nil
 	}
 	switch d.currentMode {
@@ -212,4 +222,8 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 
 	d.currentMode = newMode
 	return nil
+}
+
+func (d *Dynamic) Mode() servermode.Mode {
+	return d.currentMode
 }

@@ -55,9 +55,7 @@ type HandleT struct {
 	errorDB         jobsdb.JobsDB
 	errProcessQ     chan []*jobsdb.JobT
 	errFileUploader filemanager.FileManager
-	stats           stats.Stats
 	statErrDBR      stats.RudderStats
-	statErrDBW      stats.RudderStats
 	logger          logger.LoggerI
 	transientSource transientsource.Service
 }
@@ -69,9 +67,7 @@ func New() *HandleT {
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
-	st.stats = stats.DefaultStats
-	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
-	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
 	st.crashRecover()
 }
@@ -98,8 +94,19 @@ func (st *HandleT) Start(ctx context.Context) {
 	_ = g.Wait()
 }
 
+func (st *HandleT) getFileUploader() filemanager.FileManager {
+	if st.errFileUploader == nil && backupEnabled() {
+		st.setupFileUploader()
+	}
+	return st.errFileUploader
+}
+
+func backupEnabled() bool {
+	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
+}
+
 func (st *HandleT) setupFileUploader() {
-	if errorStashEnabled && jobsdb.IsMasterBackupEnabled() {
+	if backupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
@@ -235,32 +242,40 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
-			if !(errorStashEnabled && jobsdb.IsMasterBackupEnabled()) {
-				continue
+			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
+			queryParams := jobsdb.GetQueryParamsT{
+				CustomValFilters:              []string{""},
+				IgnoreCustomValFiltersInQuery: true,
+				JobsLimit:                     errDBReadBatchSize,
+				PayloadSizeLimit:              payloadLimit,
 			}
-			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
-			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
-			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, IgnoreCustomValFiltersInQuery: true, JobsLimit: toQuery, PayloadSizeLimit: payloadLimit})
+			toRetry := st.errorDB.GetToRetry(queryParams)
+			combinedList := toRetry.Jobs
+			if !toRetry.LimitsReached {
+				queryParams.JobsLimit -= len(toRetry.Jobs)
+				if queryParams.PayloadSizeLimit > 0 {
+					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+				}
+				unprocessed := st.errorDB.GetUnprocessed(queryParams)
+				combinedList = append(combinedList, unprocessed.Jobs...)
+			}
 
 			st.statErrDBR.End()
-
-			combinedList := append(retryList, unprocessedList...)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
 				continue
 			}
 
-			hasFileUploader := st.errFileUploader != nil
+			canUpload := backupEnabled() && st.getFileUploader() != nil
 
 			jobState := jobsdb.Executing.State
 
 			var filteredJobList []*jobsdb.JobT
 
 			// abort jobs if file uploader not configured to store them to object storage
-			if !hasFileUploader {
+			// or backup is not enabled
+			if !canUpload {
 				jobState = jobsdb.Aborted.State
 				filteredJobList = combinedList
 			}
@@ -280,7 +295,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					WorkspaceId:   job.WorkspaceId,
 				}
 
-				if hasFileUploader {
+				if canUpload {
 					if st.transientSource.ApplyJob(job) {
 						// if it is a transient source, we don't process the job and mark it as aborted
 						status.JobState = jobsdb.Aborted.State
@@ -297,7 +312,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				panic(err)
 			}
 
-			if hasFileUploader && len(filteredJobList) > 0 {
+			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList
 			}
 		}

@@ -44,7 +44,7 @@ func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string
 	return workspaceConfig.workspaceID
 }
 
-//GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
 func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
@@ -54,7 +54,7 @@ func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceI
 	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
 }
 
-//Get returns sources from the workspace
+// Get returns sources from the workspace
 func (workspaceConfig *SingleWorkspaceConfig) Get(workspace string) (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
@@ -83,7 +83,6 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(workspace string) (Conf
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false
@@ -127,7 +126,7 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, bool) {
 	return configJSON, true
 }
 
-func (*SingleWorkspaceConfig) makeHTTPRequest(url string, workspaceToken string) ([]byte, int, error) {
+func (*SingleWorkspaceConfig) makeHTTPRequest(url, workspaceToken string) ([]byte, int, error) {
 	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
