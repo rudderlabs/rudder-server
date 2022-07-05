@@ -109,13 +109,13 @@ type producer interface {
 	Publish(context.Context, ...client.Message) error
 
 	getTimeout() time.Duration
-	getCodecs() map[string]goavro.Codec
+	getCodecs() map[string]*goavro.Codec
 }
 
 type producerImpl struct {
 	p       *client.Producer
 	timeout time.Duration
-	codecs  map[string]goavro.Codec
+	codecs  map[string]*goavro.Codec
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
@@ -136,7 +136,7 @@ func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) erro
 	return p.p.Publish(ctx, msgs...)
 }
 
-func (p *producerImpl) getCodecs() map[string]goavro.Codec {
+func (p *producerImpl) getCodecs() map[string]*goavro.Codec {
 	return p.codecs
 }
 
@@ -250,9 +250,9 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 
 	convertToAvro := destConfig.ConvertToAvro
 	avroSchemas := destConfig.AvroSchemas
-	var codecs map[string]goavro.Codec
+	var codecs map[string]*goavro.Codec
 	if convertToAvro {
-		codecs = make(map[string]goavro.Codec, len(avroSchemas))
+		codecs = make(map[string]*goavro.Codec, len(avroSchemas))
 		for i, avroSchema := range avroSchemas {
 			if avroSchema.SchemaId == "" {
 				return nil, fmt.Errorf("length of a schemaId is 0, of index: %d", i)
@@ -261,7 +261,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 			if err != nil {
 				return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
 			}
-			codecs[avroSchema.SchemaId] = *newCodec
+			codecs[avroSchema.SchemaId] = newCodec
 		}
 	}
 
@@ -480,7 +480,7 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 			if !ok {
 				return nil, fmt.Errorf("unable to find schema with schemaId: %v", schemaId)
 			}
-			marshalledMsg, err = serializeAvroMessage(marshalledMsg, codec)
+			marshalledMsg, err = serializeAvroMessage(marshalledMsg, *codec)
 			if err != nil {
 				return nil, fmt.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
 			}
@@ -588,7 +588,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 		if !ok {
 			return makeErrorResponse(fmt.Errorf("unable to find schema with schemaId: %v", schemaId))
 		}
-		value, err = serializeAvroMessage(value, codec)
+		value, err = serializeAvroMessage(value, *codec)
 		if err != nil {
 			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 		}

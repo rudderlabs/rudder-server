@@ -621,8 +621,8 @@ func TestSendBatchedMessage(t *testing.T) {
 			]
 		  }`)
 		p := &pMockErr{
-			codecs: map[string]goavro.Codec{
-				"schemaId001": *codec,
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
 			},
 		}
 		sc, res, err := sendBatchedMessage(
@@ -649,8 +649,8 @@ func TestSendBatchedMessage(t *testing.T) {
 			]
 		  }`)
 		p := &pMockErr{
-			codecs: map[string]goavro.Codec{
-				"schemaId001": *codec,
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
 			},
 		}
 		sc, res, err := sendBatchedMessage(
@@ -677,8 +677,8 @@ func TestSendBatchedMessage(t *testing.T) {
 			]
 		  }`)
 		p := &pMockErr{
-			codecs: map[string]goavro.Codec{
-				"schemaId001": *codec,
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
 			},
 		}
 		sc, res, err := sendBatchedMessage(
@@ -756,8 +756,8 @@ func TestSendMessage(t *testing.T) {
 			]
 		  }`)
 		p := &pMockErr{
-			codecs: map[string]goavro.Codec{
-				"schemaId001": *codec,
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
 			},
 		}
 		sc, res, err := sendMessage(
@@ -782,8 +782,8 @@ func TestSendMessage(t *testing.T) {
 			]
 		  }`)
 		p := &pMockErr{
-			codecs: map[string]goavro.Codec{
-				"schemaId001": *codec,
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
 			},
 		}
 		sc, res, err := sendMessage(
@@ -809,7 +809,7 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats
 type pMockErr struct {
 	error  error
 	calls  [][]client.Message
-	codecs map[string]goavro.Codec
+	codecs map[string]*goavro.Codec
 }
 
 func (*pMockErr) getTimeout() time.Duration       { return 0 }
@@ -819,7 +819,7 @@ func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	return p.error
 }
 
-func (p *pMockErr) getCodecs() map[string]goavro.Codec {
+func (p *pMockErr) getCodecs() map[string]*goavro.Codec {
 	return p.codecs
 }
 
