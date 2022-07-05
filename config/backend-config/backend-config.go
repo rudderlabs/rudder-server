@@ -307,8 +307,11 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-bc.pollingErrors:
-			pkgLogger.Errorf("BackendConfig WaitForConfig error: %v", err)
+		case err, open := <-bc.pollingErrors:
+			if !open {
+				return fmt.Errorf("backend config polling stopped")
+			}
+			pkgLogger.Errorf("backend config WaitForConfig error: %v", err)
 			if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
 				return err
 			}
