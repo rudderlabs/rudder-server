@@ -18,7 +18,7 @@ func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.getStatus).Methods("GET")
 	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.delete).Methods("DELETE")
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.getFailedRecords).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.failedRecords).Methods("GET")
 	return srvMux
 }
 
@@ -80,7 +80,7 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *handler) getFailedRecords(w http.ResponseWriter, r *http.Request) {
+func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
 	var taskRunId, sourceId []string

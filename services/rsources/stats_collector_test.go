@@ -446,7 +446,7 @@ type jobParamsNoRecordId struct {
 	DestinationID string `json:"destination_id"`
 }
 
-func generateJobs(num int, params jobParams) []*jobsdb.JobT {
+func generateJobs(num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P0003
 	var jobs []*jobsdb.JobT
 	for i := 0; i < num; i++ {
 		jobs = append(jobs, newJob(int64(i), params))
@@ -454,7 +454,7 @@ func generateJobs(num int, params jobParams) []*jobsdb.JobT {
 	return jobs
 }
 
-func newJob(id int64, params jobParams) *jobsdb.JobT {
+func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
 	p, err := json.Marshal(params)
 	Expect(err).To(BeNil())
 	return &jobsdb.JobT{
