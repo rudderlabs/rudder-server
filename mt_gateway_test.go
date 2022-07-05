@@ -253,8 +253,8 @@ func TestMultiTenantGateway(t *testing.T) {
 				t.Logf("Error while checking test-ack/1: %s", err)
 				return false
 			}
-			t.Logf("TODO: %+v", v)
-			return v.Status == "ERROR" // && v.Error == ""
+			t.Logf("test-ack/2 error: %s", v.Error)
+			return v.Status == "ERROR" && v.Error != ""
 		}, 10*time.Second, 500*time.Millisecond)
 	}
 

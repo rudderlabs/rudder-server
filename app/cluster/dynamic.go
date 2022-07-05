@@ -32,7 +32,7 @@ type lifecycle interface {
 
 type configLifecycle interface {
 	Stop()
-	StartWithIDs(workspaces string)
+	StartWithIDs(ctx context.Context, workspaces string)
 	WaitForConfig(ctx context.Context) error
 }
 
@@ -185,7 +185,7 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 		return nil
 	}
 	d.BackendConfig.Stop()
-	d.BackendConfig.StartWithIDs(workspaces)
+	d.BackendConfig.StartWithIDs(ctx, workspaces)
 	d.currentWorkspaceIDs = workspaces
 	return d.BackendConfig.WaitForConfig(ctx)
 }

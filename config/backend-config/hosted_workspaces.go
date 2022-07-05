@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,7 +55,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForWriteKey(wr
 	return ""
 }
 
-// GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+// GetWorkspaceIDForSourceID returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForSourceID(sourceID string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -78,7 +79,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 // Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool) {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(ctx context.Context, _ string) (ConfigT, *Error) {
 	var url string
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
 		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
@@ -91,7 +92,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -101,13 +102,13 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, false
+		return ConfigT{}, newError(true, err)
 	}
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, false
+		return ConfigT{}, newError(true, err)
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
@@ -130,11 +131,13 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	multiWorkspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Unlock()
 
-	return sourcesJSON, true
+	return sourcesJSON, nil
 }
 
-func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) ([]byte, int, error) {
-	req, err := Http.NewRequest("GET", url, nil)
+func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(
+	ctx context.Context, url string,
+) ([]byte, int, error) {
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
@@ -148,7 +151,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) 
 		return []byte{}, 400, err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

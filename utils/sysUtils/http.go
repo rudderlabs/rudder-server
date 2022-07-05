@@ -18,12 +18,14 @@ Http.NewRequest(...)
 package sysUtils
 
 import (
+	"context"
 	"io"
 	"net/http"
 )
 
 type HttpI interface {
 	NewRequest(method, url string, body io.Reader) (*http.Request, error)
+	NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*http.Request, error)
 }
 
 type Http struct{}
@@ -36,4 +38,8 @@ func NewHttp() *Http {
 // NewRequest wraps NewRequestWithContext using the background context.
 func (gz *Http) NewRequest(method, url string, body io.Reader) (*http.Request, error) {
 	return http.NewRequest(method, url, body)
+}
+
+func (gz *Http) NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	return http.NewRequestWithContext(ctx, method, url, body)
 }

@@ -155,3 +155,13 @@ type TrackingPlanT struct {
 	Id      string `json:"id"`
 	Version int    `json:"version"`
 }
+
+func newError(retryable bool, err error) *Error { return &Error{err, retryable} }
+
+type Error struct {
+	err       error
+	retryable bool
+}
+
+func (e *Error) Error() string     { return e.err.Error() }
+func (e *Error) IsRetryable() bool { return e.retryable }
