@@ -5,6 +5,7 @@
 package destination
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -35,16 +36,16 @@ func (m *MockdestinationMiddleware) EXPECT() *MockdestinationMiddlewareMockRecor
 }
 
 // Get mocks base method.
-func (m *MockdestinationMiddleware) Get(workspace string) (backendconfig.ConfigT, bool) {
+func (m *MockdestinationMiddleware) Get(ctx context.Context, workspace string) (backendconfig.ConfigT, *backendconfig.Error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", workspace)
+	ret := m.ctrl.Call(m, "Get", ctx, workspace)
 	ret0, _ := ret[0].(backendconfig.ConfigT)
-	ret1, _ := ret[1].(bool)
+	ret1, _ := ret[1].(*backendconfig.Error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockdestinationMiddlewareMockRecorder) Get(workspace interface{}) *gomock.Call {
+func (mr *MockdestinationMiddlewareMockRecorder) Get(ctx, workspace interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockdestinationMiddleware)(nil).Get), workspace)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockdestinationMiddleware)(nil).Get), ctx, workspace)
 }

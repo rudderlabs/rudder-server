@@ -9,10 +9,11 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -84,7 +85,7 @@ var SampleBackendConfig2 = ConfigT{
 var (
 	originalHttp       = Http
 	originalLogger     = pkgLogger
-	mockLogger         *mock_logger.MockLoggerI
+	mockLogger         *mocklogger.MockLoggerI
 	originalMockPubSub = pubsub.PublishSubscriber{}
 	ctrl               *gomock.Controller
 )
@@ -98,7 +99,7 @@ func initBackendConfig() {
 
 var _ = Describe("newForDeployment", func() {
 	It("supports single workspace config", func() {
-		os.Setenv("WORKSPACE_TOKEN", "password")
+		Expect(os.Setenv("WORKSPACE_TOKEN", "password")).To(BeNil())
 		config, err := newForDeployment(deployment.DedicatedType, nil)
 
 		Expect(err).To(BeNil())
@@ -107,7 +108,7 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		os.Setenv("HOSTED_SERVICE_SECRET", "password")
+		Expect(os.Setenv("HOSTED_SERVICE_SECRET", "password")).To(BeNil())
 		config, err := newForDeployment(deployment.HostedType, nil)
 
 		Expect(err).To(BeNil())
@@ -116,7 +117,7 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		os.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
+		Expect(os.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")).To(BeNil())
 		config, err := newForDeployment(deployment.MultiTenantType, nil)
 
 		Expect(err).To(BeNil())
@@ -138,7 +139,7 @@ var _ = Describe("BackendConfig", func() {
 	BeforeEach(func() {
 		backendConfig = &SingleWorkspaceConfig{CommonBackendConfig: CommonBackendConfig{eb: &originalMockPubSub}}
 		ctrl = gomock.NewController(GinkgoT())
-		mockLogger = mock_logger.NewMockLoggerI(ctrl)
+		mockLogger = mocklogger.NewMockLoggerI(ctrl)
 		pkgLogger = mockLogger
 	})
 	AfterEach(func() {
@@ -149,16 +150,20 @@ var _ = Describe("BackendConfig", func() {
 
 	Context("configUpdate method", func() {
 		var (
+			ctx                    = context.Background()
 			statConfigBackendError stats.RudderStats
-			mockIoUtil             *mock_sysUtils.MockIoUtilI
+			mockIoUtil             *mocksysutils.MockIoUtilI
 			originalIoUtil         = IoUtil
 			originalConfigFromFile = configFromFile
+			bc                     = &CommonBackendConfig{
+				eb: &originalMockPubSub,
+			}
 		)
 		BeforeEach(func() {
 			pollInterval = 500
 			stats.Setup()
 			statConfigBackendError = stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
-			mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
+			mockIoUtil = mocksysutils.NewMockIoUtilI(ctrl)
 			IoUtil = mockIoUtil
 			configFromFile = true
 			mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
@@ -171,22 +176,21 @@ var _ = Describe("BackendConfig", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			configUpdate(&originalMockPubSub, statConfigBackendError, "test_token")
+			bc.configUpdate(ctx, statConfigBackendError, "test_token")
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			configUpdate(&originalMockPubSub, statConfigBackendError, "test_token")
+			bc.configUpdate(ctx, statConfigBackendError, "test_token")
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
-			initialized = false
 			pubSub := pubsub.PublishSubscriber{}
+			bc := &CommonBackendConfig{eb: &pubSub}
 			curSourceJSON = SampleBackendConfig2
-			Expect(initialized).To(BeFalse())
 			mockLogger.EXPECT().Info(gomock.Any()).Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
@@ -197,8 +201,8 @@ var _ = Describe("BackendConfig", func() {
 			chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 			chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
-			configUpdate(&pubSub, statConfigBackendError, "test_token")
-			Expect(initialized).To(BeTrue())
+			bc.configUpdate(ctx, statConfigBackendError, "test_token")
+			Expect(bc.initialized).To(BeTrue())
 
 			Expect((<-chProcess).Data).To(Equal(SampleFilteredSources))
 			Expect((<-chBackend).Data).To(Equal(SampleBackendConfig))
@@ -210,7 +214,7 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 			result := filterProcessorEnabledDestinations(SampleBackendConfig)
-			Expect(result).To(Equal((SampleFilteredSources)))
+			Expect(result).To(Equal(SampleFilteredSources))
 		})
 	})
 
@@ -242,19 +246,21 @@ var _ = Describe("BackendConfig", func() {
 	})
 
 	Context("WaitForConfig method", func() {
+		bc := &CommonBackendConfig{}
+
 		It("Should not wait if initialized is true", func() {
-			initialized = true
+			bc.initialized = true
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
 			_ = backendConfig.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
-			initialized = false
+			bc.initialized = false
 			pollInterval = 2000
 			count := 0
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Do(func(v string) {
 				count++
 				if count == 5 {
-					initialized = true
+					bc.initialized = true
 				}
 			}).Times(5)
 			_ = backendConfig.WaitForConfig(context.TODO())

@@ -61,7 +61,7 @@ type configMock struct {
 	waitForConfigCalled bool
 }
 
-func (s *configMock) StartWithIDs(workspaces string) {
+func (s *configMock) StartWithIDs(_ context.Context, workspaces string) {
 	s.workspaces = workspaces
 }
 
