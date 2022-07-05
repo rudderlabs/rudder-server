@@ -320,7 +320,7 @@ func Test_Workspaces(t *testing.T) {
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("error if update with invalid JSON ")
