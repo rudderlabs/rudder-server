@@ -40,7 +40,7 @@ func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("workspaceId not found in config")
 }
 
-// make api call to get json and then parse it to get destination related details
+// GetDestDetails makes api call to get json and then parse it to get destination related details
 // like: dest_type, auth details,
 // return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
