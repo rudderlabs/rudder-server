@@ -12,9 +12,16 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
+// StatsPublisher publishes stats
+type StatsPublisher interface {
+	// Publish publishes statistics
+	Publish(ctx context.Context, tx *sql.Tx) error
+}
+
 // StatsCollector collects and publishes stats as jobs are
 // being created, processed and their statuses are being updated.
 type StatsCollector interface {
+	StatsPublisher
 	// JobsStored captures incoming job statistics
 	JobsStored(jobs []*jobsdb.JobT)
 
@@ -30,13 +37,27 @@ type StatsCollector interface {
 	// so that all necessary indices can be created, since a JobStatus
 	// doesn't carry all necessary job metadata such as jobRunId, taskRunId, etc.
 	JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT)
+}
 
-	// Publish publishes statistics
-	Publish(ctx context.Context, tx *sql.Tx) error
+// FailedJobsStatsCollector collects stats for failed jobs
+type FailedJobsStatsCollector interface {
+	StatsPublisher
+	JobsFailed(jobs []*jobsdb.JobT)
 }
 
 // NewStatsCollector creates a new stats collector
 func NewStatsCollector(jobservice JobService) StatsCollector {
+	return &statsCollector{
+		jobService:            jobservice,
+		jobIdsToStatKeyIndex:  map[int64]statKey{},
+		jobIdsToRecordIdIndex: map[int64]json.RawMessage{},
+		statsIndex:            map[statKey]*Stats{},
+		failedRecordsIndex:    map[statKey][]json.RawMessage{},
+	}
+}
+
+// NewFailedJobsCollector creates a new stats collector for publishing failed job stats and records
+func NewFailedJobsCollector(jobservice JobService) FailedJobsStatsCollector {
 	return &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
@@ -64,6 +85,19 @@ type statsCollector struct {
 
 func (r *statsCollector) JobsStored(jobs []*jobsdb.JobT) {
 	r.buildStats(jobs, nil, true)
+}
+
+func (r *statsCollector) JobsFailed(jobs []*jobsdb.JobT) {
+	r.processing = true
+	r.buildStats(jobs, nil, true)
+	jobStatuses := make([]*jobsdb.JobStatusT, 0, len(jobs))
+	for i := range jobs {
+		jobStatuses = append(jobStatuses, &jobsdb.JobStatusT{
+			JobID:    jobs[i].JobID,
+			JobState: jobsdb.Aborted.State,
+		})
+	}
+	r.JobStatusesUpdated(jobStatuses)
 }
 
 func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string) {
@@ -177,7 +211,8 @@ func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUI
 			}
 			if incrementIn {
 				stats.In++
-			} else if recordId != "" && recordId != "null" && recordId != `""` {
+			}
+			if recordId != "" && recordId != "null" && recordId != `""` {
 				recordIdJson := json.RawMessage(recordId)
 				if json.Valid(recordIdJson) {
 					r.jobIdsToRecordIdIndex[job.JobID] = recordIdJson

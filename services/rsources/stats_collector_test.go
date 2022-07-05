@@ -17,18 +17,20 @@ import (
 
 var _ = Describe("Using StatsCollector", Serial, func() {
 	var (
-		jobs           []*jobsdb.JobT
-		jobErrors      map[uuid.UUID]string
-		jobStatuses    []*jobsdb.JobStatusT
-		mockCtrl       *gomock.Controller
-		js             *MockJobService
-		statsCollector StatsCollector
+		jobs                   []*jobsdb.JobT
+		jobErrors              map[uuid.UUID]string
+		jobStatuses            []*jobsdb.JobStatusT
+		mockCtrl               *gomock.Controller
+		js                     *MockJobService
+		statsCollector         StatsCollector
+		failedRecordsCollector FailedJobsStatsCollector
 	)
 
 	BeforeEach(func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		js = NewMockJobService(mockCtrl)
 		statsCollector = NewStatsCollector(js)
+		failedRecordsCollector = NewFailedJobsCollector(js)
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
@@ -334,6 +336,50 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				}()
 				statsCollector.JobStatusesUpdated(jobStatuses)
 				Expect(err).ToNot(BeNil())
+			})
+		})
+
+		Context("it calls failedRecordsCollector.JobsFailed", func() {
+			BeforeEach(func() {
+				failedRecordsCollector.JobsFailed(jobs)
+			})
+
+			It("publishes both in and out stats and adds failed records", func() {
+				js.EXPECT().
+					IncrementStats(
+						gomock.Any(),
+						gomock.Any(),
+						params.JobRunID,
+						JobTargetKey{
+							TaskRunID:     params.TaskRunID,
+							SourceID:      params.SourceID,
+							DestinationID: params.DestinationID,
+						},
+						Stats{
+							In:     uint(len(jobs)),
+							Failed: uint(len(jobs)),
+						}).
+					Times(1)
+
+				failedRecords := []json.RawMessage{}
+				for i := 0; i < len(jobs); i++ {
+					failedRecords = append(failedRecords, []byte(`"recordId"`))
+				}
+				js.EXPECT().
+					AddFailedRecords(
+						gomock.Any(),
+						gomock.Any(),
+						params.JobRunID,
+						JobTargetKey{
+							TaskRunID:     params.TaskRunID,
+							SourceID:      params.SourceID,
+							DestinationID: params.DestinationID,
+						},
+						failedRecords).
+					Times(1)
+
+				err := failedRecordsCollector.Publish(context.TODO(), nil)
+				Expect(err).To(BeNil())
 			})
 		})
 	})
