@@ -155,6 +155,8 @@ type managerStats struct {
 	produceTime                stats.RudderStats
 	prepareBatchTime           stats.RudderStats
 	closeProducerTime          stats.RudderStats
+	jsonSerializationMsgErr    stats.RudderStats
+	avroSerializationErr       stats.RudderStats
 }
 
 const (
@@ -221,6 +223,8 @@ func Init() {
 		produceTime:                stats.DefaultStats.NewStat("router.kafka.produce_time", stats.TimerType),
 		prepareBatchTime:           stats.DefaultStats.NewStat("router.kafka.prepare_batch_time", stats.TimerType),
 		closeProducerTime:          stats.DefaultStats.NewStat("router.kafka.close_producer_time", stats.TimerType),
+		jsonSerializationMsgErr:    stats.DefaultStats.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
+		avroSerializationErr:       stats.DefaultStats.NewStat("router.kafka.avro_serialization_err", stats.CountType),
 	}
 }
 
@@ -468,24 +472,35 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 		}
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
-			return nil, err
+			kafkaStats.jsonSerializationMsgErr.Increment()
+			pkgLogger.Errorf("unable to marshal message of index:%d", i)
+			continue
 		}
 		codecs := p.getCodecs()
 		if len(codecs) > 0 {
 			schemaId, _ := data["schemaId"].(string)
 			if schemaId == "" {
-				return nil, fmt.Errorf("schemaId is not available for the event with index:%d", i)
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("schemaId is not available for the event with index:%d", i)
+				continue
 			}
 			codec, ok := codecs[schemaId]
 			if !ok {
-				return nil, fmt.Errorf("unable to find schema with schemaId: %v", schemaId)
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("unable to find schema with schemaId: %v", schemaId)
+				continue
 			}
 			marshalledMsg, err = serializeAvroMessage(marshalledMsg, *codec)
 			if err != nil {
-				return nil, fmt.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
+				continue
 			}
 		}
 		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("unable to process any of the event in the batch")
 	}
 	return messages, nil
 }
