@@ -36,5 +36,5 @@ func String(n int) string {
 		remain--
 	}
 
-	return *(*string)(unsafe.Pointer(&b))
+	return *(*string)(unsafe.Pointer(&b)) // skipcq: GSC-G103
 }
