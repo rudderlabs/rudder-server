@@ -3138,7 +3138,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					'attempt',failed_jobs.attempt,
 					'exec_time',failed_jobs.exec_time,
 					'retry_time',failed_jobs.retry_time,
-					'error_co	de',failed_jobs.error_code,
+					'error_code',failed_jobs.error_code,
 					'error_response',failed_jobs.error_response,
 					'parameters',failed_jobs.status_parameters
 				)
