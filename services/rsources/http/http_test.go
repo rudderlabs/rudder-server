@@ -300,8 +300,10 @@ func TestGetFailedRecords(t *testing.T) {
 
 var failedRecordsRespBody string = `failed to get failed records
 `
+
 var statusNotFoundError string = `Status not found
 `
+
 var getStatusFailedError string = `GetStatusFailed
 `
 
