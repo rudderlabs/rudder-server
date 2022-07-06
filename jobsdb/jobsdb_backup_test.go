@@ -159,7 +159,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
 	}
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -199,7 +199,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	dbRetention := time.Second
 	migrationMode := ""
 
-	triggerAddNewDS := make(chan time.Time, 0)
+	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
