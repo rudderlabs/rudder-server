@@ -184,7 +184,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (int, string) {
-	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
+	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": destName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, destName, jobId)
 	rawJSON, err := jsonfast.Marshal(responseData)
 	if err != nil {
@@ -204,8 +204,8 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		rdl_time := time.Now()
 		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName, jobId)
 		reqSuccessStr := strconv.FormatBool(requestError == nil)
-		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
-		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
+		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": destName}).SendTiming(time.Since(rdl_time))
+		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": destName}).Increment()
 		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} RespData - %[3]v, RespCode - %[4]v `, destName, jobId, string(respData), respCode)
 		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request operation ended - %[1]v`, destName, jobId)
 		// end
@@ -215,7 +215,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request for proxy to URL:: %[3]v, Error:: %+[4]v retrying after:: %[5]v,", destName, jobId, url, err, t)
-		stats.NewTaggedStat("transformer_proxy.retries", stats.CountType, stats.Tags{"destination": destName}).Increment()
+		stats.NewTaggedStat("transformer_proxy.retries", stats.CountType, stats.Tags{"destType": destName}).Increment()
 	})
 
 	if err != nil {
@@ -291,7 +291,7 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
 	stats.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
-		"destination": destName,
+		"destType": destName,
 	}).SendTiming(reqRoundTripTime)
 
 	if err != nil {
