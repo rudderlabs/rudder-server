@@ -534,8 +534,7 @@ func TestBackupTable(t *testing.T) {
 	stats.Setup()
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	fmt.Println("DB_DSN:", DB_DSN)
-
+	t.Log("DB_DSN:", DB_DSN)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
@@ -547,7 +546,7 @@ func TestBackupTable(t *testing.T) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	fmt.Println("postgres setup successful")
+	t.Log("postgres setup successful")
 
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
@@ -560,7 +559,7 @@ func TestBackupTable(t *testing.T) {
 		},
 	})
 	if err != nil {
-		panic(fmt.Errorf("Could not start resource: %s", err))
+		t.Fatal(fmt.Errorf("Could not start resource: %s", err))
 	}
 	defer func() {
 		if err := pool.Purge(minioResource); err != nil {
@@ -585,26 +584,26 @@ func TestBackupTable(t *testing.T) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	fmt.Println("minio is up & running properly")
+	t.Log("minio is up & running properly")
 
 	useSSL := false
 	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	fmt.Println("minioClient created successfully")
+	t.Log("minioClient created successfully")
 
 	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(bucket, "us-east-1")
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	fmt.Println("bucket created successfully")
+	t.Log("bucket created successfully")
 
 	goldenFileJobsFileName := "goldenDirectory/backupJobs.json.gz"
 	goldenFileStatusFileName := "goldenDirectory/backupStatus.json.gz"
 
-	fmt.Println("reading jobs")
+	t.Log("reading jobs")
 	jobs, err := readGzipJobFile(goldenFileJobsFileName)
 	require.NoError(t, err, "expected no error while reading golden jobs file")
 
@@ -612,11 +611,11 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while reading golden status file")
 
 	maxDSSize = 10
-	batchRTJobsDB, err := insertBatchRTData(jobs, statusList)
+	batchRTJobsDB, err := insertBatchRTData(t, jobs, statusList)
 	require.NoError(t, err, "expected no error while inserting batch data")
 	defer batchRTJobsDB.TearDown()
 
-	jobDB_rt, err := insertRTData(jobs, statusList)
+	jobDB_rt, err := insertRTData(t, jobs, statusList)
 	require.NoError(t, err, "expected no error while inserting rt data")
 	defer jobDB_rt.TearDown()
 
@@ -662,16 +661,16 @@ func TestBackupTable(t *testing.T) {
 
 	// downloading backed-up files
 	DownloadedAbortedFileName := "downloadedAbortedJobs.json.gz"
-	err = downloadBackedupFiles(fm, backedupAbortedOnlyRTJobs, DownloadedAbortedFileName)
+	err = downloadBackedupFiles(t, fm, backedupAbortedOnlyRTJobs, DownloadedAbortedFileName)
 	require.NoError(t, err, "expected no error")
 	defer os.Remove(DownloadedAbortedFileName)
-	abortedJobs, abortedStatus, err := getJobsFromAbortedJobs(DownloadedAbortedFileName)
+	abortedJobs, abortedStatus, err := getJobsFromAbortedJobs(t, DownloadedAbortedFileName)
 	require.NoError(t, err, "expected no error while getting jobs & status from aborted jobs file")
 	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
 	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
 
 	DownloadedStausFileName := "downloadedStatus.json.gz"
-	err = downloadBackedupFiles(fm, backedupStatusFileName, DownloadedStausFileName)
+	err = downloadBackedupFiles(t, fm, backedupStatusFileName, DownloadedStausFileName)
 	require.NoError(t, err, "expected no error")
 	defer os.Remove(DownloadedStausFileName)
 	downloadedStatusFile, err := readGzipFile(DownloadedStausFileName)
@@ -681,7 +680,7 @@ func TestBackupTable(t *testing.T) {
 	require.Equal(t, backupStatusFile, downloadedStatusFile, "expected status files to be same")
 
 	DownloadedJobsFileName := "downloadedJobs.json.gz"
-	err = downloadBackedupFiles(fm, backedupJobsFileName, DownloadedJobsFileName)
+	err = downloadBackedupFiles(t, fm, backedupJobsFileName, DownloadedJobsFileName)
 	require.NoError(t, err, "expected no error")
 	defer os.Remove(DownloadedJobsFileName)
 	downloadedJobsFile, err := readGzipFile(DownloadedJobsFileName)
@@ -691,7 +690,7 @@ func TestBackupTable(t *testing.T) {
 	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
 }
 
-func insertRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
+func insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 	dbRetention := time.Second
 	migrationMode := ""
 	queryFilters := QueryFiltersT{
@@ -717,7 +716,6 @@ func insertRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 		return jobDB_rt.copyJobStatusDS(tx, rtDS, statusList, []string{}, nil)
 	})
 	if err != nil {
-		fmt.Println("error while coping RT jobs & status to DS: ", err)
 		return jobDB_rt, err
 	}
 
@@ -733,13 +731,13 @@ func insertRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 		return jobDB_rt.copyJobStatusDS(tx, rtDS2, statusList, []string{}, nil)
 	})
 	if err != nil {
-		fmt.Println("error while coping RT jobs & status to DS: ", err)
+		t.Log("error while coping RT jobs & status to DS: ", err)
 		return jobDB_rt, err
 	}
 	return jobDB_rt, nil
 }
 
-func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
+func insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 	dbRetention := time.Second
 	migrationMode := ""
 
@@ -760,14 +758,14 @@ func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) 
 	ds := newDataSet("batch_rt", "1")
 	err := jobDB.WithTx(func(tx *sql.Tx) error {
 		if err := jobDB.copyJobsDS(tx, ds, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
+			t.Log("error while copying jobs to ds: ", err)
 			return err
 		}
 
 		return jobDB.copyJobStatusDS(tx, ds, statusList, []string{}, nil)
 	})
 	if err != nil {
-		fmt.Println("error while coping jobs & status to DS: ", err)
+		t.Log("error while coping jobs & status to DS: ", err)
 		return jobDB, err
 	}
 
@@ -777,29 +775,30 @@ func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) 
 	})
 	err = jobDB.WithTx(func(tx *sql.Tx) error {
 		if err := jobDB.copyJobsDS(tx, ds2, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
+			t.Log("error while copying jobs to ds: ", err)
 			return err
 		}
 
 		return jobDB.copyJobStatusDS(tx, ds2, statusList, []string{}, nil)
 	})
 	if err != nil {
-		fmt.Println("error while coping jobs & status to DS: ", err)
+		t.Log("error while coping jobs & status to DS: ", err)
 		return jobDB, err
 	}
 	return jobDB, nil
 }
 
-func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
+func getJobsFromAbortedJobs(t *testing.T, fileName string) ([]*JobT, []*JobStatusT, error) {
 	file, err := os.Open(fileName)
-	if err != nil {
-		fmt.Println("error while opening file: ", err)
-	}
 	defer file.Close()
+	if err != nil {
+		t.Log("error while opening file: ", err)
+		return nil, nil, err
+	}
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
-		fmt.Println("error while creating gzip reader: ", err)
+		t.Log("error while creating gzip reader: ", err)
 	}
 	defer gz.Close()
 
@@ -844,10 +843,10 @@ func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
 	return jobs, statusList, nil
 }
 
-func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload, downloadedFileName string) error {
+func downloadBackedupFiles(t *testing.T, fm filemanager.FileManager, fileToDownload, downloadedFileName string) error {
 	filePtr, err := os.OpenFile(downloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
-		fmt.Println("error while Creating file to download data: ", err)
+		t.Log("error while Creating file to download data: ", err)
 	}
 
 	err = fm.Download(context.Background(), filePtr, fileToDownload)
