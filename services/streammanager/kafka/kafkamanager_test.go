@@ -325,7 +325,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		var data []map[string]interface{}
 		p := &pMockErr{error: nil}
 		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
-		require.Equal(t, []client.Message([]client.Message(nil)), batch)
+		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
 
@@ -337,7 +337,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			"not-interesting": "some value",
 		}}
 		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
-		require.Equal(t, []client.Message([]client.Message(nil)), batch)
+		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
 
