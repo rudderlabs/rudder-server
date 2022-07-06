@@ -175,13 +175,13 @@ func setMaxParallelLoads() {
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountThresholds = map[string]int{
-		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
-		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
-		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
-		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
-		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
-		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
-		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 0),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountThreshold", 0),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 0),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountThreshold", 0),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 0),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 0),
+		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 0),
 	}
 }
 
