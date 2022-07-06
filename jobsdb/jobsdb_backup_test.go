@@ -47,7 +47,7 @@ func TestBackupTable(t *testing.T) {
 	minioResource, err = destination.SetupMINIO(pool, cleanup)
 	require.NoError(t, err)
 
-	{
+	{ // skipcq: CRT-A0008
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_FAILED_ONLY", "true")
 		t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
