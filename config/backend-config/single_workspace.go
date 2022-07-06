@@ -114,7 +114,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, wo
 }
 
 // getFromFile reads the workspace config from JSON file
-func (*SingleWorkspaceConfig) getFromFile() (ConfigT, *Error) {
+func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
