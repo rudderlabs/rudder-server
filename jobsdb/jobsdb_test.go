@@ -612,11 +612,13 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while reading golden status file")
 
 	maxDSSize = 10
-	err = insertBatchRTData(jobs, statusList)
+	batchRTJobsDB, err := insertBatchRTData(jobs, statusList)
 	require.NoError(t, err, "expected no error while inserting batch data")
+	defer batchRTJobsDB.TearDown()
 
-	err = insertRTData(jobs, statusList)
-	require.NoError(t, err, "expected no error while inserting batch data")
+	jobDB_rt, err := insertRTData(jobs, statusList)
+	require.NoError(t, err, "expected no error while inserting rt data")
+	defer jobDB_rt.TearDown()
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
@@ -638,8 +640,7 @@ func TestBackupTable(t *testing.T) {
 	require.Eventually(t, func() bool {
 		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
 		require.NoError(t, err, "expected no error while listing files")
-
-		if len(file) > 0 {
+		if len(file) == 3 {
 			return true
 		} else {
 			return false
@@ -690,7 +691,7 @@ func TestBackupTable(t *testing.T) {
 	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
 }
 
-func insertRTData(jobs []*JobT, statusList []*JobStatusT) error {
+func insertRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 	dbRetention := time.Second
 	migrationMode := ""
 	queryFilters := QueryFiltersT{
@@ -717,7 +718,7 @@ func insertRTData(jobs []*JobT, statusList []*JobStatusT) error {
 	})
 	if err != nil {
 		fmt.Println("error while coping RT jobs & status to DS: ", err)
-		return err
+		return jobDB_rt, err
 	}
 
 	rtDS2 := newDataSet("rt", "2")
@@ -733,12 +734,12 @@ func insertRTData(jobs []*JobT, statusList []*JobStatusT) error {
 	})
 	if err != nil {
 		fmt.Println("error while coping RT jobs & status to DS: ", err)
-		return err
+		return jobDB_rt, err
 	}
-	return nil
+	return jobDB_rt, nil
 }
 
-func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) error {
+func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) (HandleT, error) {
 	dbRetention := time.Second
 	migrationMode := ""
 
@@ -755,7 +756,6 @@ func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) error {
 	}
 
 	jobDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
-	defer jobDB.TearDown()
 
 	ds := newDataSet("batch_rt", "1")
 	err := jobDB.WithTx(func(tx *sql.Tx) error {
@@ -768,7 +768,7 @@ func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) error {
 	})
 	if err != nil {
 		fmt.Println("error while coping jobs & status to DS: ", err)
-		return err
+		return jobDB, err
 	}
 
 	ds2 := newDataSet("batch_rt", "2")
@@ -785,9 +785,9 @@ func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) error {
 	})
 	if err != nil {
 		fmt.Println("error while coping jobs & status to DS: ", err)
-		return err
+		return jobDB, err
 	}
-	return nil
+	return jobDB, nil
 }
 
 func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
