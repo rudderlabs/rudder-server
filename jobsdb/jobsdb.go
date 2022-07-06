@@ -3505,7 +3505,10 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 				panic(fmt.Errorf("Scanning row failed with error : %w", err))
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
-			gzWriter.Write(rawJSONRows)
+			_, err = gzWriter.Write(rawJSONRows)
+			if err != nil {
+				return false, fmt.Errorf("writing gz file %q: %w", path, err)
+			}
 			offset++
 		}
 
