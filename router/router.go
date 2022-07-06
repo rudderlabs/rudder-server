@@ -883,7 +883,7 @@ func (worker *workerT) processDestinationJobs() {
 				// This is introduced to ensure the above statement
 				resp := misc.UpdateJSONWithNewKeyVal(router_utils.EmptyPayload, "blocking_id", prevFailedJobID)
 				resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", destinationJobMetadata.UserID)
-				resp = misc.UpdateJSONWithNewKeyVal(resp, "more info", "attempted to send in a batch")
+				resp = misc.UpdateJSONWithNewKeyVal(resp, "moreinfo", "attempted to send in a batch")
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
