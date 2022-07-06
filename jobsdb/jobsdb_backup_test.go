@@ -47,6 +47,11 @@ func TestBackupTable(t *testing.T) {
 	minioResource, err = destination.SetupMINIO(pool, cleanup)
 	require.NoError(t, err)
 
+	// create a unique temporary directory to allow for parallel test execution
+	tmpDir, err := ioutil.TempDir("", "TestBackupTable")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
 	{ // skipcq: CRT-A0008
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_FAILED_ONLY", "true")
@@ -54,7 +59,7 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_BATCH_RT_ENABLED", "true")
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
-		t.Setenv("RUDDER_TMPDIR", "/tmp")
+		t.Setenv("RUDDER_TMPDIR", tmpDir)
 		t.Setenv(config.TransformKey("JobsDB.maxDSSize"), "10")
 		t.Setenv(config.TransformKey("JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
@@ -108,13 +113,13 @@ func TestBackupTable(t *testing.T) {
 	var file []*filemanager.FileObject
 	require.Eventually(t, func() bool {
 		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
-		require.NoError(t, err, "expected no error while listing files")
-		if len(file) == 3 {
-			return true
-		} else {
+
+		if len(file) != 3 {
+			t.Log("file list: ", file, " err: ", err)
 			return false
 		}
-	}, time.Second*10, time.Second*3, "less than 3 backup files found in backup store")
+		return true
+	}, 20*time.Second, 1*time.Second, "less than 3 backup files found in backup store: ", err)
 
 	var jobStatusBackupFilename, jobsBackupFilename, abortedJobsBackupFilename string
 	for i := 0; i < len(file); i++ {
