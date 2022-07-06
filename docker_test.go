@@ -577,6 +577,10 @@ func TestMainFlow(t *testing.T) {
 func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	setupStart := time.Now()
 
+	if testing.Verbose() {
+		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+	}
+
 	config.Load()
 	logger.Init()
 
@@ -623,12 +627,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	wht.InitWHConfig()
-
 	t.Cleanup(wht.SetWHPostgresDestination(pool))
 	t.Cleanup(wht.SetWHClickHouseDestination(pool))
 	t.Cleanup(wht.SetWHClickHouseClusterDestination(pool))
 	t.Cleanup(wht.SetWHMssqlDestination(pool))
 	t.Cleanup(wht.SetWHBigQueryDestination())
+	t.Log("Warehouse setup done")
 
 	addWHSpecificSqlFunctionsToJobsDb()
 
