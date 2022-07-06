@@ -40,9 +40,9 @@ import (
 )
 
 var (
-	hold   bool
-	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
-
+	hold            bool
+	database        = "jobsdb"
+	DB_DSN          = "root@tcp(127.0.0.1:3306)/service"
 	minioEndpoint   string
 	bucket          = "backup-test"
 	prefix          = "some-prefix"
@@ -484,8 +484,11 @@ var dsListInMemory = []dataSetT{
 
 func setTestEnvs(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_FAILED_ONLY", "true")
 	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_BATCH_RT_ENABLED", "true")
+	t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
+
 	t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 	t.Setenv("RUDDER_TMPDIR", "/tmp")
 	t.Setenv(config.TransformKey("JobsDB.maxDSSize"), "10")
@@ -494,8 +497,12 @@ func setTestEnvs(t *testing.T) {
 	t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyId)
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
-	t.Setenv("MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
+	t.Setenv("JOBS_DB_DB_NAME", database)
+	t.Setenv("JOBS_DB_HOST", "localhost")
+	t.Setenv("JOBS_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_USER", "rudder")
+	t.Setenv("JOBS_DB_PASSWORD", "password")
 }
 
 func TestBackupTable(t *testing.T) {
@@ -505,6 +512,43 @@ func TestBackupTable(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+
+	// pulls an image, creates a container based on it and runs it
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+		"POSTGRES_PASSWORD=password",
+		"POSTGRES_DB=" + database,
+		"POSTGRES_USER=rudder",
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	t.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
+
+	//NOTE: DB initilization should happen after we have all the env vars set
+	setTestEnvs(t)
+	initJobsDB()
+	stats.Setup()
+
+	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	fmt.Println("DB_DSN:", DB_DSN)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		db, err := sql.Open("postgres", DB_DSN)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	fmt.Println("postgres setup successful")
 
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
@@ -526,6 +570,7 @@ func TestBackupTable(t *testing.T) {
 	}()
 
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
+	t.Setenv("MINIO_ENDPOINT", minioEndpoint)
 
 	//check if minio server is up & running.
 	if err := pool.Retry(func() error {
@@ -556,10 +601,6 @@ func TestBackupTable(t *testing.T) {
 		panic(err)
 	}
 	fmt.Println("bucket created successfully")
-	setTestEnvs(t)
-
-	initJobsDB()
-	stats.Setup()
 
 	dbRetention := time.Second
 	migrationMode := ""
@@ -580,6 +621,7 @@ func TestBackupTable(t *testing.T) {
 
 	jobDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
+
 	fmt.Println("reading jobs")
 	jobs, err := readGzipJobFile(goldenFileJobsFileName)
 	require.NoError(t, err, "expected no error while reading golden jobs file")
@@ -612,6 +654,40 @@ func TestBackupTable(t *testing.T) {
 	})
 	require.NoError(t, err, "expected no error while coping jobs & status to DS")
 
+	jobDB_rt := HandleT{
+		MaxDSSize: &maxDSSize,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	jobDB_rt.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	// defer jobDB.TearDown()
+
+	rtDS := newDataSet("rt", "1")
+	err = jobDB_rt.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB_rt.copyJobsDS(tx, rtDS, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
+
+		return jobDB_rt.copyJobStatusDS(tx, rtDS, statusList, []string{}, nil)
+	})
+	require.NoError(t, err, "expected no error while coping jobs & status to DS")
+
+	rtDS2 := newDataSet("rt", "2")
+	jobDB_rt.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jobDB_rt.addNewDS(l, rtDS2)
+	})
+	err = jobDB_rt.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB_rt.copyJobsDS(tx, rtDS2, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
+
+		return jobDB_rt.copyJobStatusDS(tx, rtDS2, statusList, []string{}, nil)
+	})
+	require.NoError(t, err, "expected no error while coping jobs & status to DS")
+
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
 		Provider: "MINIO",
@@ -627,10 +703,15 @@ func TestBackupTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	f, err := fm.ListFilesWithPrefix(context.Background(), prefix, 5)
+	if err != nil {
+		fmt.Println("error while listing files from minio: ", err)
+	} else {
+		fmt.Println("files from minio: ", f)
+	}
 	var file []*filemanager.FileObject
 	require.Eventually(t, func() bool {
-		file, err = fm.ListFilesWithPrefix(context.TODO(), "some-prefix", 5)
+		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
 		require.NoError(t, err, "expected no error while listing files")
 
 		if len(file) > 0 {
@@ -638,38 +719,106 @@ func TestBackupTable(t *testing.T) {
 		} else {
 			return false
 		}
-	}, time.Second*10, time.Second*5, "no files found in backup store")
+	}, time.Second*10, time.Second*3, "no files found in backup store")
 
-	var backedupStatusFileName, backedupJobsFileName string
+	var backedupStatusFileName, backedupJobsFileName, backedupAbortedOnlyRTJobs string
 	for i := 0; i < len(file); i++ {
-		if strings.Contains(file[i].Key, "status") {
-			backedupStatusFileName = file[i].Key
-		} else {
-			backedupJobsFileName = file[i].Key
+		if strings.Contains(file[i].Key, "batch_rt") {
+			if strings.Contains(file[i].Key, "status") {
+				backedupStatusFileName = file[i].Key
+			} else {
+				backedupJobsFileName = file[i].Key
+			}
+		} else if strings.Contains(file[i].Key, "aborted") {
+			backedupAbortedOnlyRTJobs = file[i].Key
 		}
+
 	}
 
 	//downloading backed-up files
+	DownloadedAbortedFileName := "downloadedAbortedJobs.json.gz"
+	err = downloadBackedupFiles(fm, backedupAbortedOnlyRTJobs, DownloadedAbortedFileName)
+	require.NoError(t, err, "expected no error")
+	defer os.Remove(DownloadedAbortedFileName)
+	abortedJobs, abortedStatus, err := getJobsFromAbortedJobs(DownloadedAbortedFileName)
+	require.NoError(t, err, "expected no error while getting jobs & status from aborted jobs file")
+	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
+	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
+
 	DownloadedStausFileName := "downloadedStatus.json.gz"
 	err = downloadBackedupFiles(fm, backedupStatusFileName, DownloadedStausFileName)
 	require.NoError(t, err, "expected no error")
+	defer os.Remove(DownloadedStausFileName)
 	downloadedStatusFile, err := readGzipFile(DownloadedStausFileName)
 	require.NoError(t, err, "expected no error")
 	backupStatusFile, err := readGzipFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error")
 	require.Equal(t, backupStatusFile, downloadedStatusFile, "expected status files to be same")
-	defer os.Remove(DownloadedStausFileName)
 
 	DownloadedJobsFileName := "downloadedJobs.json.gz"
 	err = downloadBackedupFiles(fm, backedupJobsFileName, DownloadedJobsFileName)
 	require.NoError(t, err, "expected no error")
+	defer os.Remove(DownloadedJobsFileName)
 	downloadedJobsFile, err := readGzipFile(DownloadedJobsFileName)
 	require.NoError(t, err, "expected no error")
 	backupJobsFile, err := readGzipFile(goldenFileJobsFileName)
 	require.NoError(t, err, "expected no error")
 	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
-	defer os.Remove(DownloadedJobsFileName)
 
+}
+
+func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		fmt.Println("error while opening file: ", err)
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		fmt.Println("error while creating gzip reader: ", err)
+	}
+	defer gz.Close()
+
+	sc := bufio.NewScanner(gz)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := 10240 * 1024 // 10MB
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
+
+	jobs := []*JobT{}
+	statusList := []*JobStatusT{}
+
+	for sc.Scan() {
+		lineByte := sc.Bytes()
+		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
+		if err != nil {
+			return []*JobT{}, []*JobStatusT{}, err
+		}
+		job := &JobT{
+			UUID:         uuid,
+			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
+			UserID:       gjson.GetBytes(lineByte, "user_id").String(),
+			CustomVal:    gjson.GetBytes(lineByte, "custom_val").String(),
+			Parameters:   []byte(gjson.GetBytes(lineByte, "parameters").String()),
+			EventCount:   int(gjson.GetBytes(lineByte, "event_count").Int()),
+			WorkspaceId:  gjson.GetBytes(lineByte, "workspace_id").String(),
+			EventPayload: []byte(gjson.GetBytes(lineByte, "event_payload").String()),
+		}
+		jobs = append(jobs, job)
+
+		jobStatus := &JobStatusT{
+			JobID:         gjson.GetBytes(lineByte, "job_id").Int(),
+			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
+			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
+			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
+			ErrorResponse: []byte(gjson.GetBytes(lineByte, "error_response").String()),
+			Parameters:    []byte(gjson.GetBytes(lineByte, "parameters").String()),
+		}
+		statusList = append(statusList, jobStatus)
+	}
+	return jobs, statusList, nil
 }
 
 func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload string, downloadedFileName string) error {
