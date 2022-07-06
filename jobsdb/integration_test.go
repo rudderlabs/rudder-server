@@ -737,9 +737,9 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		CustomVal: true,
 	}
 
-	jobDB.Setup(jobsdb.ReadWrite, false, "gw", 5*time.Minute, "", true, queryFilters, []prebackup.Handler{})
-	defer jobDB.TearDown()
 	customVal := "MOCKDS"
+	jobDB.Setup(jobsdb.ReadWrite, false, customVal, 5*time.Minute, "", true, queryFilters, []prebackup.Handler{})
+	defer jobDB.TearDown()
 	sampleTestJob := jobsdb.JobT{
 		Parameters:   []byte(`{}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
@@ -772,6 +772,96 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	}
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{jobStatus}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
+}
+
+func TestCreateDS(t *testing.T) {
+	t.Run("CreateDS in case of negative job_indices in the previous", func(t *testing.T) {
+		// create -ve index table
+		func() {
+			psqlInfo := jobsdb.GetConnectionString()
+			db, err := sql.Open("postgres", psqlInfo)
+			require.NoError(t, err)
+			defer db.Close()
+			customVal := "mockgw"
+
+			_, err = db.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_jobs_-2" (
+				job_id BIGSERIAL PRIMARY KEY,
+			workspace_id TEXT NOT NULL DEFAULT '',
+			uuid UUID NOT NULL,
+			user_id TEXT NOT NULL,
+			parameters JSONB NOT NULL,
+			custom_val VARCHAR(64) NOT NULL,
+			event_payload JSONB NOT NULL,
+			event_count INTEGER NOT NULL DEFAULT 1,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, customVal))
+			require.NoError(t, err)
+			_, err = db.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_job_status_-2" (
+				id BIGSERIAL,
+				job_id BIGINT REFERENCES "%[1]s_jobs_-2"(job_id),
+				job_state VARCHAR(64),
+				attempt SMALLINT,
+				exec_time TIMESTAMP,
+				retry_time TIMESTAMP,
+				error_code VARCHAR(32),
+				error_response JSONB DEFAULT '{}'::JSONB,
+				parameters JSONB DEFAULT '{}'::JSONB,
+				PRIMARY KEY (job_id, job_state, id));`, customVal))
+			require.NoError(t, err)
+			negativeJobID := -100
+			_, err = db.Exec(fmt.Sprintf(`ALTER SEQUENCE "%[2]s_jobs_-2_job_id_seq" MINVALUE %[1]d START %[1]d RESTART %[1]d;`, negativeJobID, customVal))
+			require.NoError(t, err)
+
+			_, err = db.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7869', 'someuserid', 'GW', '{}', '{}');`, customVal))
+			require.NoError(t, err)
+			_, err = db.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, customVal))
+			require.NoError(t, err)
+
+			initJobsDB()
+			stats.Setup()
+			dbRetention := time.Minute * 5
+			migrationMode := ""
+
+			triggerAddNewDS := make(chan time.Time)
+			maxDSSize := 1
+			jobDB := jobsdb.HandleT{
+				MaxDSSize: &maxDSSize,
+				TriggerAddNewDS: func() <-chan time.Time {
+					return triggerAddNewDS
+				},
+			}
+			queryFilters := jobsdb.QueryFiltersT{
+				CustomVal: true,
+			}
+
+			jobDB.Setup(jobsdb.ReadWrite, false, customVal, dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+			defer jobDB.TearDown()
+
+			triggerAddNewDS <- time.Now()
+			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
+
+			tables, err := db.Query(fmt.Sprintf(`SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%[1]s_jobs_`, customVal) + `%' order by table_name desc;`)
+			defer tables.Close()
+			require.NoError(t, err)
+			var tableName string
+			tableNames := make([]string, 0)
+			for tables.Next() {
+				err = tables.Scan(&tableName)
+				require.NoError(t, err)
+				tableNames = append(tableNames, tableName)
+			}
+			require.Equal(t, len(tableNames), 2, `should find two tables`)
+			require.Equal(t, tableNames[0], customVal+"_jobs_-2")
+			require.Equal(t, tableNames[1], customVal+"_jobs_-1")
+			expectedNextVal := negativeJobID + 2
+
+			nextVal := db.QueryRow(fmt.Sprintf(`select nextval('"%s_job_id_seq"');`, tableNames[1]))
+			var nextValInt int
+			err = nextVal.Scan(&nextValInt)
+			require.NoError(t, err)
+			require.Equal(t, nextValInt, expectedNextVal, `should have the correct nextval`)
+		}()
+	})
 }
 
 func filterWorkspaceJobs(jobs []*jobsdb.JobT, workspaceId string) []*jobsdb.JobT {
