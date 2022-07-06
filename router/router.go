@@ -747,7 +747,7 @@ func (worker *workerT) processDestinationJobs() {
 								"workspace":     workspaceID,
 							}).Count(len(result))
 
-							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
+							pkgLogger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
 								destinationJob.JobMetadataArray[0].JobID,
 								len(result),
 								len(respBodyArr),
