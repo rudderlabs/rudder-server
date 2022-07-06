@@ -112,6 +112,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 		if err != nil {
 			return ConfigT{}, newError(false, fmt.Errorf("could not marshal workspace IDs, skipping backend config fetch"))
 		}
+
 		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
 		url = url + "&fetchAll=true"
 	}
