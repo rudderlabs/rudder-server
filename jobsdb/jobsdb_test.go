@@ -506,7 +506,6 @@ func setTestEnvs(t *testing.T) {
 }
 
 func TestBackupTable(t *testing.T) {
-
 	// running minio container on docker
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -529,7 +528,7 @@ func TestBackupTable(t *testing.T) {
 	}()
 	t.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 
-	//NOTE: DB initilization should happen after we have all the env vars set
+	// NOTE: DB initilization should happen after we have all the env vars set
 	setTestEnvs(t)
 	initJobsDB()
 	stats.Setup()
@@ -572,7 +571,7 @@ func TestBackupTable(t *testing.T) {
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 	t.Setenv("MINIO_ENDPOINT", minioEndpoint)
 
-	//check if minio server is up & running.
+	// check if minio server is up & running.
 	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
@@ -595,32 +594,15 @@ func TestBackupTable(t *testing.T) {
 	}
 	fmt.Println("minioClient created successfully")
 
-	//creating bucket inside minio where testing will happen.
+	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(bucket, "us-east-1")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("bucket created successfully")
 
-	dbRetention := time.Second
-	migrationMode := ""
-
-	triggerAddNewDS := make(chan time.Time, 0)
-	maxDSSize := 10
-	jobDB := HandleT{
-		MaxDSSize: &maxDSSize,
-		TriggerAddNewDS: func() <-chan time.Time {
-			return triggerAddNewDS
-		},
-	}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
 	goldenFileJobsFileName := "goldenDirectory/backupJobs.json.gz"
 	goldenFileStatusFileName := "goldenDirectory/backupStatus.json.gz"
-
-	jobDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
-	defer jobDB.TearDown()
 
 	fmt.Println("reading jobs")
 	jobs, err := readGzipJobFile(goldenFileJobsFileName)
@@ -629,64 +611,12 @@ func TestBackupTable(t *testing.T) {
 	statusList, err := readGzipStatusFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
 
-	ds := newDataSet("batch_rt", "1")
-	err = jobDB.WithTx(func(tx *sql.Tx) error {
-		if err := jobDB.copyJobsDS(tx, ds, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
-			return err
-		}
+	maxDSSize = 10
+	err = insertBatchRTData(jobs, statusList)
+	require.NoError(t, err, "expected no error while inserting batch data")
 
-		return jobDB.copyJobStatusDS(tx, ds, statusList, []string{}, nil)
-	})
-	require.NoError(t, err, "expected no error while coping jobs & status to DS")
-
-	ds2 := newDataSet("batch_rt", "2")
-	jobDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
-		jobDB.addNewDS(l, ds2)
-	})
-	err = jobDB.WithTx(func(tx *sql.Tx) error {
-		if err := jobDB.copyJobsDS(tx, ds2, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
-			return err
-		}
-
-		return jobDB.copyJobStatusDS(tx, ds2, statusList, []string{}, nil)
-	})
-	require.NoError(t, err, "expected no error while coping jobs & status to DS")
-
-	jobDB_rt := HandleT{
-		MaxDSSize: &maxDSSize,
-		TriggerAddNewDS: func() <-chan time.Time {
-			return triggerAddNewDS
-		},
-	}
-	jobDB_rt.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
-	// defer jobDB.TearDown()
-
-	rtDS := newDataSet("rt", "1")
-	err = jobDB_rt.WithTx(func(tx *sql.Tx) error {
-		if err := jobDB_rt.copyJobsDS(tx, rtDS, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
-			return err
-		}
-
-		return jobDB_rt.copyJobStatusDS(tx, rtDS, statusList, []string{}, nil)
-	})
-	require.NoError(t, err, "expected no error while coping jobs & status to DS")
-
-	rtDS2 := newDataSet("rt", "2")
-	jobDB_rt.dsListLock.WithLock(func(l lock.DSListLockToken) {
-		jobDB_rt.addNewDS(l, rtDS2)
-	})
-	err = jobDB_rt.WithTx(func(tx *sql.Tx) error {
-		if err := jobDB_rt.copyJobsDS(tx, rtDS2, jobs); err != nil {
-			fmt.Println("error while copying jobs to ds")
-			return err
-		}
-
-		return jobDB_rt.copyJobStatusDS(tx, rtDS2, statusList, []string{}, nil)
-	})
-	require.NoError(t, err, "expected no error while coping jobs & status to DS")
+	err = insertRTData(jobs, statusList)
+	require.NoError(t, err, "expected no error while inserting batch data")
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
@@ -703,12 +633,7 @@ func TestBackupTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := fm.ListFilesWithPrefix(context.Background(), prefix, 5)
-	if err != nil {
-		fmt.Println("error while listing files from minio: ", err)
-	} else {
-		fmt.Println("files from minio: ", f)
-	}
+
 	var file []*filemanager.FileObject
 	require.Eventually(t, func() bool {
 		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
@@ -732,10 +657,9 @@ func TestBackupTable(t *testing.T) {
 		} else if strings.Contains(file[i].Key, "aborted") {
 			backedupAbortedOnlyRTJobs = file[i].Key
 		}
-
 	}
 
-	//downloading backed-up files
+	// downloading backed-up files
 	DownloadedAbortedFileName := "downloadedAbortedJobs.json.gz"
 	err = downloadBackedupFiles(fm, backedupAbortedOnlyRTJobs, DownloadedAbortedFileName)
 	require.NoError(t, err, "expected no error")
@@ -764,7 +688,106 @@ func TestBackupTable(t *testing.T) {
 	backupJobsFile, err := readGzipFile(goldenFileJobsFileName)
 	require.NoError(t, err, "expected no error")
 	require.Equal(t, backupJobsFile, downloadedJobsFile, "expected jobs files to be same")
+}
 
+func insertRTData(jobs []*JobT, statusList []*JobStatusT) error {
+	dbRetention := time.Second
+	migrationMode := ""
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+	triggerAddNewDS := make(chan time.Time, 0)
+
+	jobDB_rt := HandleT{
+		MaxDSSize: &maxDSSize,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	jobDB_rt.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	// defer jobDB.TearDown()
+
+	rtDS := newDataSet("rt", "1")
+	err := jobDB_rt.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB_rt.copyJobsDS(tx, rtDS, jobs); err != nil {
+			return err
+		}
+
+		return jobDB_rt.copyJobStatusDS(tx, rtDS, statusList, []string{}, nil)
+	})
+	if err != nil {
+		fmt.Println("error while coping RT jobs & status to DS: ", err)
+		return err
+	}
+
+	rtDS2 := newDataSet("rt", "2")
+	jobDB_rt.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jobDB_rt.addNewDS(l, rtDS2)
+	})
+	err = jobDB_rt.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB_rt.copyJobsDS(tx, rtDS2, jobs); err != nil {
+			return err
+		}
+
+		return jobDB_rt.copyJobStatusDS(tx, rtDS2, statusList, []string{}, nil)
+	})
+	if err != nil {
+		fmt.Println("error while coping RT jobs & status to DS: ", err)
+		return err
+	}
+	return nil
+}
+
+func insertBatchRTData(jobs []*JobT, statusList []*JobStatusT) error {
+	dbRetention := time.Second
+	migrationMode := ""
+
+	triggerAddNewDS := make(chan time.Time, 0)
+	maxDSSize := 10
+	jobDB := HandleT{
+		MaxDSSize: &maxDSSize,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+
+	jobDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	defer jobDB.TearDown()
+
+	ds := newDataSet("batch_rt", "1")
+	err := jobDB.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB.copyJobsDS(tx, ds, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
+
+		return jobDB.copyJobStatusDS(tx, ds, statusList, []string{}, nil)
+	})
+	if err != nil {
+		fmt.Println("error while coping jobs & status to DS: ", err)
+		return err
+	}
+
+	ds2 := newDataSet("batch_rt", "2")
+	jobDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jobDB.addNewDS(l, ds2)
+	})
+	err = jobDB.WithTx(func(tx *sql.Tx) error {
+		if err := jobDB.copyJobsDS(tx, ds2, jobs); err != nil {
+			fmt.Println("error while copying jobs to ds")
+			return err
+		}
+
+		return jobDB.copyJobStatusDS(tx, ds2, statusList, []string{}, nil)
+	})
+	if err != nil {
+		fmt.Println("error while coping jobs & status to DS: ", err)
+		return err
+	}
+	return nil
 }
 
 func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
@@ -821,8 +844,8 @@ func getJobsFromAbortedJobs(fileName string) ([]*JobT, []*JobStatusT, error) {
 	return jobs, statusList, nil
 }
 
-func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload string, downloadedFileName string) error {
-	filePtr, err := os.OpenFile(downloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+func downloadBackedupFiles(fm filemanager.FileManager, fileToDownload, downloadedFileName string) error {
+	filePtr, err := os.OpenFile(downloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		fmt.Println("error while Creating file to download data: ", err)
 	}
@@ -926,6 +949,7 @@ func readGzipStatusFile(fileName string) ([]*JobStatusT, error) {
 	}
 	return statusList, nil
 }
+
 func BenchmarkSanitizeJson(b *testing.B) {
 	size := 4_000
 	nulls := 100
