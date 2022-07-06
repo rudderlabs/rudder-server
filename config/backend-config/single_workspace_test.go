@@ -149,7 +149,7 @@ var (
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(SampleBackendConfig))
-				Expect(err).NotTo(BeNil())
+				Expect(err).To(BeNil())
 			})
 		})
 	})

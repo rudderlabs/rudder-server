@@ -66,6 +66,7 @@ var _ = Describe("workspace-config", func() {
 			defer server.Close()
 
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
+			mockLogger.EXPECT().Debugf("Fetching config from %s", gomock.Any())
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).Times(1)
