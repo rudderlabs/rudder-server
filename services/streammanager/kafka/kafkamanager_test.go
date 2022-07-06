@@ -807,6 +807,7 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats
 	mockedTimer.EXPECT().SendTiming(sinceDuration).Times(times)
 	return mockedTimer
 }
+
 func getMockedCounter(t *testing.T, ctrl *gomock.Controller, times int) *mockStats.MockRudderStats {
 	t.Helper()
 	mockedCounter := mockStats.NewMockRudderStats(ctrl)
