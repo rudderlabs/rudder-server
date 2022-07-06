@@ -20,6 +20,7 @@ type SchemaHandleT struct {
 	localSchema       warehouseutils.SchemaT
 	schemaInWarehouse warehouseutils.SchemaT
 	uploadSchema      warehouseutils.SchemaT
+	excludedSchema    warehouseutils.SchemaT
 }
 
 func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -413,9 +414,21 @@ func mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload warehou
 	return mergedSchema
 }
 
+/*
+ * Given maximum table column count limit
+ * 1. Returns excess columns from each table in upload schema
+ * 2. For a new event, rudder reserved columns are not included in excluded schema
+ * 3. For an existing event, rudder reserved columns do not hold any priority
+ */
 func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, maxColumnCount int) warehouseutils.SchemaT {
 	excludedSchema := warehouseutils.SchemaT{}
 	for tableName, columnMap := range uploadSchema {
+		// To avoid computational cost, comparing each schema to half of maxColumnCount. Most cases fall under this category.
+		// If upload schema columns + schema in warehouse columns < max columns , it is definitely a case of no exceeded columns.
+		if len(columnMap)+len(schemaInWarehouse[tableName]) < maxColumnCount {
+			continue
+		}
+
 		// Get distinct columns from schema in warehouse
 		sortedTableColumns := []string{}
 		var currTableColumnCount int
@@ -429,12 +442,15 @@ func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, m
 			}
 			currTableColumnCount = len(schemaInWarehouse[tableName])
 		} else {
+			reservedColumnscount := 0
 			for k := range columnMap {
-				if !misc.ContainsString(warehouseutils.RudderReservedColumns, k) {
+				if misc.ContainsString(warehouseutils.RudderReservedColumns, k) {
+					reservedColumnscount++
+				} else {
 					sortedTableColumns = append(sortedTableColumns, k)
 				}
 			}
-			currTableColumnCount = len(warehouseutils.RudderReservedColumns)
+			currTableColumnCount = reservedColumnscount
 		}
 
 		// return if columns does not exceed max limit

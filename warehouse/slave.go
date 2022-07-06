@@ -413,7 +413,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			return nil, err
 		}
 
-		excludedTable := len(job.ExcludedSchema[tableName]) != 0
+		hasExcludedColumns := len(job.ExcludedSchema[tableName]) != 0
 
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
@@ -439,8 +439,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 				columnVal = int(floatVal)
 			}
 
-			// if tableExists && misc.ContainsString(excludedColumns, columnName) {
-			if excludedTable {
+			if hasExcludedColumns {
 				if _, ok := job.ExcludedSchema[tableName][columnName]; ok {
 					cv := &ConstraintsViolationT{
 						isViolated: false,

@@ -97,6 +97,7 @@ var RudderReservedColumns = []string{
 	"event_text",
 	"group_id",
 	"id",
+	"loaded_at",
 	"name",
 	"original_timestamp",
 	"previous_id",

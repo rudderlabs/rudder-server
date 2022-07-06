@@ -233,6 +233,7 @@ var _ = Describe("Schema", func() {
 				"event_text":         "string",
 				"group_id":           "string",
 				"id":                 "string",
+				"loaded_at":          "datetime",
 				"name":               "string",
 				"original_timestamp": "datetime",
 				"previous_id":        "string",
@@ -241,7 +242,7 @@ var _ = Describe("Schema", func() {
 				"sent_at":            "datetime",
 				"timestamp":          "datetime",
 				"user_id":            "string",
-				"uuid_ts":            "datetime", // end of 17 rudder columns
+				"uuid_ts":            "datetime", // end of 18 rudder columns
 				"ad_name":            "string",
 				"blendo_id":          "string",
 				"clicks":             "int",
@@ -261,6 +262,7 @@ var _ = Describe("Schema", func() {
 				"event_text":         "string",
 				"group_id":           "string",
 				"id":                 "string",
+				"loaded_at":          "datetime",
 				"name":               "string",
 				"original_timestamp": "datetime",
 				"previous_id":        "string",
@@ -269,7 +271,7 @@ var _ = Describe("Schema", func() {
 				"sent_at":            "datetime",
 				"timestamp":          "datetime",
 				"user_id":            "string",
-				"uuid_ts":            "datetime", // end of 17 rudder columns
+				"uuid_ts":            "datetime", // end of 18 rudder columns
 				"ad_name":            "string",
 				"blendo_id":          "string",
 			},
@@ -288,13 +290,13 @@ var _ = Describe("Schema", func() {
 		})
 
 		It("Should contain excluded schema if max column count is reached and picked in sorted order", func() {
-			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 21)
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 22)
 			Expect(excludedSchema).To(Equal(ExcludedSchema))
 		})
 
 		It("Should contain rudder reserved columns in included column list if it is a new event and max limit is reached", func() {
 			delete(schemaInWarehouse, "demo_event")
-			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 21)
+			excludedSchema := GetExcludedSchema(uploadSchema, schemaInWarehouse, 22)
 			Expect(excludedSchema).To(Equal(ExcludedSchema))
 		})
 	})

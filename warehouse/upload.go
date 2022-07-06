@@ -93,7 +93,6 @@ type UploadT struct {
 	Status               string
 	UploadSchema         warehouseutils.SchemaT
 	MergedSchema         warehouseutils.SchemaT
-	ExcludedSchema       warehouseutils.SchemaT
 	Error                json.RawMessage
 	Timings              []map[string]string
 	FirstAttemptAt       time.Time
@@ -245,8 +244,8 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	return err
 }
 
-// exceeded columns are included in excluded schema
-func (job *UploadJobT) generateExcludedSchema() error {
+// excess columns are included in excluded schema
+func (job *UploadJobT) generateExcludedSchema() {
 	uploadSchema := job.upload.UploadSchema
 	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		uploadSchema = job.upload.MergedSchema
@@ -257,8 +256,7 @@ func (job *UploadJobT) generateExcludedSchema() error {
 		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
 	}
 	// set excluded schema
-	err := job.setExcludedSchema(excludedSchema)
-	return err
+	job.schemaHandle.excludedSchema = excludedSchema
 }
 
 func (job *UploadJobT) initTableUploads() error {
@@ -394,6 +392,8 @@ func (job *UploadJobT) run() (err error) {
 	}
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
+	// set excluded schema
+	job.generateExcludedSchema()
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -944,7 +944,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := GetTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
+	tableSchemaDiff := GetTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.schemaHandle.excludedSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1128,7 +1128,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := GetTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.upload.ExcludedSchema)
+		tableSchemaDiff := GetTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema, job.schemaHandle.excludedSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1300,12 +1300,6 @@ func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) erro
 	}
 	job.upload.MergedSchema = mergedSchema
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
-}
-
-func (job *UploadJobT) setExcludedSchema(excludedSchema warehouseutils.SchemaT) (err error) {
-	job.upload.ExcludedSchema = excludedSchema
-	// TODO: extend wh_uploads to include excluded schema
-	return
 }
 
 // Set LoadFileIDs
@@ -1782,7 +1776,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				StagingFileID:        stagingFile.ID,
 				StagingFileLocation:  stagingFile.Location,
 				UploadSchema:         job.upload.UploadSchema,
-				ExcludedSchema:       job.upload.ExcludedSchema,
+				ExcludedSchema:       job.schemaHandle.excludedSchema,
 				LoadFileType:         job.upload.LoadFileType,
 				SourceID:             job.warehouse.Source.ID,
 				SourceName:           job.warehouse.Source.Name,
@@ -2052,7 +2046,7 @@ func (job *UploadJobT) GetTableSchemaInWarehouse(tableName string) warehouseutil
 
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
 	uploadTableSchema := job.schemaHandle.uploadSchema[tableName]
-	excludedSchema := job.upload.ExcludedSchema
+	excludedSchema := job.schemaHandle.excludedSchema
 	for k, _ := range excludedSchema[tableName] {
 		delete(uploadTableSchema, k)
 	}
