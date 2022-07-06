@@ -283,6 +283,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return dm.Run(ctx)
 	})
 
+	g.Go(func() error {
+		return rsourcesService.CleanupLoop(ctx)
+	})
+
 	return g.Wait()
 }
 

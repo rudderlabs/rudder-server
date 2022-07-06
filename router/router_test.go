@@ -6,7 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"testing"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/tidwall/sjson"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -54,6 +59,24 @@ var (
 		ID:          gaDestinationDefinitionID,
 		Name:        "GA",
 		DisplayName: "Google Analytics",
+	}
+	collectMetricsErrorMap = map[string]int{
+		"Error Response 1":  1,
+		"Error Response 2":  2,
+		"Error Response 3":  3,
+		"Error Response 4":  4,
+		"Error Response 5":  1,
+		"Error Response 6":  2,
+		"Error Response 7":  3,
+		"Error Response 8":  4,
+		"Error Response 9":  1,
+		"Error Response 10": 2,
+		"Error Response 11": 3,
+		"Error Response 12": 4,
+		"Error Response 13": 1,
+		"Error Response 14": 2,
+		"Error Response 15": 3,
+		"Error Response 16": 4,
 	}
 	// This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 	sampleBackendConfig = backendconfig.ConfigT{
@@ -1140,4 +1163,33 @@ func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, exp
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.AttemptNum).To(Equal(attemptNum))
+}
+
+func Benchmark_SJSON_SET(b *testing.B) {
+	var stringValue string
+	var err error
+	for i := 0; i < b.N; i++ {
+		for k, v := range collectMetricsErrorMap {
+			stringValue, err = sjson.Set(stringValue, k, v)
+			if err != nil {
+				stringValue = ""
+			}
+		}
+	}
+}
+
+func Benchmark_JSON_MARSHAL(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		val, _ := json.Marshal(collectMetricsErrorMap)
+		_ = string(val)
+	}
+}
+
+func Benchmark_FASTJSON_MARSHAL(b *testing.B) {
+	jsonfast := jsoniter.ConfigCompatibleWithStandardLibrary
+
+	for i := 0; i < b.N; i++ {
+		val, _ := jsonfast.Marshal(collectMetricsErrorMap)
+		_ = string(val)
+	}
 }
