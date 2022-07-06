@@ -102,7 +102,7 @@ type HandleT struct {
 	throttler                              throttler.Throttler
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
-	timeoutDuration                        time.Duration
+	minDeliveryTimeoutAlertLimit           time.Duration
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
@@ -339,7 +339,7 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 		select {
 		case <-ch:
 			// do nothing
-		case <-time.After(misc.MaxDuration(worker.rt.netClientTimeout, worker.rt.timeoutDuration) * 2):
+		case <-time.After(misc.MaxDuration(worker.rt.netClientTimeout, worker.rt.minDeliveryTimeoutAlertLimit) * 2):
 			worker.rt.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", worker.rt.destName)
 			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, stats.Tags{
 				"destType": worker.rt.destName,
@@ -2201,7 +2201,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.destName = destName
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
-	config.RegisterDurationConfigVariable(30, &rt.timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
+	config.RegisterDurationConfigVariable(30, &rt.minDeliveryTimeoutAlertLimit, false, time.Second, []string{"HttpClient.timeout"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
