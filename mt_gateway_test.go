@@ -173,7 +173,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
 	// TODO: this is to be reviewed after "Review health checkpoint (probes)
 	// https://www.notion.so/rudderstacks/Review-health-checkpoint-probes-ec33b45c1b7541f3bf802f3276667920
-	etcdReqKey := getGatewayRequestKey(t, serverInstanceID)
+	etcdReqKey := getGatewayWorkspacesReqKey(t, serverInstanceID)
 	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
 	require.NoError(t, err)
 
@@ -192,20 +192,15 @@ func TestMultiTenantGateway(t *testing.T) {
 		"serviceHealthEndpoint",
 	)
 
-	require.Eventually(t, func() bool {
-		t.Log("Waiting for test-ack/1...")
-		ack1, err := etcdContainer.Client.Get(ctx, "test-ack/1")
-		if err != nil {
-			t.Logf("Error while checking test-ack/1: %s", err)
-			return false
-		}
-		v, err := unmarshalWorkspaceAckValue(t, ack1)
-		if err != nil {
-			t.Logf("Error while checking test-ack/1: %s", err)
-			return false
-		}
-		return v.Status == "RELOADED" && v.Error == ""
-	}, 10*time.Second, 500*time.Millisecond)
+	select {
+	case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/1"):
+		v, err := unmarshalWorkspaceAckValue(t, &ack)
+		require.NoError(t, err)
+		require.Equal(t, "RELOADED", v.Status)
+		require.Equal(t, "", v.Error)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for test-ack/1")
+	}
 
 	require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
 	sendEventsToGateway(t, httpPort, writeKey)
@@ -241,22 +236,19 @@ func TestMultiTenantGateway(t *testing.T) {
 	{ // Checking that Workspace Changes errors are handled
 		_, err := etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
 		require.NoError(t, err)
-		require.Eventually(t, func() bool {
-			t.Log("Waiting for test-ack/2...")
-			ack1, err := etcdContainer.Client.Get(ctx, "test-ack/2")
-			if err != nil {
-				t.Logf("Error while checking test-ack/1: %s", err)
-				return false
-			}
-			v, err := unmarshalWorkspaceAckValue(t, ack1)
-			if err != nil {
-				t.Logf("Error while checking test-ack/1: %s", err)
-				return false
-			}
-			t.Logf("test-ack/2 error: %s", v.Error)
-			return v.Status == "ERROR" && v.Error != ""
-		}, 10*time.Second, 500*time.Millisecond)
+		select {
+		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/2"):
+			v, err := unmarshalWorkspaceAckValue(t, &ack)
+			require.NoError(t, err)
+			require.Equal(t, "ERROR", v.Status)
+			require.NotEqual(t, "", v.Error)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Timeout waiting for test-ack/2")
+		}
 	}
+
+	serverModeReqKey := getETCDServerModeReqKey(t, serverInstanceID)
+	t.Logf("Server mode ETCD key: %s", serverModeReqKey)
 
 	// TODO trigger degraded mode, the GW should still work
 
@@ -264,11 +256,15 @@ func TestMultiTenantGateway(t *testing.T) {
 	<-done
 }
 
-func getGatewayRequestKey(t *testing.T, instance string) string {
-	return getRequestKey(t, instance, app.GATEWAY)
+func getGatewayWorkspacesReqKey(t *testing.T, instance string) string {
+	return getETCDWorkspacesReqKey(t, instance, app.GATEWAY)
 }
 
-func getRequestKey(t *testing.T, instance, appType string) string {
+func getETCDServerModeReqKey(t *testing.T, instance string) string {
+	return fmt.Sprintf("/%s/SERVER/%s/MODE", t.Name(), instance)
+}
+
+func getETCDWorkspacesReqKey(t *testing.T, instance, appType string) string {
 	return fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", t.Name(), instance, appType)
 }
 
@@ -338,13 +334,13 @@ type workspaceAckValue struct {
 	Error  string `json:"error"`
 }
 
-func unmarshalWorkspaceAckValue(t *testing.T, res *clientv3.GetResponse) (workspaceAckValue, error) {
+func unmarshalWorkspaceAckValue(t *testing.T, res *clientv3.WatchResponse) (workspaceAckValue, error) {
 	t.Helper()
 	var v workspaceAckValue
-	if len(res.Kvs) == 0 {
-		return v, fmt.Errorf("empty key value response")
+	if len(res.Events) == 0 {
+		return v, fmt.Errorf("no events in the response")
 	}
-	if err := json.Unmarshal(res.Kvs[0].Value, &v); err != nil {
+	if err := json.Unmarshal(res.Events[0].Kv.Value, &v); err != nil {
 		return v, fmt.Errorf("could not unmarshal key value response: %v", err)
 	}
 	return v, nil
