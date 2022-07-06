@@ -71,10 +71,10 @@ var _ = Describe("workspace-config", func() {
 				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
 					configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			config, ok := backendConfig.Get(ctx, "testToken")
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
-			Expect(ok).To(BeTrue())
+			Expect(err).To(BeNil())
 			multiConfig := SampleBackendConfig
 			Expect(config).To(Equal(multiConfig))
 		})
