@@ -176,7 +176,15 @@ var _ = Describe("BackendConfig", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
+
+			done := make(chan struct{})
+			bc.pollingErrors = make(chan error, 1)
+			go func() {
+				Expect(<-bc.pollingErrors).To(MatchError("TestRequestError"))
+				close(done)
+			}()
 			bc.configUpdate(ctx, statConfigBackendError, "test_token")
+			<-done
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
