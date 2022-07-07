@@ -175,6 +175,7 @@ var _ = Describe("BackendConfig", func() {
 		It("Expect to make the correct actions if Get method fails", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
+			mockLogger.EXPECT().Warnf("Error fetching config from backend: %v", gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 
 			done := make(chan struct{})

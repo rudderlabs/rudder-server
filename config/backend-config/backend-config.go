@@ -128,7 +128,7 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	sourceJSON, err := backendConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
-		pkgLogger.Debugf("Error fetching config from backend: %v", err)
+		pkgLogger.Warnf("Error fetching config from backend: %v", err)
 		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
 			select {
 			case bc.waitForConfigErrs <- err:
