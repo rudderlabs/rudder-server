@@ -204,6 +204,7 @@ func TestMultiTenantGateway(t *testing.T) {
 		t.Fatal("Timeout waiting for test-ack/1")
 	}
 
+	// Test basic Gateway happy path
 	t.Run("EventsAreReceived", func(t *testing.T) {
 		require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
 		sendEventsToGateway(t, httpPort, writeKey)
