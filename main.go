@@ -65,9 +65,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (

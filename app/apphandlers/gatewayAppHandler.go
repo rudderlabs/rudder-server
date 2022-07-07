@@ -19,9 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 // GatewayApp is the type for Gateway type implementation
