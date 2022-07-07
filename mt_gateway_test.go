@@ -233,6 +233,33 @@ func TestMultiTenantGateway(t *testing.T) {
 	// Only the Gateway is running, so we don't expect any destinations to be hit.
 	require.EqualValues(t, 0, webhook.RequestsCount(), "webhook should have no requests because there is no processor")
 
+	serverModeReqKey := getETCDServerModeReqKey(t, serverInstanceID)
+	t.Logf("Server mode ETCD key: %s", serverModeReqKey)
+
+	{ // Trigger degraded mode, the Gateway should still work
+		_, err = etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
+		require.NoError(t, err)
+		select {
+		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
+			t.Logf("ACK: %+v", ack)
+		case <-time.After(20 * time.Second):
+			t.Fatal("Timeout waiting for server-mode test-ack")
+		}
+
+		sendEventsToGateway(t, httpPort, writeKey)
+		require.Eventually(t, func() bool {
+			var count int
+			err := postgresContainer.DB.QueryRowContext(ctx,
+				"SELECT COUNT(*) FROM gw_jobs_1 WHERE workspace_id = $1", workspaceID,
+			).Scan(&count)
+			if err != nil {
+				return false
+			}
+			return count == 2
+		}, time.Minute, 50*time.Millisecond)
+		require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
+	}
+
 	{ // Checking that Workspace Changes errors are handled
 		_, err := etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
 		require.NoError(t, err)
@@ -247,12 +274,7 @@ func TestMultiTenantGateway(t *testing.T) {
 		}
 	}
 
-	serverModeReqKey := getETCDServerModeReqKey(t, serverInstanceID)
-	t.Logf("Server mode ETCD key: %s", serverModeReqKey)
-
-	// TODO trigger degraded mode, the GW should still work
-
-	cancel()
+	// no need to cancel the context here, as the gateway will be stopped by a bad workspace change configuration
 	<-done
 }
 
