@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"database/sql"
 	"io"
 	"io/ioutil"
 	"os"
@@ -173,7 +172,11 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	// defer jobDB.TearDown()
 
 	rtDS := newDataSet("rt", "1")
-	err := jobsDB.WithTx(func(tx *sql.Tx) error {
+	err := jobsDB.WithTx(func(txGetter TxGetter) error {
+		tx, err := txGetter.Tx()
+		if err != nil {
+			return err
+		}
 		if err := jobsDB.copyJobsDS(tx, rtDS, jobs); err != nil {
 			return err
 		}
@@ -186,7 +189,11 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
 		jobsDB.addNewDS(l, rtDS2)
 	})
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(txGetter TxGetter) error {
+		tx, err := txGetter.Tx()
+		if err != nil {
+			return err
+		}
 		if err := jobsDB.copyJobsDS(tx, rtDS2, jobs); err != nil {
 			return err
 		}
@@ -215,7 +222,11 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	jobsDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
 
 	ds := newDataSet("batch_rt", "1")
-	err := jobsDB.WithTx(func(tx *sql.Tx) error {
+	err := jobsDB.WithTx(func(txGetter TxGetter) error {
+		tx, err := txGetter.Tx()
+		if err != nil {
+			return err
+		}
 		if err := jobsDB.copyJobsDS(tx, ds, jobs); err != nil {
 			t.Log("error while copying jobs to ds: ", err)
 			return err
@@ -228,7 +239,11 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
 		jobsDB.addNewDS(l, ds2)
 	})
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(txGetter TxGetter) error {
+		tx, err := txGetter.Tx()
+		if err != nil {
+			return err
+		}
 		if err := jobsDB.copyJobsDS(tx, ds2, jobs); err != nil {
 			t.Log("error while copying jobs to ds: ", err)
 			return err
