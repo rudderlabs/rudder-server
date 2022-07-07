@@ -5,6 +5,7 @@ FROM golang:${GO_VERSION} AS builder
 ARG VERSION
 ARG REVISION
 ARG COMMIT_HASH
+ARG ENTERPRISE_TOKEN
 ARG RACE_ENABLED=false
 ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
@@ -19,7 +20,7 @@ RUN go mod download
 COPY . . 
 
 RUN BUILD_DATE=$(date "+%F,%T") \
-    LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} " \
+    LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} -X main.builtBy=${REVISION} -X main.enterpriseToken=${ENTERPRISE_TOKEN} " \
     make build
 
 FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34

@@ -1,17 +1,15 @@
-.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build enterprise-is-at-master
+.PHONY: help default build run run-dev test mocks prepare-build
 
 GO=go
 GINKGO=ginkgo
 LDFLAGS?=-s -w
-
-include .enterprise/env
 
 default: build
 
 mocks: install-tools ## Generate all mocks
 	$(GO) generate ./...
 
-test: enterprise-prepare-build mocks ## Run all unit tests
+test: ## Run all unit tests
 ifdef package
 	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
@@ -27,7 +25,7 @@ coverage:
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
 
-prepare-build: build-sql-migrations enterprise-prepare-build
+prepare-build: build-sql-migrations
 
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
 	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
@@ -50,29 +48,6 @@ run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-
-# Enterprise version
-
-enterprise-init: ## Initialise enterprise version
-	@.enterprise/scripts/init.sh
-
-enterprise-cleanup: ## Cleanup enterprise dependencies, revert to oss version
-	rm -rf ${ENTERPRISE_DIR}
-	rm -f ./imports/enterprise.go
-
-enterprise-update-commit: ## Updates linked enterprise commit to current commit in ENTERPRISE_DIR
-	@.enterprise/scripts/update-commit.sh
-
-
-enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise packages in binary
-	@if [ -d "./$(ENTERPRISE_DIR)" ]; then \
-		$(ENTERPRISE_DIR)/import.sh ./$(ENTERPRISE_DIR) | tee ./imports/enterprise.go; \
-	else \
-		rm -f ./imports/enterprise.go; \
-	fi
-
-enterprise-is-at-master: ## Checks if enterprise repo commit matches the origin master
-	@.enterprise/scripts/is-at-master.sh
 
 install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
