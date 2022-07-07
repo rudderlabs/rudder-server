@@ -1,3 +1,5 @@
+//go:build integration
+
 package jobsdb
 
 import (
@@ -14,7 +16,6 @@ import (
 
 func Test_mustRenameDS(t *testing.T) {
 	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
-
 		// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
 		dbHandle := postgresql.DB
 		jobsdb := &HandleT{
@@ -48,10 +49,9 @@ func Test_mustRenameDS(t *testing.T) {
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable), 1)
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable), 1)
 	})
-
 }
-func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 
+func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
 		dbHandle := postgresql.DB
 

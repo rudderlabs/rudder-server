@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
+	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 )
 
 var (
@@ -147,7 +147,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
-func (sf *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+func (sf *HandleT) columnExists(columnName, tableName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
    								 FROM   information_schema.columns
    								 WHERE  table_schema = '%s'
@@ -168,7 +168,7 @@ func (sf *HandleT) schemaExists() (exists bool, err error) {
 	return
 }
 
-func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (sf *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
 	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
@@ -232,7 +232,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sort.Strings(strkeys)
 	var sortedColumnNames string
-	//TODO: use strings.Join() instead
+	// TODO: use strings.Join() instead
 	for index, key := range strkeys {
 		if index > 0 {
 			sortedColumnNames += `, `
@@ -287,7 +287,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var columnNames, stagingColumnNames, columnsWithValues string
-	//TODO: use strings.Join() instead
+	// TODO: use strings.Join() instead
 	for idx, str := range strkeys {
 		columnNames += str
 		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
@@ -481,7 +481,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		if _, ok := identifyColMap[colName]; ok {
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
 		} else {
-			//This is to handle cases when column in users table not present in inditifies table
+			// This is to handle cases when column in users table not present in inditifies table
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
 		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
@@ -626,7 +626,7 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (sf *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
@@ -643,13 +643,12 @@ func (sf *HandleT) AddColumn(tableName string, columnName string, columnType str
 	return err
 }
 
-func (sf *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (sf *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
 // DownloadIdentityRules gets distinct combinations of anonymous_id, user_id from tables in warehouse
 func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
-
 	getFromTable := func(tableName string) (err error) {
 		var exists bool
 		exists, err = sf.tableExists(tableName)
@@ -915,7 +914,7 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (sf *HandleT) LoadTestTable(location string, tablename string, payloadMap map[string]interface{}, format string) (err error) {
+func (sf *HandleT) LoadTestTable(location, tablename string, payloadMap map[string]interface{}, format string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
 
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'

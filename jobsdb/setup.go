@@ -61,7 +61,6 @@ func (jd *HandleT) setupDatabaseTables(l lock.DSListLockToken, clearAll bool) {
 }
 
 func (jd *HandleT) dropDatabaseTables(l lock.DSListLockToken) {
-
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))

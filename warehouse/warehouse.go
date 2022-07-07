@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"io"
 	"math/rand"
 	"net/http"
@@ -17,6 +16,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
@@ -36,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -81,7 +83,6 @@ var (
 	waitForWorkerSleep                  time.Duration
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
-	useParquetLoadFilesRS               bool
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
@@ -106,8 +107,10 @@ const (
 	triggerUploadQPName = "triggerUpload"
 )
 
-type WorkerIdentifierT string
-type JobIDT int64
+type (
+	WorkerIdentifierT string
+	JobIDT            int64
+)
 
 type HandleT struct {
 	destType                          string
@@ -143,7 +146,7 @@ func Init4() {
 }
 
 func loadConfig() {
-	//Port where WH is running
+	// Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
@@ -240,10 +243,8 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-	for {
-		config := <-ch
+	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	for config := range ch {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.ConfigT)
@@ -321,7 +322,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	configMap := configI.(map[string]interface{})
 	var namespace string
 	if destType == warehouseutils.CLICKHOUSE {
-		//TODO: Handle if configMap["database"] is nil
+		// TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
 	if configMap["namespace"] != nil {
@@ -342,7 +343,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	return namespace
 }
 
-func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
+func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
@@ -751,9 +752,8 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
-
 	var skipIdentifiersSQL string
-	var partitionIdentifierSQL = `destination_id, namespace`
+	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
 		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
@@ -1023,16 +1023,16 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 	}
 }
 
-func getBucketFolder(batchID string, tableName string) string {
+func getBucketFolder(batchID, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
 
-//Enable enables a router :)
+// Enable enables a router :)
 func (wh *HandleT) Enable() {
 	wh.isEnabled = true
 }
 
-//Disable disables a router:)
+// Disable disables a router:)
 func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
@@ -1058,7 +1058,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType string, whName string) {
+func (wh *HandleT) Setup(whType, whName string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
@@ -1112,10 +1112,8 @@ func (wh *HandleT) resetInProgressJobs() {
 }
 
 func minimalConfigSubscriber() {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-	for {
-		config := <-ch
+	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	for config := range ch {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
@@ -1158,18 +1156,11 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context) {
-	ch := make(chan pubsub.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	ch := backendconfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case config := <-ch:
-			onConfigDataEvent(config, dstToWhRouter)
-		}
+	for config := range ch {
+		onConfigDataEvent(config, dstToWhRouter)
 	}
 
 	g, _ := errgroup.WithContext(context.Background())
@@ -1181,7 +1172,6 @@ loop:
 		})
 	}
 	g.Wait()
-
 }
 
 func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
@@ -1226,7 +1216,6 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 			}
 		}
 	}
-
 }
 
 func setupTables(dbHandle *sql.DB) {
@@ -1510,8 +1499,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func TriggerUploadHandler(sourceID string, destID string) error {
-
+func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
 		err := fmt.Errorf("Empty source and destination id")
@@ -1749,17 +1737,15 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
-	// only if standalone or embeded connecting to diff DB for warehouse
+	// Setting up reporting client
+	// only if standalone or embedded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
-		if application.Features().Reporting != nil {
-			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-			g.Go(misc.WithBugsnagForWarehouse(func() error {
-				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
-				return nil
-			}))
-		}
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+			return nil
+		}))
 	}
 
 	if isStandAlone() && isMaster() {

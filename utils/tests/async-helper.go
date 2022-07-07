@@ -41,7 +41,6 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallback() func(...interface{}) {
 // ExpectAndNotifyCallback Adds one to this helper's WaitGroup, and provides a callback that calls Done on it.
 // Should be used for gomock Do calls that trigger via mocked functions executed in a goroutine.
 func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func(...interface{}) {
-
 	helper.waitingMapLock.Lock()
 	defer helper.waitingMapLock.Unlock()
 
@@ -57,6 +56,18 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func
 
 		helper.wg.Done()
 		helper.waitingMap[name]--
+	}
+}
+
+// ExpectAndNotifyCallback Adds one to this helper's WaitGroup, and provides a callback that calls Done on it.
+// Should be used for gomock Do calls that trigger via mocked functions executed in a goroutine.
+func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithNameOnce(name string) func() {
+	var s sync.Once
+	f := helper.ExpectAndNotifyCallbackWithName(name)
+	return func() {
+		s.Do(func() {
+			f()
+		})
 	}
 }
 

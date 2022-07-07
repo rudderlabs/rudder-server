@@ -1,7 +1,7 @@
 -- Drop any existing datasets
 {{range .Datasets}}
-    DROP TABLE {{$.Prefix}}_jobs_{{.}};
-    DROP TABLE {{$.Prefix}}_job_status_{{.}};
+    DROP TABLE "{{$.Prefix}}_jobs_{{.}}";
+    DROP TABLE "{{$.Prefix}}_job_status_{{.}}";
 {{end}}
 
 -- Drop type job_state_type

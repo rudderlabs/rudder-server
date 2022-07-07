@@ -69,7 +69,7 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(c.addresses...),
 			Topic:                  topic,
-			Balancer:               &kafka.ReferenceHash{}, // TODO replace: https://github.com/segmentio/kafka-go/pull/906
+			Balancer:               &kafka.ReferenceHash{},
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,

@@ -1,4 +1,4 @@
-//Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
+// Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
 
 /*
  *
@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
 
@@ -91,14 +91,16 @@ type PrivateDataT struct {
 	FrequencyCounters []*FrequencyCounter
 }
 
-type WriteKey string
-type EventType string
-type EventIdentifier string
+type (
+	WriteKey        string
+	EventType       string
+	EventIdentifier string
+)
 
-//EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
+// EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
 type EventModelMapT map[WriteKey]map[EventType]map[EventIdentifier]*EventModelT
 
-//SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
+// SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
 type SchemaVersionMapT map[string]map[string]*SchemaVersionT
 
 // EventSchemaManagerT handles all event-schemas related features
@@ -150,19 +152,21 @@ var (
 	areEventSchemasPopulated        bool
 )
 
-const EVENT_MODELS_TABLE = "event_models"
-const SCHEMA_VERSIONS_TABLE = "schema_versions"
+const (
+	EVENT_MODELS_TABLE    = "event_models"
+	SCHEMA_VERSIONS_TABLE = "schema_versions"
+)
 
-//GatewayEventBatchT : Type sent from gateway
+// GatewayEventBatchT : Type sent from gateway
 type GatewayEventBatchT struct {
 	writeKey   string
 	eventBatch string
 }
 
-//EventT : Generic type for singular event
+// EventT : Generic type for singular event
 type EventT map[string]interface{}
 
-//EventPayloadT : Generic type for gateway event payload
+// EventPayloadT : Generic type for gateway event payload
 type EventPayloadT struct {
 	WriteKey   string
 	ReceivedAt string
@@ -192,8 +196,8 @@ func Init2() {
 	pkgLogger = logger.NewLogger().Child("event-schema")
 }
 
-//RecordEventSchema : Records event schema for every event in the batch
-func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatch string) bool {
+// RecordEventSchema : Records event schema for every event in the batch
+func (manager *EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
@@ -244,10 +248,6 @@ func (manager *EventSchemaManagerT) deleteFromSchemaVersionCache(schemaVersion *
 	delete(countersCache, schemaHash)
 }
 
-func (manager *EventSchemaManagerT) deleteModelFromSchemaVersionCache(eventModel *EventModelT) {
-	delete(manager.schemaVersionMap, eventModel.UUID)
-}
-
 func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *SchemaVersionT, toCreateOrUpdate bool) {
 	eventModelID := schemaVersion.EventModelID
 	schemaHash := schemaVersion.SchemaHash
@@ -282,7 +282,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 *    <identify> There will be only identify event_model per source. Schema versions can change with different traits.
 *
 * This function is goroutine-safe. We can scale multiple go-routines calling this function,
-* but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
+* but since this method does mostly in-memory operations and has locks, there might not be much performance improvement.
 */
 func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventType, ok := event["type"].(string)
@@ -303,7 +303,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	processingTimer.Start()
 	defer processingTimer.End()
 
-	//TODO: Create locks on every event_model to improve scaling this
+	// TODO: Create locks on every event_model to improve scaling this
 	manager.eventModelLock.Lock()
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
@@ -354,7 +354,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			err := manager.reloadModel(archivedModel)
 			if err != nil {
-				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 			} else {
 				eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 				if !ok {
@@ -364,15 +364,15 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
 		} else {
-			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 		}
 	}
 	eventModel.LastSeen = timeutil.Now()
 
 	eventMap := map[string]interface{}(event)
-	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
+	flattenedEvent, err := flatten.Flatten(eventMap, "", flatten.DotStyle)
 	if err != nil {
-		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
+		pkgLogger.Debugf("[EventSchemas] Failed to flatten the event %+v with error: %v", eventMap, err)
 		return
 	}
 
@@ -449,24 +449,27 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
-func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
+func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
 	eventModelID := uuid.Must(uuid.NewV4()).String()
-	eventModel = &EventModelT{
+	em := &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
 		EventType:       eventType,
 		EventIdentifier: eventIdentifier,
 		Schema:          []byte("{}"),
+		reservoirSample: NewReservoirSampler(reservoirSampleSize, 0, 0),
 	}
-
-	eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 	if totalEventModels >= eventModelLimit {
 		archiveOldestLastSeenModel()
 	}
-	manager.updateEventModelCache(eventModel, true)
-	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
-	return eventModel
+	manager.updateEventModelCache(em, true)
+	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{
+		"module":          "event_schemas",
+		"writeKey":        em.WriteKey,
+		"eventIdentifier": em.EventIdentifier,
+	}).Increment()
+	return em
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
@@ -559,8 +562,8 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 	em.Schema = masterSchemaJSON
 }
 
-//NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
-func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash string, eventModelID string) *SchemaVersionT {
+// NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
+func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
 	schemaJSON, err := json.Marshal(schema)
 	assertError(err)
 
@@ -612,7 +615,6 @@ func getPrivateDataJSON(schemaHash string) []byte {
 	pkgLogger.Debugf("[EventSchemas] Private Data JSON: %s", string(privateDataJSON))
 	assertError(err)
 	return privateDataJSON
-
 }
 
 func (manager *EventSchemaManagerT) flushEventSchemas() {
@@ -675,25 +677,33 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				assertTxnError(err, txn)
 			}
 
-			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata", "private_data", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
-			defer stmt.Close()
-			for eventModelID, eventModel := range updatedEventModels {
-				metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
-				privateDataJSON := getPrivateDataJSON(eventModel.UUID)
-				eventModel.TotalCount = eventModel.reservoirSample.totalCount
-
-				_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType, eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON), string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
+			func() {
+				stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE,
+					"uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata",
+					"private_data", "last_seen", "total_count"))
 				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(eventModelIds))
+				defer func() { _ = stmt.Close() }()
+				for eventModelID, eventModel := range updatedEventModels {
+					metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
+					privateDataJSON := getPrivateDataJSON(eventModel.UUID)
+					eventModel.TotalCount = eventModel.reservoirSample.totalCount
+
+					_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType,
+						eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON),
+						string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
+					assertTxnError(err, txn)
+				}
+				_, err = stmt.Exec()
+				assertTxnError(err, txn)
+			}()
+
+			stats.NewTaggedStat(
+				"update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+			).Gauge(len(eventModelIds))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
-		//Handle Schema Versions
+		// Handle Schema Versions
 		if len(schemaVersionsInCache) > 0 {
 			versionIDs := make([]string, 0, len(schemaVersionsInCache))
 			for uid := range updatedSchemaVersions {
@@ -710,28 +720,37 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				assertTxnError(err, txn)
 			}
 
-			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data", "first_seen", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
-			defer stmt.Close()
-			for _, sv := range schemaVersionsInCache {
-				metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
-				privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
-				sv.TotalCount = sv.reservoirSample.totalCount
-
-				_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema), string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
+			func() {
+				stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE,
+					"uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data",
+					"first_seen", "last_seen", "total_count"))
 				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
+				defer func() { _ = stmt.Close() }()
+				for _, sv := range schemaVersionsInCache {
+					metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
+					privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
+					sv.TotalCount = sv.reservoirSample.totalCount
+
+					_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema),
+						string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
+					assertTxnError(err, txn)
+				}
+				_, err = stmt.Exec()
+				assertTxnError(err, txn)
+			}()
+
+			stats.NewTaggedStat(
+				"update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+			).Gauge(len(versionIDs))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
 		}
 
 		err = txn.Commit()
 		assertTxnError(err, txn)
 
-		flushDBHandle.Close()
+		if err := flushDBHandle.Close(); err != nil {
+			pkgLogger.Warnf("Error flushing DB handle: %v", err)
+		}
 
 		updatedEventModels = make(map[string]*EventModelT)
 		updatedSchemaVersions = make(map[string]*SchemaVersionT)
@@ -836,15 +855,17 @@ func assertError(err error) {
 
 func assertTxnError(err error, txn *sql.Tx) {
 	if err != nil {
-		txn.Rollback()
-		pkgLogger.Info(fmt.Sprintf("%#v\n", err))
-		pkgLogger.Info(fmt.Sprintf("%#v\n", txn))
+		pkgLogger.Error(err.Error())
+		pkgLogger.Debugf("%+v", txn)
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			pkgLogger.Error(err.Error())
+			pkgLogger.Error(rollbackErr.Error())
+		}
 		panic(err)
 	}
 }
 
 func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) error {
-
 	var uuidFilter string
 	if len(uuidFilters) > 0 {
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
@@ -858,7 +879,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 	} else {
 		assertError(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var eventModel EventModelT
@@ -901,7 +922,7 @@ func (manager *EventSchemaManagerT) populateEventModelsMinimal() {
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var eventModel EventModelT
@@ -935,7 +956,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT

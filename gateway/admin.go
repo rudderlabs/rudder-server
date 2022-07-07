@@ -19,8 +19,8 @@ var prefix = "gw_jobs_"
 func (g *GatewayAdmin) Status() interface{} {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))
-	for k := range enabledWriteKeysSourceMap {
+	writeKeys := make([]string, 0, len(writeKeysSourceMap))
+	for k := range writeKeysSourceMap {
 		writeKeys = append(writeKeys, k)
 	}
 
@@ -30,7 +30,6 @@ func (g *GatewayAdmin) Status() interface{} {
 		"enabled-write-keys": writeKeys,
 		"jobsdb":             g.handle.jobsDB.Status(),
 	}
-
 }
 
 type GatewayRPCHandler struct {

@@ -12,6 +12,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
+	"github.com/rudderlabs/rudder-server/enterprise/migrator"
+	"github.com/rudderlabs/rudder-server/enterprise/replay"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -52,8 +57,13 @@ func (a *App) Setup() {
 		a.initCPUProfiling()
 	}
 
-	// initialize enterprise features, if available
-	a.initEnterpriseFeatures()
+	if a.options.EnterpriseToken == "" {
+		pkgLogger.Info("Open source version of rudder-server")
+	} else {
+		pkgLogger.Info("Enterprise version of rudder-server")
+	}
+
+	a.initFeatures()
 }
 
 func (a *App) initCPUProfiling() {
@@ -67,30 +77,26 @@ func (a *App) initCPUProfiling() {
 	if err != nil {
 		panic(err)
 	}
-
 }
 
-func (a *App) initEnterpriseFeatures() {
-	a.features = &Features{}
-
-	if migratorFeatureSetup != nil {
-		a.features.Migrator = migratorFeatureSetup(a)
+func (a *App) initFeatures() {
+	a.features = &Features{
+		SuppressUser: &suppression.Factory{
+			EnterpriseToken: a.options.EnterpriseToken,
+		},
+		Reporting: &reporting.Factory{
+			EnterpriseToken: a.options.EnterpriseToken,
+		},
+		Replay: &replay.Factory{
+			EnterpriseToken: a.options.EnterpriseToken,
+		},
+		ConfigEnv: &configenv.Factory{
+			EnterpriseToken: a.options.EnterpriseToken,
+		},
 	}
 
-	if suppressUserFeatureSetup != nil {
-		a.features.SuppressUser = suppressUserFeatureSetup(a)
-	}
-
-	if configEnvFeatureSetup != nil {
-		a.features.ConfigEnv = configEnvFeatureSetup(a)
-	}
-
-	if reportingFeatureSetup != nil {
-		a.features.Reporting = reportingFeatureSetup(a)
-	}
-
-	if replayFeatureSetup != nil {
-		a.features.Replay = replayFeatureSetup(a)
+	if a.options.EnterpriseToken != "" {
+		a.features.Migrator = &migrator.Migrator{}
 	}
 }
 
@@ -133,7 +139,7 @@ func New(options *Options) Interface {
 	}
 }
 
-//HealthHandler is the http handler for health endpoint
+// HealthHandler is the http handler for health endpoint
 func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
@@ -149,6 +155,6 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 	}
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
-	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
-	w.Write([]byte(healthVal))
+	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
+	_, _ = w.Write([]byte(healthVal))
 }

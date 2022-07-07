@@ -4,20 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime/pprof"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"strings"
-
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
@@ -50,7 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -70,7 +67,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
@@ -81,9 +77,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (
@@ -100,8 +93,10 @@ var (
 	MaxHeaderBytes            int
 )
 
-var version = "Not an official release. Get the latest release from the github repo."
-var major, minor, commit, buildDate, builtBy, gitURL, patch string
+var (
+	version                                                                  = "Not an official release. Get the latest release from the github repo."
+	major, minor, commit, buildDate, builtBy, gitURL, patch, enterpriseToken string
+)
 
 func loadConfig() {
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -112,6 +107,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+
+	enterpriseToken = config.GetEnv("ENTERPRISE_TOKEN", enterpriseToken)
 }
 
 func Init() {
@@ -124,7 +121,7 @@ func versionInfo() map[string]interface{} {
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
-	var version = versionInfo()
+	version := versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
 	_, _ = w.Write(versionFormatted)
 }
@@ -204,13 +201,11 @@ func runAllInit() {
 	gateway.Init()
 	apphandlers.Init()
 	apphandlers.Init2()
-	rruntime.Init()
 	integrations.Init()
 	alert.Init()
 	multitenant.Init()
 	oauth.Init()
 	Init()
-
 }
 
 func main() {
@@ -234,9 +229,11 @@ func Run(ctx context.Context) {
 		return
 	}
 
+	options.EnterpriseToken = enterpriseToken
+
 	application = app.New(options)
 
-	//application & backend setup should be done before starting any new goroutines.
+	// application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
@@ -256,14 +253,7 @@ func Run(ctx context.Context) {
 	ctx = bugsnag.StartSession(ctx)
 	defer misc.BugsnagNotify(ctx, "Core")()
 
-	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
-		pkgLogger.Info("Suppress User feature is either disabled or enterprise only. Unable to poll regulations.")
-	}
-
-	var configEnvHandler types.ConfigEnvI
-	if application.Features().ConfigEnv != nil {
-		configEnvHandler = application.Features().ConfigEnv.Setup()
-	}
+	configEnvHandler := application.Features().ConfigEnv.Setup()
 
 	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {

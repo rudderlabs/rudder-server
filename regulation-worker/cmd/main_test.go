@@ -69,8 +69,10 @@ var (
 	}
 )
 
-const searchDir = "./testData"
-const goldenDir = "./goldenDir"
+const (
+	searchDir = "./testData"
+	goldenDir = "./goldenDir"
+)
 
 func TestMain(m *testing.M) {
 	initialize.Init()
@@ -107,7 +109,7 @@ func insertRedisData(address string) {
 	}
 	manager = kvstoremanager.New(destName, destConfig)
 
-	//inserting test data in Redis
+	// inserting test data in Redis
 	for _, test := range redisInputTestData {
 		err := manager.HMSet(test.key, test.fields)
 		if err != nil {
@@ -126,8 +128,7 @@ func insertRedisData(address string) {
 }
 
 func insertMinioData() {
-
-	//getting list of files in `testData` directory while will be used to testing filemanager.
+	// getting list of files in `testData` directory while will be used to testing filemanager.
 	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
 			fileList = append(fileList, path)
@@ -149,7 +150,7 @@ func insertMinioData() {
 		panic(err)
 	}
 
-	//upload all files
+	// upload all files
 	for _, file := range fileList {
 		filePtr, err := os.Open(file)
 		if err != nil {
@@ -164,12 +165,12 @@ func insertMinioData() {
 	}
 	fmt.Println("test files upload to minio mock bucket successful")
 }
-func run(m *testing.M) int {
 
+func run(m *testing.M) int {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.Parse()
 
-	//starting redis server to mock redis-destination
+	// starting redis server to mock redis-destination
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
@@ -202,7 +203,7 @@ func run(m *testing.M) int {
 	}
 	insertRedisData(redisAddress)
 
-	//starting minio server for batch-destination
+	// starting minio server for batch-destination
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
 		Tag:        "latest",
@@ -224,7 +225,7 @@ func run(m *testing.M) int {
 
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 	minioConfig["endPoint"] = minioEndpoint
-	//check if minio server is up & running.
+	// check if minio server is up & running.
 	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
@@ -246,7 +247,7 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("minioClient created successfully")
 
-	//creating bucket inside minio where testing will happen.
+	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(minioBucket, minioRegion)
 	if err != nil {
 		panic(err)
@@ -254,7 +255,7 @@ func run(m *testing.M) int {
 	fmt.Println("bucket created successfully")
 	insertMinioData()
 
-	//starting http server to mock regulation-manager
+	// starting http server to mock regulation-manager
 	svr := httptest.NewServer(handler())
 	defer svr.Close()
 	svcCtx, svcCancel := context.WithCancel(context.Background())
@@ -267,7 +268,6 @@ func run(m *testing.M) int {
 		c := m.Run()
 		svcCancel()
 		code <- c
-
 	}()
 	<-testDataInitialized
 	_ = os.Setenv("URL_PREFIX", svr.URL)
@@ -286,7 +286,6 @@ type test struct {
 }
 
 func TestFlow(t *testing.T) {
-
 	t.Run("TestFlow", func(t *testing.T) {
 		testData = []test{
 			{
@@ -332,7 +331,6 @@ func TestFlow(t *testing.T) {
 
 		verifyBatchDelete(t)
 	})
-
 }
 
 func getJob(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +343,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	//for the time when testData is not initialized.
+	// for the time when testData is not initialized.
 	w.WriteHeader(404)
 }
 
@@ -447,7 +445,7 @@ func verifyBatchDelete(t *testing.T) {
 	}
 
 	DownloadedFileName := "TmpDownloadedFile"
-	filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		require.NoError(t, err, "batch verification failed")
 	}

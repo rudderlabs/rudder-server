@@ -1,11 +1,11 @@
 {{range .Datasets}}
-    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN created_at set DEFAULT NOW();
-    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN expire_at set DEFAULT NOW();
-    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '-1';
+    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ALTER COLUMN created_at set DEFAULT NOW();
+    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ALTER COLUMN expire_at set DEFAULT NOW();
+    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '-1';
 
     -- Convert job_state to varchar, drop type job_state_type
-    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_state TYPE VARCHAR(64);
-    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_id TYPE BIGINT;
+    ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ALTER COLUMN job_state TYPE VARCHAR(64);
+    ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ALTER COLUMN job_id TYPE BIGINT;
 
 
     -- Might still be used by other jobsdb instance, last one updated will drop the type.

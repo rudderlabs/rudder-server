@@ -64,7 +64,7 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 			Timeout: o.Timeout,
 		})
 	default:
-		return nil, fmt.Errorf("no provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
 }
 
@@ -80,16 +80,16 @@ func CloseProducer(producer interface{}, destType string) error { // TODO check 
 	case "GOOGLEPUBSUB":
 		return googlepubsub.CloseProducer(producer)
 	default:
-		return fmt.Errorf("no provider configured for StreamManager") //404, "no provider configured for StreamManager", ""
+		return fmt.Errorf("no provider configured for StreamManager") // 404, "no provider configured for StreamManager", ""
 	}
 }
 
 type StreamProducer interface {
-	Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string)
+	Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string)
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer, config interface{}) (int, string, string) {
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
