@@ -150,9 +150,10 @@ func TestMultiTenantGateway(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
+	releaseName := t.Name()
 	require.NoError(t, os.Setenv("APP_TYPE", app.GATEWAY))
 	require.NoError(t, os.Setenv("INSTANCE_ID", serverInstanceID))
-	require.NoError(t, os.Setenv("RELEASE_NAME", t.Name()))
+	require.NoError(t, os.Setenv("RELEASE_NAME", releaseName))
 	require.NoError(t, os.Setenv("ETCD_HOSTS", etcdContainer.Hosts[0]))
 	require.NoError(t, os.Setenv("JOBS_DB_PORT", postgresContainer.Port))
 	require.NoError(t, os.Setenv("JOBS_DB_USER", postgresContainer.User))
@@ -173,7 +174,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
 	// TODO: this is to be reviewed after "Review health checkpoint (probes)
 	// https://www.notion.so/rudderstacks/Review-health-checkpoint-probes-ec33b45c1b7541f3bf802f3276667920
-	etcdReqKey := getGatewayWorkspacesReqKey(t, serverInstanceID)
+	etcdReqKey := getGatewayWorkspacesReqKey(releaseName, serverInstanceID)
 	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
 	require.NoError(t, err)
 
@@ -182,6 +183,7 @@ func TestMultiTenantGateway(t *testing.T) {
 		defer close(done)
 		Run(ctx)
 	}()
+	t.Cleanup(func() { cancel(); <-done })
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
@@ -202,51 +204,64 @@ func TestMultiTenantGateway(t *testing.T) {
 		t.Fatal("Timeout waiting for test-ack/1")
 	}
 
-	require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
-	sendEventsToGateway(t, httpPort, writeKey)
+	t.Run("EventsAreReceived", func(t *testing.T) {
+		require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
+		sendEventsToGateway(t, httpPort, writeKey)
+		t.Cleanup(func() {
+			_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_jobs_1 WHERE workspace_id = $1`, workspaceID)
+		})
 
-	var (
-		eventPayload string
-		message      map[string]interface{}
-	)
-	require.Eventually(t, func() bool {
-		return postgresContainer.DB.QueryRowContext(ctx,
-			"SELECT event_payload FROM gw_jobs_1 WHERE workspace_id = $1", workspaceID,
-		).Scan(&eventPayload) == nil
-	}, time.Minute, 50*time.Millisecond)
-	require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
+		var (
+			eventPayload string
+			message      map[string]interface{}
+		)
+		require.Eventually(t, func() bool {
+			return postgresContainer.DB.QueryRowContext(ctx,
+				"SELECT event_payload FROM gw_jobs_1 WHERE workspace_id = $1", workspaceID,
+			).Scan(&eventPayload) == nil
+		}, time.Minute, 50*time.Millisecond)
+		require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
 
-	batch, ok := message["batch"].([]interface{})
-	require.True(t, ok)
-	require.Len(t, batch, 1)
-	require.Equal(t, message["writeKey"], writeKey)
-	for _, msg := range batch {
-		m, ok := msg.(map[string]interface{})
+		batch, ok := message["batch"].([]interface{})
 		require.True(t, ok)
-		require.Equal(t, "anonymousId_1", m["anonymousId"])
-		require.Equal(t, "identified_user_id", m["userId"])
-		require.Equal(t, "identify", m["type"])
-		require.Equal(t, "1", m["eventOrderNo"])
-		require.Equal(t, "messageId_1", m["messageId"])
-	}
+		require.Len(t, batch, 1)
+		require.Equal(t, message["writeKey"], writeKey)
+		for _, msg := range batch {
+			m, ok := msg.(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, "anonymousId_1", m["anonymousId"])
+			require.Equal(t, "identified_user_id", m["userId"])
+			require.Equal(t, "identify", m["type"])
+			require.Equal(t, "1", m["eventOrderNo"])
+			require.Equal(t, "messageId_1", m["messageId"])
+		}
 
-	// Only the Gateway is running, so we don't expect any destinations to be hit.
-	require.EqualValues(t, 0, webhook.RequestsCount(), "webhook should have no requests because there is no processor")
+		// Only the Gateway is running, so we don't expect any destinations to be hit.
+		require.Empty(t, webhook.Requests(), "webhook should have no requests because there is no processor")
+	})
 
-	serverModeReqKey := getETCDServerModeReqKey(t, serverInstanceID)
-	t.Logf("Server mode ETCD key: %s", serverModeReqKey)
+	// Trigger degraded mode, the Gateway should still work
+	t.Run("ServerModeDegraded", func(t *testing.T) {
+		serverModeReqKey := getETCDServerModeReqKey(releaseName, serverInstanceID)
+		t.Logf("Server mode ETCD key: %s", serverModeReqKey)
 
-	{ // Trigger degraded mode, the Gateway should still work
-		_, err = etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
+		_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
 		require.NoError(t, err)
+		t.Log("Triggering degraded mode")
+
 		select {
 		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
-			t.Logf("ACK: %+v", ack)
+			require.Len(t, ack.Events, 1)
+			require.Equal(t, "test-ack/2", string(ack.Events[0].Kv.Key))
+			require.Equal(t, `{"status":"DEGRADED"}`, string(ack.Events[0].Kv.Value))
 		case <-time.After(20 * time.Second):
 			t.Fatal("Timeout waiting for server-mode test-ack")
 		}
 
 		sendEventsToGateway(t, httpPort, writeKey)
+		t.Cleanup(func() {
+			_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_jobs_1 WHERE workspace_id = $1`, workspaceID)
+		})
 		require.Eventually(t, func() bool {
 			var count int
 			err := postgresContainer.DB.QueryRowContext(ctx,
@@ -255,12 +270,13 @@ func TestMultiTenantGateway(t *testing.T) {
 			if err != nil {
 				return false
 			}
-			return count == 2
+			return count == 1
 		}, time.Minute, 50*time.Millisecond)
-		require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
-	}
+	})
 
-	{ // Checking that Workspace Changes errors are handled
+	// Checking that Workspace Changes errors are handled
+	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
+		// do not move this test up because the gateway terminates after a configuration error
 		_, err := etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
 		require.NoError(t, err)
 		select {
@@ -272,22 +288,19 @@ func TestMultiTenantGateway(t *testing.T) {
 		case <-time.After(20 * time.Second):
 			t.Fatal("Timeout waiting for test-ack/2")
 		}
-	}
-
-	// no need to cancel the context here, as the gateway will be stopped by a bad workspace change configuration
-	<-done
+	})
 }
 
-func getGatewayWorkspacesReqKey(t *testing.T, instance string) string {
-	return getETCDWorkspacesReqKey(t, instance, app.GATEWAY)
+func getGatewayWorkspacesReqKey(releaseName, instance string) string {
+	return getETCDWorkspacesReqKey(releaseName, instance, app.GATEWAY)
 }
 
-func getETCDServerModeReqKey(t *testing.T, instance string) string {
-	return fmt.Sprintf("/%s/SERVER/%s/MODE", t.Name(), instance)
+func getETCDServerModeReqKey(releaseName, instance string) string {
+	return fmt.Sprintf("/%s/SERVER/%s/MODE", releaseName, instance)
 }
 
-func getETCDWorkspacesReqKey(t *testing.T, instance, appType string) string {
-	return fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", t.Name(), instance, appType)
+func getETCDWorkspacesReqKey(releaseName, instance, appType string) string {
+	return fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", releaseName, instance, appType)
 }
 
 func sendEventsToGateway(t *testing.T, httpPort int, writeKey string) {
