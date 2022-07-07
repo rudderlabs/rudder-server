@@ -23,15 +23,15 @@ func (noop *NOOPConfig) SetUp() {
 	return
 }
 
-func (noop *NOOPConfig) Get(workspace string) (backendconfig.ConfigT, bool) {
-	return backendconfig.ConfigT{}, false
+func (noop *NOOPConfig) Get(_ context.Context, _ string) (backendconfig.ConfigT, error) {
+	return backendconfig.ConfigT{}, nil
 }
 
 func (noop *NOOPConfig) GetWorkspaceIDForWriteKey(string) string {
 	return ""
 }
 
-func (noop *NOOPConfig) GetWorkspaceIDForSourceID(sourceID string) string {
+func (noop *NOOPConfig) GetWorkspaceIDForSourceID(_ string) string {
 	return ""
 }
 
@@ -39,11 +39,11 @@ func (noop *NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfi
 	return backendconfig.LibrariesT{}
 }
 
-func (noop *NOOPConfig) WaitForConfig(ctx context.Context) error {
+func (noop *NOOPConfig) WaitForConfig(_ context.Context) error {
 	return nil
 }
 
-func (noop *NOOPConfig) Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+func (noop *NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {
 	ch := make(chan pubsub.DataEvent)
 
 	go func() {
@@ -53,7 +53,7 @@ func (noop *NOOPConfig) Subscribe(ctx context.Context, topic backendconfig.Topic
 	return ch
 }
 
-func (noop *NOOPConfig) StartWithIDs(workspaces string) {
+func (noop *NOOPConfig) StartWithIDs(_ context.Context, _ string) {
 	return
 }
 
