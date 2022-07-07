@@ -57,14 +57,14 @@ type BackendConfig interface {
 	IsConfigured() bool
 }
 type CommonBackendConfig struct {
-	eb               *pubsub.PublishSubscriber
-	configEnvHandler types.ConfigEnvI
-	ctx              context.Context
-	cancel           context.CancelFunc
-	blockChan        chan struct{}
-	pollingErrors    chan error
-	initializedLock  sync.RWMutex
-	initialized      bool
+	eb                *pubsub.PublishSubscriber
+	configEnvHandler  types.ConfigEnvI
+	ctx               context.Context
+	cancel            context.CancelFunc
+	blockChan         chan struct{}
+	waitForConfigErrs chan error
+	initializedLock   sync.RWMutex
+	initialized       bool
 }
 
 func loadConfig() {
@@ -130,9 +130,11 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		statConfigBackendError.Increment()
 		pkgLogger.Debugf("Error fetching config from backend: %v", err)
 		select {
-		case <-ctx.Done():
-		case bc.pollingErrors <- err:
+		case bc.waitForConfigErrs <- err:
 		default:
+			// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
+			// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
+			// polling unless we explicitly want to.
 		}
 		return
 	}
@@ -277,7 +279,7 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.pollingErrors = make(chan error, 1)
+	bc.waitForConfigErrs = make(chan error, 1)
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -289,8 +291,8 @@ func (bc *CommonBackendConfig) Stop() {
 	<-bc.blockChan
 	bc.initializedLock.Lock()
 	bc.initialized = false
-	if bc.pollingErrors != nil {
-		close(bc.pollingErrors)
+	if bc.waitForConfigErrs != nil {
+		close(bc.waitForConfigErrs)
 	}
 	bc.initializedLock.Unlock()
 }
@@ -309,7 +311,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err, open := <-bc.pollingErrors:
+		case err, open := <-bc.waitForConfigErrs:
 			if !open {
 				return fmt.Errorf("backend config polling stopped")
 			}

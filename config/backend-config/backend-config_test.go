@@ -178,9 +178,9 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 
 			done := make(chan struct{})
-			bc.pollingErrors = make(chan error, 1)
+			bc.waitForConfigErrs = make(chan error, 1)
 			go func() {
-				Expect(<-bc.pollingErrors).To(MatchError("TestRequestError"))
+				Expect(<-bc.waitForConfigErrs).To(MatchError("TestRequestError"))
 				close(done)
 			}()
 			bc.configUpdate(ctx, statConfigBackendError, "test_token")
