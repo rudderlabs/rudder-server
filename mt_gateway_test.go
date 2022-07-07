@@ -198,7 +198,7 @@ func TestMultiTenantGateway(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "RELOADED", v.Status)
 		require.Equal(t, "", v.Error)
-	case <-time.After(10 * time.Second):
+	case <-time.After(20 * time.Second):
 		t.Fatal("Timeout waiting for test-ack/1")
 	}
 
@@ -242,7 +242,7 @@ func TestMultiTenantGateway(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "ERROR", v.Status)
 			require.NotEqual(t, "", v.Error)
-		case <-time.After(10 * time.Second):
+		case <-time.After(20 * time.Second):
 			t.Fatal("Timeout waiting for test-ack/2")
 		}
 	}
