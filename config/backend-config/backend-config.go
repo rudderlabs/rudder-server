@@ -128,9 +128,11 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	sourceJSON, err := backendConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
+		pkgLogger.Debugf("Error fetching config from backend: %v", err)
 		select {
 		case <-ctx.Done():
 		case bc.pollingErrors <- err:
+		default:
 		}
 		return
 	}
