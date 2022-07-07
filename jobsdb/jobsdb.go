@@ -1523,7 +1523,7 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_workspace_%s ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "customval_workspace_%s" ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1563,9 +1563,9 @@ func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) da
 
 	// Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dRangeList) > 0 {
-		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
+		newDSMin := dRangeList[len(dRangeList)-1].maxJobID + 1
 		// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
-		sqlStatement := fmt.Sprintf(`SELECT setval(pg_get_serial_sequence('"%s_jobs_%s"', 'job_id'), %d)`,
+		sqlStatement := fmt.Sprintf(`ALTER SEQUENCE "%[1]s_jobs_%[2]s_job_id_seq" MINVALUE %[3]d START %[3]d RESTART %[3]d`,
 			jd.tablePrefix, newDSIdx, newDSMin)
 		_, err := jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
@@ -2142,7 +2142,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 			  s.job_state as jobState,
 			  j.workspace_id as workspace
 			from
-			  %[1]s j
+			  "%[1]s" j
 			  left join (
 				select * from (select
 					  *,
@@ -2152,7 +2152,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 						  rs.id DESC
 					  ) AS row_no
 					FROM
-					  %[2]s as rs) nq1
+					  "%[2]s" as rs) nq1
 				  where
 				  nq1.row_no = 1
 
@@ -2229,7 +2229,7 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = txHandler.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
+	_, err = txHandler.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobTable))
 	return err
 }
 
@@ -2258,7 +2258,7 @@ func (jd *HandleT) doStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*JobT) err
 			return err
 		}
 		if len(jobList) > jd.analyzeThreshold {
-			_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobTable))
+			_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobTable))
 		}
 
 		return err
@@ -2697,8 +2697,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 				`	pg_column_size(jobs.event_payload) as payload_size, `+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				`FROM %[1]s AS jobs `+
-				`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
+				`FROM "%[1]s" AS jobs `+
+				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
 				`WHERE job_status.job_id is NULL `,
 			ds.JobTable, ds.JobStatusTable)
 	} else {
@@ -2707,7 +2707,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 				`	pg_column_size(jobs.event_payload) as payload_size, `+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				` FROM AS jobs `+
+				` FROM "%[1]s" AS jobs `+
 				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM "%[2]s" AS job_status)`,
 			ds.JobTable, ds.JobStatusTable)
 	}
@@ -2884,7 +2884,7 @@ func (jd *HandleT) updateJobStatusDSInTx(tx *sql.Tx, ds dataSetT, statusList []*
 		}
 
 		if len(statusList) > jd.analyzeThreshold {
-			_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
+			_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobStatusTable))
 		}
 
 		return err
