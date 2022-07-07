@@ -15,7 +15,7 @@ func CreateTempFile(t *testing.T, templatePath string, values map[string]string)
 
 	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = tmpFile.Close() })
+	defer func() { _ = tmpFile.Close() }()
 
 	require.NoError(t, tpl.Execute(tmpFile, values))
 	t.Cleanup(func() {
