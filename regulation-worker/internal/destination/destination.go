@@ -83,7 +83,7 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
 		destConf, err = d.Dest.Get(ctx, config.GetWorkspaceToken())
 		if err != nil {
-			return fmt.Errorf("error while getting destination details: %v", err)
+			return fmt.Errorf("error while getting destination details: %w", err)
 		}
 		return nil
 	}, boCtx); err != nil {
