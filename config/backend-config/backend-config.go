@@ -129,12 +129,14 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Debugf("Error fetching config from backend: %v", err)
-		select {
-		case bc.waitForConfigErrs <- err:
-		default:
-			// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
-			// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
-			// polling unless we explicitly want to.
+		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
+			select {
+			case bc.waitForConfigErrs <- err:
+			default:
+				// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
+				// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
+				// polling unless we explicitly want to.
+			}
 		}
 		return
 	}
@@ -316,9 +318,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 				return fmt.Errorf("backend config polling stopped")
 			}
 			pkgLogger.Errorf("backend config WaitForConfig error: %v", err)
-			if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
-				return err
-			}
+			return err
 		case <-time.After(pollInterval):
 		}
 	}
