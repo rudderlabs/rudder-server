@@ -2,10 +2,12 @@ package cluster_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -31,11 +33,11 @@ func (m *mockModeProvider) WorkspaceIDs(_ context.Context) <-chan workspace.Chan
 	return m.workspaceCh
 }
 
-func (m *mockModeProvider) SendMode(newMode servermode.ChangeEvent) {
+func (m *mockModeProvider) sendMode(newMode servermode.ChangeEvent) {
 	m.modeCh <- newMode
 }
 
-func (m *mockModeProvider) SendWorkspaceIDs(ws workspace.ChangeEvent) {
+func (m *mockModeProvider) sendWorkspaceIDs(ws workspace.ChangeEvent) {
 	m.workspaceCh <- ws
 }
 
@@ -53,25 +55,6 @@ func (m *mockLifecycle) Start() {
 func (m *mockLifecycle) Stop() {
 	m.callOrder = atomic.AddUint64(m.callCount, 1)
 	m.status = "stop"
-}
-
-type configMock struct {
-	workspaces          string
-	stopPollingCalled   bool
-	waitForConfigCalled bool
-}
-
-func (s *configMock) StartWithIDs(_ context.Context, workspaces string) {
-	s.workspaces = workspaces
-}
-
-func (s *configMock) Stop() {
-	s.stopPollingCalled = true
-}
-
-func (s *configMock) WaitForConfig(_ context.Context) error {
-	s.waitForConfigCalled = true
-	return nil
 }
 
 func Init() {
@@ -102,7 +85,8 @@ func TestDynamicCluster(t *testing.T) {
 		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
 	}
 
-	backendConfig := configMock{}
+	ctrl := gomock.NewController(t)
+	backendConfig := NewMockconfigLifecycle(ctrl)
 	dc := cluster.Dynamic{
 		Provider: provider,
 
@@ -115,7 +99,7 @@ func TestDynamicCluster(t *testing.T) {
 		Router:    router,
 
 		MultiTenantStat: mtStat,
-		BackendConfig:   &backendConfig,
+		BackendConfig:   backendConfig,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,7 +112,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("DEGRADED -> NORMAL", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
+		provider.sendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 			close(chACK)
 			return nil
 		}))
@@ -161,7 +145,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
+		provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 			close(chACK)
 			return nil
 		}))
@@ -194,7 +178,11 @@ func TestDynamicCluster(t *testing.T) {
 
 	t.Run("Update workspaceIDs", func(t *testing.T) {
 		chACK := make(chan struct{})
-		provider.SendWorkspaceIDs(
+		backendConfig.EXPECT().Stop().Times(1)
+		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+		backendConfig.EXPECT().StartWithIDs(gomock.Any(), "a,b,c").Times(1)
+
+		provider.sendWorkspaceIDs(
 			workspace.NewWorkspacesRequest([]string{"a", "b", "c"},
 				func(_ context.Context) error {
 					close(chACK)
@@ -211,13 +199,36 @@ func TestDynamicCluster(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("Did not get acknowledgement within 1 second")
 		}
-
-		require.True(t, backendConfig.stopPollingCalled)
-		require.True(t, backendConfig.waitForConfigCalled)
-		require.Equal(t, "a,b,c", backendConfig.workspaces)
 	})
 
-	t.Run("Shutdown from Normal ", func(t *testing.T) {
+	t.Run("Update workspaceIDs with error", func(t *testing.T) {
+		chACK := make(chan struct{})
+		waitForConfigErr := errors.New("foo")
+		backendConfig.EXPECT().Stop().Times(1)
+		backendConfig.EXPECT().StartWithIDs(gomock.Any(), "d,e,f").Times(1)
+		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(waitForConfigErr).Times(1)
+
+		provider.sendWorkspaceIDs(
+			workspace.NewWorkspacesRequest([]string{"d", "e", "f"},
+				func(_ context.Context) error {
+					t.Fatalf("unexpected acknoledgement")
+					return nil
+				},
+				func(ctx context.Context, err error) error {
+					require.EqualError(t, waitForConfigErr, err.Error())
+					close(chACK)
+					return nil
+				}),
+		)
+
+		select {
+		case <-chACK:
+		case <-time.After(time.Second):
+			t.Fatal("Did not get acknowledgement error within 1 second")
+		}
+	})
+
+	t.Run("Shutdown from Normal", func(t *testing.T) {
 		cancel()
 		<-wait
 

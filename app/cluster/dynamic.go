@@ -30,6 +30,7 @@ type lifecycle interface {
 	Stop()
 }
 
+//go:generate mockgen -destination=./configlifecycle_mock_test.go -package=cluster_test -source=./dynamic.go configLifecycle
 type configLifecycle interface {
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
