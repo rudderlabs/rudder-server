@@ -2,6 +2,7 @@ package state_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -321,6 +322,23 @@ func Test_Workspaces(t *testing.T) {
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
 		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
+	}
+
+	t.Log("acknowledge with error")
+	{
+		_, err := etcdClient.Put(ctx, requestKey, `{"workspaces": "a,b,c", "ack_key": "test-ack/3"}`)
+		require.NoError(t, err)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, []string{"a", "b", "c"}, m.WorkspaceIDs())
+		fakeErr := errors.New("fake error")
+		require.NoError(t, m.AckWithError(ctx, fakeErr))
+
+		resp, err := etcdClient.Get(ctx, "test-ack/3")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"ERROR","error":"`+fakeErr.Error()+`"}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("error if update with invalid JSON ")

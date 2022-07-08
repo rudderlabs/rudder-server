@@ -263,13 +263,18 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			}
 			return err
 		},
-		func(ctx context.Context, err error) error {
+		func(ctx context.Context, ackErr error) error {
+			var errMessage string
+			if ackErr != nil {
+				errMessage = ackErr.Error()
+			}
+
 			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
 			defer cancel()
 
 			ackValue, err := json.MarshalToString(workspacesAckValue{
 				Status: "ERROR",
-				Error:  err.Error(),
+				Error:  errMessage,
 			})
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
