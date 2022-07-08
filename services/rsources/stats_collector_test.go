@@ -17,18 +17,20 @@ import (
 
 var _ = Describe("Using StatsCollector", Serial, func() {
 	var (
-		jobs           []*jobsdb.JobT
-		jobErrors      map[uuid.UUID]string
-		jobStatuses    []*jobsdb.JobStatusT
-		mockCtrl       *gomock.Controller
-		js             *MockJobService
-		statsCollector StatsCollector
+		jobs                   []*jobsdb.JobT
+		jobErrors              map[uuid.UUID]string
+		jobStatuses            []*jobsdb.JobStatusT
+		mockCtrl               *gomock.Controller
+		js                     *MockJobService
+		statsCollector         StatsCollector
+		failedRecordsCollector FailedJobsStatsCollector
 	)
 
 	BeforeEach(func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		js = NewMockJobService(mockCtrl)
 		statsCollector = NewStatsCollector(js)
+		failedRecordsCollector = NewFailedJobsCollector(js)
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
@@ -42,6 +44,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				TaskRunID:     "taskRunId",
 				SourceID:      "sourceId",
 				DestinationID: "destinationId",
+				RecordID:      "recordId",
 			}
 			jobs = append(jobs, generateJobs(10, params)...)
 		})
@@ -130,6 +133,90 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 			})
 		})
 
+		Context("jobs have no RecordId", func() {
+			BeforeEach(func() {
+				for i, job := range jobs {
+					if i == 0 {
+						// empty string
+						params1 := params
+						params1.RecordID = ""
+						p, err := json.Marshal(params1)
+						Expect(err).To(BeNil())
+						job.Parameters = p
+					} else if i >= len(jobs)/2 {
+						// nil value
+						params1 := params
+						params1.RecordID = nil
+						p, err := json.Marshal(params1)
+						Expect(err).To(BeNil())
+						job.Parameters = p
+					} else {
+						// non existent field
+						params1 := jobParamsNoRecordId{
+							JobRunID:      params.JobRunID,
+							TaskRunID:     params.TaskRunID,
+							SourceID:      params.SourceID,
+							DestinationID: params.DestinationID,
+						}
+						p, err := json.Marshal(params1)
+						Expect(err).To(BeNil())
+						job.Parameters = p
+					}
+				}
+			})
+			Context("processing of jobs has started", func() {
+				BeforeEach(func() {
+					statsCollector.BeginProcessing(jobs)
+				})
+
+				Context("all jobs are aborted", func() {
+					BeforeEach(func() {
+						for _, job := range jobs {
+							jobStatuses = append(jobStatuses, newAbortedStatus(job.JobID))
+						}
+					})
+					Context("it calls JobStatusesUpdated", func() {
+						BeforeEach(func() {
+							statsCollector.JobStatusesUpdated(jobStatuses)
+						})
+
+						It("can publish without error all statuses but with updating all stats as Failed stats and without adding failed records", func() {
+							js.EXPECT().
+								IncrementStats(
+									gomock.Any(),
+									gomock.Any(),
+									params.JobRunID,
+									JobTargetKey{
+										TaskRunID:     params.TaskRunID,
+										SourceID:      params.SourceID,
+										DestinationID: params.DestinationID,
+									},
+									Stats{
+										Failed: uint(len(jobs)),
+									}).
+								Times(1)
+
+							js.EXPECT().
+								AddFailedRecords(
+									gomock.Any(),
+									gomock.Any(),
+									params.JobRunID,
+									JobTargetKey{
+										TaskRunID:     params.TaskRunID,
+										SourceID:      params.SourceID,
+										DestinationID: params.DestinationID,
+									},
+									gomock.Any()).
+								Times(0)
+
+							err := statsCollector.Publish(context.TODO(), nil)
+							Expect(err).To(BeNil())
+						})
+					})
+				})
+			})
+		})
+
 		Context("processing of jobs has started", func() {
 			BeforeEach(func() {
 				statsCollector.BeginProcessing(jobs)
@@ -200,7 +287,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						statsCollector.JobStatusesUpdated(jobStatuses)
 					})
 
-					It("can publish without error all statuses but with updating half stats as Failed stats", func() {
+					It("can publish without error all statuses but with updating half stats as Failed stats and adding failed records", func() {
 						js.EXPECT().
 							IncrementStats(
 								gomock.Any(),
@@ -214,6 +301,23 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 								Stats{
 									Failed: uint(len(jobs) / 2),
 								}).
+							Times(1)
+
+						failedRecords := []json.RawMessage{}
+						for i := 0; i < len(jobs)/2; i++ {
+							failedRecords = append(failedRecords, []byte(`"recordId"`))
+						}
+						js.EXPECT().
+							AddFailedRecords(
+								gomock.Any(),
+								gomock.Any(),
+								params.JobRunID,
+								JobTargetKey{
+									TaskRunID:     params.TaskRunID,
+									SourceID:      params.SourceID,
+									DestinationID: params.DestinationID,
+								},
+								failedRecords).
 							Times(1)
 
 						err := statsCollector.Publish(context.TODO(), nil)
@@ -232,6 +336,50 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				}()
 				statsCollector.JobStatusesUpdated(jobStatuses)
 				Expect(err).ToNot(BeNil())
+			})
+		})
+
+		Context("it calls failedRecordsCollector.JobsFailed", func() {
+			BeforeEach(func() {
+				failedRecordsCollector.JobsFailed(jobs)
+			})
+
+			It("publishes both in and out stats and adds failed records", func() {
+				js.EXPECT().
+					IncrementStats(
+						gomock.Any(),
+						gomock.Any(),
+						params.JobRunID,
+						JobTargetKey{
+							TaskRunID:     params.TaskRunID,
+							SourceID:      params.SourceID,
+							DestinationID: params.DestinationID,
+						},
+						Stats{
+							In:     uint(len(jobs)),
+							Failed: uint(len(jobs)),
+						}).
+					Times(1)
+
+				failedRecords := []json.RawMessage{}
+				for i := 0; i < len(jobs); i++ {
+					failedRecords = append(failedRecords, []byte(`"recordId"`))
+				}
+				js.EXPECT().
+					AddFailedRecords(
+						gomock.Any(),
+						gomock.Any(),
+						params.JobRunID,
+						JobTargetKey{
+							TaskRunID:     params.TaskRunID,
+							SourceID:      params.SourceID,
+							DestinationID: params.DestinationID,
+						},
+						failedRecords).
+					Times(1)
+
+				err := failedRecordsCollector.Publish(context.TODO(), nil)
+				Expect(err).To(BeNil())
 			})
 		})
 	})
@@ -284,13 +432,21 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 })
 
 type jobParams struct {
+	JobRunID      string      `json:"source_job_run_id"`
+	TaskRunID     string      `json:"source_task_run_id"`
+	SourceID      string      `json:"source_id"`
+	DestinationID string      `json:"destination_id"`
+	RecordID      interface{} `json:"record_id"`
+}
+
+type jobParamsNoRecordId struct {
 	JobRunID      string `json:"source_job_run_id"`
 	TaskRunID     string `json:"source_task_run_id"`
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
 }
 
-func generateJobs(num int, params jobParams) []*jobsdb.JobT {
+func generateJobs(num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P0003
 	var jobs []*jobsdb.JobT
 	for i := 0; i < num; i++ {
 		jobs = append(jobs, newJob(int64(i), params))
@@ -298,7 +454,7 @@ func generateJobs(num int, params jobParams) []*jobsdb.JobT {
 	return jobs
 }
 
-func newJob(id int64, params jobParams) *jobsdb.JobT {
+func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
 	p, err := json.Marshal(params)
 	Expect(err).To(BeNil())
 	return &jobsdb.JobT{

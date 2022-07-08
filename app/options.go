@@ -9,13 +9,14 @@ import (
 
 // Options contains application's initialisation options
 type Options struct {
-	NormalMode    bool
-	DegradedMode  bool
-	MigrationMode string
-	ClearDB       bool
-	Cpuprofile    string
-	Memprofile    string
-	VersionFlag   bool
+	NormalMode      bool
+	DegradedMode    bool
+	MigrationMode   string
+	ClearDB         bool
+	Cpuprofile      string
+	Memprofile      string
+	VersionFlag     bool
+	EnterpriseToken string
 }
 
 // LoadOptions loads application's initialisation options based on command line flags and environment

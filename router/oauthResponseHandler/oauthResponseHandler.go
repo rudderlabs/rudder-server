@@ -71,7 +71,7 @@ type OAuthErrResHandler struct {
 
 type Authorizer interface {
 	Setup()
-	DisableDestination(destination backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, resBody string)
+	DisableDestination(destination *backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, resBody string)
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
 }
@@ -178,8 +178,8 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	accountMutex.RLock()
 	refVal, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 	if ok {
-		isInvalidAccountSecretForRefresh := (router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
-			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret))
+		isInvalidAccountSecretForRefresh := router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
+			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret)
 		if isInvalidAccountSecretForRefresh {
 			accountMutex.RUnlock()
 			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.Secret)
@@ -343,7 +343,7 @@ func (refStats *OAuthStats) SendCountStat() {
 	}).Increment()
 }
 
-func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, respBody string) {
+func (authErrHandler *OAuthErrResHandler) DisableDestination(destination *backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := destination.ID
 	disableDestMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)

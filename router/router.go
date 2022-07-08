@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -32,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -98,7 +99,7 @@ type HandleT struct {
 	failureMetricLock                      sync.RWMutex
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
-	failuresMetric                         map[string][]failureMetric
+	failuresMetric                         map[string]map[string]int
 	customDestinationManager               customdestinationmanager.DestinationManager
 	throttler                              throttler.Throttler
 	guaranteeUserEventOrder                bool
@@ -231,6 +232,8 @@ var (
 	disableEgress                                                 bool
 )
 
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
 type requestMetric struct {
 	RequestRetries       int
 	RequestAborted       int
@@ -238,23 +241,15 @@ type requestMetric struct {
 	RequestCompletedTime time.Duration
 }
 
-type failureMetric struct {
-	RouterDestination string          `json:"router_destination"`
-	UserId            string          `json:"user_id"`
-	RouterAttemptNum  int             `json:"router_attempt_num"`
-	ErrorCode         string          `json:"error_code"`
-	ErrorResponse     json.RawMessage `json:"error_response"`
-}
-
 type resultSetT struct {
 	id                 int64
 	resultSetBeginTime time.Time
-	timeAlloted        time.Duration
+	timeAllotted       time.Duration
 }
 
-func (rt *HandleT) initResultSet(timeAlloted time.Duration) {
+func (rt *HandleT) initResultSet(timeAllotted time.Duration) {
 	rt.lastResultSet.id++
-	rt.lastResultSet.timeAlloted = timeAlloted
+	rt.lastResultSet.timeAllotted = timeAllotted
 	rt.addResultSetMeta(rt.lastResultSet)
 }
 
@@ -268,7 +263,7 @@ func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
 
 	newResultSet := resultSetT{}
 	newResultSet.id = resultSet.id
-	newResultSet.timeAlloted = resultSet.timeAlloted
+	newResultSet.timeAllotted = resultSet.timeAllotted
 
 	rt.resultSetMeta[resultSet.id] = &newResultSet
 
@@ -670,14 +665,14 @@ func (worker *workerT) processDestinationJobs() {
 					resultSet := worker.rt.getResultSet(resultSetID)
 					worker.localResultSet.id = resultSetID
 					worker.localResultSet.resultSetBeginTime = time.Now()
-					worker.localResultSet.timeAlloted = resultSet.timeAlloted
+					worker.localResultSet.timeAllotted = resultSet.timeAllotted
 				}
 
 				// Assuming twice the overhead - defensive: 30% was just fine though
 				// In fact, the timeout should be more than the maximum latency allowed by these workers.
 				// Assuming 10s maximum latency
 				elapsed := time.Since(worker.localResultSet.resultSetBeginTime)
-				threshold := time.Duration(2.0 * math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second)))
+				threshold := time.Duration(2.0 * math.Max(float64(worker.localResultSet.timeAllotted), float64(10*time.Second)))
 				if elapsed > threshold {
 					respStatusCode = types.RouterTimedOutStatusCode
 					respBody = fmt.Sprintf("%d Jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
@@ -1594,8 +1589,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				}
 
 				rt.failureMetricLock.Lock()
-				failureMetricVal := failureMetric{RouterDestination: rt.destName, UserId: resp.userID, RouterAttemptNum: resp.status.AttemptNum, ErrorCode: resp.status.ErrorCode, ErrorResponse: resp.status.ErrorResponse}
-				rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetricVal)
+				if _, ok := rt.failuresMetric[event][string(resp.status.ErrorResponse)]; !ok {
+					rt.failuresMetric[event] = make(map[string]int)
+				}
+				rt.failuresMetric[event][string(resp.status.ErrorResponse)] += 1
 				rt.failureMetricLock.Unlock()
 			}
 		}
@@ -1801,30 +1798,24 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 		rt.requestsMetric = nil
 		rt.requestsMetricLock.RUnlock()
 
-		// This lock will ensure we dont send out Track Request while filling up the
+		// This lock will ensure we don't send out Track Request while filling up the
 		// failureMetric struct
-		rt.failureMetricLock.RLock()
-		for key, values := range rt.failuresMetric {
-			var stringValue string
+		rt.failureMetricLock.Lock()
+		for key, value := range rt.failuresMetric {
 			var err error
-			errorMap := make(map[string]int)
-			for _, value := range values {
-				errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
+			stringValueBytes, err := jsonfast.Marshal(value)
+			if err != nil {
+				stringValueBytes = []byte{}
 			}
-			for k, v := range errorMap {
-				stringValue, err = sjson.Set(stringValue, k, v)
-				if err != nil {
-					stringValue = ""
-				}
-			}
+
 			Diagnostics.Track(key, map[string]interface{}{
 				diagnostics.RouterDestination: rt.destName,
-				diagnostics.Count:             len(values),
-				diagnostics.ErrorCountMap:     stringValue,
+				diagnostics.Count:             len(value),
+				diagnostics.ErrorCountMap:     string(stringValueBytes),
 			})
 		}
-		rt.failuresMetric = make(map[string][]failureMetric)
-		rt.failureMetricLock.RUnlock()
+		rt.failuresMetric = make(map[string]map[string]int)
+		rt.failureMetricLock.Unlock()
 	}
 }
 
@@ -2229,7 +2220,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
 		Timeout: rt.netClientTimeout,
 	})
-	rt.failuresMetric = make(map[string][]failureMetric)
+	rt.failuresMetric = make(map[string]map[string]int)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
@@ -2357,7 +2348,8 @@ func (rt *HandleT) backendConfigSubscriber() {
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
-		for _, source := range allSources.Sources {
+		for i := range allSources.Sources {
+			source := &allSources.Sources[i]
 			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.workspaceSet[workspaceID]; !ok {
@@ -2365,12 +2357,13 @@ func (rt *HandleT) backendConfigSubscriber() {
 				rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
 			}
 			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
+				for i := range source.Destinations {
+					destination := &source.Destinations[i]
 					if destination.DestinationDefinition.Name == rt.destName {
 						if _, ok := rt.destinationsMap[destination.ID]; !ok {
-							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: *destination, Sources: []backendconfig.SourceT{}}
 						}
-						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, source)
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
@@ -2411,7 +2404,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
-			return rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
+			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceId, trRespBody, rudderAccountId)
 		case oauth.REFRESH_TOKEN:
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
@@ -2429,10 +2422,10 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
+				disableStCd, _ := rt.ExecDisableDestination(&destinationJob.Destination, workspaceId, trRespBody, rudderAccountId)
 				stats.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
-					"worspaceId":    refTokenParams.WorkspaceId,
+					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destName":      refTokenParams.DestDefName,
 				}).Increment()
@@ -2447,17 +2440,17 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 			return http.StatusInternalServerError, trRespBody
 		}
 	}
-	// By default send the status code & response from transformed response directly
+	// By default, send the status code & response from transformed response directly
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId, destResBody, rudderAccountId string) (int, string) {
+func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
-		"id":          destinationJob.Destination.ID,
+		"id":          destination.ID,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId, rudderAccountId)
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceId, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
 		// Error while disabling a destination
 		// High-Priority notification to rudderstack needs to be sent
@@ -2467,7 +2460,7 @@ func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, 
 	}
 	// High-Priority notification to workspace(&rudderstack) needs to be sent
 	stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-	// Abort the jobs as the destination is disable
+	// Abort the jobs as the destination is disabled
 	return http.StatusBadRequest, destResBody
 }
 

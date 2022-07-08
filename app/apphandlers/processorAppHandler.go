@@ -32,9 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 // ProcessorApp is the type for Processor type implemention
@@ -85,15 +82,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
-	// Setting up reporting client
-	if processor.App.Features().Reporting != nil {
-		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-		g.Go(misc.WithBugsnag(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
-			return nil
-		}))
-	}
+	g.Go(misc.WithBugsnag(func() error {
+		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		return nil
+	}))
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
@@ -261,6 +255,10 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		// because if this start before that then there might be a case when ReadDB will try to read the owner table
 		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
+	})
+
+	g.Go(func() error {
+		return rsourcesService.CleanupLoop(ctx)
 	})
 
 	return g.Wait()

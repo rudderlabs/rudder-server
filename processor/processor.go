@@ -694,7 +694,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
 	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
-	commonMetadata.RecordID = misc.MapLookup(singularEvent, "context", "record_id")
+	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
@@ -2079,10 +2079,12 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 
+		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
+		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
 			// TODO: error propagation
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
-			return nil
+			return rsourcesStats.Publish(context.TODO(), tx)
 		})
 
 	}
