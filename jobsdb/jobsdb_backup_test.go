@@ -48,9 +48,7 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err)
 
 	// create a unique temporary directory to allow for parallel test execution
-	tmpDir, err := ioutil.TempDir("", "TestBackupTable")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	{ // skipcq: CRT-A0008
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "true")
