@@ -455,6 +455,7 @@ func (bc *CommonBackendConfig) Stop() {
 	<-bc.blockChan
 	initializedLock.Lock()
 	initialized = false
+	curSourceJSON = ConfigT{}
 	initializedLock.Unlock()
 }
 
