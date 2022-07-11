@@ -616,10 +616,10 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		t.Log("INFO: No .env file found.")
 	}
 
-	_ = os.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
-	_ = os.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
-	_ = os.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	wht.InitWHConfig()
 
@@ -635,12 +635,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
-	_ = os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
+	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
 	httpAdminPort, err := freeport.GetFreePort()
 	require.NoError(t, err)
 
-	_ = os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
-	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = whUtil.NewRecorder()
 	t.Cleanup(webhook.Close)
@@ -690,12 +690,9 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		}
 	})
 	t.Log("workspace config path:", workspaceConfigPath)
-	_ = os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
-	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_test")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
-	_ = os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
 
 	t.Logf("--- Setup done (%s)", time.Since(setupStart))
 
