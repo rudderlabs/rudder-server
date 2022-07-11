@@ -53,6 +53,15 @@ type WarehouseOperations interface {
 //New is a Factory function that returns a ManagerI of a given destination-type
 func New(destType string) (ManagerI, error) {
 	switch destType {
+	case warehouseutils.BLACK_HOLE_RS:
+		var bh blackhole.BlackHole
+		return &bh, nil
+	case warehouseutils.BLACK_HOLE_S3_DATALAKE:
+		var bh blackhole.BlackHole
+		return &bh, nil
+	case warehouseutils.BLACK_HOLE_GCS_DATALAKE:
+		var bh blackhole.BlackHole
+		return &bh, nil
 	case warehouseutils.BLACK_HOLE_BQ:
 		var bh blackhole.BlackHole
 		return &bh, nil
