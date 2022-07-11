@@ -130,10 +130,6 @@ func TestMultiTenantGateway(t *testing.T) {
 		})
 	}
 	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("Unexpected call to /hostedWorkspaceConfig given that hosted=false")
-	}).Methods("GET")
-	backendConfRouter.HandleFunc("/multitenantWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, `["`+workspaceID+`"]`, r.FormValue("workspaceIds"))
 		_, _ = w.Write(marshalledWorkspaces)
 	}).Methods("GET")
 
@@ -151,6 +147,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
 	releaseName := t.Name()
+	multiTenantSvcSecret := "so-secret"
 	t.Setenv("APP_TYPE", app.GATEWAY)
 	t.Setenv("INSTANCE_ID", serverInstanceID)
 	t.Setenv("RELEASE_NAME", releaseName)
@@ -165,7 +162,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG", "false")
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "so-secret")
+	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", multiTenantSvcSecret)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
@@ -278,10 +275,12 @@ func TestMultiTenantGateway(t *testing.T) {
 	// Checking that Workspace Changes errors are handled
 	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
 		// do not move this test up because the gateway terminates after a configuration error
-		_, err := etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":",,,","ack_key":"test-ack/2"}`)
+		_, err := etcdContainer.Client.Put(ctx,
+			etcdReqKey, `{"workspaces":"`+multiTenantSvcSecret+`","ack_key":"test-ack/3"}`,
+		)
 		require.NoError(t, err)
 		select {
-		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/2"):
+		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/3"):
 			v, err := unmarshalWorkspaceAckValue(t, &ack)
 			require.NoError(t, err)
 			require.Equal(t, "ERROR", v.Status)

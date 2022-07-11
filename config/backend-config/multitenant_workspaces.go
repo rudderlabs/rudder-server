@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -83,42 +82,16 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
 	}
 
-	var url string
-	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
-	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
-		if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-			url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
-		} else {
-			url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-		}
+	var (
+		url        string
+		respBody   []byte
+		statusCode int
+	)
+	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
+		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
 	} else {
-		var (
-			rawWorkspaceIDs = strings.Split(workspaceArr, ",")
-			wIds            = make([]string, 0, len(rawWorkspaceIDs))
-		)
-		for _, wId := range rawWorkspaceIDs {
-			trimmed := strings.Trim(wId, " ")
-			if trimmed == "" {
-				pkgLogger.Warn("empty workspace ID provided")
-				continue
-			}
-			wIds = append(wIds, trimmed)
-		}
-		if len(wIds) == 0 {
-			return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
-		}
-
-		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
-		if err != nil {
-			return ConfigT{}, newError(false, fmt.Errorf("could not marshal workspace IDs, skipping backend config fetch"))
-		}
-
-		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
-		url = url + "&fetchAll=true"
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 	}
-	var respBody []byte
-	var statusCode int
-
 	operation := func() error {
 		var fetchError error
 		pkgLogger.Debugf("Fetching config from %s", url)
