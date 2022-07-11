@@ -57,7 +57,7 @@ func init() {
 
 func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	var config Config
-	var credentialsFile Credentials
+	// var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
@@ -71,15 +71,18 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 		return nil, createErr(err, "credentials not being sent")
 	}
 	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
+		fmt.Printf(`Credentials -> %+v`, config.Credentials)
 		return nil, createErr(err, "incompatible credentials")
 	}
 	confCreds = []byte(config.Credentials)
-	err = json.Unmarshal(confCreds, &credentialsFile)
-	if err != nil {
-		return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-	}
+	// We don't need this as we're not trying to check for schema as of this moment
+	// That should be taken care by Google SDK itself
+	// err = json.Unmarshal(confCreds, &credentialsFile)
+	// if err != nil {
+	// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
+	// }
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON([]byte(config.Credentials)),
+		option.WithCredentialsJSON(confCreds),
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
