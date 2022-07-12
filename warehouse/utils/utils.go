@@ -383,7 +383,7 @@ func GetS3Location(location string) (s3Location, region string) {
 
 	// Path-style access
 	if strings.HasPrefix(location, "https://s3.") {
-		r, _ = regexp.Compile("s3.*\\.amazonaws\\.com\\/")
+		r, _ = regexp.Compile(`s3.*\.amazonaws\.com/`)
 		subLocation := r.FindString(location)
 		regionTokens := strings.Split(subLocation, ".")
 		if len(regionTokens) == 4 {
@@ -391,7 +391,7 @@ func GetS3Location(location string) (s3Location, region string) {
 		}
 	} else {
 		// Virtual-hosted–style access
-		r, _ = regexp.Compile("\\.s3.*\\.amazonaws\\.com")
+		r, _ = regexp.Compile(`\.s3.*\.amazonaws\.com`)
 		subLocation := r.FindString(location)
 		regionTokens := strings.Split(subLocation, ".")
 		if len(regionTokens) == 5 {

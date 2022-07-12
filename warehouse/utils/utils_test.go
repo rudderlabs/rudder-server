@@ -3,10 +3,11 @@ package warehouseutils_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -676,7 +677,7 @@ func TestSnowflakeCloudProvider(t *testing.T) {
 
 func assertTime(t *testing.T, got, want time.Time) {
 	t.Helper()
-	if !(!got.Before(want) && !got.Before(want)) {
+	if got.Before(want) {
 		t.Errorf("got %v want %v", got, want)
 	}
 }
