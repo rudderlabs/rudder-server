@@ -3,12 +3,13 @@ package manager
 import (
 	"context"
 
+	"golang.org/x/sync/errgroup"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -72,7 +73,7 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 
 	// Crash recover routerDB, batchRouterDB
 	// Note: The following cleanups can take time if there are too many
-	// rt / batch_rt tables and there would be a delay readin from channel `ch`
+	// rt / batch_rt tables and there would be a delay reading from the 'ch' channel
 	// However, this shouldn't be the problem since backend config pushes config
 	// to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.DeleteExecuting()
@@ -85,10 +86,12 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				// For batch router destinations
-				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) || misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+					misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) ||
+					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
 					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 					if !ok {
-						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+						pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
 						brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
 						brt.Start()
 						cleanup = append(cleanup, brt.Shutdown)
@@ -97,7 +100,7 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 				} else {
 					_, ok := dstToRouter[destination.DestinationDefinition.Name]
 					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
+						pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
 						rt := routerFactory.New(destination.DestinationDefinition)
 						rt.Start()
 						cleanup = append(cleanup, rt.Shutdown)

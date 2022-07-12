@@ -338,7 +338,7 @@ func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map
 	relevantConfigs := make(map[string]interface{})
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
-		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)
+		pkgLogger.Errorf("[CDM] DestType: %s. Destination config is not of expected type (map). Returning empty map", customManager.destType)
 		return map[string]interface{}{}
 	}
 
