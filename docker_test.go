@@ -590,7 +590,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		containersGroup.Go(func() (err error) {
 			kafkaContainer, err = destination.SetupKafka(pool, t,
 				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-				destination.WithBrokers(3),
+				destination.WithBrokers(1),
 			)
 			return err
 		})
