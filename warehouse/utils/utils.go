@@ -89,7 +89,6 @@ const (
 )
 
 var (
-	serverIP                  string
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
 	AWSCredsExpiryInS         int64
@@ -272,26 +271,6 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	return // zero values
 }
 
-func GetFirstTiming(str sql.NullString) (status string, recordedTime time.Time) {
-	timingsMap := gjson.Parse(str.String).Array()
-	if len(timingsMap) > 0 {
-		for s, t := range timingsMap[0].Map() {
-			return s, t.Time()
-		}
-	}
-	return // zero values
-}
-
-func GetLastTiming(str sql.NullString) (status string, recordedTime time.Time) {
-	timingsMap := gjson.Parse(str.String).Array()
-	if len(timingsMap) > 0 {
-		for s, t := range timingsMap[len(timingsMap)-1].Map() {
-			return s, t.Time()
-		}
-	}
-	return // zero values
-}
-
 func GetLastFailedStatus(str sql.NullString) (status string) {
 	timingsMap := gjson.Parse(str.String).Array()
 	if len(timingsMap) > 0 {
@@ -329,26 +308,6 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 	return namespace, len(namespace) > 0
 }
 
-func GetTableFirstEventAt(dbHandle *sql.DB, sourceId, destinationId, tableName string, start, end int64) (firstEventAt string) {
-	sqlStatement := fmt.Sprintf(`SELECT first_event_at FROM %[7]s where id = ( SELECT staging_file_id FROM %[1]s WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v) ORDER BY staging_file_id ASC LIMIT 1)`,
-		WarehouseLoadFilesTable,
-		sourceId,
-		destinationId,
-		tableName,
-		start,
-		end,
-		WarehouseStagingFilesTable)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&firstEventAt)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
-	}
-	return
-}
-
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectFolder(provider, location string) (folder string) {
@@ -384,16 +343,16 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
-// GetObjectFolder returns the folder path for the storage object based on the storage provider
+// GetObjectLocation returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
-func GetObjectLocation(provider, location string) (folder string) {
+func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
 	case "S3":
-		folder, _ = GetS3Location(location)
+		objectLocation, _ = GetS3Location(location)
 	case "GCS":
-		folder = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
 	case "AZURE_BLOB":
-		folder = GetAzureBlobLocation(location)
+		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
 }
@@ -417,14 +376,29 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format
-// https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+// [Path-style access] https://s3.amazonaws.com/test-bucket/test-object.csv --> s3://test-bucket/test-object.csv
+// [Virtual-hosted–style access] https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetS3Location(location string) (s3Location, region string) {
-	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
-	subLocation := r.FindString(location)
-	regionTokens := strings.Split(subLocation, ".")
-	if len(regionTokens) == 5 {
-		region = regionTokens[2]
+	var r *regexp.Regexp
+
+	// Path-style access
+	if strings.HasPrefix(location, "https://s3.") {
+		r, _ = regexp.Compile("s3.*\\.amazonaws\\.com\\/")
+		subLocation := r.FindString(location)
+		regionTokens := strings.Split(subLocation, ".")
+		if len(regionTokens) == 4 {
+			region = regionTokens[1]
+		}
+	} else {
+		// Virtual-hosted–style access
+		r, _ = regexp.Compile("\\.s3.*\\.amazonaws\\.com")
+		subLocation := r.FindString(location)
+		regionTokens := strings.Split(subLocation, ".")
+		if len(regionTokens) == 5 {
+			region = regionTokens[2]
+		}
 	}
+
 	str1 := r.ReplaceAllString(location, "")
 	s3Location = strings.Replace(str1, "https", "s3", 1)
 	return
@@ -501,41 +475,8 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func JSONTimingsToMap(rawMsg json.RawMessage) []map[string]string {
-	timings := make([]map[string]string, 0)
-	err := json.Unmarshal(rawMsg, &timings)
-	if err != nil {
-		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
-	}
-	return timings
-}
-
 func DestStat(statType, statName, id string) stats.RudderStats {
 	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})
-}
-
-func Datatype(in interface{}) string {
-	if _, ok := in.(bool); ok {
-		return "boolean"
-	}
-
-	if _, ok := in.(int); ok {
-		return "int"
-	}
-
-	if _, ok := in.(float64); ok {
-		return "float"
-	}
-
-	if str, ok := in.(string); ok {
-		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
-
-		if isTimestamp {
-			return "datetime"
-		}
-	}
-
-	return "string"
 }
 
 /*
@@ -596,23 +537,6 @@ func ToProviderCase(provider, str string) string {
 		str = strings.ToUpper(str)
 	}
 	return str
-}
-
-func GetIP() string {
-	if serverIP != "" {
-		return serverIP
-	}
-
-	serverIP := ""
-	ip, err := misc.GetOutboundIP()
-	if err == nil {
-		serverIP = ip.String()
-	}
-	return serverIP
-}
-
-func GetSlaveWorkerId(workerIdx int, slaveID string) string {
-	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }
 
 func SnowflakeCloudProvider(config interface{}) string {
@@ -723,12 +647,6 @@ func GetTempFileExtension(destType string) string {
 
 func GetTimeWindow(ts time.Time) time.Time {
 	ts = ts.UTC()
-
-	// // get lastHalfHourWindow
-	// lastHalfHourWindow := 0
-	// if ts.Minute() >= 30 {
-	// 	lastHalfHourWindow = 30
-	// }
 
 	// create and return time struct for window
 	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), 0, 0, 0, time.UTC)
