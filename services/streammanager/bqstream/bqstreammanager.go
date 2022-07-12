@@ -69,28 +69,30 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
-	var confCreds []byte
-	if config.Credentials == "" {
-		return nil, createErr(err, "credentials not being sent")
-	}
-	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
-		fmt.Printf(`Credentials -> %+v`, config.Credentials)
-		return nil, createErr(err, "incompatible credentials")
-	}
-	confCreds = []byte(config.Credentials)
-	// We don't need this as we're not trying to check for schema as of this moment
-	// That should be taken care by Google SDK itself
-	// err = json.Unmarshal(confCreds, &credentialsFile)
-	// if err != nil {
-	// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-	// }
+	trimmedStr := strings.TrimSpace(serverConfig.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
+	// if env is not set
+	isEnvEmpty := !router_utils.IsNotEmptyString(trimmedStr)
 	opts := []option.ClientOption{
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	trimmedStr := strings.TrimSpace(serverConfig.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
-	if !router_utils.IsNotEmptyString(trimmedStr) {
+	if isEnvEmpty {
+		var confCreds []byte
+		if config.Credentials == "" {
+			return nil, createErr(err, "credentials not being sent")
+		}
+		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
+			fmt.Printf(`Credentials -> %+v`, config.Credentials)
+			return nil, createErr(err, "incompatible credentials")
+		}
+		confCreds = []byte(config.Credentials)
+		// We don't need this as we're not trying to check for schema as of this moment
+		// That should be taken care by Google SDK itself
+		// err = json.Unmarshal(confCreds, &credentialsFile)
+		// if err != nil {
+		// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
+		// }
 		opts = append(opts, option.WithCredentialsJSON(confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
