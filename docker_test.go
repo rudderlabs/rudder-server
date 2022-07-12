@@ -585,14 +585,19 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	containersGroup := errgroup.Group{}
+	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	if runtime.GOARCH != "arm64" || overrideArm64Check {
 		containersGroup.Go(func() (err error) {
 			kafkaContainer, err = destination.SetupKafka(pool, t,
 				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
 				destination.WithBrokers(1),
 			)
-			return err
+			if err != nil {
+				return err
+			}
+			kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
+			defer kafkaCancel()
+			return kafkaContainer.Wait(kafkaCtx, t)
 		})
 	}
 	containersGroup.Go(func() (err error) {
