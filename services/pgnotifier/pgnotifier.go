@@ -294,6 +294,9 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 			}
 		}
 	}()
+	if err == sql.ErrNoRows {
+		return
+	}
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		return

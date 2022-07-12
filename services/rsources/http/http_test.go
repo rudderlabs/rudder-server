@@ -1,6 +1,8 @@
 package http_test
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -80,18 +82,18 @@ func TestGetStatus(t *testing.T) {
 		expectedResponseCode int
 		filter               map[string][]string
 		jobStatus            rsources.JobStatus
+		getStatusError       error
 		respBody             string
 	}{
 		{
-			name:                 "basic test",
+			name:                 "basic test - get status success",
 			jobID:                "123",
 			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "GET",
 			expectedResponseCode: 200,
 			filter: map[string][]string{
 				"task_run_id": {"t1", "t2"},
-
-				"source_id": {"s1"},
+				"source_id":   {"s1"},
 			},
 			jobStatus: rsources.JobStatus{
 				ID: "123",
@@ -150,6 +152,34 @@ func TestGetStatus(t *testing.T) {
 			},
 			respBody: `{"id":"123","tasks":[{"id":"t1","sources":[{"id":"s1","completed":false,"stats":{"in":1,"out":1,"failed":0},"destinations":[{"id":"d1","completed":false,"stats":{"in":1,"out":1,"failed":0}}]}]},{"id":"t2","sources":[{"id":"s1","completed":false,"stats":{"in":1,"out":1,"failed":0},"destinations":[{"id":"d2","completed":false,"stats":{"in":1,"out":1,"failed":0}}]}]}]}`,
 		},
+		{
+			name:                 "basic test - GetStatus fails with StatusNotFoundError",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			method:               "GET",
+			expectedResponseCode: http.StatusNotFound,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			jobStatus:      rsources.JobStatus{},
+			getStatusError: rsources.StatusNotFoundError,
+			respBody:       statusNotFoundError,
+		},
+		{
+			name:                 "basic test - GetStatus fails with internal server error",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			method:               "GET",
+			expectedResponseCode: 500,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			jobStatus:      rsources.JobStatus{},
+			getStatusError: errors.New("GetStatusFailed"),
+			respBody:       getStatusFailedError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -157,7 +187,7 @@ func TestGetStatus(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
 
 			filterArg := getArgumentFilter(tt.filter)
-			service.EXPECT().GetStatus(gomock.Any(), tt.jobID, filterArg).Return(tt.jobStatus, nil).Times(1)
+			service.EXPECT().GetStatus(gomock.Any(), tt.jobID, filterArg).Return(tt.jobStatus, tt.getStatusError).Times(1)
 
 			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			url := withFilter(basicUrl, tt.filter)
@@ -175,6 +205,107 @@ func TestGetStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestGetFailedRecords(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	service := rsources.NewMockJobService(mockCtrl)
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+
+	tests := []struct {
+		name                 string
+		jobID                string
+		endpoint             string
+		method               string
+		expectedResponseCode int
+		filter               map[string][]string
+		failedRecords        rsources.FailedRecords
+		failedRecordsError   error
+		respBody             string
+	}{
+		{
+			name:                 "basic test - GetFailedRecords succeeds",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: http.StatusOK,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecordsError: nil,
+			failedRecords: rsources.FailedRecords{
+				{
+					JobRunID:      "123",
+					TaskRunID:     "t1",
+					SourceID:      "s1",
+					DestinationID: "d1",
+					RecordID:      json.RawMessage(`{"id":"record_123"}`),
+				},
+			},
+			respBody: `[{"job_run_id":"123","task_run_id":"t1","source_id":"s1","destination_id":"d1","record_id":{"id":"record_123"}}]`,
+		},
+		{
+			name:                 "get failed records basic test with no failed records",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: 200,
+			failedRecordsError:   nil,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecords: rsources.FailedRecords{},
+			respBody:      `[]`,
+		},
+		{
+			name:                 "get failed records basic test - GetFailedRecords fails",
+			jobID:                "123",
+			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			method:               "GET",
+			expectedResponseCode: 500,
+			filter: map[string][]string{
+				"task_run_id": {"t1", "t2"},
+				"source_id":   {"s1"},
+			},
+			failedRecords:      rsources.FailedRecords{},
+			failedRecordsError: errors.New("failed to get failed records"),
+			respBody:           failedRecordsRespBody,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log("endpoint tested:", tt.endpoint)
+
+			filterArg := getArgumentFilter(tt.filter)
+			service.EXPECT().GetFailedRecords(gomock.Any(), tt.jobID, filterArg).Return(tt.failedRecords, tt.failedRecordsError).Times(1)
+
+			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			url := withFilter(basicUrl, tt.filter)
+			req, err := http.NewRequest(tt.method, url, nil)
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
+			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
+		})
+	}
+}
+
+var failedRecordsRespBody string = `failed to get failed records
+`
+
+var statusNotFoundError string = `Status not found
+`
+
+var getStatusFailedError string = `GetStatusFailed
+`
 
 func getArgumentFilter(filter map[string][]string) rsources.JobFilter {
 	var filterArg rsources.JobFilter

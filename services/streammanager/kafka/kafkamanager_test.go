@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/linkedin/goavro"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,25 @@ func TestNewProducer(t *testing.T) {
 			p, err := NewProducer(destConfig, Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, `invalid configuration: invalid port: 0`)
+		})
+		t.Run("invalid schema", func(t *testing.T) {
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), 1)
+
+			destConfig := map[string]interface{}{
+				"topic":         "some-topic",
+				"hostname":      "some-hostname",
+				"port":          "9090",
+				"convertToAvro": true,
+				"avroSchemas": []interface{}{
+					map[string]string{"schemaId": "schema001"},
+					map[string]interface{}{
+						"schema": map[string]string{"name": "MyClass"},
+					},
+				},
+			}
+			p, err := NewProducer(destConfig, Opts{})
+			require.Nil(t, p)
+			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
 		})
 	})
 
@@ -303,21 +323,22 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
 
 		var data []map[string]interface{}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now())
-		require.NoError(t, err)
-		require.Nil(t, batch)
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
+		require.Equal(t, []client.Message(nil), batch)
+		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
 
 	t.Run("no message", func(t *testing.T) {
 		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
 		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-
+		p := &pMockErr{error: nil}
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
 		}}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now())
-		require.NoError(t, err)
-		require.Nil(t, batch)
+		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), p)
+		require.Equal(t, []client.Message(nil), batch)
+		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
 
 	t.Run("with message and user id", func(t *testing.T) {
@@ -332,7 +353,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"message": "msg02", "userId": "123"},
 			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456"},
 		}
-		batch, err := prepareBatchOfMessages("some-topic", data, now)
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, now, p)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -360,7 +382,8 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"not-interesting": "some value"},
 			{"message": "msg01"},
 		}
-		batch, err := prepareBatchOfMessages("some-topic", data, now)
+		p := &pMockErr{error: nil}
+		batch, err := prepareBatchOfMessages("some-topic", data, now, p)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -584,6 +607,93 @@ func TestSendBatchedMessage(t *testing.T) {
 		require.Equal(t, "some-topic", p.calls[0][0].Topic)
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
+
+	t.Run("schemaId not available", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
+			},
+		}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+	})
+
+	t.Run("wrong codec", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
+			},
+		}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+	})
+
+	t.Run("unavailable schemaId", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, 1)
+		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl, 1)
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
+			},
+		}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002"}]`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "Failure", res)
+		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch", err)
+	})
 }
 
 func TestSendMessage(t *testing.T) {
@@ -637,6 +747,58 @@ func TestSendMessage(t *testing.T) {
 		require.Equal(t, "some-topic", p.calls[0][0].Topic)
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
+
+	t.Run("schemaId not available", func(t *testing.T) {
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
+			},
+		}
+		sc, res, err := sendMessage(
+			context.Background(),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "schemaId is not available for event with messageId: message001 error occurred.", res)
+		require.Equal(t, "schemaId is not available for event with messageId: message001", err)
+	})
+
+	t.Run("wrong codec", func(t *testing.T) {
+		codec, _ := goavro.NewCodec(`{
+			"namespace" : "kafkaAvroTest",
+			"name": "myrecord",
+			"type" :  "record",
+			"fields" : [
+			   {"name": "uid", "type": "int"},
+			   {"name": "somefield", "type": "string"}
+			]
+		  }`)
+		p := &pMockErr{
+			codecs: map[string]*goavro.Codec{
+				"schemaId001": codec,
+			},
+		}
+		sc, res, err := sendMessage(
+			context.Background(),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}`),
+			p,
+			"some-topic",
+		)
+		require.Equal(t, 400, sc)
+		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\" error occurred.", res)
+		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\"", err)
+	})
 }
 
 func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats.MockRudderStats {
@@ -646,10 +808,18 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, times int) *mockStats
 	return mockedTimer
 }
 
+func getMockedCounter(t *testing.T, ctrl *gomock.Controller, times int) *mockStats.MockRudderStats {
+	t.Helper()
+	mockedCounter := mockStats.NewMockRudderStats(ctrl)
+	mockedCounter.EXPECT().Increment().Times(times)
+	return mockedCounter
+}
+
 // Mocks
 type pMockErr struct {
-	error error
-	calls [][]client.Message
+	error  error
+	calls  [][]client.Message
+	codecs map[string]*goavro.Codec
 }
 
 func (*pMockErr) getTimeout() time.Duration       { return 0 }
@@ -657,6 +827,10 @@ func (p *pMockErr) Close(_ context.Context) error { return p.error }
 func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 	p.calls = append(p.calls, msgs)
 	return p.error
+}
+
+func (p *pMockErr) getCodecs() map[string]*goavro.Codec {
+	return p.codecs
 }
 
 type nopLogger struct{}

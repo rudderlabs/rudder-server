@@ -30,6 +30,6 @@ END $$;
 -- This is an example of a dataset migration script, using migration templates:
 --
 -- {{range .Datasets}}
---     ALTER TABLE {{$.Prefix}}_jobs_{{.}} ADD COLUMN new_column TEXT;
---     ALTER TABLE {{$.Prefix}}_job_status_{{.}} ADD COLUMN new_column TEXT;
+--     ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN new_column TEXT;
+--     ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ADD COLUMN new_column TEXT;
 -- {{end}}

@@ -20,7 +20,7 @@ type TrackingPlanStatT struct {
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
 // 1. sourceSchemaConfig in Metadata.MergedTpConfig should be true
-func reportViolations(validateEvent *transformer.TransformerResponseT, trackingPlanId string) {
+func reportViolations(validateEvent *transformer.TransformerResponseT, trackingPlanId string, trackingPlanVersion int) {
 	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
@@ -30,6 +30,7 @@ func reportViolations(validateEvent *transformer.TransformerResponseT, trackingP
 	eventContext, castOk := output["context"].(map[string]interface{})
 	if castOk {
 		eventContext["trackingPlanId"] = trackingPlanId
+		eventContext["trackingPlanVersion"] = trackingPlanVersion
 		eventContext["violationErrors"] = validationErrors
 	}
 }
@@ -37,13 +38,13 @@ func reportViolations(validateEvent *transformer.TransformerResponseT, trackingP
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:
 // 1. response.Events
 // 1. response.FailedEvents
-func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string) {
+func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string, trackingPlanVersion int) {
 	for _, validatedEvent := range response.Events {
-		reportViolations(&validatedEvent, trackingPlanId)
+		reportViolations(&validatedEvent, trackingPlanId, trackingPlanVersion)
 	}
 
 	for _, validatedEvent := range response.FailedEvents {
-		reportViolations(&validatedEvent, trackingPlanId)
+		reportViolations(&validatedEvent, trackingPlanId, trackingPlanVersion)
 	}
 }
 
@@ -84,7 +85,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 			continue
 		}
 
-		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanId)
+		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanId, eventList[0].Metadata.TrackingPlanVersion)
 
 		transformerEvent := eventList[0]
 		destination := transformerEvent.Destination

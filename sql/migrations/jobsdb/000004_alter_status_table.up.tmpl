@@ -1,4 +1,4 @@
 -- Add parameter column to status table
 {{range .Datasets}}
-    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT '{}'::JSONB;
+    ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT '{}'::JSONB;
 {{end}}
