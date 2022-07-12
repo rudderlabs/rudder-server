@@ -19,7 +19,19 @@ func NewWarehouseDB(handle *sql.DB) *DB {
 }
 
 func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
-	query := fmt.Sprintf(`SELECT id, status, COALESCE(metadata->>'priority', '100')::int FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable,
+	pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
+
+	query := fmt.Sprintf(`
+		SELECT
+			id,
+			status,
+			COALESCE(metadata->>'priority', '100')::int
+		FROM %[1]s
+		WHERE
+				%[1]s.destination_type='%[2]s' AND
+				%[1]s.source_id='%[3]s' AND
+				%[1]s.destination_id='%[4]s'
+		ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable,
 		destType, sourceID, destinationID)
 
 	var (
