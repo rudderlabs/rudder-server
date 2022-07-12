@@ -577,6 +577,9 @@ func TestMainFlow(t *testing.T) {
 
 func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	setupStart := time.Now()
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
 
 	config.Load()
 	logger.Init()
