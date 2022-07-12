@@ -32,6 +32,7 @@ import (
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
@@ -584,23 +585,34 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
+	containersGroup := errgroup.Group{}
 	if runtime.GOARCH != "arm64" || overrideArm64Check {
-		kafkaContainer, err = destination.SetupKafka(pool, t,
-			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			destination.WithBrokers(3),
-		)
-		require.NoError(t, err)
+		containersGroup.Go(func() (err error) {
+			kafkaContainer, err = destination.SetupKafka(pool, t,
+				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+				destination.WithBrokers(3),
+			)
+			return err
+		})
 	}
-
-	redisContainer, err = destination.SetupRedis(pool, t)
-	require.NoError(t, err)
-
-	postgresContainer, err = destination.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	db = postgresContainer.DB
-
-	transformerContainer, err = destination.SetupTransformer(pool, t)
-	require.NoError(t, err)
+	containersGroup.Go(func() (err error) {
+		redisContainer, err = destination.SetupRedis(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		postgresContainer, err = destination.SetupPostgres(pool, t)
+		db = postgresContainer.DB
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		transformerContainer, err = destination.SetupTransformer(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		minioContainer, err = destination.SetupMINIO(pool, t)
+		return err
+	})
+	require.NoError(t, containersGroup.Wait())
 
 	health.WaitUntilReady(
 		context.Background(), t,
@@ -609,9 +621,6 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		time.Second,
 		"transformer",
 	)
-
-	minioContainer, err = destination.SetupMINIO(pool, t)
-	require.NoError(t, err)
 
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
