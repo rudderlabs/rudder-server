@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	serverConfig "github.com/rudderlabs/rudder-server/config"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -82,10 +85,13 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
 	// }
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON(confCreds),
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
+	}
+	trimmedStr := strings.TrimSpace(serverConfig.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
+	if !router_utils.IsNotEmptyString(trimmedStr) {
+		opts = append(opts, option.WithCredentialsJSON(confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 	if err != nil {
@@ -102,6 +108,8 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 	dsId := parsedJSON.Get("datasetId").String()
 	tblId := parsedJSON.Get("tableId").String()
 	props := parsedJSON.Get("properties").String()
+
+	fmt.Printf(`[BQStream]JSONData: %+v`, string(jsonData))
 
 	var genericRec *genericRecord
 	err := json.Unmarshal([]byte(props), &genericRec)
