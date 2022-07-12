@@ -77,6 +77,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
+	fmt.Printf(`IsEnvEmpty -> %[1]v, TrimmedStr(Env Value) -> %[2]v`, isEnvEmpty, trimmedStr)
 	if isEnvEmpty {
 		var confCreds []byte
 		if config.Credentials == "" {
