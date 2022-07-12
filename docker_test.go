@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -702,6 +703,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
 	)
+	if testing.Verbose() {
+		data, err := ioutil.ReadFile(workspaceConfigPath)
+		require.NoError(t, err)
+		t.Logf("Workspace config: %s", string(data))
+	}
+
 	t.Log("workspace config path:", workspaceConfigPath)
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
