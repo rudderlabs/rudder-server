@@ -86,7 +86,7 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 
 // Get fileManager
 func (job *PayloadT) getFileManager(config interface{}) (filemanager.FileManager, error) {
-	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage)
+	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, job.UseRudderStorage)
 	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
