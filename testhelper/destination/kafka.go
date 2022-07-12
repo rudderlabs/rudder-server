@@ -1,20 +1,15 @@
 package destination
 
 import (
-	"context"
 	_ "encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/phayes/freeport"
 	"golang.org/x/sync/errgroup"
-
-	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 )
 
 type scramHashGenerator uint8
@@ -111,41 +106,6 @@ type KafkaResource struct {
 
 	pool       *dockertest.Pool
 	containers []*dockertest.Resource
-}
-
-func (k *KafkaResource) Wait(ctx context.Context, l logger) error {
-	kafkaHost := fmt.Sprintf("localhost:%s", k.Port)
-	ticker := time.NewTicker(250 * time.Millisecond)
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("kafka not ready within context: %v", ctx.Err())
-		case <-ticker.C:
-			kc, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
-			if err != nil {
-				l.Log(fmt.Errorf("could not create Kafka client: %v", err))
-				continue
-			}
-			if err := kc.Ping(ctx); err != nil {
-				l.Log(fmt.Errorf("could not ping Kafka: %v", err))
-				continue
-			}
-			tc := testutil.New("tcp", kafkaHost)
-			if err := tc.CreateTopic(ctx, "dumb-topic", 1, 1); err != nil {
-				l.Log(fmt.Errorf("could not create Kafka topic (dumb-topic): %v", err))
-				continue
-			}
-			if topics, err := tc.ListTopics(ctx); err != nil {
-				l.Log(fmt.Errorf("could not list Kafka topics: %v", err))
-				continue
-			} else if len(topics) == 0 {
-				l.Log(fmt.Errorf("kafka topic was not created (dumb-topic missing)"))
-				continue
-			}
-			l.Log("Kafka is ready!")
-			return nil
-		}
-	}
 }
 
 func (k *KafkaResource) Destroy() error {

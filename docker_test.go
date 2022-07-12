@@ -597,7 +597,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 			}
 			kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 			defer kafkaCancel()
-			return kafkaContainer.Wait(kafkaCtx, t)
+			return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
 		})
 	}
 	containersGroup.Go(func() (err error) {
@@ -1509,6 +1509,41 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 				_, err := chResource.DB.Exec(sqlStatement)
 				require.Equal(t, err, nil)
 			}
+		}
+	}
+}
+
+func waitForKafka(ctx context.Context, t *testing.T, port string) error {
+	kafkaHost := "localhost:" + port
+	ticker := time.NewTicker(250 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("kafka not ready within context: %v", ctx.Err())
+		case <-ticker.C:
+			kc, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
+			if err != nil {
+				t.Log(fmt.Errorf("could not create Kafka client: %v", err))
+				continue
+			}
+			if err := kc.Ping(ctx); err != nil {
+				t.Log(fmt.Errorf("could not ping Kafka: %v", err))
+				continue
+			}
+			tc := testutil.New("tcp", kafkaHost)
+			if err := tc.CreateTopic(ctx, "dumb-topic", 1, 1); err != nil {
+				t.Log(fmt.Errorf("could not create Kafka topic (dumb-topic): %v", err))
+				continue
+			}
+			if topics, err := tc.ListTopics(ctx); err != nil {
+				t.Log(fmt.Errorf("could not list Kafka topics: %v", err))
+				continue
+			} else if len(topics) == 0 {
+				t.Log(fmt.Errorf("kafka topic was not created (dumb-topic missing)"))
+				continue
+			}
+			t.Log("Kafka is ready!")
+			return nil
 		}
 	}
 }
