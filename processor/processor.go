@@ -980,8 +980,8 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 
 		pkgLogger.Debugf(
-			"Got failed event job for source %q and destination %q: %s",
-			commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
+			"[Processor: getFailedEventJobs] Failure [%d] for source %q and destination %q: %s",
+			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
 
 		id := misc.FastUUID()
