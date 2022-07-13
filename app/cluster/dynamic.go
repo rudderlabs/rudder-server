@@ -128,14 +128,14 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			err := d.handleWorkspaceChange(ctx, ids)
 			if err != nil {
 				d.logger.Debugf("Could not handle workspaceIDs change: %v", err)
-				if ackErr := req.AckWithError(ctx, err); ackErr != nil {
+				if ackErr := req.Ack(ctx, err); ackErr != nil {
 					return fmt.Errorf("ack workspaceIDs change with error: %v: %w", err, ackErr)
 				}
 				return err
 			}
 
 			d.logger.Debugf("Acknowledging the workspaceIDs change")
-			if err := req.Ack(ctx); err != nil {
+			if err := req.Ack(ctx, nil); err != nil {
 				return fmt.Errorf("ack workspaceIDs change: %w", err)
 			}
 		}

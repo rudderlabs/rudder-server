@@ -251,7 +251,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 
-		require.ErrorAs(t, m.Ack(ctx), &context.DeadlineExceeded)
+		require.ErrorAs(t, m.Ack(ctx, nil), &context.DeadlineExceeded)
 	})
 
 	provider := state.ETCDManager{
@@ -280,7 +280,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -301,7 +301,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
@@ -317,7 +317,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2", "5"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
@@ -334,7 +334,7 @@ func Test_Workspaces(t *testing.T) {
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"a", "b", "c"}, m.WorkspaceIDs())
 		fakeErr := errors.New("fake error")
-		require.NoError(t, m.AckWithError(ctx, fakeErr))
+		require.NoError(t, m.Ack(ctx, fakeErr))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/3")
 		require.NoError(t, err)

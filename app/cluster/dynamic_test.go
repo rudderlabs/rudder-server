@@ -184,14 +184,12 @@ func TestDynamicCluster(t *testing.T) {
 
 		provider.sendWorkspaceIDs(
 			workspace.NewWorkspacesRequest([]string{"a", "b", "c"},
-				func(_ context.Context) error {
+				func(_ context.Context, err error) error {
 					close(chACK)
+					require.NoError(t, err)
 					return nil
 				},
-				func(ctx context.Context, err error) error {
-					t.Fatalf("unexpected error: %v", err)
-					return nil
-				}),
+			),
 		)
 
 		select {
@@ -210,10 +208,6 @@ func TestDynamicCluster(t *testing.T) {
 
 		provider.sendWorkspaceIDs(
 			workspace.NewWorkspacesRequest([]string{"d", "e", "f"},
-				func(_ context.Context) error {
-					t.Fatalf("unexpected acknoledgement")
-					return nil
-				},
 				func(ctx context.Context, err error) error {
 					require.EqualError(t, waitForConfigErr, err.Error())
 					close(chACK)
