@@ -25,7 +25,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/router/throttler"
@@ -99,7 +98,7 @@ type HandleT struct {
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
 	failuresMetric                         map[string]map[string]int
-	customDestinationManager               customdestinationmanager.DestinationManager
+	customDestinationManager               customDestinationManager.DestinationManager
 	throttler                              throttler.Throttler
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
