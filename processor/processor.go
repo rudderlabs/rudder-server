@@ -980,7 +980,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 
 		pkgLogger.Debugf(
-			"[Processor: getFailedEventJobs] Failure [%d] for source %q and destination %q: %s",
+			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
 			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
 
