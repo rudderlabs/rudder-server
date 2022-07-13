@@ -16,7 +16,8 @@ type TransformerResource struct {
 
 func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, error) {
 	// Set Rudder Transformer
-	// pulls an image, creates a container based on it and runs it
+	// pulls an image first to make sure we don't have an old cached version locally,
+	// then it creates a container based on it and runs it
 	err := pool.Client.PullImage(docker.PullImageOptions{
 		Repository: "rudderlabs/rudder-transformer",
 		Tag:        "latest",
