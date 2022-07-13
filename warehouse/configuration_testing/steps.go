@@ -3,7 +3,6 @@ package configuration_testing
 import (
 	"encoding/json"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -23,41 +22,52 @@ func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.Ra
 func (ct *CTHandleT) validationSteps() []*validationStep {
 	steps := []*validationStep{{
 		ID:        1,
-		Name:      "Verifying Object Storage",
+		Name:      verifyingObjectStorage,
 		Validator: ct.verifyingObjectStorage,
 	}}
 
-	// Time window destination contains only object storage verification
-	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
-		return steps
+	switch ct.infoRequest.Destination.DestinationDefinition.Name {
+	case warehouseutils.RS, warehouseutils.BQ, warehouseutils.SNOWFLAKE, warehouseutils.POSTGRES, warehouseutils.CLICKHOUSE, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE:
+		steps = append(steps,
+			&validationStep{
+				ID:        2,
+				Name:      verifyingConnections,
+				Validator: ct.verifyingConnections,
+			},
+			&validationStep{
+				ID:        3,
+				Name:      verifyingCreateSchema,
+				Validator: ct.verifyingCreateSchema,
+			},
+			&validationStep{
+				ID:        4,
+				Name:      verifyingCreateAndAlterTable,
+				Validator: ct.verifyingCreateAlterTable,
+			},
+			&validationStep{
+				ID:        5,
+				Name:      verifyingFetchSchema,
+				Validator: ct.verifyingFetchSchema,
+			},
+			&validationStep{
+				ID:        6,
+				Name:      verifyingLoadTable,
+				Validator: ct.verifyingLoadTable,
+			},
+		)
+	case warehouseutils.S3_DATALAKE:
+		steps = append(steps,
+			&validationStep{
+				ID:        2,
+				Name:      verifyingCreateSchema,
+				Validator: ct.verifyingCreateSchema,
+			},
+			&validationStep{
+				ID:        3,
+				Name:      verifyingFetchSchema,
+				Validator: ct.verifyingFetchSchema,
+			},
+		)
 	}
-
-	steps = append(steps,
-		&validationStep{
-			ID:        2,
-			Name:      "Verifying Connections",
-			Validator: ct.verifyingConnections,
-		},
-		&validationStep{
-			ID:        3,
-			Name:      "Verifying Create Schema",
-			Validator: ct.verifyingCreateSchema,
-		},
-		&validationStep{
-			ID:        4,
-			Name:      "Verifying Create and Alter Table",
-			Validator: ct.verifyingCreateAlterTable,
-		},
-		&validationStep{
-			ID:        5,
-			Name:      "Verifying Fetch Schema",
-			Validator: ct.verifyingFetchSchema,
-		},
-		&validationStep{
-			ID:        6,
-			Name:      "Verifying Load Table",
-			Validator: ct.verifyingLoadTable,
-		},
-	)
 	return steps
 }

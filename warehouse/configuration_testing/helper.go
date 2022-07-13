@@ -27,6 +27,15 @@ var (
 	}
 )
 
+const (
+	verifyingObjectStorage       = "Verifying Object Storage"
+	verifyingConnections         = "Verifying Connections"
+	verifyingCreateSchema        = "Verifying Create Schema"
+	verifyingCreateAndAlterTable = "Verifying Create and Alter Table"
+	verifyingFetchSchema         = "Verifying Fetch Schema"
+	verifyingLoadTable           = "Verifying Load Table"
+)
+
 // warehouseAdapter returns warehouseT from info request
 func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
 	destination := req.Destination
