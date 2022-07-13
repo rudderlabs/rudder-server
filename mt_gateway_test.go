@@ -24,7 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -62,58 +62,11 @@ func TestMultiTenantGateway(t *testing.T) {
 
 	writeKey := rand.String(27)
 	workspaceID := rand.String(27)
-	workspaces := map[string]backendconfig.ConfigT{
-		workspaceID: {
-			EnableMetrics: false,
-			WorkspaceID:   workspaceID,
-			Sources: []backendconfig.SourceT{
-				{
-					ID:          "xxxyyyzzEaEurW247ad9WYZLUyk",
-					Name:        "Dev Integration Test 1",
-					WriteKey:    writeKey,
-					WorkspaceID: workspaceID,
-					Enabled:     true,
-					SourceDefinition: backendconfig.SourceDefinitionT{
-						ID:   "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
-						Name: "HTTP",
-					},
-					Destinations: []backendconfig.DestinationT{
-						{
-							ID:                 "xxxyyyzzP9kQfzOoKd1tuxchYAG",
-							Name:               "Dev WebHook Integration Test 1",
-							Enabled:            true,
-							IsProcessorEnabled: false,
-							Config: map[string]interface{}{
-								"webhookUrl":    webhook.Server.URL,
-								"webhookMethod": "POST",
-							},
-							DestinationDefinition: backendconfig.DestinationDefinitionT{
-								ID:          "xxxyyyzzSOU9pLRavMf0GuVnWV3",
-								Name:        "WEBHOOK",
-								DisplayName: "Webhook",
-								Config: map[string]interface{}{
-									"destConfig": map[string]interface{}{
-										"defaultConfig": []string{"webhookUrl", "webhookMethod", "headers"},
-									},
-									"secretKeys":           []string{"headers.to"},
-									"supportedSourceTypes": []string{"web"},
-									"supportedMessageTypes": []string{
-										"alias",
-										"group",
-										"identify",
-										"page",
-										"screen",
-										"track",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	marshalledWorkspaces, err := json.Marshal(&workspaces)
+	marshalledWorkspaces := testhelper.FillTemplateAndReturn(t, "testdata/mtGatewayTest01.json", map[string]string{
+		"writeKey":    writeKey,
+		"workspaceId": workspaceID,
+		"webhookUrl":  webhook.Server.URL,
+	})
 	require.NoError(t, err)
 
 	backendConfRouter := mux.NewRouter()
@@ -126,7 +79,9 @@ func TestMultiTenantGateway(t *testing.T) {
 		})
 	}
 	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(marshalledWorkspaces)
+		n, err := w.Write(marshalledWorkspaces.Bytes())
+		require.NoError(t, err)
+		require.Equal(t, marshalledWorkspaces.Len(), n)
 	}).Methods("GET")
 
 	backendConfigSrv := httptest.NewServer(backendConfRouter)
