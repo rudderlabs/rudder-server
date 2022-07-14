@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -99,7 +98,7 @@ func initBackendConfig() {
 
 var _ = Describe("newForDeployment", func() {
 	It("supports single workspace config", func() {
-		Expect(os.Setenv("WORKSPACE_TOKEN", "password")).To(BeNil())
+		GinkgoT().Setenv("WORKSPACE_TOKEN", "password")
 		config, err := newForDeployment(deployment.DedicatedType, nil)
 
 		Expect(err).To(BeNil())
@@ -108,7 +107,7 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		Expect(os.Setenv("HOSTED_SERVICE_SECRET", "password")).To(BeNil())
+		GinkgoT().Setenv("HOSTED_SERVICE_SECRET", "password")
 		config, err := newForDeployment(deployment.HostedType, nil)
 
 		Expect(err).To(BeNil())
@@ -117,7 +116,7 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		Expect(os.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")).To(BeNil())
+		GinkgoT().Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 		config, err := newForDeployment(deployment.MultiTenantType, nil)
 
 		Expect(err).To(BeNil())
