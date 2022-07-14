@@ -18,7 +18,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/ory/dockertest/v3"
-	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
@@ -88,9 +87,9 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := freeport.GetFreePort()
+	httpPort, err := testhelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := freeport.GetFreePort()
+	httpAdminPort, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
