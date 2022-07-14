@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/rudderlabs/rudder-server/compare/v0.2.0...v0.2.1) (2022-07-14)
+
+
+### Bug Fixes
+
+* **core:** order inserts(updates) to avoid deadlocks ([b9811d6](https://github.com/rudderlabs/rudder-server/commit/b9811d66b3fffdce1f2ee551366777cb1b3a8402))
+
 ## [0.2.0](https://github.com/rudderlabs/rudder-server/compare/v0.1.11...v0.2.0) (2022-07-06)
 
 
