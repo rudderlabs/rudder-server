@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,6 +51,7 @@ var _ = Describe("workspace-config", func() {
 	})
 
 	Context("Get method", func() {
+		ctx := context.Background()
 		var mockHttp *mock_sysUtils.MockHttpI
 		BeforeEach(func() {
 			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
@@ -71,12 +73,12 @@ var _ = Describe("workspace-config", func() {
 			defer server.Close()
 
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			config, ok := backendConfig.Get("testToken")
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
-			Expect(ok).To(BeTrue())
+			Expect(err).To(BeNil())
 			mutliConfig := SampleBackendConfig
 			mutliConfig.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 			Expect(config).To(Equal(mutliConfig))
@@ -92,29 +94,29 @@ var _ = Describe("workspace-config", func() {
 			defer server.Close()
 
 			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
-			config, ok := backendConfig.Get("testToken")
+			mockLogger.EXPECT().Errorf("Error while parsing request [%d]: %v", http.StatusNoContent, gomock.Any()).Times(1)
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
+			Expect(err).NotTo(BeNil())
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-			config, ok := backendConfig.Get("testToken")
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
+			Expect(err).NotTo(BeNil())
 		})
 		It("Expect to make the correct actions if fail to send the request", func() {
 			testRequest, _ := http.NewRequest("GET", "", nil)
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
+			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-			config, ok := backendConfig.Get("testToken")
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
+			Expect(err).NotTo(BeNil())
 		})
 	})
 })

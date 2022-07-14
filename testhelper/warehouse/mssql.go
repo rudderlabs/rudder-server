@@ -8,6 +8,7 @@ import (
 
 	"github.com/ory/dockertest/v3"
 
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 )
 
@@ -23,7 +24,7 @@ type MSSQLTest struct {
 // SetWHMssqlDestination setup warehouse mssql destination
 func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 	Test.MSSQLTest = &MSSQLTest{
-		WriteKey: randString(27),
+		WriteKey: rand.String(27),
 		Credentials: &mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
