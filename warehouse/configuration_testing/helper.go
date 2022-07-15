@@ -2,7 +2,6 @@ package configuration_testing
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/gofrs/uuid"
@@ -28,12 +27,11 @@ var (
 )
 
 const (
-	verifyingObjectStorage       = "Verifying Object Storage"
-	verifyingConnections         = "Verifying Connections"
-	verifyingCreateSchema        = "Verifying Create Schema"
-	verifyingCreateAndAlterTable = "Verifying Create and Alter Table"
-	verifyingFetchSchema         = "Verifying Fetch Schema"
-	verifyingLoadTable           = "Verifying Load Table"
+	verifyingObjectStorage        = "Verifying Object Storage"
+	verifyingConnections          = "Verifying Connections"
+	verifyingCreateAndFetchSchema = "Verifying Create And Fetch Schema"
+	verifyingCreateAndAlterTable  = "Verifying Create and Alter Table"
+	verifyingLoadTable            = "Verifying Load Table"
 )
 
 // warehouseAdapter returns warehouseT from info request
@@ -48,7 +46,6 @@ func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
 			Name: randomSourceName,
 		},
 		Destination: destination,
-		Namespace:   warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace),
 		Type:        destination.DestinationDefinition.Name,
 		Identifier:  warehouseutils.GetWarehouseIdentifier(destination.DestinationDefinition.Name, randomSourceId, destination.ID),
 	}
@@ -85,8 +82,4 @@ func parseOptions(req json.RawMessage, v interface{}) error {
 
 func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-}
-
-func stagingTableName() string {
-	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, randomString())
 }

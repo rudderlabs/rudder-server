@@ -14,16 +14,48 @@ func TestValidationSteps(t *testing.T) {
 		steps           []string
 	}{
 		{
-			destinationName: warehouseutils.S3_DATALAKE,
-			steps:           []string{verifyingObjectStorage, verifyingCreateSchema, verifyingFetchSchema},
-		},
-		{
 			destinationName: warehouseutils.GCS_DATALAKE,
 			steps:           []string{verifyingObjectStorage},
 		},
 		{
+			destinationName: warehouseutils.AZURE_DATALAKE,
+			steps:           []string{verifyingObjectStorage},
+		},
+		{
+			destinationName: warehouseutils.S3_DATALAKE,
+			steps:           []string{verifyingObjectStorage, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable},
+		},
+		{
 			destinationName: warehouseutils.RS,
-			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateSchema, verifyingCreateAndAlterTable, verifyingFetchSchema, verifyingLoadTable},
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.BQ,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.SNOWFLAKE,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.POSTGRES,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.CLICKHOUSE,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.MSSQL,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.AZURE_SYNAPSE,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
+		},
+		{
+			destinationName: warehouseutils.DELTALAKE,
+			steps:           []string{verifyingObjectStorage, verifyingConnections, verifyingCreateAndFetchSchema, verifyingCreateAndAlterTable, verifyingLoadTable},
 		},
 	}
 	for _, input := range inputs {

@@ -137,13 +137,38 @@ func (ct *CTHandleT) verifyingConnections() (err error) {
 	return
 }
 
-func (ct *CTHandleT) verifyingCreateSchema() (err error) {
+func (ct *CTHandleT) verifyingCreateFetchSchema() (err error) {
 	err = ct.initManager()
 	if err != nil {
 		return
 	}
 
+	err = ct.checkForConfiguredSchema()
+	if err != nil {
+		return
+	}
+
 	err = ct.manager.CreateSchema()
+	return
+}
+
+// checkForConfiguredSchema check for the namespace configured by the customer.
+// If it doesn't exists uses TestNamespace
+func (ct *CTHandleT) checkForConfiguredSchema() (err error) {
+	destination := ct.warehouse.Destination
+
+	configuredNamespace := warehouseutils.GetConfigValue("namespace", ct.warehouse)
+	configuredSafeNamespace := warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, configuredNamespace)
+	ct.warehouse.Namespace = configuredSafeNamespace
+
+	var s warehouseutils.SchemaT
+	s, err = ct.manager.FetchSchema(ct.warehouse)
+	if err != nil {
+		return
+	}
+	if len(s) == 0 {
+		ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace)
+	}
 	return
 }
 
@@ -153,34 +178,27 @@ func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
 		return
 	}
 
-	stagingTableName := stagingTableName()
+	err = ct.checkForConfiguredSchema()
+	if err != nil {
+		return
+	}
 
 	// Create table
-	err = ct.manager.CreateTable(stagingTableName, TestTableSchemaMap)
+	err = ct.manager.CreateTable(warehouseutils.CTStagingTablePrefix, TestTableSchemaMap)
 	if err != nil {
 		return
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(stagingTableName)
+	defer ct.manager.DropTable(warehouseutils.CTStagingTablePrefix)
 
 	// Alter table
 	for columnName, columnType := range AlterColumnMap {
-		err = ct.manager.AddColumn(stagingTableName, columnName, columnType)
+		err = ct.manager.AddColumn(warehouseutils.CTStagingTablePrefix, columnName, columnType)
 		if err != nil {
 			return
 		}
 	}
-	return
-}
-
-func (ct *CTHandleT) verifyingFetchSchema() (err error) {
-	err = ct.initManager()
-	if err != nil {
-		return
-	}
-
-	_, err = ct.manager.FetchSchema(ct.warehouse)
 	return
 }
 
@@ -341,18 +359,16 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	destination := ct.infoRequest.Destination
 	destinationType := destination.DestinationDefinition.Name
 
-	stagingTableName := stagingTableName()
-
 	// Create table
-	err = ct.manager.CreateTable(stagingTableName, TestTableSchemaMap)
+	err = ct.manager.CreateTable(warehouseutils.CTStagingTablePrefix, TestTableSchemaMap)
 	if err != nil {
 		return
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(stagingTableName)
+	defer ct.manager.DropTable(warehouseutils.CTStagingTablePrefix)
 
 	// loading test table from staging file
-	err = ct.manager.LoadTestTable(loadFileLocation, stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))
+	err = ct.manager.LoadTestTable(loadFileLocation, warehouseutils.CTStagingTablePrefix, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))
 	return
 }

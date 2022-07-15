@@ -2,7 +2,6 @@ package configuration_testing
 
 import (
 	"encoding/json"
-
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -27,7 +26,22 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 	}}
 
 	switch ct.infoRequest.Destination.DestinationDefinition.Name {
-	case warehouseutils.RS, warehouseutils.BQ, warehouseutils.SNOWFLAKE, warehouseutils.POSTGRES, warehouseutils.CLICKHOUSE, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE:
+	case warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
+		break
+	case warehouseutils.S3_DATALAKE:
+		steps = append(steps,
+			&validationStep{
+				ID:        2,
+				Name:      verifyingCreateAndFetchSchema,
+				Validator: ct.verifyingCreateFetchSchema,
+			},
+			&validationStep{
+				ID:        3,
+				Name:      verifyingCreateAndAlterTable,
+				Validator: ct.verifyingCreateAlterTable,
+			},
+		)
+	default:
 		steps = append(steps,
 			&validationStep{
 				ID:        2,
@@ -36,8 +50,8 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 			},
 			&validationStep{
 				ID:        3,
-				Name:      verifyingCreateSchema,
-				Validator: ct.verifyingCreateSchema,
+				Name:      verifyingCreateAndFetchSchema,
+				Validator: ct.verifyingCreateFetchSchema,
 			},
 			&validationStep{
 				ID:        4,
@@ -46,26 +60,8 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 			},
 			&validationStep{
 				ID:        5,
-				Name:      verifyingFetchSchema,
-				Validator: ct.verifyingFetchSchema,
-			},
-			&validationStep{
-				ID:        6,
 				Name:      verifyingLoadTable,
 				Validator: ct.verifyingLoadTable,
-			},
-		)
-	case warehouseutils.S3_DATALAKE:
-		steps = append(steps,
-			&validationStep{
-				ID:        2,
-				Name:      verifyingCreateSchema,
-				Validator: ct.verifyingCreateSchema,
-			},
-			&validationStep{
-				ID:        3,
-				Name:      verifyingFetchSchema,
-				Validator: ct.verifyingFetchSchema,
 			},
 		)
 	}

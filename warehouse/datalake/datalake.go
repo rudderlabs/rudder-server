@@ -52,7 +52,7 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 }
 
 func (wh *HandleT) DropTable(tableName string) (err error) {
-	return fmt.Errorf("datalake err :not implemented")
+	return nil
 }
 
 func (wh *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
