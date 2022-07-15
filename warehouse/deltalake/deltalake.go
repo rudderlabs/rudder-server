@@ -39,6 +39,7 @@ const (
 const (
 	tableOrViewNotFound = "42S02"
 	databaseNotFound    = "42000"
+	partitionNotFound   = "42000"
 )
 
 var (
@@ -284,7 +285,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 }
 
 // fetchTables fetch tables with tableNames
-func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (tableNames []string, err error) {
+func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
 	fetchTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -299,7 +300,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
 		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
-		Schema:     sqlStatement,
+		Schema:     schema,
 	})
 	if err != nil {
 		return tableNames, fmt.Errorf("%s Error while fetching tables: %v", dl.GetLogIdentifier(), err)
@@ -309,6 +310,40 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 		return
 	}
 	tableNames = append(tableNames, fetchTableResponse.GetTables()...)
+	return
+}
+
+// fetchPartitionColumns fetch tables with tableNames
+func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName string) (partitionedColumns []string, err error) {
+	sqlStatement := fmt.Sprintf(`SHOW PARTITIONS %s.%s`, dl.Warehouse.Namespace, tableName)
+	columnsResponse, err := dbT.Client.FetchPartitionColumns(dbT.Context, &proto.FetchPartitionColumnsRequest{
+		Config:       dbT.CredConfig,
+		Identifier:   dbT.CredIdentifier,
+		SqlStatement: sqlStatement,
+	})
+	if err != nil {
+		return partitionedColumns, fmt.Errorf("error while fetching partition columns with error: %w", err)
+	}
+	if !checkAndIgnoreAlreadyExistError(columnsResponse.GetErrorCode(), partitionNotFound) {
+		err = fmt.Errorf("error while fetching partition with response: %v", columnsResponse.GetErrorMessage())
+		return
+	}
+	partitionedColumns = append(partitionedColumns, columnsResponse.GetColumns()...)
+	return
+}
+
+// fetchPartitionColumns fetch tables with tableNames
+func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) {
+	partitionedColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
+	if err != nil {
+		pkgLogger.Errorf("error while fetching partitioned query with %s", err.Error())
+		return
+	}
+	if misc.ContainsString(partitionedColumns, "event_date") {
+		firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
+		dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
+		partitionedQuery = fmt.Sprintf(`CAST ( STAGING.event_date AS string) IN (%s)`, strings.Join(dateRange, ","))
+	}
 	return
 }
 
@@ -576,6 +611,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			tableName,
 			stagingTableName,
 			sortedColumnKeys,
+			dl.partitionedQuery(tableName),
 		)
 	}
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
@@ -680,6 +716,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			warehouseutils.UsersTable,
 			stagingTableName,
 			columnKeys,
+			dl.partitionedQuery(warehouseutils.UsersTable),
 		)
 	}
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)

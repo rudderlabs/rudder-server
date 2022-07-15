@@ -2045,6 +2045,10 @@ func (job *UploadJobT) GetLoadFileType() string {
 	return job.upload.LoadFileType
 }
 
+func (job *UploadJobT) GetFirstLastEvent() (time.Time, time.Time) {
+	return job.upload.FirstEventAt, job.upload.LastEventAt
+}
+
 /*
  * State Machine for upload job lifecycle
  */

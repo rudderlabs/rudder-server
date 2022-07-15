@@ -209,6 +209,7 @@ type UploaderI interface {
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
 	GetLoadFileType() string
+	GetFirstLastEvent() (time.Time, time.Time)
 }
 
 type GetLoadFilesOptionsT struct {
@@ -933,4 +934,11 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
 	}
 	return timeWindowFormat
+}
+
+func GetDateRangeList(start time.Time, end time.Time, dateFormat string) (dateRange []string) {
+	for d := start; d.After(end) == false; d = d.AddDate(0, 0, 1) {
+		dateRange = append(dateRange, d.Format(dateFormat))
+	}
+	return
 }

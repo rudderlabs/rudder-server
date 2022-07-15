@@ -1,6 +1,8 @@
 package warehouseutils_test
 
 import (
+	"reflect"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -9,6 +11,34 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestGetDateRangeList(t *testing.T) {
+	inputs := []struct {
+		start     time.Time
+		end       time.Time
+		format    string
+		dateRange []string
+	}{
+		{
+			start:     time.Now(),
+			end:       time.Now(),
+			format:    "2006-01-02",
+			dateRange: []string{time.Now().Format("2006-01-02")},
+		},
+		{
+			start:     time.Now(),
+			end:       time.Now().AddDate(0, 0, 1),
+			format:    "2006-01-02",
+			dateRange: []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")},
+		},
+	}
+	for _, ip := range inputs {
+		dateRange := GetDateRangeList(ip.start, ip.end, ip.format)
+		if !reflect.DeepEqual(dateRange, ip.dateRange) {
+			t.Errorf("got %#v want %#v input %#v", dateRange, ip.dateRange, ip)
+		}
+	}
+}
 
 var _ = Describe("Utils", func() {
 	Describe("Locations", func() {
