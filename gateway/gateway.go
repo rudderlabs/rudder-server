@@ -503,7 +503,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			// set anonymousId if not set in payload
 			result := gjson.GetBytes(body, "batch")
-			out := []map[string]interface{}{}
+			var out []map[string]interface{}
 			var builtUserID string
 			var notIdentifiable, nonRudderEvent, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {

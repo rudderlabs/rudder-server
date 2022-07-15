@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -74,7 +75,7 @@ func Run(ctx context.Context) {
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
 	err = l.Loop(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}

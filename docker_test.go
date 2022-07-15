@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +23,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -32,20 +31,24 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	wht "github.com/rudderlabs/rudder-server/testhelper/warehouse"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	bq "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -575,6 +578,9 @@ func TestMainFlow(t *testing.T) {
 
 func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	setupStart := time.Now()
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
 
 	config.Load()
 	logger.Init()
@@ -583,34 +589,47 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
+	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	if runtime.GOARCH != "arm64" || overrideArm64Check {
-		kafkaContainer, err = destination.SetupKafka(pool, t,
-			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			destination.WithBrokers(3),
-		)
-		require.NoError(t, err)
+		containersGroup.Go(func() (err error) {
+			kafkaContainer, err = destination.SetupKafka(pool, t,
+				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+				destination.WithBrokers(1),
+			)
+			if err != nil {
+				return err
+			}
+			kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
+			defer kafkaCancel()
+			return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
+		})
 	}
+	containersGroup.Go(func() (err error) {
+		redisContainer, err = destination.SetupRedis(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		postgresContainer, err = destination.SetupPostgres(pool, t)
+		db = postgresContainer.DB
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		transformerContainer, err = destination.SetupTransformer(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		minioContainer, err = destination.SetupMINIO(pool, t)
+		return err
+	})
+	require.NoError(t, containersGroup.Wait())
 
-	redisContainer, err = destination.SetupRedis(pool, t)
-	require.NoError(t, err)
-
-	postgresContainer, err = destination.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	db = postgresContainer.DB
-
-	transformerContainer, err = destination.SetupTransformer(pool, t)
-	require.NoError(t, err)
-
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
 		time.Minute,
 		time.Second,
 		"transformer",
 	)
-
-	minioContainer, err = destination.SetupMINIO(pool, t)
-	require.NoError(t, err)
 
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
@@ -622,12 +641,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	wht.InitWHConfig()
-
 	t.Cleanup(wht.SetWHPostgresDestination(pool))
 	t.Cleanup(wht.SetWHClickHouseDestination(pool))
 	t.Cleanup(wht.SetWHClickHouseClusterDestination(pool))
 	t.Cleanup(wht.SetWHMssqlDestination(pool))
 	t.Cleanup(wht.SetWHBigQueryDestination())
+	t.Log("Warehouse setup done")
 
 	addWHSpecificSqlFunctionsToJobsDb()
 
@@ -650,8 +669,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
-	writeKey = randString(27)
-	workspaceID = randString(27)
+	writeKey = rand.String(27)
+	workspaceID = rand.String(27)
 	mapWorkspaceConfig := map[string]string{
 		"webhookUrl":                          webhookURL,
 		"disableDestinationwebhookUrl":        disableDestinationWebhookURL,
@@ -680,15 +699,16 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig["rwhBQBucketName"] = wht.Test.BQTest.Credentials.Bucket
 		mapWorkspaceConfig["rwhBQCredentials"] = wht.Test.BQTest.Credentials.CredentialsEscaped
 	}
-	workspaceConfigPath := createWorkspaceConfig(
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
 	)
-	t.Cleanup(func() {
-		if err := os.Remove(workspaceConfigPath); err != nil {
-			t.Logf("Error while removing workspace config path: %v", err)
-		}
-	})
+	if testing.Verbose() {
+		data, err := ioutil.ReadFile(workspaceConfigPath)
+		require.NoError(t, err)
+		t.Logf("Workspace config: %s", string(data))
+	}
+
 	t.Log("workspace config path:", workspaceConfigPath)
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
@@ -704,7 +724,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		serviceHealthEndpoint,
 		time.Minute,
@@ -850,60 +870,6 @@ func sendEventsToGateway(t *testing.T) {
 	}`)
 	sendEvent(t, payloadGroup, "group", writeKey)
 	sendPixelEvents(t, writeKey)
-}
-
-func randString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
-
-func createWorkspaceConfig(templatePath string, values map[string]string) string {
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		panic(err)
-	}
-
-	f, err := os.CreateTemp("", "workspaceConfig.*.json")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	err = t.Execute(f, values)
-	if err != nil {
-		panic(err)
-	}
-
-	return f.Name()
-}
-
-func waitUntilReady(ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string) {
-	t.Helper()
-	probe := time.NewTicker(interval)
-	timeout := time.After(atMost)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout:
-			t.Fatalf(
-				"application was not ready after %s, for the end point: %s, caller: %s", atMost, endpoint, caller,
-			)
-		case <-probe.C:
-			resp, err := http.Get(endpoint)
-			if err != nil {
-				continue
-			}
-			if resp.StatusCode == http.StatusOK {
-				t.Log("application ready")
-				return
-			}
-		}
-	}
 }
 
 func blockOnHold(t *testing.T) {
@@ -1553,6 +1519,41 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 				_, err := chResource.DB.Exec(sqlStatement)
 				require.Equal(t, err, nil)
 			}
+		}
+	}
+}
+
+func waitForKafka(ctx context.Context, t *testing.T, port string) error {
+	kafkaHost := "localhost:" + port
+	ticker := time.NewTicker(250 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("kafka not ready within context: %v", ctx.Err())
+		case <-ticker.C:
+			kc, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
+			if err != nil {
+				t.Log(fmt.Errorf("could not create Kafka client: %v", err))
+				continue
+			}
+			if err := kc.Ping(ctx); err != nil {
+				t.Log(fmt.Errorf("could not ping Kafka: %v", err))
+				continue
+			}
+			tc := testutil.New("tcp", kafkaHost)
+			if err := tc.CreateTopic(ctx, "dumb-topic", 1, 1); err != nil {
+				t.Log(fmt.Errorf("could not create Kafka topic (dumb-topic): %v", err))
+				continue
+			}
+			if topics, err := tc.ListTopics(ctx); err != nil {
+				t.Log(fmt.Errorf("could not list Kafka topics: %v", err))
+				continue
+			} else if len(topics) == 0 {
+				t.Log(fmt.Errorf("kafka topic was not created (dumb-topic missing)"))
+				continue
+			}
+			t.Log("Kafka is ready!")
+			return nil
 		}
 	}
 }
