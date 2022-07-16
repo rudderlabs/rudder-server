@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 )
 
@@ -22,7 +24,7 @@ type PostgresTest struct {
 // SetWHPostgresDestination setup warehouse postgres destination
 func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 	Test.PGTest = &PostgresTest{
-		WriteKey: randString(27),
+		WriteKey: rand.String(27),
 		Credentials: &postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",
