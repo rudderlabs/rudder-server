@@ -1766,7 +1766,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				DestinationName:              job.warehouse.Destination.Name,
 				DestinationType:              destType,
 				DestinationNamespace:         job.warehouse.Namespace,
-				DestinationConfig:            job.warehouse.Destination.Config,
+				CurrentDestinationConfig:     job.warehouse.Destination.Config,
 				UniqueLoadGenID:              uniqueLoadGenID,
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				CurrentUseRudderStorage:      job.upload.UseRudderStorage,

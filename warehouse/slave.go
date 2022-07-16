@@ -185,7 +185,7 @@ type loadFileUploadOutputT struct {
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager(job.DestinationConfig, job.CurrentUseRudderStorage)
+	uploader, err := job.getFileManager(job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
 		return []loadFileUploadOutputT{}, err
 	}
@@ -268,7 +268,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.CurrentUseRudderStorage), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.CurrentDestinationConfig, job.CurrentUseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
@@ -370,7 +370,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile(jobRun.job.DestinationConfig, job.CurrentUseRudderStorage)
+	err = jobRun.downloadStagingFile(jobRun.job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
 		// If error occurs with the current config
 		// We retry with the revision config if it is present

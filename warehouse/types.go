@@ -28,11 +28,11 @@ type PayloadT struct {
 	DestinationNamespace         string
 	CurrentDestinationRevisionID string
 	StagingDestinationRevisionID string
-	DestinationConfig            interface{}
+	CurrentDestinationConfig     interface{}
 	StagingDestinationConfig     interface{}
-	UniqueLoadGenID              string
 	CurrentUseRudderStorage      bool
 	StagingUseRudderStorage      bool
+	UniqueLoadGenID              string
 	RudderStoragePrefix          string
 	Output                       []loadFileUploadOutputT
 	LoadFilePrefix               string // prefix for the load file name
