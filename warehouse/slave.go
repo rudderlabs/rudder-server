@@ -374,9 +374,9 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	if err != nil {
 		// If error occurs with the current config
 		// We retry with the revision config if it is present
-		if job.DestinationRevisionConfig != nil {
+		if job.StagingDestinationConfig != nil {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
-			err = jobRun.downloadStagingFile(job.DestinationRevisionConfig, job.StagingUseRudderStorage)
+			err = jobRun.downloadStagingFile(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
 				job.sendDownloadStagingFileFailedStat()
 				return loadFileUploadOutputs, err

@@ -29,7 +29,7 @@ type PayloadT struct {
 	CurrentDestinationRevisionID string
 	StagingDestinationRevisionID string
 	DestinationConfig            interface{}
-	DestinationRevisionConfig    interface{}
+	StagingDestinationConfig     interface{}
 	UniqueLoadGenID              string
 	CurrentUseRudderStorage      bool
 	StagingUseRudderStorage      bool

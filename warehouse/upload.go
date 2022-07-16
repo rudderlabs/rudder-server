@@ -1776,7 +1776,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			}
 
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
-				payload.DestinationRevisionConfig = revisionConfig.Config
+				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
