@@ -12,7 +12,8 @@ func distinctDestinationRevisionIdsFromStagingFiles(d struct {
 	destinationID      string
 	startStagingFileID int64
 	endStagingFileID   int64
-}) (revisionIDs []string, err error) {
+},
+) (revisionIDs []string, err error) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
