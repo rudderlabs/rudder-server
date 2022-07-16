@@ -182,6 +182,7 @@ type loadFileUploadOutputT struct {
 	ContentLength         int64
 	StagingFileID         int64
 	DestinationRevisionID string
+	UseRudderStorage      bool
 }
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
@@ -233,6 +234,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						TotalRows:             jobRun.tableEventCountMap[tableName],
 						StagingFileID:         stagingFileId,
 						DestinationRevisionID: job.CurrentDestinationRevisionID,
+						UseRudderStorage:      job.CurrentUseRudderStorage,
 					}
 				}
 			}
