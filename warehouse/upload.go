@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -1625,7 +1626,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 
 func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
-	revisionIDs, err := destinationRevisionIDs(struct {
+	revisionIDs, err := distinctDestinationRevisionIdsFromStagingFiles(struct {
 		sourceID           string
 		destinationID      string
 		startStagingFileID int64
@@ -1648,7 +1649,7 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
 
 		pkgLogger.Infof("[WH]: Get request Started for Dest revisionID %s", revisionID)
-		response, responseCode, err = warehouseutils.GetRequestWithTimeout(urlStr, time.Second*60)
+		response, responseCode, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
 		pkgLogger.Infof("[WH]: Get request Finished for Dest revisionID %s", revisionID)
 
 		if err == nil && responseCode == 200 {
@@ -1754,21 +1755,24 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
-				UploadID:             job.upload.ID,
-				StagingFileID:        stagingFile.ID,
-				StagingFileLocation:  stagingFile.Location,
-				UploadSchema:         job.upload.UploadSchema,
-				LoadFileType:         job.upload.LoadFileType,
-				SourceID:             job.warehouse.Source.ID,
-				SourceName:           job.warehouse.Source.Name,
-				DestinationID:        destID,
-				DestinationName:      job.warehouse.Destination.Name,
-				DestinationType:      destType,
-				DestinationNamespace: job.warehouse.Namespace,
-				DestinationConfig:    job.warehouse.Destination.Config,
-				UniqueLoadGenID:      uniqueLoadGenID,
-				UseRudderStorage:     job.upload.UseRudderStorage,
-				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
+				UploadID:                     job.upload.ID,
+				StagingFileID:                stagingFile.ID,
+				StagingFileLocation:          stagingFile.Location,
+				UploadSchema:                 job.upload.UploadSchema,
+				LoadFileType:                 job.upload.LoadFileType,
+				SourceID:                     job.warehouse.Source.ID,
+				SourceName:                   job.warehouse.Source.Name,
+				DestinationID:                destID,
+				DestinationName:              job.warehouse.Destination.Name,
+				DestinationType:              destType,
+				DestinationNamespace:         job.warehouse.Namespace,
+				DestinationConfig:            job.warehouse.Destination.Config,
+				UniqueLoadGenID:              uniqueLoadGenID,
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				CurrentUseRudderStorage:      job.upload.UseRudderStorage,
+				StagingUseRudderStorage:      stagingFile.UseRudderStorage,
+				CurrentDestinationRevisionID: job.warehouse.Destination.RevisionID,
+				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 			}
 
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {

@@ -1,6 +1,7 @@
 package warehouseutils
 
 import (
+	"context"
 	"crypto/sha1"
 	"database/sql"
 	"encoding/json"
@@ -169,6 +170,16 @@ type WarehouseT struct {
 	Namespace   string
 	Type        string
 	Identifier  string
+}
+
+func (w *WarehouseT) GetBoolConfig(key string) bool {
+	destConfig := w.Destination.Config
+	if destConfig[key] != nil {
+		if val, ok := destConfig[key].(bool); ok {
+			return val
+		}
+	}
+	return false
 }
 
 type DestinationT struct {
@@ -938,8 +949,8 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 	return timeWindowFormat
 }
 
-func GetRequestWithTimeout(url string, timeout time.Duration) ([]byte, int, error) {
-	req, err := http.NewRequest("GET", url, nil)
+func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}

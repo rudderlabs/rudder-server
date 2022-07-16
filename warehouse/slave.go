@@ -32,7 +32,11 @@ const (
 	TAG_WORKERID                            = "workerId"
 )
 
-// Temporary store for processing staging file to load file
+const (
+	WorkerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
+)
+
+// JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
 	job                  PayloadT
 	stagingFilePath      string
@@ -84,15 +88,29 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	return filePath
 }
 
+func (job *PayloadT) sendDownloadStagingFileFailedStat() {
+	tags := []warehouseutils.Tag{
+		{
+			Name:  "destID",
+			Value: job.DestinationID,
+		},
+		{
+			Name:  "destType",
+			Value: job.DestinationType,
+		},
+	}
+	warehouseutils.NewCounterStat(WorkerProcessingDownloadStagingFileFailed, tags...).Increment()
+}
+
 // Get fileManager
-func (job *PayloadT) getFileManager(config interface{}) (filemanager.FileManager, error) {
-	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, job.UseRudderStorage)
+func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
 			Config:                      config,
-			UseRudderStorage:            job.UseRudderStorage,
+			UseRudderStorage:            useRudderStorage,
 			RudderStoragePrefixOverride: job.RudderStoragePrefix,
 		}),
 	})
@@ -102,7 +120,7 @@ func (job *PayloadT) getFileManager(config interface{}) (filemanager.FileManager
 /*
  * Download Staging file for the job
  */
-func (jobRun *JobRunT) downloadStagingFile(config interface{}) error {
+func (jobRun *JobRunT) downloadStagingFile(config interface{}, useRudderStorage bool) error {
 	filePath := jobRun.stagingFilePath
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -110,7 +128,7 @@ func (jobRun *JobRunT) downloadStagingFile(config interface{}) error {
 	}
 
 	job := jobRun.job
-	downloader, err := jobRun.job.getFileManager(config)
+	downloader, err := jobRun.job.getFileManager(config, useRudderStorage)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to initialize downloader")
 		return err
@@ -167,7 +185,7 @@ type loadFileUploadOutputT struct {
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager(job.DestinationConfig)
+	uploader, err := job.getFileManager(job.DestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
 		return []loadFileUploadOutputT{}, err
 	}
@@ -250,7 +268,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.CurrentUseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
@@ -352,14 +370,15 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile(jobRun.job.DestinationConfig)
+	err = jobRun.downloadStagingFile(jobRun.job.DestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
 		// If error occurs with the current config
 		// We retry with the revision config if it is present
-		if jobRun.job.DestinationRevisionConfig != nil {
-			pkgLogger.Infof("[WH]: Starting downloading staging file with revision config for StagingFileID: %d, StagingFileLocation: %s, whIdentifier: %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
-			err = jobRun.downloadStagingFile(jobRun.job.DestinationRevisionConfig)
+		if job.DestinationRevisionConfig != nil {
+			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
+			err = jobRun.downloadStagingFile(job.DestinationRevisionConfig, job.StagingUseRudderStorage)
 			if err != nil {
+				job.sendDownloadStagingFileFailedStat()
 				return loadFileUploadOutputs, err
 			}
 		} else {

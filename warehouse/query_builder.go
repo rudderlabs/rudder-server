@@ -7,13 +7,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func destinationRevisionIDs(d struct {
+func distinctDestinationRevisionIdsFromStagingFiles(d struct {
 	sourceID           string
 	destinationID      string
 	startStagingFileID int64
 	endStagingFileID   int64
-},
-) (revisionIDs []string, err error) {
+}) (revisionIDs []string, err error) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id

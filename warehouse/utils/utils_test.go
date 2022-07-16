@@ -1,6 +1,7 @@
 package warehouseutils_test
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -9,6 +10,59 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestWarehouseT_GetBoolConfig(t *testing.T) {
+	inputs := []struct {
+		warehouse WarehouseT
+		expected  bool
+	}{
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": "true",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": false,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": true,
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+	for idx, input := range inputs {
+		got := input.warehouse.GetBoolConfig("k1")
+		want := input.expected
+		if got != want {
+			t.Errorf("got %t expected %t input %d", got, want, idx)
+		}
+	}
+}
 
 var _ = Describe("Utils", func() {
 	Describe("Locations", func() {
