@@ -176,11 +176,12 @@ type loadFileUploadJob struct {
 }
 
 type loadFileUploadOutputT struct {
-	TableName     string
-	Location      string
-	TotalRows     int
-	ContentLength int64
-	StagingFileID int64
+	TableName             string
+	Location              string
+	TotalRows             int
+	ContentLength         int64
+	StagingFileID         int64
+	DestinationRevisionID string
 }
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
@@ -226,11 +227,12 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						return
 					}
 					loadFileOutputChan <- loadFileUploadOutputT{
-						TableName:     tableName,
-						Location:      uploadOutput.Location,
-						ContentLength: loadFileStats.Size(),
-						TotalRows:     jobRun.tableEventCountMap[tableName],
-						StagingFileID: stagingFileId,
+						TableName:             tableName,
+						Location:              uploadOutput.Location,
+						ContentLength:         loadFileStats.Size(),
+						TotalRows:             jobRun.tableEventCountMap[tableName],
+						StagingFileID:         stagingFileId,
+						DestinationRevisionID: job.CurrentDestinationRevisionID,
 					}
 				}
 			}

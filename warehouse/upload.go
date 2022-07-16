@@ -1910,7 +1910,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
+		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q}`, loadFile.ContentLength, loadFile.DestinationRevisionID)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
