@@ -1640,9 +1640,9 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 	var responseCode int
 
 	for _, revisionID := range revisionIDs {
-		// We are ignoring current revision ID since we already have the config for this.
 		// No need to make config backend api call for the current config
 		if revisionID == job.warehouse.Destination.RevisionID {
+			revisionIDMap[revisionID] = job.warehouse.Destination
 			continue
 		}
 
