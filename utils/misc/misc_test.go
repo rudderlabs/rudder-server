@@ -548,7 +548,7 @@ func TestReplaceMultiRegex(t *testing.T) {
 	}
 }
 
-func assertString(t *testing.T, got string, expected string) {
+func assertString(t *testing.T, got, expected string) {
 	t.Helper()
 	if got != expected {
 		t.Errorf("got %q expected %q", got, expected)
