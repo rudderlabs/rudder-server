@@ -120,7 +120,8 @@ type UploadJobT struct {
 	upload               *UploadT
 	dbHandle             *sql.DB
 	warehouse            warehouseutils.WarehouseT
-	whManager            manager.ManagerI
+	queryManager         manager.QueryManagerI
+	uploadManager        manager.UploadManagerI
 	stagingFiles         []*StagingFileT
 	stagingFileIDs       []int64
 	pgNotifier           *pgnotifier.PgNotifierT
@@ -255,7 +256,7 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	}
 	job.schemaHandle = &schemaHandle
 	schemaHandle.localSchema = schemaHandle.getLocalSchema()
-	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
+	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.queryManager)
 	if err != nil {
 		return false, err
 	}
@@ -345,13 +346,13 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 
-	whManager := job.whManager
-	err = whManager.Setup(job.warehouse, job)
+	uploadManager := job.uploadManager
+	err = uploadManager.Setup(job.warehouse, job)
 	if err != nil {
 		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
-	defer whManager.Cleanup()
+	defer uploadManager.Cleanup()
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
@@ -441,7 +442,7 @@ func (job *UploadJobT) run() (err error) {
 		case CreatedRemoteSchema:
 			newStatus = nextUploadState.failed
 			if len(schemaHandle.schemaInWarehouse) == 0 {
-				err = whManager.CreateSchema()
+				err = queryManager.CreateSchema()
 				if err != nil {
 					break
 				}
@@ -787,7 +788,7 @@ func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err e
 		DbHandle:         job.dbHandle,
 		UploadID:         job.upload.ID,
 		Uploader:         job,
-		WarehouseManager: job.whManager,
+		WarehouseManager: job.uploadManager,
 	}
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities()
@@ -799,7 +800,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
-		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
+		err = job.queryManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
 			return err
@@ -809,7 +810,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	}
 
 	for columnName, columnType := range tableSchemaDiff.ColumnMap {
-		err = job.whManager.AddColumn(tName, columnName, columnType)
+		err = job.queryManager.AddColumn(tName, columnName, columnType)
 		if err != nil {
 			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
 			break
@@ -822,7 +823,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	}
 
 	for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
-		err = job.whManager.AlterColumn(tName, columnName, "text")
+		err = job.queryManager.AlterColumn(tName, columnName, "text")
 		if err != nil {
 			pkgLogger.Errorf("Altering column %s in table: %s.%s failed. Error: %v", columnName, job.warehouse.Namespace, tName, err)
 			break
@@ -929,7 +930,7 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	var total int64
 	operation := func() error {
 		var countErr error
-		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		total, countErr = job.queryManager.GetTotalCountInTable(tName)
 		return countErr
 	}
 	expBackoff := backoff.NewExponentialBackOff()
@@ -964,7 +965,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		}
 	}
 
-	err = job.whManager.LoadTable(tName)
+	err = job.uploadManager.LoadTable(tName)
 	if err != nil {
 		tableUpload.setError(TableUploadExportingFailed, err)
 		return
@@ -1057,7 +1058,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 			return job.processLoadTableResponse(map[string]error{job.usersTableName(): err})
 		}
 	}
-	errorMap := job.whManager.LoadUserTables()
+	errorMap := job.uploadManager.LoadUserTables()
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
@@ -1116,9 +1117,9 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 		switch tableName {
 		case job.identityMergeRulesTableName():
-			err = job.whManager.LoadIdentityMergeRulesTable()
+			err = job.uploadManager.LoadIdentityMergeRulesTable()
 		case job.identityMappingsTableName():
-			err = job.whManager.LoadIdentityMappingsTable()
+			err = job.uploadManager.LoadIdentityMappingsTable()
 		}
 
 		if err != nil {

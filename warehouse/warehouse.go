@@ -527,7 +527,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -584,7 +584,7 @@ func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 }
 
 func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
-	whManager, err := manager.New(wh.destType)
+	uploadManager, err := manager.NewUploadManager(wh.destType)
 	if err != nil {
 		return err
 	}
@@ -594,7 +594,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	_, ok := inRecoveryMap[warehouse.Destination.ID]
 	if ok {
 		pkgLogger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
-		err = whManager.CrashRecover(warehouse)
+		err = uploadManager.CrashRecover(warehouse)
 		if err != nil {
 			return err
 		}
@@ -640,7 +640,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.Start()
 
 	uploadStartAfter := getUploadStartAfterTime()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
+	wh.createUploadJobsFromStagingFiles(warehouse, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
 
 	uploadJobCreationStat.End()
@@ -861,7 +861,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 		}
 
-		whManager, err := manager.New(wh.destType)
+		queryManager, err := manager.NewQueryManager(wh.destType)
+		if err != nil {
+			return nil, err
+		}
+
+		uploadManager, err := manager.NewUploadManager(wh.destType)
 		if err != nil {
 			return nil, err
 		}
@@ -871,7 +876,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			stagingFiles:         stagingFilesList,
 			stagingFileIDs:       stagingFileIDs,
 			warehouse:            warehouse,
-			whManager:            whManager,
+			queryManager:         queryManager,
+			uploadManager:        uploadManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: configuration_testing.NewDestinationValidator(),

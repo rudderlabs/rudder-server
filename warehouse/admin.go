@@ -62,11 +62,11 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 		}
 	}
 
-	whManager, err := manager.New(warehouse.Type)
+	queryManager, err := manager.NewQueryManager(warehouse.Type)
 	if err != nil {
 		return err
 	}
-	client, err := whManager.Connect(warehouse)
+	client, err := queryManager.Connect(warehouse)
 	if err != nil {
 		return err
 	}

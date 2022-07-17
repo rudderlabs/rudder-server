@@ -121,8 +121,8 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	return err
 }
 
-func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
+func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(queryManager manager.QueryManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, err = queryManager.FetchSchema(sHandle.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, err

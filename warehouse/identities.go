@@ -102,12 +102,12 @@ func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) (ex
 }
 
 func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
-	whManager, err := manager.New(wh.destType)
+	queryManager, err := manager.NewQueryManager(wh.destType)
 	if err != nil {
 		panic(err)
 	}
 
-	empty, err := whManager.IsEmpty(warehouse)
+	empty, err := queryManager.IsEmpty(warehouse)
 	if err != nil {
 		return false, err
 	}
@@ -291,7 +291,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			upload = wh.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
-		whManager, err := manager.New(wh.destType)
+		uploadManager, err := manager.NewUploadManager(wh.destType)
 		if err != nil {
 			panic(err)
 		}
@@ -299,7 +299,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		job := UploadJobT{
 			upload:               &upload,
 			warehouse:            warehouse,
-			whManager:            whManager,
+			uploadManager:        uploadManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: configuration_testing.NewDestinationValidator(),
@@ -314,12 +314,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			}
 		}
 
-		err = whManager.Setup(job.warehouse, &job)
+		err = uploadManager.Setup(job.warehouse, &job)
 		if err != nil {
 			job.setUploadError(err, Aborted)
 			return
 		}
-		defer whManager.Cleanup()
+		defer uploadManager.Cleanup()
 
 		schemaHandle := SchemaHandleT{
 			warehouse:    job.warehouse,
@@ -328,7 +328,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		queryManager, err := manager.NewQueryManager(wh.destType)
+		if err != nil {
+			panic(err)
+		}
+
+		job.schemaHandle.schemaInWarehouse, err = queryManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, Aborted)
