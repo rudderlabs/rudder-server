@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
@@ -16,7 +17,7 @@ var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destinationMiddleware interface {
-	Get(workspace string) (backendconfig.ConfigT, bool)
+	Get(ctx context.Context, workspace string) (backendconfig.ConfigT, error)
 }
 
 type DestMiddleware struct {
@@ -39,7 +40,7 @@ func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("workspaceId not found in config")
 }
 
-// make api call to get json and then parse it to get destination related details
+// GetDestDetails makes api call to get json and then parse it to get destination related details
 // like: dest_type, auth details,
 // return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
@@ -77,13 +78,12 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	var destConf backendconfig.ConfigT
-	var ok bool
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
-		destConf, ok = d.Dest.Get(config.GetWorkspaceToken())
-		if !ok {
-			return fmt.Errorf("error while getting destination details")
+		destConf, err = d.Dest.Get(ctx, config.GetWorkspaceToken())
+		if err != nil {
+			return fmt.Errorf("error while getting destination details: %w", err)
 		}
 		return nil
 	}, boCtx); err != nil {

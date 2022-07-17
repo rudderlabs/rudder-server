@@ -12,6 +12,7 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/phayes/freeport"
 
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
@@ -46,7 +47,7 @@ type ClickHouseClusterTest struct {
 // SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
 func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 	Test.CHClusterTest = &ClickHouseClusterTest{
-		WriteKey: randString(27),
+		WriteKey: rand.String(27),
 		EventsMap: EventsCountMap{
 			"identifies":    1,
 			"users":         1,

@@ -1,14 +1,15 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -56,7 +57,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(so
 	return ""
 }
 
-// GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
 func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -68,44 +69,33 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (ConfigT, bool) {
-	return workspaceConfig.getFromAPI(workspaces)
+func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+	return workspaceConfig.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
+func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
+	ctx context.Context, workspaceArr string,
+) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
 	if workspaceArr == workspaceConfig.Token {
-		pkgLogger.Infof("no workspace IDs provided, skipping backend config fetch")
-		return ConfigT{}, false
+		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
 	}
-	var url string
-	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
-	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
-		if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-			url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
-		} else {
-			url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-		}
-	} else {
-		wIds := strings.Split(workspaceArr, ",")
-		for i := range wIds {
-			wIds[i] = strings.Trim(wIds[i], " ")
-		}
-		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
-		if err != nil {
-			pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
-			return ConfigT{}, false
-		}
-		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
-		url = url + "&fetchAll=true"
-	}
-	var respBody []byte
-	var statusCode int
 
+	var (
+		url        string
+		respBody   []byte
+		statusCode int
+	)
+	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
+		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
+	} else {
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	}
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+		pkgLogger.Debugf("Fetching config from %s", url)
+		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -114,19 +104,21 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, false
+		pkgLogger.Errorf("Error sending request to the server: %v", err)
+		return ConfigT{}, newError(true, err)
 	}
 	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
+
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
-		return ConfigT{}, false
+		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		return ConfigT{}, newError(true, err)
 	}
+
 	writeKeyToWorkspaceIDMap := make(map[string]string)
 	sourceToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
@@ -143,15 +135,16 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 	workspaceConfig.workspaceWriteKeysMapLock.Lock()
 	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
 	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
 
-	return sourcesJSON, true
+	return sourcesJSON, nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) ([]byte, int, error) {
-	req, err := Http.NewRequest("GET", url, nil)
+func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
+	ctx context.Context, url string,
+) ([]byte, int, error) {
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
@@ -173,7 +166,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	return respBody, resp.StatusCode, nil

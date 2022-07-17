@@ -62,7 +62,7 @@ type logger interface {
 
 type cleaner interface {
 	Cleanup(func())
-	Log(...interface{})
+	logger
 }
 
 // WithLogger allows to set a logger that prints debugging information

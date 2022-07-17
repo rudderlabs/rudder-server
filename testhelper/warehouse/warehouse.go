@@ -2,7 +2,6 @@ package warehouse_test
 
 import (
 	"context"
-	"math/rand"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -40,16 +39,6 @@ type WareHouseTest struct {
 }
 
 var Test *WareHouseTest
-
-func randString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
 
 // InitWHConfig Initialize warehouse config
 func InitWHConfig() {

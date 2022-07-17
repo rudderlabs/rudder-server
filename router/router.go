@@ -16,34 +16,32 @@ import (
 	"sync/atomic"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/cenkalti/backoff/v4"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
-	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
-	"github.com/rudderlabs/rudder-server/router/throttler"
-	"github.com/rudderlabs/rudder-server/router/transformer"
-	"github.com/rudderlabs/rudder-server/router/types"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/metric"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
+	"github.com/rudderlabs/rudder-server/router/throttler"
+	"github.com/rudderlabs/rudder-server/router/transformer"
+	"github.com/rudderlabs/rudder-server/router/types"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type reporter interface {
@@ -100,7 +98,7 @@ type HandleT struct {
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
 	failuresMetric                         map[string]map[string]int
-	customDestinationManager               customdestinationmanager.DestinationManager
+	customDestinationManager               customDestinationManager.DestinationManager
 	throttler                              throttler.Throttler
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
@@ -1924,7 +1922,7 @@ func (rt *HandleT) readAndProcess() int {
 		}
 	}
 	rt.timeGained = 0
-	rt.logger.Debugf("pickupMap: %+v", pickupMap)
+	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
 	combinedList := rt.jobsDB.GetAllJobs(
 		pickupMap,
 		jobsdb.GetQueryParamsT{

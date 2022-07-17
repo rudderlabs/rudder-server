@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/jeremywohl/flatten"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/sjson"
 )
 
 type HandleT struct{}
