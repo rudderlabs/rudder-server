@@ -346,7 +346,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour', metadata->>'destination_revision_id'
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour', metadata->>'use_rudder_storage', metadata->>'destination_revision_id'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -362,11 +362,13 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID,
 		var jsonUpload StagingFileT
 		var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
 		var destinationRevisionID sql.NullString
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour, &destinationRevisionID)
+		var UseRudderStorage sql.NullBool
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour, &UseRudderStorage, &destinationRevisionID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.TimeWindow = time.Date(int(timeWindowYear.Int64), time.Month(timeWindowMonth.Int64), int(timeWindowDay.Int64), int(timeWindowHour.Int64), 0, 0, 0, time.UTC)
+		jsonUpload.UseRudderStorage = UseRudderStorage.Bool
 		jsonUpload.DestinationRevisionID = destinationRevisionID.String
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
