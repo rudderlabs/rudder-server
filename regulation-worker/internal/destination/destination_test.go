@@ -2,17 +2,22 @@ package destination_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetDestDetails(t *testing.T) {
+	if testing.Verbose() {
+		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+	}
 	initialize.Init()
 	ctx := context.Background()
 	config := map[string]interface{}{
@@ -73,7 +78,7 @@ func TestGetDestDetails(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	mockDestMiddleware := destination.NewMockdestinationMiddleware(mockCtrl)
-	mockDestMiddleware.EXPECT().Get("").Return(testConfig, true).Times(1)
+	mockDestMiddleware.EXPECT().Get(context.TODO(), "").Return(testConfig, nil).Times(1)
 
 	dest := destination.DestMiddleware{
 		Dest: mockDestMiddleware,

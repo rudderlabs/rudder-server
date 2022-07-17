@@ -7,17 +7,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/app"
-
 	jsoniter "github.com/json-iterator/go"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
-	"go.etcd.io/etcd/api/v3/mvccpb"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -64,6 +64,7 @@ type workspacesRequestsValue struct {
 
 type workspacesAckValue struct {
 	Status string `json:"status"`
+	Error  string `json:"error"`
 }
 
 func EnvETCDConfig() *ETCDConfig {
@@ -245,23 +246,34 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 
 	return workspace.NewWorkspacesRequest(
 		strings.Split(req.Workspaces, ","),
-		func(ctx context.Context) error {
+		func(ctx context.Context, ackErr error) (err error) {
 			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
 			defer cancel()
 
-			ackValue, err := json.MarshalToString(workspacesAckValue{
-				Status: "RELOADED",
-			})
+			var ackValue string
+			if ackErr != nil {
+				ackValue, err = json.MarshalToString(workspacesAckValue{
+					Status: "ERROR",
+					Error:  ackErr.Error(),
+				})
+			} else {
+				ackValue, err = json.MarshalToString(workspacesAckValue{
+					Status: "RELOADED",
+				})
+			}
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			manager.logger.Infof("Workspace ID Change Acknowledgement Key: %s", req.AckKey)
+			manager.logger.Infof("Workspace ID Change Acknowledgement (error: %b) Key: %s", ackErr != nil, req.AckKey)
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			if err != nil {
-				manager.logger.Errorf("Failed to acknowledge workspace ID change for key: %s", req.AckKey)
+				manager.logger.Errorf(
+					"Failed to acknowledge workspace ID change (error: %b) for key: %s", ackErr != nil, req.AckKey,
+				)
 			}
 			return err
-		})
+		},
+	)
 }
 
 func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {

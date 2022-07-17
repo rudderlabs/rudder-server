@@ -5,6 +5,7 @@
 package mock_sysUtils
 
 import (
+	context "context"
 	io "io"
 	http "net/http"
 	reflect "reflect"
@@ -48,4 +49,19 @@ func (m *MockHttpI) NewRequest(arg0, arg1 string, arg2 io.Reader) (*http.Request
 func (mr *MockHttpIMockRecorder) NewRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequest", reflect.TypeOf((*MockHttpI)(nil).NewRequest), arg0, arg1, arg2)
+}
+
+// NewRequestWithContext mocks base method.
+func (m *MockHttpI) NewRequestWithContext(arg0 context.Context, arg1, arg2 string, arg3 io.Reader) (*http.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewRequestWithContext", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(*http.Request)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NewRequestWithContext indicates an expected call of NewRequestWithContext.
+func (mr *MockHttpIMockRecorder) NewRequestWithContext(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequestWithContext", reflect.TypeOf((*MockHttpI)(nil).NewRequestWithContext), arg0, arg1, arg2, arg3)
 }

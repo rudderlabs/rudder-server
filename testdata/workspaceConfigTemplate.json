@@ -1,11 +1,9 @@
 {
     "enableMetrics": false,
     "workspaceId": "{{.workspaceId}}",
-    "sources":
-    [
+    "sources": [
         {
-            "config":
-            {},
+            "config": {},
             "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
             "name": "Dev Integration Test 1",
             "writeKey": "{{.writeKey}}",
@@ -16,16 +14,13 @@
             "deleted": false,
             "createdAt": "2021-08-27T06:33:00.305Z",
             "updatedAt": "2021-08-27T06:33:00.305Z",
-            "destinations":
-            [
+            "destinations": [
                 {
-                    "config":
-                    {
+                    "config": {
                         "webhookUrl": "{{.webhookUrl}}",
                         "webhookMethod": "POST"
                     },
-                    "secretConfig":
-                    {},
+                    "secretConfig": {},
                     "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
                     "name": "Des WebHook Integration Test 1",
                     "enabled": true,
@@ -40,31 +35,23 @@
                             "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
                         }
                     ],
-                    "destinationDefinition":
-                    {
-                        "config":
-                        {
-                            "destConfig":
-                            {
-                                "defaultConfig":
-                                [
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
                                     "webhookUrl",
                                     "webhookMethod",
                                     "headers"
                                 ]
                             },
-                            "secretKeys":
-                            [
+                            "secretKeys": [
                                 "headers.to"
                             ],
-                            "excludeKeys":
-                            [],
-                            "includeKeys":
-                            [],
+                            "excludeKeys": [],
+                            "includeKeys": [],
                             "transformAt": "processor",
                             "transformAtV1": "processor",
-                            "supportedSourceTypes":
-                            [
+                            "supportedSourceTypes": [
                                 "android",
                                 "ios",
                                 "web",
@@ -75,8 +62,7 @@
                                 "reactnative",
                                 "flutter"
                             ],
-                            "supportedMessageTypes":
-                            [
+                            "supportedMessageTypes": [
                                 "alias",
                                 "group",
                                 "identify",
@@ -641,13 +627,11 @@
                     "isProcessorEnabled": true
                 },
                 {
-                    "config":
-                    {
+                    "config": {
                         "webhookUrl": "{{.disableDestinationwebhookUrl}}",
                         "webhookMethod": "POST"
                     },
-                    "secretConfig":
-                    {},
+                    "secretConfig": {},
                     "id": "xxxyyyzzzP9kQfzOoKd1tuxchYAG",
                     "name": "Des WebHook Integration Test 1",
                     "enabled": false,
@@ -662,31 +646,23 @@
                             "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
                         }
                     ],
-                    "destinationDefinition":
-                    {
-                        "config":
-                        {
-                            "destConfig":
-                            {
-                                "defaultConfig":
-                                [
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
                                     "webhookUrl",
                                     "webhookMethod",
                                     "headers"
                                 ]
                             },
-                            "secretKeys":
-                            [
+                            "secretKeys": [
                                 "headers.to"
                             ],
-                            "excludeKeys":
-                            [],
-                            "includeKeys":
-                            [],
+                            "excludeKeys": [],
+                            "includeKeys": [],
                             "transformAt": "processor",
                             "transformAtV1": "processor",
-                            "supportedSourceTypes":
-                            [
+                            "supportedSourceTypes": [
                                 "android",
                                 "ios",
                                 "web",
@@ -697,8 +673,7 @@
                                 "reactnative",
                                 "flutter"
                             ],
-                            "supportedMessageTypes":
-                            [
+                            "supportedMessageTypes": [
                                 "alias",
                                 "group",
                                 "identify",
@@ -721,8 +696,7 @@
                     "isProcessorEnabled": true
                 }
             ],
-            "sourceDefinition":
-            {
+            "sourceDefinition": {
                 "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
                 "name": "HTTP",
                 "options": null,
@@ -2419,8 +2393,7 @@
             "dgSourceTrackingPlanConfig": null
         }
     ],
-    "libraries":
-    [
+    "libraries": [
         {
             "versionId": "def"
         },
