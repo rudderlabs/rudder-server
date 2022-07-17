@@ -88,6 +88,11 @@ const (
 	CTStagingTablePrefix = "setup_test_staging"
 )
 
+const (
+	WAREHOUSE               = "warehouse"
+	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
+)
+
 var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
@@ -777,6 +782,19 @@ func NewTimerStat(name string, extraTags ...Tag) stats.RudderStats {
 func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
 	tags := map[string]string{
 		"module": "warehouse",
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return stats.NewTaggedStat(name, stats.CountType, tags)
+}
+
+func DestCounterStat(name string, warehouse WarehouseT, extraTags ...Tag) stats.RudderStats {
+	tags := map[string]string{
+		"module":    WAREHOUSE,
+		"destType":  warehouse.Type,
+		"destID":    warehouse.Destination.ID,
+		"namespace": warehouse.Namespace,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
