@@ -446,7 +446,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	now := timeutil.Now()
 	metadataMap := map[string]interface{}{
-		"use_rudder_storage": jsonUploadsList[0].UseRudderStorage, // use_rudder_storage is being used only for archiving.
+		"use_rudder_storage": jsonUploadsList[0].UseRudderStorage, // TODO: Since the use_rudder_storage is now being populated for both the staging and load files. Let's try to leverage it instead of hard coding it from the first staging file.
 		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
 		"source_task_id":     jsonUploadsList[0].SourceTaskID,
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
@@ -841,7 +841,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}).(warehouseutils.WarehouseT)
 		wh.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolConfig("use_rudder_storage")
+		upload.UseRudderStorage = warehouse.GetBoolConfig("useRudderStorage")
 
 		if !ok {
 			uploadJob := UploadJobT{
