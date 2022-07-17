@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_mustRenameDS(t *testing.T) {
@@ -102,7 +103,7 @@ func withPostgreSQL(t *testing.T, f func(postgresql *destination.PostgresResourc
 		t.Fatalf("Could not start postgres: %s", err)
 	}
 
-	fmt.Println("DB_DSN:", postgresql.DB_DSN)
+	fmt.Println("DB_DSN:", postgresql.DBDsn)
 	f(postgresql)
 }
 
