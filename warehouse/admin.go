@@ -26,8 +26,8 @@ type TestInput struct {
 }
 
 type TestResponse struct {
-	status bool
-	error  string
+	Status bool
+	Error  string
 }
 
 func Init5() {
@@ -88,7 +88,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 }
 
 // Test the underlying warehouse
-func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) error {
+func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
@@ -106,16 +106,15 @@ func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) error {
 
 	pkgLogger.Infof(`[WH Admin]: Test warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
-	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
-
 	destinationValidator := configuration_testing.NewDestinationValidator()
+	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
 	res, err := destinationValidator.ValidateCredentials(req)
 	if err != nil {
 		err = fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
 		pkgLogger.Error(err)
-		return err
+		return
 	}
 
-	*reply = TestResponse{status: res.Success, error: res.Error}
-	return err
+	*reply = TestResponse{Status: res.Success, Error: res.Error}
+	return
 }
