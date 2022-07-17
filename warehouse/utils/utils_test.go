@@ -11,7 +11,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestWarehouseT_GetBoolConfig(t *testing.T) {
+func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
 		warehouse WarehouseT
 		expected  bool
