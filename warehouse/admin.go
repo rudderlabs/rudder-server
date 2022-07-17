@@ -96,7 +96,7 @@ func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
 	var warehouse warehouseutils.WarehouseT
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
-		return errors.New("Please specify a valid and existing destination ID")
+		return errors.New("please specify a valid and existing destination ID")
 	}
 
 	for _, v := range srcMap {
