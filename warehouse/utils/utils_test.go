@@ -56,7 +56,7 @@ func TestWarehouseT_GetBoolConfig(t *testing.T) {
 		},
 	}
 	for idx, input := range inputs {
-		got := input.warehouse.GetBoolConfig("k1")
+		got := input.warehouse.GetBoolDestinationConfig("k1")
 		want := input.expected
 		if got != want {
 			t.Errorf("got %t expected %t input %d", got, want, idx)

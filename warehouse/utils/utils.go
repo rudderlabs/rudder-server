@@ -172,7 +172,7 @@ type WarehouseT struct {
 	Identifier  string
 }
 
-func (w *WarehouseT) GetBoolConfig(key string) bool {
+func (w *WarehouseT) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
 		if val, ok := destConfig[key].(bool); ok {

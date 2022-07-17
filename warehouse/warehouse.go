@@ -843,7 +843,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}).(warehouseutils.WarehouseT)
 		wh.configSubscriberLock.RUnlock()
 
-		upload.UseRudderStorage = warehouse.GetBoolConfig("useRudderStorage")
+		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !ok {
 			uploadJob := UploadJobT{
