@@ -92,6 +92,7 @@ var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
 	AWSCredsExpiryInS         int64
+	s3Regexes                 []string
 )
 
 var WHDestNameMap = map[string]string{
@@ -152,6 +153,10 @@ func Init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
+	s3Regexes = []string{
+		"https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
+		"https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
+	}
 	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
 	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
@@ -375,32 +380,42 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	return fm.GetObjectNameFromLocation(location)
 }
 
+func CaptureRegexGroup(regEx, pattern string) (groups map[string]string, err error) {
+	r, err := regexp.Compile(regEx)
+	if err != nil {
+		return
+	}
+
+	if !r.MatchString(pattern) {
+		err = errors.New(fmt.Sprintf("regex %s does not match pattern %s", regEx, pattern))
+		return
+	}
+	m := r.FindStringSubmatch(pattern)
+	groups = make(map[string]string)
+	for i, name := range r.SubexpNames() {
+		if name == "" {
+			continue
+		}
+		if i > 0 && i <= len(m) {
+			groups[name] = m[i]
+		}
+	}
+	return
+}
+
 // GetS3Location parses path-style location http url to return in s3:// format
 // [Path-style access] https://s3.amazonaws.com/test-bucket/test-object.csv --> s3://test-bucket/test-object.csv
 // [Virtual-hosted–style access] https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetS3Location(location string) (s3Location, region string) {
-	var r *regexp.Regexp
-
-	// Path-style access
-	if strings.HasPrefix(location, "https://s3.") {
-		r, _ = regexp.Compile(`s3.*\.amazonaws\.com/`)
-		subLocation := r.FindString(location)
-		regionTokens := strings.Split(subLocation, ".")
-		if len(regionTokens) == 4 {
-			region = regionTokens[1]
-		}
-	} else {
-		// Virtual-hosted–style access
-		r, _ = regexp.Compile(`\.s3.*\.amazonaws\.com`)
-		subLocation := r.FindString(location)
-		regionTokens := strings.Split(subLocation, ".")
-		if len(regionTokens) == 5 {
-			region = regionTokens[2]
+	for _, s3Regex := range s3Regexes {
+		var groups map[string]string
+		groups, err := CaptureRegexGroup(s3Regex, location)
+		if err == nil {
+			region = groups["region"]
+			s3Location = fmt.Sprintf("s3://%s/%s", groups["bucket"], groups["keyname"])
+			return
 		}
 	}
-
-	str1 := r.ReplaceAllString(location, "")
-	s3Location = strings.Replace(str1, "https", "s3", 1)
 	return
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -65,15 +66,77 @@ func TestGetS3Location(t *testing.T) {
 			s3Location: "s3://my.test-bucket/test-object.csv",
 			region:     "us-west-1",
 		},
+		{
+			location:   "https://s3.amazonaws.com/bucket.with.a.dot/test-object.csv",
+			s3Location: "s3://bucket.with.a.dot/test-object.csv",
+			region:     "",
+		},
+		{
+			location:   "https://s3.amazonaws.com/s3.rudderstack/test-object.csv",
+			s3Location: "s3://s3.rudderstack/test-object.csv",
+			region:     "",
+		},
 	}
 
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		s3Location, region := GetS3Location(input.location)
 		if s3Location != input.s3Location {
-			t.Errorf("got %q want %q input %q", s3Location, input.s3Location, input.location)
+			t.Errorf("got %q want %q input %d", s3Location, input.s3Location, idx)
 		}
 		if region != input.region {
-			t.Errorf("got %q want %q input %q", region, input.region, input.location)
+			t.Errorf("got %q want %q input %d", region, input.region, idx)
+		}
+	}
+}
+
+func TestCaptureRegexGroup(t *testing.T) {
+	inputs := []struct {
+		regex   string
+		pattern string
+		groups  map[string]string
+	}{
+		{
+			regex:   "https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
+			pattern: "https://s3.amazonaws.com/bucket.with.a.dot/keyname",
+			groups: map[string]string{
+				"bucket":  "bucket.with.a.dot",
+				"keyname": "keyname",
+				"region":  "",
+			},
+		},
+		{
+			regex:   "https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
+			pattern: "https://s3.us-east.amazonaws.com/bucket.with.a.dot/keyname",
+			groups: map[string]string{
+				"bucket":  "bucket.with.a.dot",
+				"keyname": "keyname",
+				"region":  "us-east",
+			},
+		},
+		{
+			regex:   "https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
+			pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
+			groups: map[string]string{
+				"bucket":  "bucket.with.a.dot",
+				"keyname": "keyname",
+				"region":  "",
+			},
+		},
+		{
+			regex:   "https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
+			pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
+			groups: map[string]string{
+				"bucket":  "bucket.with.a.dot",
+				"keyname": "keyname",
+				"region":  "",
+			},
+		},
+	}
+	for idx, input := range inputs {
+		got, err := CaptureRegexGroup(input.regex, input.pattern)
+		assertNoError(t, err)
+		if !reflect.DeepEqual(got, input.groups) {
+			t.Errorf("got %#v want %#v input %d", got, input.groups, idx)
 		}
 	}
 }
@@ -96,10 +159,10 @@ func TestGetS3LocationFolder(t *testing.T) {
 			s3LocationFolder: "s3://my.test-bucket/myfolder",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		s3LocationFolder := GetS3LocationFolder(input.s3Location)
 		if s3LocationFolder != input.s3LocationFolder {
-			t.Errorf("got %q want %q input %q", s3LocationFolder, input.s3LocationFolder, input.s3Location)
+			t.Errorf("got %q want %q input %d", s3LocationFolder, input.s3LocationFolder, idx)
 		}
 	}
 }
@@ -138,10 +201,10 @@ func TestGetGCSLocation(t *testing.T) {
 			gcsLocation: "gs://my.test-bucket/test-object.csv",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{})
 		if gcsLocation != input.gcsLocation {
-			t.Errorf("got %q want %q input %q", gcsLocation, input.gcsLocation, input.location)
+			t.Errorf("got %q want %q input %d", gcsLocation, input.gcsLocation, idx)
 		}
 	}
 }
@@ -160,10 +223,10 @@ func TestGetGCSLocationFolder(t *testing.T) {
 			gcsLocationFolder: "gs://my.test-bucket",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptionsT{})
 		if gcsLocationFolder != input.gcsLocationFolder {
-			t.Errorf("got %q want %q input %q", gcsLocationFolder, input.gcsLocationFolder, input.location)
+			t.Errorf("got %q want %q input %d", gcsLocationFolder, input.gcsLocationFolder, idx)
 		}
 	}
 }
@@ -198,10 +261,10 @@ func TestGetAzureBlobLocation(t *testing.T) {
 			azBlobLocation: "azure://myproject.blob.core.windows.net/test-bucket/test-object.csv",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		azBlobLocation := GetAzureBlobLocation(input.location)
 		if azBlobLocation != input.azBlobLocation {
-			t.Errorf("got %q want %q input %q", azBlobLocation, input.azBlobLocation, input.location)
+			t.Errorf("got %q want %q input %d", azBlobLocation, input.azBlobLocation, idx)
 		}
 	}
 }
@@ -216,10 +279,10 @@ func TestGetAzureBlobLocationFolder(t *testing.T) {
 			azBlobLocationFolder: "azure://myproject.blob.core.windows.net/test-bucket/myfolder",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		azBlobLocationFolder := GetAzureBlobLocationFolder(input.location)
 		if azBlobLocationFolder != input.azBlobLocationFolder {
-			t.Errorf("got %q want %q input %q", azBlobLocationFolder, input.azBlobLocationFolder, input.location)
+			t.Errorf("got %q want %q input %d", azBlobLocationFolder, input.azBlobLocationFolder, idx)
 		}
 	}
 }
@@ -270,10 +333,10 @@ func TestToSafeNamespace(t *testing.T) {
 			safeNamespace: "rudderstack",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		safeNamespace := ToSafeNamespace("", input.namespace)
 		if safeNamespace != input.safeNamespace {
-			t.Errorf("got %q want %q input %q", safeNamespace, input.safeNamespace, input.namespace)
+			t.Errorf("got %q want %q input %d", safeNamespace, input.safeNamespace, idx)
 		}
 	}
 }
@@ -301,11 +364,11 @@ func TestGetObjectLocation(t *testing.T) {
 		},
 	}
 
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
 			objectLocation := GetObjectLocation(input.provider, input.location)
 			if objectLocation != input.objectLocation {
-				t.Errorf("got %q want %q input %q", objectLocation, input.objectLocation, input.location)
+				t.Errorf("got %q want %q input %d", objectLocation, input.objectLocation, idx)
 			}
 		})
 	}
@@ -334,11 +397,11 @@ func TestGetObjectFolder(t *testing.T) {
 		},
 	}
 
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
 			objectLocation := GetObjectFolder(input.provider, input.location)
 			if objectLocation != input.objectFolder {
-				t.Errorf("got %q want %q input %q", objectLocation, input.objectFolder, input.location)
+				t.Errorf("got %q want %q input %d", objectLocation, input.objectFolder, idx)
 			}
 		})
 	}
@@ -367,11 +430,11 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 		},
 	}
 
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
 			objectLocation := GetObjectFolderForDeltalake(input.provider, input.location)
 			if objectLocation != input.objectFolder {
-				t.Errorf("got %q want %q input %q", objectLocation, input.objectFolder, input.location)
+				t.Errorf("got %q want %q input %d", objectLocation, input.objectFolder, idx)
 			}
 		})
 	}
@@ -454,10 +517,10 @@ func TestGetLastFailedStatus(t *testing.T) {
 			status: "",
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		status := GetLastFailedStatus(input.timingsMap)
 		if status != input.status {
-			t.Errorf("got %q want %q input %#v", status, input.status, input.timingsMap)
+			t.Errorf("got %q want %q input %d", status, input.status, idx)
 		}
 	}
 }
@@ -521,10 +584,10 @@ func TestGetConfigValue(t *testing.T) {
 			},
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		value := GetConfigValue(input.key, input.warehouse)
 		if value != input.value {
-			t.Errorf("got %q want %q input %#v", value, input.value, input)
+			t.Errorf("got %q want %q input %d", value, input.value, idx)
 		}
 	}
 }
@@ -567,10 +630,10 @@ func TestGetConfigValueBoolString(t *testing.T) {
 			},
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		value := GetConfigValueBoolString(input.key, input.warehouse)
 		if value != input.value {
-			t.Errorf("got %q want %q input %#v", value, input.value, input)
+			t.Errorf("got %q want %q input %d", value, input.value, idx)
 		}
 	}
 }
@@ -598,10 +661,10 @@ func TestGetConfigValueAsMap(t *testing.T) {
 			config: map[string]interface{}{},
 		},
 	}
-	for _, input := range inputs {
+	for idx, input := range inputs {
 		value := GetConfigValueAsMap(input.key, input.config)
 		if !reflect.DeepEqual(value, input.value) {
-			t.Errorf("got %q want %q input %#v", value, input.value, input)
+			t.Errorf("got %q want %q input %d", value, input.value, idx)
 		}
 	}
 }
@@ -840,6 +903,13 @@ func assertString(t *testing.T, got, want string) {
 	}
 }
 
+func assertNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("got error %s when not expected", err.Error())
+	}
+}
+
 var _ = Describe("Utils", func() {
 	Describe("Time window warehouse destinations", func() {
 		It("should give time window format based on warehouse destination type", func() {
@@ -864,3 +934,9 @@ var _ = Describe("Utils", func() {
 		})
 	})
 })
+
+func TestMain(m *testing.M) {
+	config.Load()
+	Init()
+	os.Exit(m.Run())
+}
