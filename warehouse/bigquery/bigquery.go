@@ -860,7 +860,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
-			warehouseutils.DestCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, bq.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 

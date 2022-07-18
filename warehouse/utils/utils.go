@@ -789,12 +789,13 @@ func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func DestCounterStat(name string, warehouse WarehouseT, extraTags ...Tag) stats.RudderStats {
+func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.RudderStats {
 	tags := map[string]string{
-		"module":    WAREHOUSE,
-		"destType":  warehouse.Type,
-		"destID":    warehouse.Destination.ID,
-		"namespace": warehouse.Namespace,
+		"module":      WAREHOUSE,
+		"destType":    warehouse.Type,
+		"destID":      warehouse.Destination.ID,
+		"whNamespace": warehouse.Namespace,
+		"sourceID":    warehouse.Source.ID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value

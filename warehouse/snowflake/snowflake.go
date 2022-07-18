@@ -869,7 +869,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
-			warehouseutils.DestCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, sf.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &sf.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 	return

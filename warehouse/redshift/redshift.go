@@ -664,7 +664,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			}
 			schema[tName][cName] = datatype
 		} else {
-			warehouseutils.DestCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 	return

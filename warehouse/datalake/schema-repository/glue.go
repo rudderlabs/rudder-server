@@ -86,7 +86,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT)
 					if _, ok := dataTypesMapToRudder[*col.Type]; ok {
 						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 					} else {
-						warehouseutils.DestCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
+						warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
 					}
 				}
 			}
