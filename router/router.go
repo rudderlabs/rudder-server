@@ -490,6 +490,8 @@ func (worker *workerT) workerProcess() {
 
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
+			destination := batchDestination.Destination
+			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -505,7 +507,6 @@ func (worker *workerT) workerProcess() {
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
-			destination := batchDestination.Destination
 			if authType := router_utils.GetAuthType(destination); router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 				rudderAccountId := router_utils.GetRudderAccountId(&destination)
 				if router_utils.IsNotEmptyString(rudderAccountId) {
@@ -525,7 +526,6 @@ func (worker *workerT) workerProcess() {
 					}
 				}
 			}
-			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
 			worker.encounteredRouterTransform = false
@@ -1723,8 +1723,8 @@ func (rt *HandleT) statusInsertLoop() {
 
 				statusStat.Start()
 				rt.commitStatusList(&responseList)
-				responseList = nil // FIXME: is this a bug ? count len after responseList
 				countStat.Count(len(responseList))
+				responseList = nil
 				statusStat.End()
 
 				rt.perfStats.End(0)
@@ -1748,9 +1748,9 @@ func (rt *HandleT) statusInsertLoop() {
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			statusStat.Start()
 			rt.commitStatusList(&responseList)
+			countStat.Count(len(responseList))
 			responseList = nil
 			lastUpdate = time.Now()
-			countStat.Count(len(responseList)) // FIXME: is this a bug ? count len after responseList
 			statusStat.End()
 		}
 	}
