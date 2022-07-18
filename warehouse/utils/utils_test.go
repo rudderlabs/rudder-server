@@ -3,11 +3,12 @@ package warehouseutils_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"os"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
