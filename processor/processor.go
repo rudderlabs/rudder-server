@@ -1564,7 +1564,7 @@ func (proc *HandleT) Store(in storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.batchRouterDB.StoreInTx(tx, batchDestJobs)
+			err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 			if err != nil {
 				return fmt.Errorf("storing batch router jobs: %w", err)
 			}
@@ -1600,7 +1600,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.routerDB.StoreInTx(tx, destJobs)
+			err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 			if err != nil {
 				return fmt.Errorf("storing router jobs: %w", err)
 			}
@@ -1637,7 +1637,7 @@ func (proc *HandleT) Store(in storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := proc.errorDB.Store(in.procErrorJobs)
+		err := proc.errorDB.Store(ctx, in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
@@ -1649,7 +1649,7 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	txnStart := time.Now()
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 		if err != nil {
 			return fmt.Errorf("updating gateway jobs statuses: %w", err)
 		}
@@ -2230,7 +2230,7 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	// Mark the jobs as executing
-	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatus(context.TODO(), statusList, []string{GWCustomVal}, nil)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}

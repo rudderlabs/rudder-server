@@ -310,9 +310,9 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		}
 		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(tx, jobList)
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(context.TODO(), tx, jobList)
 			} else {
-				err := gateway.jobsDB.StoreInTx(tx, jobList)
+				err := gateway.jobsDB.StoreInTx(context.TODO(), tx, jobList)
 				if err != nil {
 					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 					gateway.logger.Errorf("JobList: %+v", jobList)

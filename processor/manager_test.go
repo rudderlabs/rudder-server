@@ -64,7 +64,8 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s\n", err)
+		return 1
 	}
 
 	database := "jobsdb"
@@ -75,7 +76,8 @@ func run(m *testing.M) int {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Printf("Could not start resourcePostgres: %s\n", err)
+		return 1
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -101,7 +103,8 @@ func run(m *testing.M) int {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s\n", err)
+		return 1
 	}
 
 	code := m.Run()
@@ -192,7 +195,7 @@ func TestProcessorManager(t *testing.T) {
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err := tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err := tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
@@ -259,7 +262,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 
 		processor.Start()
-		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},

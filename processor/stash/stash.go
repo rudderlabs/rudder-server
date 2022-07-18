@@ -173,7 +173,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		}
 		contentSlice = append(contentSlice, rawJob)
 	}
-	content := bytes.Join(contentSlice[:], []byte("\n"))
+	content := bytes.Join(contentSlice, []byte("\n"))
 	if _, err := gzWriter.Write(content); err != nil {
 		panic(err)
 	}
@@ -224,7 +224,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := st.errorDB.UpdateJobStatus(context.TODO(), statusList, nil, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
@@ -306,7 +306,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				statusList = append(statusList, &status)
 			}
 
-			err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+			err := st.errorDB.UpdateJobStatus(context.TODO(), statusList, nil, nil)
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
