@@ -1607,14 +1607,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			err := rt.errorDB.Store(routerAbortedJobs)
+			err := rt.errorDB.Store(context.TODO(), routerAbortedJobs)
 			if err != nil {
 				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
 			}
 		}
 		// Update the status
 		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, statusList, []string{rt.destName}, nil)
+			err := rt.jobsDB.UpdateJobStatusInTx(context.TODO(), tx, statusList, []string{rt.destName}, nil)
 			if err != nil {
 				return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
 			}
@@ -2013,14 +2013,14 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
-	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+	err := rt.jobsDB.UpdateJobStatus(context.TODO(), statusList, []string{rt.destName}, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
 	}
 	// Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err = rt.errorDB.Store(drainJobList)
+		err = rt.errorDB.Store(context.TODO(), drainJobList)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -2048,7 +2048,7 @@ func (rt *HandleT) readAndProcess() int {
 		// REPORTING - ROUTER - END
 
 		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			err := rt.jobsDB.UpdateJobStatusInTx(tx, drainList, []string{rt.destName}, nil)
+			err := rt.jobsDB.UpdateJobStatusInTx(context.TODO(), tx, drainList, []string{rt.destName}, nil)
 			if err != nil {
 				return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
 			}

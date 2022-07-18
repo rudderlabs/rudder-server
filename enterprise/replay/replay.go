@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"context"
 	"math/rand"
 	"sort"
 	"strings"
@@ -87,7 +88,7 @@ func (handle *HandleT) generatorLoop() {
 		}
 
 		// Mark the jobs as executing
-		handle.db.UpdateJobStatus(statusList, []string{"replay"}, nil)
+		handle.db.UpdateJobStatus(context.TODO(), statusList, []string{"replay"}, nil)
 
 		// Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {

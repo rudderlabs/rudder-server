@@ -185,7 +185,7 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 			for _, job := range jobList {
 				statusList = append(statusList, jobsdb.BuildStatus(job, jobsdb.WontMigrate.State))
 			}
-			exp.migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
+			exp.migrator.jobsDB.UpdateJobStatus(context.TODO(), statusList, []string{}, []jobsdb.ParameterFilterT{})
 			queryStat.Since(queryStart)
 			continue
 		}
