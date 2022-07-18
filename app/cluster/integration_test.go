@@ -17,9 +17,10 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -278,13 +279,13 @@ func TestDynamicClusterManager(t *testing.T) {
 	}()
 
 	chACK := make(chan bool)
-	provider.SendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
+	provider.sendMode(servermode.NewChangeEvent(servermode.NormalMode, func(_ context.Context) error {
 		return nil
 	}))
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.NormalMode
 	}, time.Second, time.Millisecond)
-	provider.SendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
+	provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
 	}))

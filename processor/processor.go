@@ -979,8 +979,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
-		id := misc.FastUUID()
+		pkgLogger.Debugf(
+			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
+			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
+		)
 
+		id := misc.FastUUID()
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
 			"destination_id":     commonMetaData.DestinationID,
@@ -1932,7 +1936,7 @@ func (proc *HandleT) transformSrcDest(
 				&proc.stats.destTransformEventsByTimeTaken,
 			)
 
-			proc.logger.Debug("Dest Transform output size", len(response.Events))
+			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(
