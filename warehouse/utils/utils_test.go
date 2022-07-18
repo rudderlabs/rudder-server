@@ -3,6 +3,8 @@ package warehouseutils_test
 import (
 	"database/sql"
 	"fmt"
+	"github.com/stretchr/testify/require"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -675,6 +677,155 @@ func TestSnowflakeCloudProvider(t *testing.T) {
 	}
 }
 
+func TestObjectStorageType(t *testing.T) {
+	inputs := []struct {
+		destType         string
+		config           interface{}
+		useRudderStorage bool
+		storageType      string
+	}{
+		{
+			config:           map[string]interface{}{},
+			useRudderStorage: true,
+			storageType:      "S3",
+		},
+		{
+			destType:    "RS",
+			config:      map[string]interface{}{},
+			storageType: "S3",
+		},
+		{
+			destType:    "S3_DATALAKE",
+			config:      map[string]interface{}{},
+			storageType: "S3",
+		},
+		{
+			destType:    "BQ",
+			config:      map[string]interface{}{},
+			storageType: "GCS",
+		},
+		{
+			destType:    "GCS_DATALAKE",
+			config:      map[string]interface{}{},
+			storageType: "GCS",
+		},
+		{
+			destType:    "AZURE_DATALAKE",
+			config:      map[string]interface{}{},
+			storageType: "AZURE_BLOB",
+		},
+		{
+			destType:    "SNOWFLAKE",
+			config:      map[string]interface{}{},
+			storageType: "S3",
+		},
+		{
+			destType: "SNOWFLAKE",
+			config: map[string]interface{}{
+				"cloudProvider": "AZURE",
+			},
+			storageType: "AZURE_BLOB",
+		},
+		{
+			destType: "SNOWFLAKE",
+			config: map[string]interface{}{
+				"cloudProvider": "GCP",
+			},
+			storageType: "GCS",
+		},
+		{
+			destType: "POSTGRES",
+			config: map[string]interface{}{
+				"bucketProvider": "GCP",
+			},
+			storageType: "GCP",
+		},
+		{
+			destType: "POSTGRES",
+			config:   map[string]interface{}{},
+		},
+	}
+	for _, input := range inputs {
+		provider := ObjectStorageType(input.destType, input.config, input.useRudderStorage)
+		assertString(t, provider, input.storageType)
+	}
+}
+
+func TestGetTablePathInObjectStorage(t *testing.T) {
+	require.NoError(t, os.Setenv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-test-payload"))
+	inputs := []struct {
+		namespace string
+		tableName string
+		expected  string
+	}{
+		{
+			namespace: "rudderstack_setup_test",
+			tableName: "setup_test_staging",
+			expected:  "rudder-test-payload/rudderstack_setup_test/setup_test_staging",
+		},
+	}
+	for _, input := range inputs {
+		got := GetTablePathInObjectStorage(input.namespace, input.tableName)
+		assertString(t, got, input.expected)
+	}
+}
+
+func TestGetTempFileExtension(t *testing.T) {
+	inputs := []struct {
+		destType string
+		expected string
+	}{
+		{
+			destType: BQ,
+			expected: "json.gz",
+		},
+		{
+			destType: RS,
+			expected: "csv.gz",
+		},
+		{
+			destType: SNOWFLAKE,
+			expected: "csv.gz",
+		},
+		{
+			destType: POSTGRES,
+			expected: "csv.gz",
+		},
+		{
+			destType: CLICKHOUSE,
+			expected: "csv.gz",
+		},
+		{
+			destType: MSSQL,
+			expected: "csv.gz",
+		},
+		{
+			destType: AZURE_SYNAPSE,
+			expected: "csv.gz",
+		},
+		{
+			destType: DELTALAKE,
+			expected: "csv.gz",
+		},
+		{
+			destType: S3_DATALAKE,
+			expected: "csv.gz",
+		},
+		{
+			destType: GCS_DATALAKE,
+			expected: "csv.gz",
+		},
+		{
+			destType: AZURE_DATALAKE,
+			expected: "csv.gz",
+		},
+	}
+	for _, input := range inputs {
+		got := GetTempFileExtension(input.destType)
+		assertString(t, got, input.expected)
+	}
+}
+
 func assertTime(t *testing.T, got, want time.Time) {
 	t.Helper()
 	if got.Before(want) {
@@ -690,13 +841,6 @@ func assertString(t *testing.T, got, want string) {
 }
 
 var _ = Describe("Utils", func() {
-	Describe("Test DoubleQuoteAndJoinByComma", func() {
-		It("should correctly apply double quotes and join by Commna ", func() {
-			values := []string{"column1", "column2", "column3", "column4", "column5", "column6", "column7"}
-			Expect(DoubleQuoteAndJoinByComma(values)).To(Equal(`"column1","column2","column3","column4","column5","column6","column7"`))
-		})
-	})
-
 	Describe("Time window warehouse destinations", func() {
 		It("should give time window format based on warehouse destination type", func() {
 			warehouse := WarehouseT{

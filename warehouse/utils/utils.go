@@ -653,7 +653,7 @@ func GetTimeWindow(ts time.Time) time.Time {
 }
 
 // GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
-// for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
+// <$WAREHOUSE_DATALAKE_FOLDER_NAME>/<namespace>/tableName
 func GetTablePathInObjectStorage(namespace, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }
