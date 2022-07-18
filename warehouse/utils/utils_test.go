@@ -31,6 +31,9 @@ func TestGetDateRangeList(t *testing.T) {
 			format:    "2006-01-02",
 			dateRange: []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")},
 		},
+		{
+			format: "2006-01-02",
+		},
 	}
 	for _, ip := range inputs {
 		dateRange := GetDateRangeList(ip.start, ip.end, ip.format)
