@@ -161,7 +161,7 @@ func (rs *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (rs *HandleT) SchemaExists() (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -591,7 +591,7 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 
 func (rs *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	schemaExists, err = rs.schemaExists(rs.Namespace)
+	schemaExists, err = rs.SchemaExists()
 	if err != nil {
 		pkgLogger.Errorf("RS: Error checking if schema: %s exists: %v", rs.Namespace, err)
 		return err
@@ -804,4 +804,8 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (rs *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	rs.ConnectTimeout = timeout
+}
+
+func (rs *HandleT) SetNamespace(namespace string) {
+	rs.Namespace = namespace
 }

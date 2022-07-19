@@ -715,10 +715,10 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	return
 }
 
-func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
+func (ch *HandleT) SchemaExists() (exists bool, err error) {
 	var count int64
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
-	err = ch.Db.QueryRow(sqlStatement, schemaName).Scan(&count)
+	err = ch.Db.QueryRow(sqlStatement, ch.Namespace).Scan(&count)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
@@ -730,7 +730,7 @@ func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
 	var schemaExists bool
-	schemaExists, err = ch.schemaExists(ch.Namespace)
+	schemaExists, err = ch.SchemaExists()
 	if err != nil {
 		pkgLogger.Errorf("CH: Error checking if database: %s exists: %v", ch.Namespace, err)
 		return err
@@ -1070,4 +1070,8 @@ func (ch *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (ch *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	ch.ConnectTimeout = timeout
+}
+
+func (ch *HandleT) SetNamespace(namespace string) {
+	ch.Namespace = namespace
 }

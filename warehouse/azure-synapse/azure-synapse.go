@@ -611,6 +611,11 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+func (as *HandleT) SchemaExists() (exists bool, err error) {
+	// TODO: @implement me
+	return
+}
+
 func (as *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
@@ -850,4 +855,8 @@ func (as *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (as *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
+}
+
+func (as *HandleT) SetNamespace(namespace string) {
+	as.Namespace = namespace
 }

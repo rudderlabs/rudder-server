@@ -43,6 +43,10 @@ func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseut
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
+func (wh *HandleT) SchemaExists() (exists bool, err error) {
+	return
+}
+
 func (wh *HandleT) CreateSchema() (err error) {
 	return wh.SchemaRepository.CreateSchema()
 }
@@ -117,4 +121,7 @@ func (wh *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 }
 
 func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
+}
+
+func (rs *HandleT) SetNamespace(namespace string) {
 }

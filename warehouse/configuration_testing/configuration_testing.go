@@ -28,7 +28,7 @@ var (
 		"id":  1,
 		"val": "RudderStack",
 	}
-	TestNamespace  = "_rudderstack_setup_test"
+	TestNamespace  = "rudderstack_setup_test"
 	AlterColumnMap = map[string]string{
 		"val_alter": "string",
 	}

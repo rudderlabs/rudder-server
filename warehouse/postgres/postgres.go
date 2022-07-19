@@ -555,7 +555,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (pg *HandleT) SchemaExists() (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -563,7 +563,7 @@ func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 
 func (pg *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	schemaExists, err = pg.schemaExists(pg.Namespace)
+	schemaExists, err = pg.SchemaExists()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error checking if schema: %s exists: %v", pg.Namespace, err)
 		return err
@@ -832,4 +832,8 @@ func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (pg *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	pg.ConnectTimeout = timeout
+}
+
+func (pg *HandleT) SetNamespace(namespace string) {
+	pg.Namespace = namespace
 }

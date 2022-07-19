@@ -119,7 +119,8 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	}
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	err = tableRef.Create(bq.BQContext, metaData)
-	if !checkAndIgnoreAlreadyExistError(err) {
+	if checkAndIgnoreAlreadyExistError(err) {
+		err = nil
 		return
 	}
 
@@ -182,7 +183,7 @@ func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 	return
 }
 
-func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
+func (bq *HandleT) SchemaExists() (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
 	if err != nil {
@@ -203,7 +204,7 @@ func (bq *HandleT) CreateSchema() (err error) {
 	}
 
 	var schemaExists bool
-	schemaExists, err = bq.schemaExists(bq.Namespace, location)
+	schemaExists, err = bq.SchemaExists()
 	if err != nil {
 		pkgLogger.Errorf("BQ: Error checking if schema: %s exists: %v", bq.Namespace, err)
 		return err
@@ -1086,4 +1087,8 @@ func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 }
 
 func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
+}
+
+func (bq *HandleT) SetNamespace(namespace string) {
+	bq.Namespace = namespace
 }

@@ -346,8 +346,8 @@ func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement
 	return
 }
 
-// schemaExists checks it schema exists or not.
-func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
+// SchemaExists checks it schema exists or not.
+func (dl *HandleT) SchemaExists() (exists bool, err error) {
 	fetchSchemasExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -359,7 +359,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	fetchSchemasExecTime.Start()
 	defer fetchSchemasExecTime.End()
 
-	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
+	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, dl.Namespace)
 	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
 		Config:       dl.dbHandleT.CredConfig,
 		Identifier:   dl.dbHandleT.CredIdentifier,
@@ -372,7 +372,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
-	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && strings.Compare(fetchSchemasResponse.GetDatabases()[0], schemaName) == 0
+	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && strings.Compare(fetchSchemasResponse.GetDatabases()[0], dl.Namespace) == 0
 	return
 }
 
@@ -805,7 +805,7 @@ func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 func (dl *HandleT) CreateSchema() (err error) {
 	// Checking if schema exists or not
 	var schemaExists bool
-	schemaExists, err = dl.schemaExists(dl.Namespace)
+	schemaExists, err = dl.SchemaExists()
 	if err != nil {
 		pkgLogger.Errorf("%s Error checking if schema exists: %s, error: %v", dl.GetLogIdentifier(), dl.Namespace, err)
 		return err
@@ -1123,4 +1123,8 @@ func (dl *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (dl *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	dl.ConnectTimeout = timeout
+}
+
+func (dl *HandleT) SetNamespace(namespace string) {
+	dl.Namespace = namespace
 }

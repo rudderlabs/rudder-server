@@ -152,44 +152,6 @@ func (ct *CTHandleT) verifyingCreateAndFetchSchema() (err error) {
 	return
 }
 
-// namespaceFromConfig checks for namespace parameter in warehouse configuration
-// If it is empty returns TestNamespace
-func (ct *CTHandleT) namespaceFromConfig() (namespace string) {
-	configuredNamespace := warehouseutils.GetConfigValue("namespace", ct.warehouse)
-	if configuredNamespace != "" {
-		return
-	}
-	namespace = TestNamespace
-	return
-}
-
-// checkForConfiguredSchema check for the namespace configured by the customer.
-// If it doesn't exist uses TestNamespace
-func (ct *CTHandleT) checkForConfiguredSchema() (err error) {
-	destination := ct.warehouse.Destination
-
-	ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, ct.namespaceFromConfig())
-	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
-		infoRequest: ct.infoRequest,
-	})
-	if err != nil {
-		return
-	}
-
-	var s warehouseutils.SchemaT
-	s, err = ct.manager.FetchSchema(ct.warehouse)
-	if err != nil {
-		return
-	}
-	if len(s) == 0 {
-		ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace)
-		err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
-			infoRequest: ct.infoRequest,
-		})
-	}
-	return
-}
-
 func (ct *CTHandleT) verifyingCreateAndAlterTable() (err error) {
 	err = ct.initManager()
 	if err != nil {
@@ -241,6 +203,39 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 
 	// loading table
 	err = ct.loadTable(uploadOutput.Location)
+	return
+}
+
+// namespaceFromConfig checks for namespace parameter in warehouse configuration
+// If it is empty returns TestNamespace
+func (ct *CTHandleT) namespaceFromConfig() (namespace string) {
+	namespace = warehouseutils.GetConfigValue("namespace", ct.warehouse)
+	if namespace != "" {
+		return
+	}
+	namespace = TestNamespace
+	return
+}
+
+// setUpNamespace set's up namespace for warehouse
+func (ct *CTHandleT) setUpNamespace(provider, namespace string) {
+	ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(provider, namespace)
+	ct.manager.SetNamespace(ct.warehouse.Namespace)
+}
+
+// checkForConfiguredSchema check for the namespace configured by the customer.
+// If it doesn't exist sets TestNamespace
+func (ct *CTHandleT) checkForConfiguredSchema() (err error) {
+	provider := ct.warehouse.Destination.DestinationDefinition.Name
+	ct.setUpNamespace(provider, ct.namespaceFromConfig())
+
+	exists, err := ct.manager.SchemaExists()
+	if err != nil {
+		return
+	}
+	if !exists {
+		ct.setUpNamespace(provider, TestNamespace)
+	}
 	return
 }
 

@@ -23,6 +23,7 @@ type ManagerI interface {
 	Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
+	SchemaExists() (exists bool, err error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumn(tableName, columnName, columnType string) (err error)
@@ -39,6 +40,7 @@ type ManagerI interface {
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
+	SetNamespace(namespace string)
 }
 
 type WarehouseDelete interface {
