@@ -936,7 +936,7 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 	return timeWindowFormat
 }
 
-func GetDateRangeList(start time.Time, end time.Time, dateFormat string) (dateRange []string) {
+func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
 	if (start == time.Time{} || end == time.Time{}) {
 		return
 	}
