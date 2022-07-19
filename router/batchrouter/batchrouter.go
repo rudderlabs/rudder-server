@@ -89,6 +89,7 @@ type HandleT struct {
 	maxEventsInABatch              int
 	maxFailedCountForJob           int
 	asyncUploadTimeout             time.Duration
+	jobdDBRequestTimeout           time.Duration
 	uploadIntervalMap              map[string]time.Duration
 	retryTimeWindow                time.Duration
 	reporting                      types.ReportingI
@@ -427,7 +428,9 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										}
 										brt.failedJobCount.Count(len(statusList))
 										err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-											err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+											updateCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBRequestTimeout)
+											err = brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{brt.destType}, parameterFilters)
+											defer cancelCtx()
 											if err != nil {
 												return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 											}
@@ -472,14 +475,20 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								}
 								brt.successfulJobCount.Count(len(statusList) - len(abortedJobs))
 								brt.abortedJobCount.Count(len(abortedJobs))
+
 								if len(abortedJobs) > 0 {
-									err := brt.errorDB.Store(ctx, abortedJobs)
+									storeCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBRequestTimeout)
+									err := brt.errorDB.Store(storeCtx, abortedJobs)
 									if err != nil {
 										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
+									defer cancelCtx()
 								}
+
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-									err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+									updateCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBRequestTimeout)
+									err = brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{brt.destType}, parameterFilters)
+									defer cancelCtx()
 									if err != nil {
 										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
@@ -535,18 +544,21 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									brt.failedJobCount.Count(len(importingList))
 								}
 								if len(abortedJobs) > 0 {
-									err := brt.errorDB.Store(ctx, abortedJobs)
+									storeCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBRequestTimeout)
+									err := brt.errorDB.Store(storeCtx, abortedJobs)
 									if err != nil {
 										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
+									defer cancelCtx()
 								}
 
 								err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-									err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
+									updateCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBRequestTimeout)
+									err = brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{brt.destType}, parameterFilters)
+									defer cancelCtx()
 									if err != nil {
 										return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 									}
-
 									// rsources stats
 									return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
 								})
@@ -1295,12 +1307,14 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	// Store the aborted jobs to errorDB
 	if abortedEvents != nil {
-		err := brt.errorDB.Store(context.TODO(), abortedEvents)
+		storeCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+		err := brt.errorDB.Store(storeCtx, abortedEvents)
 		if err != nil {
 			brt.logger.Errorf("[Batch Router] Store into proc error table failed with error: %v", err)
 			brt.logger.Errorf("abortedEvents: %v", abortedEvents)
 			panic(err)
 		}
+		defer cancelCtx()
 	}
 
 	// REPORTING - START
@@ -1331,7 +1345,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	// Mark the status of the jobs
 	err = brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err = brt.jobsDB.UpdateJobStatusInTx(context.TODO(), tx, statusList, []string{brt.destType}, parameterFilters)
+		updateCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+		err = brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{brt.destType}, parameterFilters)
+		defer cancelCtx()
 		if err != nil {
 			brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 			return err
@@ -1447,12 +1463,13 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 
 	// Mark the status of the jobs
 	err := brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err := brt.jobsDB.UpdateJobStatusInTx(context.TODO(), tx, statusList, []string{brt.destType}, parameterFilters)
+		updateCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+		err := brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{brt.destType}, parameterFilters)
+		defer cancelCtx()
 		if err != nil {
 			brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 			return err
 		}
-
 		// rsources stats
 		rsourcesStats.JobStatusesUpdated(statusList)
 		err = rsourcesStats.Publish(context.TODO(), tx.Tx())
@@ -1714,16 +1731,20 @@ func (worker *workerT) workerProcess() {
 
 			// Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.errorDB.Store(context.TODO(), drainJobList)
+				storeCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+				err := brt.errorDB.Store(storeCtx, drainJobList)
 				if err != nil {
 					panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 				}
+				defer cancelCtx()
+
 				err = brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-					err := brt.jobsDB.UpdateJobStatusInTx(context.TODO(), tx, drainList, []string{brt.destType}, parameterFilters)
+					updateCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+					err := brt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, drainList, []string{brt.destType}, parameterFilters)
+					defer cancelCtx()
 					if err != nil {
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
-
 					// rsources stats
 					return brt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
 				})
@@ -1744,11 +1765,13 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 			// Mark the jobs as executing
-			err := brt.jobsDB.UpdateJobStatus(context.TODO(), statusList, []string{brt.destType}, parameterFilters)
+			updateCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBRequestTimeout)
+			err := brt.jobsDB.UpdateJobStatus(updateCtx, statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
 				brt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", brt.destType, err)
 				panic(err)
 			}
+			defer cancelCtx()
 			brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 
 			var wg sync.WaitGroup
@@ -2284,6 +2307,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "PayloadLimit", "BatchRouter.PayloadLimit"}...)
+	config.RegisterDurationConfigVariable(5, &brt.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "BatchRouter." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
+
 	brt.uploadIntervalMap = map[string]time.Duration{}
 
 	tr := &http.Transport{}
