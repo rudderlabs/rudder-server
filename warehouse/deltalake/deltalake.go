@@ -151,7 +151,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
-		if name == "received_at" && false {
+		if name == "received_at" {
 			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
 			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
 		}
