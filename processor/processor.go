@@ -53,30 +53,31 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 
 // HandleT is a handle to this object used in main.go
 type HandleT struct {
-	backendConfig       backendconfig.BackendConfig
-	transformer         transformer.Transformer
-	lastJobID           int64
-	gatewayDB           jobsdb.JobsDB
-	routerDB            jobsdb.JobsDB
-	batchRouterDB       jobsdb.JobsDB
-	errorDB             jobsdb.JobsDB
-	logger              logger.LoggerI
-	eventSchemaHandler  types.EventSchemasI
-	dedupHandler        dedup.DedupI
-	reporting           types.ReportingI
-	reportingEnabled    bool
-	multitenantI        multitenant.MultiTenantI
-	backgroundWait      func() error
-	backgroundCancel    context.CancelFunc
-	transformerFeatures json.RawMessage
-	readLoopSleep       time.Duration
-	maxLoopSleep        time.Duration
-	storeTimeout        time.Duration
-	statsFactory        stats.Stats
-	stats               processorStats
-	payloadLimit        int64
-	transientSources    transientsource.Service
-	rsourcesService     rsources.JobService
+	backendConfig        backendconfig.BackendConfig
+	transformer          transformer.Transformer
+	lastJobID            int64
+	gatewayDB            jobsdb.JobsDB
+	routerDB             jobsdb.JobsDB
+	batchRouterDB        jobsdb.JobsDB
+	errorDB              jobsdb.JobsDB
+	logger               logger.LoggerI
+	eventSchemaHandler   types.EventSchemasI
+	dedupHandler         dedup.DedupI
+	reporting            types.ReportingI
+	reportingEnabled     bool
+	multitenantI         multitenant.MultiTenantI
+	backgroundWait       func() error
+	backgroundCancel     context.CancelFunc
+	transformerFeatures  json.RawMessage
+	readLoopSleep        time.Duration
+	maxLoopSleep         time.Duration
+	storeTimeout         time.Duration
+	statsFactory         stats.Stats
+	stats                processorStats
+	payloadLimit         int64
+	jobdDBRequestTimeout time.Duration
+	transientSources     transientsource.Service
+	rsourcesService      rsources.JobService
 }
 
 type processorStats struct {
@@ -314,6 +315,8 @@ func (proc *HandleT) Setup(
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
+	config.RegisterDurationConfigVariable(5, &proc.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Processor." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
+
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 
@@ -1536,18 +1539,6 @@ type storeMessage struct {
 }
 
 func (proc *HandleT) Store(in storeMessage) {
-	// FIXME: This is a hack to get around the fact that,
-	// 	processor will stuck in case write query takes for ever.
-	// SHOULD BE REMOVED AFTER PROPER TIMEOUTS ARE IMPLEMENTED.
-	ctx, cancel := context.WithTimeout(context.TODO(), proc.storeTimeout)
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		if ctx.Err() == context.DeadlineExceeded {
-			panic(fmt.Sprintf("processor .Store() timed out after %s", proc.storeTimeout))
-		}
-	}()
-
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	beforeStoreStatus := time.Now()
@@ -1556,7 +1547,9 @@ func (proc *HandleT) Store(in storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+			storeCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBRequestTimeout)
+			err := proc.batchRouterDB.StoreInTx(storeCtx, tx, batchDestJobs)
+			defer cancelCtx()
 			if err != nil {
 				return fmt.Errorf("storing batch router jobs: %w", err)
 			}
@@ -1592,7 +1585,9 @@ func (proc *HandleT) Store(in storeMessage) {
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+			storeCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBRequestTimeout)
+			err := proc.routerDB.StoreInTx(storeCtx, tx, destJobs)
+			defer cancelCtx()
 			if err != nil {
 				return fmt.Errorf("storing router jobs: %w", err)
 			}
@@ -1629,19 +1624,23 @@ func (proc *HandleT) Store(in storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := proc.errorDB.Store(ctx, in.procErrorJobs)
+		storeCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBRequestTimeout)
+		err := proc.errorDB.Store(storeCtx, in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
 			panic(err)
 		}
+		defer cancelCtx()
 		recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
 	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
+		updateCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBRequestTimeout)
+		err := proc.gatewayDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{GWCustomVal}, nil)
+		defer cancelCtx()
 		if err != nil {
 			return fmt.Errorf("updating gateway jobs statuses: %w", err)
 		}
@@ -2222,7 +2221,9 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	// Mark the jobs as executing
-	err := proc.gatewayDB.UpdateJobStatus(context.TODO(), statusList, []string{GWCustomVal}, nil)
+	updateCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBRequestTimeout)
+	err := proc.gatewayDB.UpdateJobStatus(updateCtx, statusList, []string{GWCustomVal}, nil)
+	defer cancelCtx()
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}

@@ -183,8 +183,8 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
-
-	rsourcesService rsources.JobService
+	jobdDBRequestTimeout                                       time.Duration
+	rsourcesService                                            rsources.JobService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -309,9 +309,13 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		}
 		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(context.TODO(), tx, jobList)
+				storeCtx, cancelCtx := context.WithTimeout(context.Background(), gateway.jobdDBRequestTimeout)
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(storeCtx, tx, jobList)
+				cancelCtx()
 			} else {
-				err := gateway.jobsDB.StoreInTx(context.TODO(), tx, jobList)
+				storeCtx, cancelCtx := context.WithTimeout(context.Background(), gateway.jobdDBRequestTimeout)
+				err := gateway.jobsDB.StoreInTx(storeCtx, tx, jobList)
+				cancelCtx()
 				if err != nil {
 					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 					gateway.logger.Errorf("JobList: %+v", jobList)
@@ -1579,6 +1583,7 @@ func (gateway *HandleT) Setup(
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
+	config.RegisterDurationConfigVariable(5, &gateway.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Gateway." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter

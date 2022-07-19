@@ -52,12 +52,13 @@ type StoreErrorOutputT struct {
 }
 
 type HandleT struct {
-	errorDB         jobsdb.JobsDB
-	errProcessQ     chan []*jobsdb.JobT
-	errFileUploader filemanager.FileManager
-	statErrDBR      stats.RudderStats
-	logger          logger.LoggerI
-	transientSource transientsource.Service
+	errorDB              jobsdb.JobsDB
+	errProcessQ          chan []*jobsdb.JobT
+	errFileUploader      filemanager.FileManager
+	statErrDBR           stats.RudderStats
+	logger               logger.LoggerI
+	transientSource      transientsource.Service
+	jobdDBRequestTimeout time.Duration
 }
 
 func New() *HandleT {
@@ -69,6 +70,8 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.errorDB = errorDB
 	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
+	config.RegisterDurationConfigVariable(5, &st.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Processor." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
+
 	st.crashRecover()
 }
 
@@ -224,11 +227,13 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := st.errorDB.UpdateJobStatus(context.TODO(), statusList, nil, nil)
+	updateCtx, cancelCtx := context.WithTimeout(context.Background(), st.jobdDBRequestTimeout)
+	err := st.errorDB.UpdateJobStatus(updateCtx, statusList, nil, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
+	defer cancelCtx()
 }
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
@@ -305,12 +310,13 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-
-			err := st.errorDB.UpdateJobStatus(context.TODO(), statusList, nil, nil)
+			updateCtx, cancelCtx := context.WithTimeout(context.Background(), st.jobdDBRequestTimeout)
+			err := st.errorDB.UpdateJobStatus(updateCtx, statusList, nil, nil)
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
 			}
+			defer cancelCtx()
 
 			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList
