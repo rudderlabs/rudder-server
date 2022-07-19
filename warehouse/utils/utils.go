@@ -84,8 +84,8 @@ const (
 )
 
 const (
-	CTInvalidStep        = "Invalid step"
-	CTStagingTablePrefix = "setup_test_staging"
+	InvalidStep      = "Invalid step"
+	SetupTestStaging = "setup_test_staging"
 )
 
 var (

@@ -11,29 +11,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	TestTableSchemaMap = map[string]string{
-		"id":  "int",
-		"val": "string",
-	}
-	TestPayloadMap = map[string]interface{}{
-		"id":  1,
-		"val": "RudderStack",
-	}
-	TestNamespace  = "_rudderstack_setup_test"
-	AlterColumnMap = map[string]string{
-		"val_alter": "string",
-	}
-)
-
-const (
-	verifyingObjectStorage        = "Verifying Object Storage"
-	verifyingConnections          = "Verifying Connections"
-	verifyingCreateAndFetchSchema = "Verifying Create And Fetch Schema"
-	verifyingCreateAndAlterTable  = "Verifying Create and Alter Table"
-	verifyingLoadTable            = "Verifying Load Table"
-)
-
 // warehouseAdapter returns warehouseT from info request
 func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
 	destination := req.Destination

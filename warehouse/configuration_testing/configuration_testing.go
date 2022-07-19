@@ -19,6 +19,29 @@ var (
 	fileManagerTimeout      time.Duration
 )
 
+var (
+	TestTableSchemaMap = map[string]string{
+		"id":  "int",
+		"val": "string",
+	}
+	TestPayloadMap = map[string]interface{}{
+		"id":  1,
+		"val": "RudderStack",
+	}
+	TestNamespace  = "_rudderstack_setup_test"
+	AlterColumnMap = map[string]string{
+		"val_alter": "string",
+	}
+)
+
+const (
+	verifyingObjectStorage        = "Verifying Object Storage"
+	verifyingConnections          = "Verifying Connections"
+	verifyingCreateAndFetchSchema = "Verifying Create And Fetch Schema"
+	verifyingCreateAndAlterTable  = "Verifying Create and Alter Table"
+	verifyingLoadTable            = "Verifying Load Table"
+)
+
 func Init() {
 	connectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")

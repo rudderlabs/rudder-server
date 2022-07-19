@@ -33,12 +33,12 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 			&validationStep{
 				ID:        2,
 				Name:      verifyingCreateAndFetchSchema,
-				Validator: ct.verifyingCreateFetchSchema,
+				Validator: ct.verifyingCreateAndFetchSchema,
 			},
 			&validationStep{
 				ID:        3,
 				Name:      verifyingCreateAndAlterTable,
-				Validator: ct.verifyingCreateAlterTable,
+				Validator: ct.verifyingCreateAndAlterTable,
 			},
 		)
 	default:
@@ -51,12 +51,12 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 			&validationStep{
 				ID:        3,
 				Name:      verifyingCreateAndFetchSchema,
-				Validator: ct.verifyingCreateFetchSchema,
+				Validator: ct.verifyingCreateAndFetchSchema,
 			},
 			&validationStep{
 				ID:        4,
 				Name:      verifyingCreateAndAlterTable,
-				Validator: ct.verifyingCreateAlterTable,
+				Validator: ct.verifyingCreateAndAlterTable,
 			},
 			&validationStep{
 				ID:        5,

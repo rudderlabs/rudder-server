@@ -36,7 +36,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 	if step != "" {
 		stepI, err := strconv.Atoi(step)
 		if err != nil {
-			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.InvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -50,7 +50,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		}
 
 		if v == nil {
-			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.CTInvalidStep, step)
+			resp.Error = fmt.Sprintf("%s: %s", warehouseutils.InvalidStep, step)
 			return json.Marshal(resp)
 		}
 
@@ -137,7 +137,7 @@ func (ct *CTHandleT) verifyingConnections() (err error) {
 	return
 }
 
-func (ct *CTHandleT) verifyingCreateFetchSchema() (err error) {
+func (ct *CTHandleT) verifyingCreateAndFetchSchema() (err error) {
 	err = ct.initManager()
 	if err != nil {
 		return
@@ -152,14 +152,29 @@ func (ct *CTHandleT) verifyingCreateFetchSchema() (err error) {
 	return
 }
 
+// namespaceFromConfig checks for namespace parameter in warehouse configuration
+// If it is empty returns TestNamespace
+func (ct *CTHandleT) namespaceFromConfig() (namespace string) {
+	configuredNamespace := warehouseutils.GetConfigValue("namespace", ct.warehouse)
+	if configuredNamespace != "" {
+		return
+	}
+	namespace = TestNamespace
+	return
+}
+
 // checkForConfiguredSchema check for the namespace configured by the customer.
-// If it doesn't exists uses TestNamespace
+// If it doesn't exist uses TestNamespace
 func (ct *CTHandleT) checkForConfiguredSchema() (err error) {
 	destination := ct.warehouse.Destination
 
-	configuredNamespace := warehouseutils.GetConfigValue("namespace", ct.warehouse)
-	configuredSafeNamespace := warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, configuredNamespace)
-	ct.warehouse.Namespace = configuredSafeNamespace
+	ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, ct.namespaceFromConfig())
+	err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
+		infoRequest: ct.infoRequest,
+	})
+	if err != nil {
+		return
+	}
 
 	var s warehouseutils.SchemaT
 	s, err = ct.manager.FetchSchema(ct.warehouse)
@@ -168,33 +183,37 @@ func (ct *CTHandleT) checkForConfiguredSchema() (err error) {
 	}
 	if len(s) == 0 {
 		ct.warehouse.Namespace = warehouseutils.ToSafeNamespace(destination.DestinationDefinition.Name, TestNamespace)
+		err = ct.manager.Setup(ct.warehouse, &CTUploadJob{
+			infoRequest: ct.infoRequest,
+		})
 	}
 	return
 }
 
-func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
+func (ct *CTHandleT) verifyingCreateAndAlterTable() (err error) {
 	err = ct.initManager()
 	if err != nil {
 		return
 	}
 
+	// Check for configured schema
 	err = ct.checkForConfiguredSchema()
 	if err != nil {
 		return
 	}
 
 	// Create table
-	err = ct.manager.CreateTable(warehouseutils.CTStagingTablePrefix, TestTableSchemaMap)
+	err = ct.manager.CreateTable(warehouseutils.SetupTestStaging, TestTableSchemaMap)
 	if err != nil {
 		return
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(warehouseutils.CTStagingTablePrefix)
+	defer ct.manager.DropTable(warehouseutils.SetupTestStaging)
 
 	// Alter table
 	for columnName, columnType := range AlterColumnMap {
-		err = ct.manager.AddColumn(warehouseutils.CTStagingTablePrefix, columnName, columnType)
+		err = ct.manager.AddColumn(warehouseutils.SetupTestStaging, columnName, columnType)
 		if err != nil {
 			return
 		}
@@ -359,16 +378,22 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	destination := ct.infoRequest.Destination
 	destinationType := destination.DestinationDefinition.Name
 
+	// Check for configured schema
+	err = ct.checkForConfiguredSchema()
+	if err != nil {
+		return
+	}
+
 	// Create table
-	err = ct.manager.CreateTable(warehouseutils.CTStagingTablePrefix, TestTableSchemaMap)
+	err = ct.manager.CreateTable(warehouseutils.SetupTestStaging, TestTableSchemaMap)
 	if err != nil {
 		return
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(warehouseutils.CTStagingTablePrefix)
+	defer ct.manager.DropTable(warehouseutils.SetupTestStaging)
 
 	// loading test table from staging file
-	err = ct.manager.LoadTestTable(loadFileLocation, warehouseutils.CTStagingTablePrefix, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))
+	err = ct.manager.LoadTestTable(loadFileLocation, warehouseutils.SetupTestStaging, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))
 	return
 }
