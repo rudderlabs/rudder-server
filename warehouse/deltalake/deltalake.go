@@ -342,6 +342,9 @@ func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) 
 	if misc.ContainsString(partitionedColumns, "event_date") {
 		firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
 		dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
+		if len(dateRange) == 0 {
+			return
+		}
 		partitionedQuery = fmt.Sprintf(`CAST ( STAGING.event_date AS string) IN (%s)`, strings.Join(dateRange, ","))
 	}
 	return
