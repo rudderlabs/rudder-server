@@ -332,7 +332,7 @@ func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName st
 	return
 }
 
-// fetchPartitionColumns fetch tables with tableNames
+// partitionedQuery partition query
 func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) {
 	partitionedColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
 	if err != nil {
@@ -345,7 +345,10 @@ func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) 
 		if len(dateRange) == 0 {
 			return
 		}
-		partitionedQuery = fmt.Sprintf(`CAST ( STAGING.event_date AS string) IN (%s)`, strings.Join(dateRange, ","))
+		dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(idx int, str string) string {
+			return fmt.Sprintf(`'%s'`, str)
+		}, ",")
+		partitionedQuery = fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s)`, dateRangeString)
 	}
 	return
 }
