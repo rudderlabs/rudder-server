@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/lib/pq"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -172,7 +173,25 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Debugf("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
+			err = nil
+		}
+	}
 	return
+}
+
+func checkAndIgnoreAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			if e.Code == "42701" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
