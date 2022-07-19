@@ -333,13 +333,13 @@ func loadConfig() {
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
-func (worker *workerT) trackStuckDelivery() chan struct{} {
+func (worker *workerT) trackStuckDelivery(d time.Duration) chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
 		case <-ch:
 			// do nothing
-		case <-time.After(misc.MaxDuration(worker.rt.netClientTimeout, worker.rt.minDeliveryTimeoutAlertLimit) * 2):
+		case <-time.After(d):
 			worker.rt.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", worker.rt.destName)
 			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, stats.Tags{
 				"destType": worker.rt.destName,
@@ -570,6 +570,17 @@ func (worker *workerT) workerProcess() {
 	}
 }
 
+func (worker *workerT) getDeliveryTimeout() time.Duration {
+	var d time.Duration
+	if worker.rt.transformerProxy {
+		d = worker.rt.minDeliveryTimeoutAlertLimit * 2
+	} else {
+		d = worker.rt.netClientTimeout * 2
+	}
+
+	return d
+}
+
 func (worker *workerT) processDestinationJobs() {
 	ctx := context.TODO()
 	worker.batchTimeStat.Start()
@@ -655,7 +666,7 @@ func (worker *workerT) processDestinationJobs() {
 
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
-				ch := worker.trackStuckDelivery()
+				ch := worker.trackStuckDelivery(worker.getDeliveryTimeout())
 
 				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
 
@@ -673,7 +684,7 @@ func (worker *workerT) processDestinationJobs() {
 				threshold := time.Duration(2.0 * math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second)))
 				if elapsed > threshold {
 					respStatusCode = types.RouterTimedOutStatusCode
-					respBody = fmt.Sprintf("%d Jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
+					respBody = "Jobs took more time than expected. Will be retried"
 					worker.rt.logger.Debugf(
 						"Will drop with %d because of time expiry %v",
 						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
@@ -745,7 +756,7 @@ func (worker *workerT) processDestinationJobs() {
 								"workspace":     workspaceID,
 							}).Count(len(result))
 
-							pkgLogger.Infof(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
+							pkgLogger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
 								destinationJob.JobMetadataArray[0].JobID,
 								len(result),
 								len(respBodyArr),
