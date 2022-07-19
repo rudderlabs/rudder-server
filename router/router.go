@@ -102,7 +102,7 @@ type HandleT struct {
 	throttler                              throttler.Throttler
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
-	minDeliveryTimeoutAlertLimit           time.Duration
+	backendProxyTimeout                    time.Duration
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
@@ -573,7 +573,7 @@ func (worker *workerT) workerProcess() {
 func (worker *workerT) getDeliveryTimeout() time.Duration {
 	var d time.Duration
 	if worker.rt.transformerProxy {
-		d = worker.rt.minDeliveryTimeoutAlertLimit * 2
+		d = worker.rt.backendProxyTimeout * 2
 	} else {
 		d = worker.rt.netClientTimeout * 2
 	}
@@ -2212,7 +2212,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.destName = destName
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
-	config.RegisterDurationConfigVariable(30, &rt.minDeliveryTimeoutAlertLimit, false, time.Second, []string{"HttpClient.timeout"}...)
+	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, []string{"HttpClient.timeout"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)

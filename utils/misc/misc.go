@@ -1420,11 +1420,3 @@ func CopyStringMap(originalMap map[string]string) map[string]string {
 	}
 	return newMap
 }
-
-func MaxDuration(a, b time.Duration) time.Duration {
-	if a > b {
-		return a
-	}
-
-	return b
-}
