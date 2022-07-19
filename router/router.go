@@ -333,7 +333,14 @@ func loadConfig() {
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
-func (worker *workerT) trackStuckDelivery(d time.Duration) chan struct{} {
+func (worker *workerT) trackStuckDelivery() chan struct{} {
+	var d time.Duration
+	if worker.rt.transformerProxy {
+		d = worker.rt.backendProxyTimeout * 2
+	} else {
+		d = worker.rt.netClientTimeout * 2
+	}
+
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
@@ -570,17 +577,6 @@ func (worker *workerT) workerProcess() {
 	}
 }
 
-func (worker *workerT) getDeliveryTimeout() time.Duration {
-	var d time.Duration
-	if worker.rt.transformerProxy {
-		d = worker.rt.backendProxyTimeout * 2
-	} else {
-		d = worker.rt.netClientTimeout * 2
-	}
-
-	return d
-}
-
 func (worker *workerT) processDestinationJobs() {
 	ctx := context.TODO()
 	worker.batchTimeStat.Start()
@@ -666,7 +662,7 @@ func (worker *workerT) processDestinationJobs() {
 
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
-				ch := worker.trackStuckDelivery(worker.getDeliveryTimeout())
+				ch := worker.trackStuckDelivery()
 
 				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
 
