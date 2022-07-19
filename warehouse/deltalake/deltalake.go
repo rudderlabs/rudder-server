@@ -151,7 +151,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
-		if name == "received_at" {
+		if name == "received_at" && false {
 			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
 			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
 		}
@@ -332,6 +332,10 @@ func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName st
 	return
 }
 
+func isPartitionedByEventDate(partitionedColumns []string) bool {
+	return misc.ContainsString(partitionedColumns, "event_date")
+}
+
 // partitionedQuery partition query
 func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) {
 	partitionedColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
@@ -339,7 +343,7 @@ func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) 
 		pkgLogger.Errorf("error while fetching partitioned query with %s", err.Error())
 		return
 	}
-	if misc.ContainsString(partitionedColumns, "event_date") {
+	if isPartitionedByEventDate(partitionedColumns) {
 		firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
 		dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
 		if len(dateRange) == 0 {
