@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -262,6 +263,15 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
+func (rs *HandleT) NewTimeStat(statName, tableName string) stats.RudderStats {
+	return warehouseutils.NewTimerStat(statName,
+		warehouseutils.Tag{Name: "tableName", Value: tableName},
+		warehouseutils.Tag{Name: "destID", Value: rs.Warehouse.Destination.ID},
+		warehouseutils.Tag{Name: "destType", Value: rs.Warehouse.Destination.DestinationDefinition.Name},
+		warehouseutils.Tag{Name: "sourceID", Value: rs.Warehouse.Source.ID},
+	)
+}
+
 func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
 	if err != nil {
@@ -330,7 +340,10 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		pkgLogger.Debugf("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
 	}
 
+	loadTableCopyTimer := rs.NewTimeStat("rs_load_table_copy_op", tableName)
+	loadTableCopyTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadTableCopyTimer.End()
 	if err != nil {
 		pkgLogger.Errorf("RS: Error running COPY command: %v\n", err)
 		tx.Rollback()
@@ -354,7 +367,10 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Debugf("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	loadTableDeleteTimer := rs.NewTimeStat("rs_load_table_delete_op", tableName)
+	loadTableDeleteTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadTableDeleteTimer.End()
 	if err != nil {
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
@@ -365,7 +381,10 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	loadTableInsertTimer := rs.NewTimeStat("rs_load_table_insert_op", tableName)
+	loadTableInsertTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadTableInsertTimer.End()
 
 	if err != nil {
 		pkgLogger.Errorf("RS: Error inserting into original table: %v\n", err)
@@ -441,7 +460,10 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
+	loadUsersTableCreateTimer := rs.NewTimeStat("rs_load_users_table_create_op", warehouseutils.UsersTable)
+	loadUsersTableCreateTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadUsersTableCreateTimer.End()
 	if err != nil {
 		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
 		pkgLogger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
@@ -454,7 +476,10 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 
+	loadUsersTableDeleteTimer := rs.NewTimeStat("rs_load_users_table_delete_op", warehouseutils.UsersTable)
+	loadUsersTableDeleteTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadUsersTableDeleteTimer.End()
 	if err != nil {
 		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
@@ -466,7 +491,10 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
 	pkgLogger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable,
 		sqlStatement)
+	loadUsersTableInsertTimer := rs.NewTimeStat("rs_load_users_table_insert_op", warehouseutils.UsersTable)
+	loadUsersTableInsertTimer.Start()
 	_, err = tx.Exec(sqlStatement)
+	loadUsersTableInsertTimer.End()
 
 	if err != nil {
 		pkgLogger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
