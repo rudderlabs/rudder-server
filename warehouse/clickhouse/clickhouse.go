@@ -837,7 +837,7 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`DROP TABLE "%s"."%s" %s `, ch.Warehouse.Namespace, tableName, clusterClause)
+	sqlStatement := fmt.Sprintf(`DROP TABLE "%s"."%s" %s `, ch.Namespace, tableName, clusterClause)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
 }

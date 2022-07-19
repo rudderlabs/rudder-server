@@ -213,6 +213,10 @@ func (ct *CTHandleT) namespaceFromConfig() (namespace string) {
 	if namespace != "" {
 		return
 	}
+	if ct.infoRequest.Destination.DestinationDefinition.Name == warehouseutils.CLICKHOUSE {
+		namespace = warehouseutils.GetConfigValue("database", ct.warehouse)
+		return
+	}
 	namespace = TestNamespace
 	return
 }
