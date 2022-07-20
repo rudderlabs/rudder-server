@@ -1517,6 +1517,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
+	failuresMetric := make(map[string]map[string]int)
 	for _, resp := range *responseList {
 
 		var parameters JobParametersT
@@ -1586,15 +1587,16 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 					event = diagnostics.RouterAborted
 				}
 
-				rt.failureMetricLock.Lock()
-				if _, ok := rt.failuresMetric[event][string(resp.status.ErrorResponse)]; !ok {
-					rt.failuresMetric[event] = make(map[string]int)
+				if _, ok := failuresMetric[event][string(resp.status.ErrorResponse)]; !ok {
+					failuresMetric[event] = make(map[string]int)
 				}
-				rt.failuresMetric[event][string(resp.status.ErrorResponse)] += 1
-				rt.failureMetricLock.Unlock()
+				failuresMetric[event][string(resp.status.ErrorResponse)] += 1
 			}
 		}
 	}
+	rt.failureMetricLock.Lock()
+	rt.failuresMetric = failuresMetric
+	rt.failureMetricLock.Unlock()
 
 	// REPORTING - ROUTER - START
 	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
