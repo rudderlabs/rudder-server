@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -190,27 +191,28 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	} else {
 		region = *manager.Config.Region
 	}
+
 	var sess *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		}))
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		}))
+	awsConfig := aws.Config{
+		Region:                        aws.String(region),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+		Endpoint:                      manager.Config.Endpoint,
+		S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
+		DisableSSL:                    manager.Config.DisableSSL, // TODO: get rid of this options as its risky
 	}
+	if manager.Config.AccessKey != "" && manager.Config.AccessKeyID != "" {
+		pkgLogger.Debug("Credentials found in the destination's config")
+		awsConfig.Credentials = credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, "")
+	} else if manager.Config.IAMRoleARN != "" {
+		pkgLogger.Debugf("Assuming - %s found in the filemanager config", manager.Config.IAMRoleARN)
+		stsSession := session.Must(session.NewSession(&awsConfig))
+		awsConfig.Credentials = stscreds.NewCredentials(stsSession, manager.Config.IAMRoleARN, func(p *stscreds.AssumeRoleProvider) {
+			p.ExternalID = aws.String(manager.Config.ExternalID)
+		})
+	}
+
+	sess = session.Must(session.NewSession(&awsConfig))
+
 	return sess, nil
 }
 
@@ -273,7 +275,7 @@ func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	var bucketName, prefix, accessKeyID, accessKey, startAfter string
+	var bucketName, prefix, accessKeyID, accessKey, startAfter, iamRoleArn, externalId string
 	var continuationToken, endPoint, region *string
 	var enableSSE, ok, useGlue bool
 	var s3ForcePathStyle, disableSSL *bool
@@ -342,6 +344,18 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 			region = &tmp
 		}
 	}
+	if config["iamRoleArn"] != nil {
+		tmp, ok := config["iamRoleArn"].(string)
+		if ok {
+			iamRoleArn = tmp
+		}
+	}
+	if config["externalId"] != nil {
+		tmp, ok := config["externalId"].(string)
+		if ok {
+			externalId = tmp
+		}
+	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 	return &S3Config{
 		Endpoint:          endPoint,
@@ -358,6 +372,8 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		S3ForcePathStyle:  s3ForcePathStyle,
 		DisableSSL:        disableSSL,
 		UseGlue:           useGlue,
+		IAMRoleARN:        iamRoleArn,
+		ExternalID:        externalId,
 	}
 }
 
@@ -376,4 +392,6 @@ type S3Config struct {
 	S3ForcePathStyle  *bool
 	DisableSSL        *bool
 	UseGlue           bool
+	IAMRoleARN        string
+	ExternalID        string
 }

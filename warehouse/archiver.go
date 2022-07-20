@@ -82,7 +82,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv(),
+		Config:   filemanager.GetProviderConfigForBackupsFromEnv(),
 	})
 	if err != nil {
 		err = errors.New(fmt.Sprintf(`Error in creating a file manager for:%s. Error: %v`, config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err))
