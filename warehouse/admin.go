@@ -22,13 +22,13 @@ type QueryInput struct {
 	SQLStatement string
 }
 
-type TestInput struct {
+type ConfigurationTestInput struct {
 	DestID string
 }
 
-type TestResponse struct {
-	Status bool
-	Error  string
+type ConfigurationTestOutput struct {
+	Valid bool
+	Error string
 }
 
 func Init5() {
@@ -88,8 +88,8 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	return err
 }
 
-// Test the underlying warehouse
-func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
+// ConfigurationTest test the underlying warehouse destination
+func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) (err error) {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
@@ -97,7 +97,7 @@ func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
 	var warehouse warehouseutils.WarehouseT
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
-		return errors.New("please specify a valid and existing destination ID")
+		return errors.New(fmt.Sprintf("please specify a valid and existing destinationID: %s", s.DestID))
 	}
 
 	for _, v := range srcMap {
@@ -105,7 +105,7 @@ func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
 		break
 	}
 
-	pkgLogger.Infof(`[WH Admin]: Test warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
 	destinationValidator := configuration_testing.NewDestinationValidator()
 	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
@@ -116,6 +116,6 @@ func (wh *WarehouseAdmin) Test(s TestInput, reply *TestResponse) (err error) {
 		return
 	}
 
-	*reply = TestResponse{Status: res.Success, Error: res.Error}
+	reply = &ConfigurationTestOutput{Valid: res.Success, Error: res.Error}
 	return
 }
