@@ -3426,7 +3426,7 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 	if jd.jobsFileUploader == nil {
 		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfigFromEnv(),
+			Config:   filemanager.GetProviderConfigForBackupsFromEnv(),
 		})
 	}
 	return jd.jobsFileUploader, err

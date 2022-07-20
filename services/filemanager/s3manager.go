@@ -13,11 +13,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	appConfig "github.com/rudderlabs/rudder-server/config"
 )
+
+const crossAccountSTSRoleSessionName = "rudderstack-s3-access"
 
 // Upload passed in file to s3
 func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
@@ -178,34 +181,32 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	} else {
 		region = *manager.Config.Region
 	}
-	var sess *session.Session
-	var err error
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess, err = session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess, err = session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		})
-		if err != nil {
-			return nil, err
-		}
+
+	awsConfig := aws.Config{
+		Region:                        aws.String(region),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+		Endpoint:                      manager.Config.Endpoint,
+		S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
+		DisableSSL:                    manager.Config.DisableSSL, // TODO: get rid of this options as its risky
 	}
+	if manager.Config.AccessKey != "" && manager.Config.AccessKeyID != "" {
+		awsConfig.Credentials = credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, "")
+	} else if manager.Config.IAMRoleARN != "" {
+		stsSession, err := session.NewSession(&awsConfig)
+		if err != nil {
+			return nil, err
+		}
+		awsConfig.Credentials = stscreds.NewCredentials(stsSession, manager.Config.IAMRoleARN, func(p *stscreds.AssumeRoleProvider) {
+			p.ExternalID = aws.String(manager.Config.ExternalID)
+			p.RoleSessionName = crossAccountSTSRoleSessionName
+		})
+	}
+
+	sess, err := session.NewSession(&awsConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return sess, nil
 }
 
@@ -281,7 +282,7 @@ func (manager *S3Manager) getTimeout() time.Duration {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	var bucketName, prefix, accessKeyID, accessKey, startAfter string
+	var bucketName, prefix, accessKeyID, accessKey, startAfter, iamRoleArn, externalId string
 	var continuationToken, endPoint, region *string
 	var enableSSE, ok, useGlue bool
 	var s3ForcePathStyle, disableSSL *bool
@@ -350,6 +351,18 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 			region = &tmp
 		}
 	}
+	if config["iamRoleArn"] != nil {
+		tmp, ok := config["iamRoleArn"].(string)
+		if ok {
+			iamRoleArn = tmp
+		}
+	}
+	if config["externalId"] != nil {
+		tmp, ok := config["externalId"].(string)
+		if ok {
+			externalId = tmp
+		}
+	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 	return &S3Config{
 		Endpoint:          endPoint,
@@ -366,6 +379,8 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		S3ForcePathStyle:  s3ForcePathStyle,
 		DisableSSL:        disableSSL,
 		UseGlue:           useGlue,
+		IAMRoleARN:        iamRoleArn,
+		ExternalID:        externalId,
 	}
 }
 
@@ -384,4 +399,6 @@ type S3Config struct {
 	S3ForcePathStyle  *bool
 	DisableSSL        *bool
 	UseGlue           bool
+	IAMRoleARN        string
+	ExternalID        string
 }

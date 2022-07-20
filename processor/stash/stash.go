@@ -117,7 +117,7 @@ func (st *HandleT) setupFileUploader() {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
-				Config:   filemanager.GetProviderConfigFromEnv(),
+				Config:   filemanager.GetProviderConfigForBackupsFromEnv(),
 			})
 			if err != nil {
 				panic(err)

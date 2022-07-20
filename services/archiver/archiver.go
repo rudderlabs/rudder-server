@@ -81,7 +81,7 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv(),
+		Config:   filemanager.GetProviderConfigForBackupsFromEnv(),
 	})
 	if err != nil {
 		pkgLogger.Errorf("[Archiver]: Error in creating a file manager for :%s: , %v", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
