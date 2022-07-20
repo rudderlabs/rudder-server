@@ -1,0 +1,994 @@
+{
+    "2CCgbmvBSa8Mv81YaIgtR36M7aW": {
+        "sources": [
+            {
+                "config": {},
+                "liveEventsConfig": {},
+                "id": "2CCggVGqbSRLhqP8trntINSihFe",
+                "name": "Test Source 1",
+                "writeKey": "2CCggSFf....jBLNxmXtSlvZ",
+                "enabled": true,
+                "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+                "createdBy": "2CCgPqUStDJPWWqm5Gid29J1Qor",
+                "workspaceId": "2CCgbmvBSa8Mv81YaIgtR36M7aW",
+                "deleted": false,
+                "transient": false,
+                "secretVersion": null,
+                "createdAt": "2022-07-20T10:14:51.323Z",
+                "updatedAt": "2022-07-20T10:14:51.323Z",
+                "destinations": [
+                    {
+                        "config": {
+                            "trackingID": "UA-12320-",
+                            "doubleClick": false,
+                            "enhancedLinkAttribution": false,
+                            "includeSearch": false,
+                            "enableServerSideIdentify": false,
+                            "serverSideIdentifyEventCategory": "",
+                            "serverSideIdentifyEventAction": "",
+                            "anonymizeIp": false,
+                            "enhancedEcommerce": false,
+                            "nonInteraction": false,
+                            "sendUserId": false,
+                            "disableMd5": false,
+                            "blacklistedEvents": [
+                                {
+                                    "eventName": ""
+                                }
+                            ],
+                            "whitelistedEvents": [
+                                {
+                                    "eventName": ""
+                                }
+                            ],
+                            "eventFilteringOption": "disable",
+                            "useNativeSDK": false,
+                            "trackCategorizedPages": true,
+                            "trackNamedPages": true,
+                            "useRichEventNames": false,
+                            "sampleRate": "100",
+                            "siteSpeedSampleRate": "1",
+                            "resetCustomDimensionsOnPage": [
+                                {
+                                    "resetCustomDimensionsOnPage": ""
+                                }
+                            ],
+                            "setAllMappedProps": true,
+                            "domain": "auto",
+                            "optimize": "",
+                            "useGoogleAmpClientId": false,
+                            "namedTracker": false,
+                            "oneTrustCookieCategories": [
+                                {
+                                    "oneTrustCookieCategory": ""
+                                }
+                            ]
+                        },
+                        "liveEventsConfig": {},
+                        "secretConfig": {},
+                        "id": "2CCgmgaOsDWVlve1xnpOZ6KcX1T",
+                        "name": "Test dest",
+                        "enabled": true,
+                        "workspaceId": "2CCgbmvBSa8Mv81YaIgtR36M7aW",
+                        "deleted": false,
+                        "createdAt": "2022-07-20T10:15:40.122Z",
+                        "updatedAt": "2022-07-20T10:15:40.122Z",
+                        "revisionId": "2CCgmZqyFPH3G3OnE95PC9Yzd7p",
+                        "secretVersion": null,
+                        "transformations": [],
+                        "destinationDefinition": {
+                            "config": {
+                                "destConfig": {
+                                    "web": [
+                                        "useNativeSDK",
+                                        "trackCategorizedPages",
+                                        "trackNamedPages",
+                                        "useRichEventNames",
+                                        "sampleRate",
+                                        "siteSpeedSampleRate",
+                                        "resetCustomDimensionsOnPage",
+                                        "setAllMappedProps",
+                                        "domain",
+                                        "optimize",
+                                        "useGoogleAmpClientId",
+                                        "namedTracker",
+                                        "oneTrustCookieCategories"
+                                    ],
+                                    "defaultConfig": [
+                                        "trackingID",
+                                        "customMappings",
+                                        "doubleClick",
+                                        "enhancedLinkAttribution",
+                                        "includeSearch",
+                                        "dimensions",
+                                        "metrics",
+                                        "contentGroupings",
+                                        "enableServerSideIdentify",
+                                        "serverSideIdentifyEventCategory",
+                                        "serverSideIdentifyEventAction",
+                                        "anonymizeIp",
+                                        "enhancedEcommerce",
+                                        "nonInteraction",
+                                        "sendUserId",
+                                        "disableMd5",
+                                        "blacklistedEvents",
+                                        "whitelistedEvents",
+                                        "eventFilteringOption"
+                                    ]
+                                },
+                                "secretKeys": [],
+                                "excludeKeys": [],
+                                "includeKeys": [
+                                    "trackingID",
+                                    "doubleClick",
+                                    "enhancedLinkAttribution",
+                                    "includeSearch",
+                                    "trackCategorizedPages",
+                                    "trackNamedPages",
+                                    "useRichEventNames",
+                                    "sampleRate",
+                                    "siteSpeedSampleRate",
+                                    "dimensions",
+                                    "metrics",
+                                    "resetCustomDimensionsOnPage",
+                                    "setAllMappedProps",
+                                    "contentGroupings",
+                                    "anonymizeIp",
+                                    "domain",
+                                    "enhancedEcommerce",
+                                    "nonInteraction",
+                                    "optimize",
+                                    "sendUserId",
+                                    "useGoogleAmpClientId",
+                                    "namedTracker",
+                                    "blacklistedEvents",
+                                    "whitelistedEvents",
+                                    "oneTrustCookieCategories",
+                                    "eventFilteringOption"
+                                ],
+                                "transformAt": "processor",
+                                "transformAtV1": "processor",
+                                "supportedSourceTypes": [
+                                    "android",
+                                    "ios",
+                                    "web",
+                                    "unity",
+                                    "amp",
+                                    "cloud",
+                                    "warehouse",
+                                    "reactnative",
+                                    "flutter",
+                                    "cordova"
+                                ],
+                                "supportsVisualMapper": true,
+                                "supportedMessageTypes": [
+                                    "identify",
+                                    "page",
+                                    "screen",
+                                    "track"
+                                ],
+                                "saveDestinationResponse": false
+                            },
+                            "configSchema": {
+                                "type": "object",
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "required": [
+                                    "trackingID"
+                                ],
+                                "properties": {
+                                    "domain": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                            }
+                                        }
+                                    },
+                                    "optimize": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                            }
+                                        }
+                                    },
+                                    "dimensions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "to": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                },
+                                                "from": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "disableMd5": {
+                                        "type": "boolean"
+                                    },
+                                    "sampleRate": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                            }
+                                        }
+                                    },
+                                    "sendUserId": {
+                                        "type": "boolean"
+                                    },
+                                    "trackingID": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(UA|YT|MO)-\\d+-\\d{0,100}$)"
+                                    },
+                                    "anonymizeIp": {
+                                        "type": "boolean"
+                                    },
+                                    "doubleClick": {
+                                        "type": "boolean"
+                                    },
+                                    "namedTracker": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "useNativeSDK": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "includeSearch": {
+                                        "type": "boolean"
+                                    },
+                                    "nonInteraction": {
+                                        "type": "boolean"
+                                    },
+                                    "trackNamedPages": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "contentGroupings": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "to": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                },
+                                                "from": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "blacklistedEvents": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "eventName": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "enhancedEcommerce": {
+                                        "type": "boolean"
+                                    },
+                                    "setAllMappedProps": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "whitelistedEvents": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "eventName": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "siteSpeedSampleRate": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                            }
+                                        }
+                                    },
+                                    "eventFilteringOption": {
+                                        "type": "string",
+                                        "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(disable|whitelistedEvents|blacklistedEvents)$"
+                                    },
+                                    "useGoogleAmpClientId": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "trackCategorizedPages": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "enhancedLinkAttribution": {
+                                        "type": "boolean"
+                                    },
+                                    "enableServerSideIdentify": {
+                                        "type": "boolean"
+                                    },
+                                    "oneTrustCookieCategories": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "oneTrustCookieCategory": {
+                                                            "type": "string",
+                                                            "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "resetCustomDimensionsOnPage": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "resetCustomDimensionsOnPage": {
+                                                            "type": "string",
+                                                            "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "serverSideIdentifyEventAction": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                    },
+                                    "serverSideIdentifyEventCategory": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                    }
+                                }
+                            },
+                            "responseRules": null,
+                            "options": null,
+                            "id": "1Q8kZOyJE87ECoQ8kc26TOpgpXl",
+                            "name": "GA",
+                            "displayName": "Google Analytics",
+                            "category": null,
+                            "createdAt": "2019-08-30T10:07:45.868Z",
+                            "updatedAt": "2022-07-19T14:31:56.381Z"
+                        },
+                        "isConnectionEnabled": true,
+                        "isProcessorEnabled": true
+                    }
+                ],
+                "sourceDefinition": {
+                    "options": null,
+                    "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+                    "name": "Javascript",
+                    "displayName": "Javascript",
+                    "category": null,
+                    "createdAt": "2019-11-12T12:35:30.464Z",
+                    "updatedAt": "2022-05-19T04:55:05.295Z"
+                },
+                "dgSourceTrackingPlanConfig": null
+            },
+            {
+                "config": {},
+                "liveEventsConfig": {},
+                "id": "2CCgpZlqlXRDRz8rChhQKtuwqKA",
+                "name": "JS source 2",
+                "writeKey": "2CCgpXME....WBD9C5nQtsFg",
+                "enabled": true,
+                "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+                "createdBy": "2CCgPqUStDJPWWqm5Gid29J1Qor",
+                "workspaceId": "2CCgbmvBSa8Mv81YaIgtR36M7aW",
+                "deleted": false,
+                "transient": false,
+                "secretVersion": null,
+                "createdAt": "2022-07-20T10:16:03.283Z",
+                "updatedAt": "2022-07-20T10:16:03.283Z",
+                "destinations": [
+                    {
+                        "config": {
+                            "trackingID": "UA-12320-",
+                            "doubleClick": false,
+                            "enhancedLinkAttribution": false,
+                            "includeSearch": false,
+                            "enableServerSideIdentify": false,
+                            "serverSideIdentifyEventCategory": "",
+                            "serverSideIdentifyEventAction": "",
+                            "anonymizeIp": false,
+                            "enhancedEcommerce": false,
+                            "nonInteraction": false,
+                            "sendUserId": false,
+                            "disableMd5": false,
+                            "blacklistedEvents": [
+                                {
+                                    "eventName": ""
+                                }
+                            ],
+                            "whitelistedEvents": [
+                                {
+                                    "eventName": ""
+                                }
+                            ],
+                            "eventFilteringOption": "disable",
+                            "useNativeSDK": false,
+                            "trackCategorizedPages": true,
+                            "trackNamedPages": true,
+                            "useRichEventNames": false,
+                            "sampleRate": "100",
+                            "siteSpeedSampleRate": "1",
+                            "resetCustomDimensionsOnPage": [
+                                {
+                                    "resetCustomDimensionsOnPage": ""
+                                }
+                            ],
+                            "setAllMappedProps": true,
+                            "domain": "auto",
+                            "optimize": "",
+                            "useGoogleAmpClientId": false,
+                            "namedTracker": false,
+                            "oneTrustCookieCategories": [
+                                {
+                                    "oneTrustCookieCategory": ""
+                                }
+                            ]
+                        },
+                        "liveEventsConfig": {},
+                        "secretConfig": {},
+                        "id": "2CCgmgaOsDWVlve1xnpOZ6KcX1T",
+                        "name": "Test dest",
+                        "enabled": true,
+                        "workspaceId": "2CCgbmvBSa8Mv81YaIgtR36M7aW",
+                        "deleted": false,
+                        "createdAt": "2022-07-20T10:15:40.122Z",
+                        "updatedAt": "2022-07-20T10:15:40.122Z",
+                        "revisionId": "2CCgmZqyFPH3G3OnE95PC9Yzd7p",
+                        "secretVersion": null,
+                        "transformations": [],
+                        "destinationDefinition": {
+                            "config": {
+                                "destConfig": {
+                                    "web": [
+                                        "useNativeSDK",
+                                        "trackCategorizedPages",
+                                        "trackNamedPages",
+                                        "useRichEventNames",
+                                        "sampleRate",
+                                        "siteSpeedSampleRate",
+                                        "resetCustomDimensionsOnPage",
+                                        "setAllMappedProps",
+                                        "domain",
+                                        "optimize",
+                                        "useGoogleAmpClientId",
+                                        "namedTracker",
+                                        "oneTrustCookieCategories"
+                                    ],
+                                    "defaultConfig": [
+                                        "trackingID",
+                                        "customMappings",
+                                        "doubleClick",
+                                        "enhancedLinkAttribution",
+                                        "includeSearch",
+                                        "dimensions",
+                                        "metrics",
+                                        "contentGroupings",
+                                        "enableServerSideIdentify",
+                                        "serverSideIdentifyEventCategory",
+                                        "serverSideIdentifyEventAction",
+                                        "anonymizeIp",
+                                        "enhancedEcommerce",
+                                        "nonInteraction",
+                                        "sendUserId",
+                                        "disableMd5",
+                                        "blacklistedEvents",
+                                        "whitelistedEvents",
+                                        "eventFilteringOption"
+                                    ]
+                                },
+                                "secretKeys": [],
+                                "excludeKeys": [],
+                                "includeKeys": [
+                                    "trackingID",
+                                    "doubleClick",
+                                    "enhancedLinkAttribution",
+                                    "includeSearch",
+                                    "trackCategorizedPages",
+                                    "trackNamedPages",
+                                    "useRichEventNames",
+                                    "sampleRate",
+                                    "siteSpeedSampleRate",
+                                    "dimensions",
+                                    "metrics",
+                                    "resetCustomDimensionsOnPage",
+                                    "setAllMappedProps",
+                                    "contentGroupings",
+                                    "anonymizeIp",
+                                    "domain",
+                                    "enhancedEcommerce",
+                                    "nonInteraction",
+                                    "optimize",
+                                    "sendUserId",
+                                    "useGoogleAmpClientId",
+                                    "namedTracker",
+                                    "blacklistedEvents",
+                                    "whitelistedEvents",
+                                    "oneTrustCookieCategories",
+                                    "eventFilteringOption"
+                                ],
+                                "transformAt": "processor",
+                                "transformAtV1": "processor",
+                                "supportedSourceTypes": [
+                                    "android",
+                                    "ios",
+                                    "web",
+                                    "unity",
+                                    "amp",
+                                    "cloud",
+                                    "warehouse",
+                                    "reactnative",
+                                    "flutter",
+                                    "cordova"
+                                ],
+                                "supportsVisualMapper": true,
+                                "supportedMessageTypes": [
+                                    "identify",
+                                    "page",
+                                    "screen",
+                                    "track"
+                                ],
+                                "saveDestinationResponse": false
+                            },
+                            "configSchema": {
+                                "type": "object",
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "required": [
+                                    "trackingID"
+                                ],
+                                "properties": {
+                                    "domain": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                            }
+                                        }
+                                    },
+                                    "optimize": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                            }
+                                        }
+                                    },
+                                    "dimensions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "to": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                },
+                                                "from": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "disableMd5": {
+                                        "type": "boolean"
+                                    },
+                                    "sampleRate": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                            }
+                                        }
+                                    },
+                                    "sendUserId": {
+                                        "type": "boolean"
+                                    },
+                                    "trackingID": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(UA|YT|MO)-\\d+-\\d{0,100}$)"
+                                    },
+                                    "anonymizeIp": {
+                                        "type": "boolean"
+                                    },
+                                    "doubleClick": {
+                                        "type": "boolean"
+                                    },
+                                    "namedTracker": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "useNativeSDK": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "includeSearch": {
+                                        "type": "boolean"
+                                    },
+                                    "nonInteraction": {
+                                        "type": "boolean"
+                                    },
+                                    "trackNamedPages": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "contentGroupings": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "to": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                },
+                                                "from": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "blacklistedEvents": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "eventName": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "enhancedEcommerce": {
+                                        "type": "boolean"
+                                    },
+                                    "setAllMappedProps": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "whitelistedEvents": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "eventName": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "siteSpeedSampleRate": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "string",
+                                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                            }
+                                        }
+                                    },
+                                    "eventFilteringOption": {
+                                        "type": "string",
+                                        "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(disable|whitelistedEvents|blacklistedEvents)$"
+                                    },
+                                    "useGoogleAmpClientId": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "trackCategorizedPages": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "enhancedLinkAttribution": {
+                                        "type": "boolean"
+                                    },
+                                    "enableServerSideIdentify": {
+                                        "type": "boolean"
+                                    },
+                                    "oneTrustCookieCategories": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "oneTrustCookieCategory": {
+                                                            "type": "string",
+                                                            "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "resetCustomDimensionsOnPage": {
+                                        "type": "object",
+                                        "properties": {
+                                            "web": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "resetCustomDimensionsOnPage": {
+                                                            "type": "string",
+                                                            "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "serverSideIdentifyEventAction": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                    },
+                                    "serverSideIdentifyEventCategory": {
+                                        "type": "string",
+                                        "pattern": "(^env[.].+)|(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^(.{0,100})$)"
+                                    }
+                                }
+                            },
+                            "responseRules": null,
+                            "options": null,
+                            "id": "1Q8kZOyJE87ECoQ8kc26TOpgpXl",
+                            "name": "GA",
+                            "displayName": "Google Analytics",
+                            "category": null,
+                            "createdAt": "2019-08-30T10:07:45.868Z",
+                            "updatedAt": "2022-07-19T14:31:56.381Z"
+                        },
+                        "isConnectionEnabled": true,
+                        "isProcessorEnabled": true
+                    }
+                ],
+                "sourceDefinition": {
+                    "options": null,
+                    "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+                    "name": "Javascript",
+                    "displayName": "Javascript",
+                    "category": null,
+                    "createdAt": "2019-11-12T12:35:30.464Z",
+                    "updatedAt": "2022-05-19T04:55:05.295Z"
+                },
+                "dgSourceTrackingPlanConfig": null
+            }
+        ],
+        "libraries": [
+            {
+                "versionId": "20MirO0IhCtS39Qjva2PSAbA9KM"
+            },
+            {
+                "versionId": "ghi"
+            },
+            {
+                "versionId": "2AWJpFCIGcpZhOrsIp7Kasw72vb"
+            },
+            {
+                "versionId": "2AWIMafC3YPKHXazWWvVn5hSGnR"
+            }
+        ]
+    },
+    "2CChLejq5aIWi3qsKVm1PjHkyTj": {
+        "sources": [
+            {
+                "config": {},
+                "liveEventsConfig": {},
+                "id": "2CChOtDTWeXIQiRmHMU56C3htPf",
+                "name": "Test source",
+                "writeKey": "2CChOrwP....9qESA9FgLFXL",
+                "enabled": true,
+                "sourceDefinitionId": "1dCzDFbwGUFw95taP68YTXGv86D",
+                "createdBy": "2CChIL3aNsnLJBjYZWvzv6AoUmc",
+                "workspaceId": "2CChLejq5aIWi3qsKVm1PjHkyTj",
+                "deleted": false,
+                "transient": false,
+                "secretVersion": null,
+                "createdAt": "2022-07-20T10:20:44.039Z",
+                "updatedAt": "2022-07-20T10:20:44.039Z",
+                "destinations": [
+                    {
+                        "config": {
+                            "webhookUrl": "test.wehbook",
+                            "webhookMethod": "POST"
+                        },
+                        "liveEventsConfig": {},
+                        "secretConfig": {},
+                        "id": "2CChSxPFWwmetc06JNAwN3uKcmx",
+                        "name": "test webhook",
+                        "enabled": true,
+                        "workspaceId": "2CChLejq5aIWi3qsKVm1PjHkyTj",
+                        "deleted": false,
+                        "createdAt": "2022-07-20T10:21:17.672Z",
+                        "updatedAt": "2022-07-20T10:21:17.672Z",
+                        "revisionId": "2CChSy4rukaUm2URBwFLzsdet9E",
+                        "secretVersion": null,
+                        "transformations": [],
+                        "destinationDefinition": {
+                            "config": {
+                                "destConfig": {
+                                    "defaultConfig": [
+                                        "webhookUrl",
+                                        "webhookMethod",
+                                        "headers"
+                                    ]
+                                },
+                                "secretKeys": [
+                                    "headers.to"
+                                ],
+                                "excludeKeys": [],
+                                "includeKeys": [],
+                                "transformAt": "processor",
+                                "transformAtV1": "processor",
+                                "supportedSourceTypes": [
+                                    "android",
+                                    "ios",
+                                    "web",
+                                    "unity",
+                                    "amp",
+                                    "cloud",
+                                    "warehouse",
+                                    "reactnative",
+                                    "flutter",
+                                    "cordova"
+                                ],
+                                "saveDestinationResponse": false
+                            },
+                            "configSchema": {
+                                "type": "object",
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "required": [
+                                    "webhookUrl"
+                                ],
+                                "properties": {
+                                    "headers": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "to": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,500})$"
+                                                },
+                                                "from": {
+                                                    "type": "string",
+                                                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "webhookUrl": {
+                                        "type": "string",
+                                        "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(?:http(s)?:\\/\\/)?[\\w.-]+(?:\\.[\\w\\.-]+)+[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$"
+                                    },
+                                    "webhookMethod": {
+                                        "type": "string",
+                                        "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^(POST|PUT|GET|DELETE)$)"
+                                    }
+                                }
+                            },
+                            "responseRules": null,
+                            "options": null,
+                            "id": "1ZDvxpIGSOU9pLRavMf0GuVnWV3",
+                            "name": "WEBHOOK",
+                            "displayName": "Webhook",
+                            "category": null,
+                            "createdAt": "2020-03-16T19:25:28.141Z",
+                            "updatedAt": "2022-07-19T14:31:35.358Z"
+                        },
+                        "isConnectionEnabled": true,
+                        "isProcessorEnabled": true
+                    }
+                ],
+                "sourceDefinition": {
+                    "options": null,
+                    "id": "1dCzDFbwGUFw95taP68YTXGv86D",
+                    "name": "Python",
+                    "displayName": "Python",
+                    "category": "",
+                    "createdAt": "2020-06-12T06:35:41.885Z",
+                    "updatedAt": "2020-06-12T06:35:41.885Z"
+                },
+                "dgSourceTrackingPlanConfig": null
+            }
+        ],
+        "libraries": [
+            {
+                "versionId": "20MirO0IhCtS39Qjva2PSAbA9KM"
+            },
+            {
+                "versionId": "ghi"
+            },
+            {
+                "versionId": "2AWJpFCIGcpZhOrsIp7Kasw72vb"
+            },
+            {
+                "versionId": "2AWIMafC3YPKHXazWWvVn5hSGnR"
+            }
+        ]
+    }
+}

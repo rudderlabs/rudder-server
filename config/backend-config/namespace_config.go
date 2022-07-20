@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,15 +16,17 @@ import (
 
 type NamespaceConfig struct {
 	CommonBackendConfig
-	Client           *http.Client
-	Namespace        string
-	Token            string
-	ConfigBackendURL string
 
-	writeKeyToWorkspaceIDMap  map[string]string
-	sourceToWorkspaceIDMap    map[string]string
-	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
+	writeKeyToWorkspaceIDMap  map[string]string
+	workspaceIDToLibrariesMap map[string]LibrariesT
+	sourceToWorkspaceIDMap    map[string]string
+
+	Client            *http.Client
+	BasicAuthUsername string
+	BasicAuthPassword string
+	Namespace         string
+	ConfigBackendURL  string
 }
 
 func (workspaceConfig *NamespaceConfig) SetUp() {
@@ -34,8 +35,11 @@ func (workspaceConfig *NamespaceConfig) SetUp() {
 	if workspaceConfig.Namespace == "" {
 		workspaceConfig.Namespace = config.GetEnv("WORKSPACE_NAMESPACE", "")
 	}
-	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetEnv("WORKSPACE_NAMESPACE_TOKEN", "")
+	if workspaceConfig.BasicAuthUsername == "" {
+		workspaceConfig.BasicAuthUsername = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "")
+	}
+	if workspaceConfig.BasicAuthPassword == "" {
+		workspaceConfig.BasicAuthPassword = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "")
 	}
 	if workspaceConfig.ConfigBackendURL == "" {
 		workspaceConfig.ConfigBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
@@ -50,7 +54,7 @@ func (workspaceConfig *NamespaceConfig) SetUp() {
 }
 
 func (workspaceConfig *NamespaceConfig) AccessToken() string {
-	return workspaceConfig.Token
+	panic("not supported")
 }
 
 func (workspaceConfig *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
@@ -133,7 +137,7 @@ func (workspaceConfig *NamespaceConfig) getFromAPI(
 	}
 
 	var workspaces WorkspacesT
-	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
+	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
 		return ConfigT{}, newError(true, err)
@@ -164,14 +168,12 @@ func (workspaceConfig *NamespaceConfig) getFromAPI(
 func (workspaceConfig *NamespaceConfig) makeHTTPRequest(
 	ctx context.Context, url string,
 ) ([]byte, int, error) {
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
 
-	req.SetBasicAuth(workspaceConfig.Token, "")
-	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(workspaceConfig.BasicAuthUsername, workspaceConfig.BasicAuthPassword)
 	resp, err := workspaceConfig.Client.Do(req)
 	if err != nil {
 		return []byte{}, 400, err
@@ -188,5 +190,5 @@ func (workspaceConfig *NamespaceConfig) makeHTTPRequest(
 }
 
 func (workspaceConfig *NamespaceConfig) IsConfigured() bool {
-	return workspaceConfig.Token != ""
+	return false
 }
