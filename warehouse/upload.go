@@ -176,7 +176,7 @@ func init() {
 	simulateErrCache = cache.New(3*time.Hour, 3*time.Hour)
 	go func() {
 		for {
-			pkgLogger.Infof("The length of simulate error cache: %d", simulateErrCache.ItemCount())
+			fmt.Printf("The length of simulate error cache: %d\n", simulateErrCache.ItemCount())
 			time.Sleep(10 * time.Minute)
 		}
 	}()
