@@ -89,7 +89,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 }
 
 // ConfigurationTest test the underlying warehouse destination
-func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) (err error) {
+func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
@@ -97,7 +97,7 @@ func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Con
 	var warehouse warehouseutils.WarehouseT
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
-		return errors.New(fmt.Sprintf("please specify a valid and existing destinationID: %s", s.DestID))
+		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
 
 	for _, v := range srcMap {
@@ -111,11 +111,9 @@ func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Con
 	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
 	res, err := destinationValidator.ValidateCredentials(req)
 	if err != nil {
-		err = fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
-		pkgLogger.Error(err)
-		return
+		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
 	}
 
 	reply = &ConfigurationTestOutput{Valid: res.Success, Error: res.Error}
-	return
+	return nil
 }
