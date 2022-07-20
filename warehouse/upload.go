@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/patrickmn/go-cache"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -159,8 +161,25 @@ var (
 	columnCountThresholds map[string]int
 )
 
+var simulateErrCache *cache.Cache
+var distinctDestinations int
+var errorRate = 5
+
+type DestinationError struct {
+	ID    string
+	Error bool
+}
+
 func init() {
 	initializeStateMachine()
+
+	simulateErrCache = cache.New(3*time.Hour, 3*time.Hour)
+	go func() {
+		for {
+			pkgLogger.Infof("The length of simulate error cache: %d", simulateErrCache.ItemCount())
+			time.Sleep(10 * time.Minute)
+		}
+	}()
 }
 
 func setMaxParallelLoads() {
@@ -520,8 +539,13 @@ func (job *UploadJobT) run() (err error) {
 				err = misc.ConcatErrors(loadErrors)
 				break
 			}
-			job.generateUploadSuccessMetrics()
 
+			if simulateError(schemaHandle.warehouse.Destination.ID) {
+				err = errors.New("simulating upload failures for specific destinations")
+				break
+			}
+
+			job.generateUploadSuccessMetrics()
 			newStatus = nextUploadState.completed
 
 		default:
@@ -583,6 +607,33 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	return nil
+}
+
+// simulateError is responsible for simulating errors
+// in the system.
+func simulateError(destID string) bool {
+
+	// Simulate error on first destID seen
+	if simulateErrCache.ItemCount() == 0 {
+		simulateErrCache.Set(destID, DestinationError{ID: destID, Error: true}, cache.DefaultExpiration)
+		return true
+	}
+
+	entry, ok := simulateErrCache.Get(destID)
+	if ok {
+		destEntry := entry.(DestinationError)
+		return destEntry.Error
+	}
+
+	toError := false
+	// for 5% error rate, every 20th entry will be marked as
+	// errored out.
+	if (simulateErrCache.ItemCount()+1)/(100/errorRate) == 0 {
+		toError = true
+	}
+
+	simulateErrCache.Set(destID, DestinationError{ID: destID, Error: toError}, cache.DefaultExpiration)
+	return toError
 }
 
 func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (err error) {
