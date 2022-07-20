@@ -64,10 +64,12 @@ func Test_Namespace_Get(t *testing.T) {
 	defer ts.Close()
 
 	client := &backendconfig.NamespaceConfig{
+		Client:           ts.Client(),
+		ConfigBackendURL: ts.URL,
+
 		Namespace:         namespace,
 		BasicAuthUsername: "cp-user",
 		BasicAuthPassword: "cp-password",
-		ConfigBackendURL:  ts.URL,
 	}
 
 	client.SetUp()
