@@ -114,6 +114,7 @@ func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Con
 		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
 	}
 
-	reply = &ConfigurationTestOutput{Valid: res.Success, Error: res.Error}
+	reply.Valid = res.Success
+	reply.Error = res.Error
 	return nil
 }
