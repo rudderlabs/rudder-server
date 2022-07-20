@@ -18,10 +18,11 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 var (
-	whSchemaVersion        string
-	hotReloadableConfig    map[string][]*ConfigVar
-	nonHotReloadableConfig map[string][]*ConfigVar
-	configVarLock          sync.RWMutex
+	whSchemaVersion string
+	configVarLock   sync.RWMutex
+
+	hotReloadableConfig    = make(map[string][]*ConfigVar)
+	nonHotReloadableConfig = make(map[string][]*ConfigVar)
 )
 
 type ConfigVar struct {
