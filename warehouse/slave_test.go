@@ -38,7 +38,7 @@ func TestPickupStagingFileBucket(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		got := PickupStagingFileBucket(input.job)
+		got := PickupStagingConfiguration(input.job)
 		require.Equal(t, got, input.expected)
 	}
 }

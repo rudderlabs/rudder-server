@@ -160,7 +160,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 
 	err := downloadTask(job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
-		if PickupStagingFileBucket(&job) {
+		if PickupStagingConfiguration(&job) {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
 			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
@@ -174,7 +174,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	return nil
 }
 
-func PickupStagingFileBucket(job *PayloadT) bool {
+func PickupStagingConfiguration(job *PayloadT) bool {
 	return job.StagingDestinationRevisionID != job.CurrentDestinationRevisionID && job.StagingDestinationConfig != nil
 }
 
