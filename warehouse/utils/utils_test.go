@@ -937,6 +937,59 @@ func TestGetLoadFilePrefix(t *testing.T) {
 	}
 }
 
+func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
+	inputs := []struct {
+		warehouse WarehouseT
+		expected  bool
+	}{
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": "true",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": false,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"k1": true,
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+	for idx, input := range inputs {
+		got := input.warehouse.GetBoolDestinationConfig("k1")
+		want := input.expected
+		if got != want {
+			t.Errorf("got %t expected %t input %d", got, want, idx)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	config.Load()
 	Init()
