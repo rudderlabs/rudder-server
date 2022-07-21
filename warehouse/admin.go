@@ -1,9 +1,11 @@
 package warehouse
 
 import (
-	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	client2 "github.com/rudderlabs/rudder-server/warehouse/client"
 
@@ -13,6 +15,21 @@ import (
 )
 
 type WarehouseAdmin struct{}
+
+type QueryInput struct {
+	DestID       string
+	SourceID     string
+	SQLStatement string
+}
+
+type ConfigurationTestInput struct {
+	DestID string
+}
+
+type ConfigurationTestOutput struct {
+	Valid bool
+	Error string
+}
 
 func Init5() {
 	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
@@ -27,12 +44,6 @@ func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 		*reply = "Successfully set uploads to start always without delay.\nRun same command with -o flag to turn off explicit triggers."
 	}
 	return nil
-}
-
-type QueryInput struct {
-	DestID       string
-	SourceID     string
-	SQLStatement string
 }
 
 // Query the underlying warehouse
@@ -77,30 +88,33 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	return err
 }
 
-func (wh *WarehouseAdmin) QueryWhUploads(uploadsReq UploadsReqT, reply *[]byte) error {
-	uploadsReq.API = UploadAPI
-	res, err := uploadsReq.GetWhUploads()
-	if err != nil {
-		return err
+// ConfigurationTest test the underlying warehouse destination
+func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
+	if strings.TrimSpace(s.DestID) == "" {
+		return errors.New("please specify the destination ID to query the warehouse")
 	}
-	bytes, err := json.Marshal(res)
-	if err != nil {
-		return err
-	}
-	*reply = bytes
-	return nil
-}
 
-func (wh *WarehouseAdmin) QueryWhTables(tableUploadReq TableUploadReqT, reply *[]byte) error {
-	tableUploadReq.API = UploadAPI
-	res, err := tableUploadReq.GetWhTableUploads()
-	if err != nil {
-		return err
+	var warehouse warehouseutils.WarehouseT
+	srcMap, ok := connectionsMap[s.DestID]
+	if !ok {
+		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
-	bytes, err := json.Marshal(res)
-	if err != nil {
-		return err
+
+	for _, v := range srcMap {
+		warehouse = v
+		break
 	}
-	*reply = bytes
+
+	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+
+	destinationValidator := configuration_testing.NewDestinationValidator()
+	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
+	res, err := destinationValidator.ValidateCredentials(req)
+	if err != nil {
+		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
+	}
+
+	reply.Valid = res.Success
+	reply.Error = res.Error
 	return nil
 }

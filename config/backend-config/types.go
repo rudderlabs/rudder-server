@@ -50,6 +50,7 @@ type DestinationT struct {
 	Enabled               bool
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
+	RevisionID            string
 }
 
 type SourceT struct {

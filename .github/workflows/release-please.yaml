@@ -20,4 +20,3 @@ jobs:
           package-name: rudder-server
           default-branch: ${{ steps.extract_branch.outputs.branch }}
           bump-minor-pre-major: true
-          bump-patch-for-minor-pre-major: true
