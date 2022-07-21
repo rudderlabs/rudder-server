@@ -18,21 +18,21 @@ func TestPickupStagingFileBucket(t *testing.T) {
 		{
 			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-				CurrentDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
+				DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
 			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-				CurrentDestinationRevisionID: "2liYatjkkCEVkEMYUmSWOE9eZ4n",
+				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
 			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
-				CurrentDestinationRevisionID: "2liYatjkkCEVkEMYUmSWOE9eZ4n",
+				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 				StagingDestinationConfig:     map[string]string{},
 			},
 			expected: true,

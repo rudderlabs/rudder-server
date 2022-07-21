@@ -158,10 +158,10 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 		return
 	}
 
-	err := downloadTask(job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
+	err := downloadTask(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
 		if PickupStagingConfiguration(&job) {
-			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
+			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
 			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
 				job.sendDownloadStagingFileFailedStat()
@@ -175,7 +175,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 }
 
 func PickupStagingConfiguration(job *PayloadT) bool {
-	return job.StagingDestinationRevisionID != job.CurrentDestinationRevisionID && job.StagingDestinationConfig != nil
+	return job.StagingDestinationRevisionID != job.DestinationRevisionID && job.StagingDestinationConfig != nil
 }
 
 func (job *PayloadT) getDiscardsTable() string {
@@ -209,7 +209,7 @@ type loadFileUploadOutputT struct {
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager(job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
+	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
 		return []loadFileUploadOutputT{}, err
 	}
@@ -255,8 +255,8 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						ContentLength:         loadFileStats.Size(),
 						TotalRows:             jobRun.tableEventCountMap[tableName],
 						StagingFileID:         stagingFileId,
-						DestinationRevisionID: job.CurrentDestinationRevisionID,
-						UseRudderStorage:      job.CurrentUseRudderStorage,
+						DestinationRevisionID: job.DestinationRevisionID,
+						UseRudderStorage:      job.UseRudderStorage,
 					}
 				}
 			}
@@ -294,7 +294,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.CurrentDestinationConfig, job.CurrentUseRudderStorage), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)

@@ -26,11 +26,11 @@ type PayloadT struct {
 	DestinationName              string
 	DestinationType              string
 	DestinationNamespace         string
-	CurrentDestinationRevisionID string
+	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	CurrentDestinationConfig     interface{}
+	DestinationConfig            interface{}
 	StagingDestinationConfig     interface{}
-	CurrentUseRudderStorage      bool
+	UseRudderStorage             bool
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
