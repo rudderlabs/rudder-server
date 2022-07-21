@@ -143,6 +143,7 @@ var (
 	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
+	parquetParallelWriters int64
 )
 
 var (
@@ -163,6 +164,7 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
+	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
 type WarehouseT struct {
