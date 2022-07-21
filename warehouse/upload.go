@@ -162,7 +162,6 @@ var (
 )
 
 var simulateErrCache *cache.Cache
-var distinctDestinations int
 var errorRate = 5
 
 type DestinationError struct {
@@ -628,7 +627,7 @@ func simulateError(destID string) bool {
 	toError := false
 	// for 5% error rate, every 20th entry will be marked as
 	// errored out.
-	if (simulateErrCache.ItemCount()+1)/(100/errorRate) == 0 {
+	if (simulateErrCache.ItemCount()+1)%(100/errorRate) == 0 {
 		toError = true
 	}
 
