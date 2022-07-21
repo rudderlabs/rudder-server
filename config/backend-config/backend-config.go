@@ -296,6 +296,7 @@ func (bc *CommonBackendConfig) Stop() {
 	if bc.waitForConfigErrs != nil {
 		close(bc.waitForConfigErrs)
 	}
+	curSourceJSON = ConfigT{}
 	bc.initializedLock.Unlock()
 }
 
