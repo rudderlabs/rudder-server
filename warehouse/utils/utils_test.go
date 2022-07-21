@@ -44,7 +44,11 @@ func TestGetS3Location(t *testing.T) {
 			s3Location: "s3://my.test-bucket/test-object.csv",
 			region:     "us-west-1",
 		},
-
+		{
+			location:   "https://my.example.s3.bucket.s3.us-west-1.amazonaws.com/test-object.csv",
+			s3Location: "s3://my.example.s3.bucket/test-object.csv",
+			region:     "us-west-1",
+		},
 		{
 			location:   "https://s3.amazonaws.com/test-bucket/test-object.csv",
 			s3Location: "s3://test-bucket/test-object.csv",

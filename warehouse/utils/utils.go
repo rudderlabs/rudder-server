@@ -147,8 +147,8 @@ var (
 )
 
 var (
-	S3PathStyleRegex     = regexp.MustCompile("https?://s3([.-](?P<region>[^.]+))?.amazonaws\\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)")
-	S3VirtualHostedRegex = regexp.MustCompile("https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\\.com/(?P<keyname>.*)")
+	S3PathStyleRegex     = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
+	S3VirtualHostedRegex = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 )
 
 func Init() {
