@@ -175,7 +175,18 @@ func init() {
 	simulateErrCache = cache.New(3*time.Hour, 3*time.Hour)
 	go func() {
 		for {
+
+			toError := 0
+			for _, aEntry := range simulateErrCache.Items() {
+				destEntry := aEntry.Object.(DestinationError)
+
+				if destEntry.Error {
+					toError += 1
+				}
+			}
+
 			fmt.Printf("The length of simulate error cache: %d\n", simulateErrCache.ItemCount())
+			fmt.Printf("The length of entries marked to error: %d\n", toError)
 			time.Sleep(10 * time.Minute)
 		}
 	}()
