@@ -1,13 +1,14 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func distinctDestinationRevisionIdsFromStagingFiles(d struct {
+func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struct {
 	sourceID           string
 	destinationID      string
 	startStagingFileID int64
@@ -28,7 +29,7 @@ func distinctDestinationRevisionIdsFromStagingFiles(d struct {
 	`,
 		warehouseutils.WarehouseStagingFilesTable,
 	)
-	rows, err := dbHandle.Query(sqlStatement, []interface{}{
+	rows, err := dbHandle.QueryContext(ctx, sqlStatement, []interface{}{
 		d.sourceID,
 		d.destinationID,
 		d.startStagingFileID,

@@ -951,10 +951,10 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 	return timeWindowFormat
 }
 
-func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, int, error) {
+func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return []byte{}, 400, err
+		return []byte{}, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -963,7 +963,7 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return []byte{}, 400, err
+		return []byte{}, err
 	}
 
 	var respBody []byte
@@ -972,5 +972,5 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 		defer resp.Body.Close()
 	}
 
-	return respBody, resp.StatusCode, nil
+	return respBody, nil
 }

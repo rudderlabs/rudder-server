@@ -1626,12 +1626,18 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 
 func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
-	revisionIDs, err := distinctDestinationRevisionIdsFromStagingFiles(struct {
+	revisionRequest := struct {
 		sourceID           string
 		destinationID      string
 		startStagingFileID int64
 		endStagingFileID   int64
-	}{sourceID: job.warehouse.Source.ID, destinationID: job.warehouse.Destination.ID, startStagingFileID: job.upload.StartStagingFileID, endStagingFileID: job.upload.EndStagingFileID})
+	}{
+		sourceID:           job.warehouse.Source.ID,
+		destinationID:      job.warehouse.Destination.ID,
+		startStagingFileID: job.upload.StartStagingFileID,
+		endStagingFileID:   job.upload.EndStagingFileID,
+	}
+	revisionIDs, err := distinctDestinationRevisionIdsFromStagingFiles(context.TODO(), revisionRequest)
 	if err != nil {
 		return
 	}
@@ -1647,12 +1653,8 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		}
 
 		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
-
-		pkgLogger.Infof("[WH]: Get request Started for Dest revisionID %s", revisionID)
-		response, responseCode, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
-		pkgLogger.Infof("[WH]: Get request Finished for Dest revisionID %s", revisionID)
-
-		if err == nil && responseCode == 200 {
+		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
+		if err == nil {
 			var destination backendconfig.DestinationT
 			err = json.Unmarshal(response, &destination)
 			if err != nil {
