@@ -119,40 +119,58 @@ func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (
 
 /*
  * Download Staging file for the job
+ * If error occurs with the current config and current revision is different from staging revision
+ * We retry with the staging revision config if it is present
  */
-func (jobRun *JobRunT) downloadStagingFile(config interface{}, useRudderStorage bool) error {
-	filePath := jobRun.stagingFilePath
-	file, err := os.Create(filePath)
-	if err != nil {
-		panic(err)
-	}
-
+func (jobRun *JobRunT) downloadStagingFile() error {
 	job := jobRun.job
-	downloader, err := jobRun.job.getFileManager(config, useRudderStorage)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to initialize downloader")
-		return err
+	downloadTask := func(config interface{}, useRudderStorage bool) (err error) {
+		filePath := jobRun.stagingFilePath
+		file, err := os.Create(filePath)
+		if err != nil {
+			panic(err)
+		}
+
+		downloader, err := job.getFileManager(config, useRudderStorage)
+		if err != nil {
+			pkgLogger.Errorf("[WH]: Failed to initialize downloader")
+			return err
+		}
+
+		timer := jobRun.timerStat("download_staging_file_time")
+		timer.Start()
+
+		err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
+		if err != nil {
+			pkgLogger.Errorf("[WH]: Failed to download file")
+			return err
+		}
+		file.Close()
+		timer.End()
+
+		fi, err := os.Stat(filePath)
+		if err != nil {
+			pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+			return err
+		}
+		fileSize := fi.Size()
+		pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
+		return
 	}
 
-	timer := jobRun.timerStat("download_staging_file_time")
-	timer.Start()
-
-	err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
+	err := downloadTask(job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to download file")
-		return err
+		if job.StagingDestinationRevisionID != job.CurrentDestinationRevisionID && job.StagingDestinationConfig != nil {
+			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
+			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
+			if err != nil {
+				job.sendDownloadStagingFileFailedStat()
+				return err
+			}
+		} else {
+			return err
+		}
 	}
-	file.Close()
-	timer.End()
-
-	fi, err := os.Stat(filePath)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
-		return err
-	}
-	fileSize := fi.Size()
-	pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
-
 	return nil
 }
 
@@ -374,13 +392,13 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile(jobRun.job.CurrentDestinationConfig, job.CurrentUseRudderStorage)
+	err = jobRun.downloadStagingFile()
 	if err != nil {
 		// If error occurs with the current config and current revision is different from staging revision
 		// We retry with the staging revision config if it is present
 		if job.StagingDestinationRevisionID != job.CurrentDestinationRevisionID && job.StagingDestinationConfig != nil {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, CurrentDestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.CurrentDestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
-			err = jobRun.downloadStagingFile(job.StagingDestinationConfig, job.StagingUseRudderStorage)
+			err = jobRun.downloadStagingFile()
 			if err != nil {
 				job.sendDownloadStagingFileFailedStat()
 				return loadFileUploadOutputs, err
