@@ -3,6 +3,7 @@ package misc
 import (
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"testing"
@@ -543,22 +544,8 @@ func TestReplaceMultiRegex(t *testing.T) {
 	}
 	for _, input := range inputs {
 		got, err := ReplaceMultiRegex(input.expression, input.expList)
-		assertNoError(t, err)
-		assertString(t, got, input.expected)
-	}
-}
-
-func assertString(t *testing.T, got, expected string) {
-	t.Helper()
-	if got != expected {
-		t.Errorf("got %q expected %q", got, expected)
-	}
-}
-
-func assertNoError(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Errorf("got errror %s when no error is expected", err)
+		require.NoError(t, err)
+		require.Equal(t, got, input.expected)
 	}
 }
 
