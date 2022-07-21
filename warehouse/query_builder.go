@@ -21,19 +21,19 @@ func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struc
 		FROM
 		  %s
 		WHERE
-		  metadata ->> 'destination_revision_id' IS NOT NULL
-		  AND source_id = $1
-		  AND destination_id = $2
-		  AND id >= $3
-		  AND id <= $4;
+          id >= $1
+		  AND id <= $2
+		  AND source_id = $3
+		  AND destination_id = $4
+		  AND metadata ->> 'destination_revision_id' IS NOT NULL;
 	`,
 		warehouseutils.WarehouseStagingFilesTable,
 	)
 	rows, err := dbHandle.QueryContext(ctx, sqlStatement, []interface{}{
-		d.sourceID,
-		d.destinationID,
 		d.startStagingFileID,
 		d.endStagingFileID,
+		d.sourceID,
+		d.destinationID,
 	}...)
 	if err == sql.ErrNoRows {
 		err = nil
