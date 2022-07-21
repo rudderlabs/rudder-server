@@ -147,8 +147,8 @@ var (
 )
 
 var (
-	S3PathStyleRegex     = regexp.MustCompile("https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)")
-	S3VirtualHostedRegex = regexp.MustCompile("https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)")
+	S3PathStyleRegex     = regexp.MustCompile("https?://s3([.-](?P<region>[^.]+))?.amazonaws\\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)")
+	S3VirtualHostedRegex = regexp.MustCompile("https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\\.com/(?P<keyname>.*)")
 )
 
 func Init() {
@@ -385,7 +385,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 // CaptureRegexGroup returns capture as per the regex provided
 func CaptureRegexGroup(r *regexp.Regexp, pattern string) (groups map[string]string, err error) {
 	if !r.MatchString(pattern) {
-		err = errors.New(fmt.Sprintf("regex does not match pattern %s", pattern))
+		err = fmt.Errorf("regex does not match pattern %s", pattern)
 		return
 	}
 	m := r.FindStringSubmatch(pattern)
