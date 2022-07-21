@@ -549,8 +549,9 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	// Sanitising copy sql statement for logging
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
+		"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
+		"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("%s Running COPY command with SQL: %s\n", dl.GetLogIdentifier(tableName), sanitisedSQLStmt)
