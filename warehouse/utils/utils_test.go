@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
@@ -12,9 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -77,69 +75,89 @@ func TestGetS3Location(t *testing.T) {
 			s3Location: "s3://s3.rudderstack/test-object.csv",
 			region:     "",
 		},
+		{
+			location:   "https://google.com",
+			s3Location: "",
+			region:     "",
+		},
 	}
 
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		s3Location, region := GetS3Location(input.location)
-		if s3Location != input.s3Location {
-			t.Errorf("got %q want %q input %d", s3Location, input.s3Location, idx)
-		}
-		if region != input.region {
-			t.Errorf("got %q want %q input %d", region, input.region, idx)
-		}
+		require.Equal(t, s3Location, input.s3Location)
+		require.Equal(t, region, input.region)
 	}
 }
 
 func TestCaptureRegexGroup(t *testing.T) {
-	inputs := []struct {
-		regex   string
-		pattern string
-		groups  map[string]string
-	}{
-		{
-			regex:   "https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
-			pattern: "https://s3.amazonaws.com/bucket.with.a.dot/keyname",
-			groups: map[string]string{
-				"bucket":  "bucket.with.a.dot",
-				"keyname": "keyname",
-				"region":  "",
+	t.Run("Matches", func(t *testing.T) {
+		inputs := []struct {
+			regex   *regexp.Regexp
+			pattern string
+			groups  map[string]string
+		}{
+			{
+				regex:   S3PathStyleRegex,
+				pattern: "https://s3.amazonaws.com/bucket.with.a.dot/keyname",
+				groups: map[string]string{
+					"bucket":  "bucket.with.a.dot",
+					"keyname": "keyname",
+					"region":  "",
+				},
 			},
-		},
-		{
-			regex:   "https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
-			pattern: "https://s3.us-east.amazonaws.com/bucket.with.a.dot/keyname",
-			groups: map[string]string{
-				"bucket":  "bucket.with.a.dot",
-				"keyname": "keyname",
-				"region":  "us-east",
+			{
+				regex:   S3PathStyleRegex,
+				pattern: "https://s3.us-east.amazonaws.com/bucket.with.a.dot/keyname",
+				groups: map[string]string{
+					"bucket":  "bucket.with.a.dot",
+					"keyname": "keyname",
+					"region":  "us-east",
+				},
 			},
-		},
-		{
-			regex:   "https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
-			pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
-			groups: map[string]string{
-				"bucket":  "bucket.with.a.dot",
-				"keyname": "keyname",
-				"region":  "",
+			{
+				regex:   S3VirtualHostedRegex,
+				pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
+				groups: map[string]string{
+					"bucket":  "bucket.with.a.dot",
+					"keyname": "keyname",
+					"region":  "",
+				},
 			},
-		},
-		{
-			regex:   "https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
-			pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
-			groups: map[string]string{
-				"bucket":  "bucket.with.a.dot",
-				"keyname": "keyname",
-				"region":  "",
+			{
+				regex:   S3VirtualHostedRegex,
+				pattern: "https://bucket.with.a.dot.s3.amazonaws.com/keyname",
+				groups: map[string]string{
+					"bucket":  "bucket.with.a.dot",
+					"keyname": "keyname",
+					"region":  "",
+				},
 			},
-		},
-	}
-	for idx, input := range inputs {
-		got, err := CaptureRegexGroup(input.regex, input.pattern)
-		assertNoError(t, err)
-		if !reflect.DeepEqual(got, input.groups) {
-			t.Errorf("got %#v want %#v input %d", got, input.groups, idx)
 		}
-	}
+		for _, input := range inputs {
+			got, err := CaptureRegexGroup(input.regex, input.pattern)
+			require.NoError(t, err)
+			require.Equal(t, got, input.groups)
+		}
+	})
+	t.Run("Not Matches", func(t *testing.T) {
+		inputs := []struct {
+			regex   *regexp.Regexp
+			pattern string
+		}{
+			{
+				regex:   S3PathStyleRegex,
+				pattern: "https://google.com",
+			},
+			{
+				regex:   S3VirtualHostedRegex,
+				pattern: "https://google.com",
+			},
+		}
+		for _, input := range inputs {
+			_, err := CaptureRegexGroup(input.regex, input.pattern)
+			require.Error(t, err)
+		}
+	})
 }
 
 func TestGetS3LocationFolder(t *testing.T) {
@@ -160,11 +178,9 @@ func TestGetS3LocationFolder(t *testing.T) {
 			s3LocationFolder: "s3://my.test-bucket/myfolder",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		s3LocationFolder := GetS3LocationFolder(input.s3Location)
-		if s3LocationFolder != input.s3LocationFolder {
-			t.Errorf("got %q want %q input %d", s3LocationFolder, input.s3LocationFolder, idx)
-		}
+		require.Equal(t, s3LocationFolder, input.s3LocationFolder)
 	}
 }
 
@@ -183,9 +199,7 @@ func TestGetS3Locations(t *testing.T) {
 	}
 
 	s3Locations := GetS3Locations(inputs)
-	if !reflect.DeepEqual(inputs, outputs) {
-		t.Errorf("got %#v want %#v", s3Locations, outputs)
-	}
+	require.Equal(t, s3Locations, outputs)
 }
 
 func TestGetGCSLocation(t *testing.T) {
@@ -202,11 +216,9 @@ func TestGetGCSLocation(t *testing.T) {
 			gcsLocation: "gs://my.test-bucket/test-object.csv",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{})
-		if gcsLocation != input.gcsLocation {
-			t.Errorf("got %q want %q input %d", gcsLocation, input.gcsLocation, idx)
-		}
+		require.Equal(t, gcsLocation, input.gcsLocation)
 	}
 }
 
@@ -224,11 +236,9 @@ func TestGetGCSLocationFolder(t *testing.T) {
 			gcsLocationFolder: "gs://my.test-bucket",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptionsT{})
-		if gcsLocationFolder != input.gcsLocationFolder {
-			t.Errorf("got %q want %q input %d", gcsLocationFolder, input.gcsLocationFolder, idx)
-		}
+		require.Equal(t, gcsLocationFolder, input.gcsLocationFolder)
 	}
 }
 
@@ -247,9 +257,7 @@ func TestGetGCSLocations(t *testing.T) {
 	}
 
 	gcsLocations := GetGCSLocations(inputs, GCSLocationOptionsT{})
-	if !reflect.DeepEqual(gcsLocations, outputs) {
-		t.Errorf("got %#v want %#v", gcsLocations, outputs)
-	}
+	require.Equal(t, gcsLocations, outputs)
 }
 
 func TestGetAzureBlobLocation(t *testing.T) {
@@ -262,11 +270,9 @@ func TestGetAzureBlobLocation(t *testing.T) {
 			azBlobLocation: "azure://myproject.blob.core.windows.net/test-bucket/test-object.csv",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		azBlobLocation := GetAzureBlobLocation(input.location)
-		if azBlobLocation != input.azBlobLocation {
-			t.Errorf("got %q want %q input %d", azBlobLocation, input.azBlobLocation, idx)
-		}
+		require.Equal(t, azBlobLocation, input.azBlobLocation)
 	}
 }
 
@@ -280,11 +286,9 @@ func TestGetAzureBlobLocationFolder(t *testing.T) {
 			azBlobLocationFolder: "azure://myproject.blob.core.windows.net/test-bucket/myfolder",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		azBlobLocationFolder := GetAzureBlobLocationFolder(input.location)
-		if azBlobLocationFolder != input.azBlobLocationFolder {
-			t.Errorf("got %q want %q input %d", azBlobLocationFolder, input.azBlobLocationFolder, idx)
-		}
+		require.Equal(t, azBlobLocationFolder, input.azBlobLocationFolder)
 	}
 }
 
@@ -334,11 +338,9 @@ func TestToSafeNamespace(t *testing.T) {
 			safeNamespace: "rudderstack",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		safeNamespace := ToSafeNamespace("", input.namespace)
-		if safeNamespace != input.safeNamespace {
-			t.Errorf("got %q want %q input %d", safeNamespace, input.safeNamespace, idx)
-		}
+		require.Equal(t, safeNamespace, input.safeNamespace)
 	}
 }
 
@@ -365,12 +367,10 @@ func TestGetObjectLocation(t *testing.T) {
 		},
 	}
 
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
 			objectLocation := GetObjectLocation(input.provider, input.location)
-			if objectLocation != input.objectLocation {
-				t.Errorf("got %q want %q input %d", objectLocation, input.objectLocation, idx)
-			}
+			require.Equal(t, objectLocation, input.objectLocation)
 		})
 	}
 }
@@ -398,12 +398,10 @@ func TestGetObjectFolder(t *testing.T) {
 		},
 	}
 
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
-			objectLocation := GetObjectFolder(input.provider, input.location)
-			if objectLocation != input.objectFolder {
-				t.Errorf("got %q want %q input %d", objectLocation, input.objectFolder, idx)
-			}
+			objectFolder := GetObjectFolder(input.provider, input.location)
+			require.Equal(t, objectFolder, input.objectFolder)
 		})
 	}
 }
@@ -431,12 +429,10 @@ func TestGetObjectFolderForDeltalake(t *testing.T) {
 		},
 	}
 
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
-			objectLocation := GetObjectFolderForDeltalake(input.provider, input.location)
-			if objectLocation != input.objectFolder {
-				t.Errorf("got %q want %q input %d", objectLocation, input.objectFolder, idx)
-			}
+			objectFolder := GetObjectFolderForDeltalake(input.provider, input.location)
+			require.Equal(t, objectFolder, input.objectFolder)
 		})
 	}
 }
@@ -445,15 +441,14 @@ func TestDoubleQuoteAndJoinByComma(t *testing.T) {
 	names := []string{"Samantha Edwards", "Samantha Smith", "Holly Miller", "Tammie Tyler", "Gina Richards"}
 	want := "\"Samantha Edwards\",\"Samantha Smith\",\"Holly Miller\",\"Tammie Tyler\",\"Gina Richards\""
 	got := DoubleQuoteAndJoinByComma(names)
-	if got != want {
-		t.Errorf("got %q want %q input %#v", got, want, names)
-	}
+	require.Equal(t, got, want)
 }
 
 func TestSortColumnKeysFromColumnMap(t *testing.T) {
 	columnMap := map[string]string{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
 	want := []string{"k1", "k2", "k3", "k4", "k5"}
 	got := SortColumnKeysFromColumnMap(columnMap)
+	require.Equal(t, got, want)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %#v want %#v input %#v", got, want, columnMap)
 	}
@@ -485,12 +480,10 @@ func TestGetLoadFileGenTime(t *testing.T) {
 	}
 	for _, input := range inputs {
 		loadFilesEpochTime, err := time.Parse(misc.RFC3339Milli, input.loadFilesEpochStr)
-		if err != nil {
-			t.Errorf("error occurred while extracting generating load files time: %v", err)
-		}
+		require.NoError(t, err)
 
 		loadFileGenTime := GetLoadFileGenTime(input.timingsMap)
-		assertTime(t, loadFilesEpochTime, loadFileGenTime)
+		require.Equal(t, loadFilesEpochTime, loadFileGenTime)
 	}
 }
 
@@ -518,11 +511,9 @@ func TestGetLastFailedStatus(t *testing.T) {
 			status: "",
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		status := GetLastFailedStatus(input.timingsMap)
-		if status != input.status {
-			t.Errorf("got %q want %q input %d", status, input.status, idx)
-		}
+		require.Equal(t, status, input.status)
 	}
 }
 
@@ -534,10 +525,10 @@ func TestTimingFromJSONString(t *testing.T) {
 	}{
 		{
 			timingsMap: sql.NullString{
-				String: "{\"generating_upload_schema\":\"2022-07-04T16:09:03.001Z\"}",
+				String: "{\"generating_upload_schema\":\"2022-07-04T16:09:04.000Z\"}",
 			},
 			status:            "generating_upload_schema",
-			loadFilesEpochStr: "2022-07-04T16:09:04.169Z",
+			loadFilesEpochStr: "2022-07-04T16:09:04.000Z",
 		},
 		{
 			timingsMap: sql.NullString{
@@ -549,13 +540,11 @@ func TestTimingFromJSONString(t *testing.T) {
 	}
 	for _, input := range inputs {
 		loadFilesEpochTime, err := time.Parse(misc.RFC3339Milli, input.loadFilesEpochStr)
-		if err != nil {
-			t.Errorf("error occurred while extracting generating load files time: %v", err)
-		}
+		require.NoError(t, err)
 
 		status, recordedTime := TimingFromJSONString(input.timingsMap)
-		assertString(t, status, input.status)
-		assertTime(t, loadFilesEpochTime, recordedTime)
+		require.Equal(t, status, input.status)
+		require.Equal(t, loadFilesEpochTime, recordedTime)
 	}
 }
 
@@ -585,11 +574,9 @@ func TestGetConfigValue(t *testing.T) {
 			},
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		value := GetConfigValue(input.key, input.warehouse)
-		if value != input.value {
-			t.Errorf("got %q want %q input %d", value, input.value, idx)
-		}
+		require.Equal(t, value, input.value)
 	}
 }
 
@@ -631,11 +618,9 @@ func TestGetConfigValueBoolString(t *testing.T) {
 			},
 		},
 	}
-	for idx, input := range inputs {
+	for _, input := range inputs {
 		value := GetConfigValueBoolString(input.key, input.warehouse)
-		if value != input.value {
-			t.Errorf("got %q want %q input %d", value, input.value, idx)
-		}
+		require.Equal(t, value, input.value)
 	}
 }
 
@@ -689,7 +674,7 @@ func TestJoinWithFormatting(t *testing.T) {
 	}
 	for _, input := range inputs {
 		value := JoinWithFormatting(input.keys, format, separator)
-		assertString(t, value, input.value)
+		require.Equal(t, value, input.value)
 	}
 }
 
@@ -714,7 +699,7 @@ func TestToProviderCase(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input.provider, func(t *testing.T) {
 			value := ToProviderCase(input.provider, "rand")
-			assertString(t, value, input.value)
+			require.Equal(t, value, input.value)
 		})
 	}
 }
@@ -737,7 +722,7 @@ func TestSnowflakeCloudProvider(t *testing.T) {
 	}
 	for _, input := range inputs {
 		provider := SnowflakeCloudProvider(input.config)
-		assertString(t, provider, input.provider)
+		require.Equal(t, provider, input.provider)
 	}
 }
 
@@ -811,7 +796,7 @@ func TestObjectStorageType(t *testing.T) {
 	}
 	for _, input := range inputs {
 		provider := ObjectStorageType(input.destType, input.config, input.useRudderStorage)
-		assertString(t, provider, input.storageType)
+		require.Equal(t, provider, input.storageType)
 	}
 }
 
@@ -830,7 +815,7 @@ func TestGetTablePathInObjectStorage(t *testing.T) {
 	}
 	for _, input := range inputs {
 		got := GetTablePathInObjectStorage(input.namespace, input.tableName)
-		assertString(t, got, input.expected)
+		require.Equal(t, got, input.expected)
 	}
 }
 
@@ -886,55 +871,67 @@ func TestGetTempFileExtension(t *testing.T) {
 	}
 	for _, input := range inputs {
 		got := GetTempFileExtension(input.destType)
-		assertString(t, got, input.expected)
+		require.Equal(t, got, input.expected)
 	}
 }
 
-func assertTime(t *testing.T, got, want time.Time) {
-	t.Helper()
-	if got.Before(want) {
-		t.Errorf("got %v want %v", got, want)
-	}
-}
-
-func assertString(t *testing.T, got, want string) {
-	t.Helper()
-	if got != want {
-		t.Errorf("got %v want %v", got, want)
-	}
-}
-
-func assertNoError(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Errorf("got error %s when not expected", err.Error())
-	}
-}
-
-var _ = Describe("Utils", func() {
-	Describe("Time window warehouse destinations", func() {
-		It("should give time window format based on warehouse destination type", func() {
-			warehouse := WarehouseT{
+func TestGetLoadFilePrefix(t *testing.T) {
+	inputs := []struct {
+		warehouse WarehouseT
+		expected  string
+	}{
+		{
+			warehouse: WarehouseT{
 				Destination: backendconfig.DestinationT{
-					Config: make(map[string]interface{}),
+					Config: map[string]interface{}{
+						"tableSuffix": "key=val",
+					},
 				},
-			}
-			warehouse.Destination.Config["tableSuffix"] = "key=val"
-			timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
-
-			warehouse.Type = S3_DATALAKE
-			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("2022/08/06/14"))
-
-			warehouse.Type = AZURE_DATALAKE
-			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("2022/08/06/14"))
-
-			warehouse.Type = GCS_DATALAKE
-			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("key=val/2022/08/06/14"))
-			warehouse.Destination.Config["timeWindowLayout"] = "year=2006/month=01/day=02/hour=15"
-			Expect(GetLoadFilePrefix(timeWindow, warehouse)).To(Equal("key=val/year=2022/month=08/day=06/hour=14"))
-		})
-	})
-})
+				Type: S3_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix": "key=val",
+					},
+				},
+				Type: AZURE_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix": "key=val",
+					},
+				},
+				Type: GCS_DATALAKE,
+			},
+			expected: "key=val/2022/08/06/14",
+		},
+		{
+			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix":      "key=val",
+						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
+					},
+				},
+				Type: GCS_DATALAKE,
+			},
+			expected: "key=val/year=2022/month=08/day=06/hour=14",
+		},
+	}
+	for _, input := range inputs {
+		timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
+		got := GetLoadFilePrefix(timeWindow, input.warehouse)
+		require.Equal(t, got, input.expected)
+	}
+}
 
 func TestMain(m *testing.M) {
 	config.Load()

@@ -92,7 +92,6 @@ var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
 	AWSCredsExpiryInS         int64
-	s3Regexes                 []string
 )
 
 var WHDestNameMap = map[string]string{
@@ -146,6 +145,11 @@ var (
 	WarehouseDestinations  []string
 )
 
+var (
+	S3PathStyleRegex     = regexp.MustCompile("https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)")
+	S3VirtualHostedRegex = regexp.MustCompile("https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)")
+)
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
@@ -153,10 +157,6 @@ func Init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
-	s3Regexes = []string{
-		"https?://s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<bucket>[^/]+)/(?P<keyname>.*)",
-		"https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws.com/(?P<keyname>.*)",
-	}
 	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
 	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
@@ -380,14 +380,10 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	return fm.GetObjectNameFromLocation(location)
 }
 
-func CaptureRegexGroup(regEx, pattern string) (groups map[string]string, err error) {
-	r, err := regexp.Compile(regEx)
-	if err != nil {
-		return
-	}
-
+// CaptureRegexGroup returns capture as per the regex provided
+func CaptureRegexGroup(r *regexp.Regexp, pattern string) (groups map[string]string, err error) {
 	if !r.MatchString(pattern) {
-		err = errors.New(fmt.Sprintf("regex %s does not match pattern %s", regEx, pattern))
+		err = errors.New(fmt.Sprintf("regex does not match pattern %s", pattern))
 		return
 	}
 	m := r.FindStringSubmatch(pattern)
@@ -406,8 +402,9 @@ func CaptureRegexGroup(regEx, pattern string) (groups map[string]string, err err
 // GetS3Location parses path-style location http url to return in s3:// format
 // [Path-style access] https://s3.amazonaws.com/test-bucket/test-object.csv --> s3://test-bucket/test-object.csv
 // [Virtual-hosted–style access] https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+// TODO: Handle non regex matches.
 func GetS3Location(location string) (s3Location, region string) {
-	for _, s3Regex := range s3Regexes {
+	for _, s3Regex := range []*regexp.Regexp{S3VirtualHostedRegex, S3PathStyleRegex} {
 		var groups map[string]string
 		groups, err := CaptureRegexGroup(s3Regex, location)
 		if err == nil {
