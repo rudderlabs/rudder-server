@@ -576,7 +576,7 @@ var (
 )
 
 // Adding a new state to this list, will require an enum change in postgres db.
-var jobStates []jobStateT = []jobStateT{
+var jobStates = []jobStateT{
 	NotProcessed,
 	Failed,
 	Executing,
@@ -2826,7 +2826,7 @@ func (jd *HandleT) copyJobStatusDS(tx *sql.Tx, ds dataSetT, statusList []*JobSta
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.Exec(fmt.Sprintf("ANALYZE %s", ds.JobStatusTable))
+	_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -3013,9 +3013,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			if jd.ownerType == Read {
 				// if jobsdb owner is read, expempting the last two datasets from migration.
 				// This is done to avoid dslist conflicts between reader and writer
-				idxCheck = (idx == len(dsList)-1 || idx == len(dsList)-2)
+				idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
 			} else {
-				idxCheck = (idx == len(dsList)-1)
+				idxCheck = idx == len(dsList)-1
 			}
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
@@ -3215,7 +3215,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 	if jd.BackupSettings.FailedOnly {
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
 		stmt = fmt.Sprintf(
-			`SELECT 
+			`SELECT
 				json_build_object(
 					'job_id', failed_jobs.job_id,
 					'workspace_id',failed_jobs.workspace_id,
@@ -3237,66 +3237,66 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 					'error_response',failed_jobs.error_response,
 					'parameters',failed_jobs.status_parameters
 				)
-			FROM 
+			FROM
 				(
-				SELECT 
-					* 
-				FROM 
+				SELECT
+					*
+				FROM
 					(
-					SELECT *, 
+					SELECT *,
 					sum(
 					pg_column_size(jobs.event_payload)
 					) OVER (
-					ORDER BY 
-						jobs.custom_val, 
-						jobs.status_job_id, 
+					ORDER BY
+						jobs.custom_val,
+						jobs.status_job_id,
 						jobs.exec_time
 					) AS running_payload_size,
-					ROW_NUMBER() 
+					ROW_NUMBER()
 					OVER (
-					ORDER BY 
-						jobs.custom_val, 
-						jobs.status_job_id, 
+					ORDER BY
+						jobs.custom_val,
+						jobs.status_job_id,
 						jobs.exec_time
-					) AS row_num 
+					) AS row_num
 					FROM
 						(
-						SELECT 
-							job.job_id, 
-							job.workspace_id, 
-							job.uuid, 
-							job.user_id, 
-							job.parameters, 
-							job.custom_val, 
-							job.event_payload, 
-							job.event_count, 
-							job.created_at, 
-							job.expire_at, 
-							job_status.id, 
-							job_status.job_id AS status_job_id, 
-							job_status.job_state, 
-							job_status.attempt, 
-							job_status.exec_time, 
-							job_status.retry_time, 
-							job_status.error_code, 
-							job_status.error_response, 
+						SELECT
+							job.job_id,
+							job.workspace_id,
+							job.uuid,
+							job.user_id,
+							job.parameters,
+							job.custom_val,
+							job.event_payload,
+							job.event_count,
+							job.created_at,
+							job.expire_at,
+							job_status.id,
+							job_status.job_id AS status_job_id,
+							job_status.job_state,
+							job_status.attempt,
+							job_status.exec_time,
+							job_status.retry_time,
+							job_status.error_code,
+							job_status.error_response,
 							job_status.parameters AS status_parameters
-						FROM 
-							"%[1]s" "job_status" 
-							INNER JOIN "%[2]s" "job" ON job_status.job_id = job.job_id 
-						WHERE 
-							job_status.job_state IN ('%[3]s', '%[4]s') 
-						ORDER BY 
-						job.custom_val, 
-							job_status.job_id, 
+						FROM
+							"%[1]s" "job_status"
+							INNER JOIN "%[2]s" "job" ON job_status.job_id = job.job_id
+						WHERE
+							job_status.job_state IN ('%[3]s', '%[4]s')
+						ORDER BY
+						job.custom_val,
+							job_status.job_id,
 							job_status.exec_time ASC
-						LIMIT 
+						LIMIT
 							%[5]d
 						OFFSET
 							%[6]d
 						) jobs
-					) subquery 
-				WHERE 
+					) subquery
+				WHERE
 					subquery.running_payload_size <= %[7]d OR subquery.row_num = 1
 				) AS failed_jobs
 		  `, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
@@ -3315,70 +3315,70 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 			 		'error_response', dump_table.error_response,
 			 		'parameters', dump_table.parameters
 	)
-			FROM 
+			FROM
 				(
-				SELECT 
+				SELECT
 					*
-				FROM 
-					"%[1]s" 
-				ORDER BY 
-					job_id ASC 
-				LIMIT 
-					%[2]d 
-				OFFSET 
+				FROM
+					"%[1]s"
+				ORDER BY
+					job_id ASC
+				LIMIT
+					%[2]d
+				OFFSET
 					%[3]d
-				) 
+				)
 				AS dump_table
 			`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
 		} else {
 			stmt = fmt.Sprintf(`
-			SELECT 
+			SELECT
 				jsonb_build_object(
 					'job_id', dump_table.job_id,
-					'workspace_id', dump_table.workspace_id, 
+					'workspace_id', dump_table.workspace_id,
 					'uuid', dump_table.uuid,
-					'user_id', dump_table.user_id, 
+					'user_id', dump_table.user_id,
 					'parameters', dump_table.parameters,
-					'custom_val', dump_table.custom_val, 
+					'custom_val', dump_table.custom_val,
 					'event_payload', dump_table.event_payload,
-					'event_count', dump_table.event_count, 
+					'event_count', dump_table.event_count,
 					'created_at', dump_table.created_at,
 					'expire_at', dump_table.expire_at
-				) 
-		  	FROM 
+				)
+		  	FROM
 				(
-				SELECT 
-					* 
-				FROM 
+				SELECT
+					*
+				FROM
 					(
 						SELECT
-							*, 
+							*,
 							sum(
 							pg_column_size(jobs.event_payload)
 							) OVER (
-							ORDER BY 
+							ORDER BY
 								jobs.job_id
 							) AS running_payload_size,
-							ROW_NUMBER() 
+							ROW_NUMBER()
 							OVER (
-							ORDER BY 
+							ORDER BY
 								job_id ASC
-							) AS row_num  
+							) AS row_num
 						FROM
 							(
-							SELECT 
+							SELECT
 								*
-							FROM 
-								"%[1]s" job 
-							ORDER BY 
+							FROM
+								"%[1]s" job
+							ORDER BY
 								job_id ASC
-							LIMIT 
+							LIMIT
 								%[2]d
 							OFFSET
 								%[3]d
 							) jobs
-					) subquery 
-				WHERE 
+					) subquery
+				WHERE
 					subquery.running_payload_size <= %[4]d OR subquery.row_num = 1
 			) AS dump_table
 			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize)
