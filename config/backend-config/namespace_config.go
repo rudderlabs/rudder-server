@@ -12,6 +12,7 @@ import (
 	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type NamespaceConfig struct {
@@ -22,6 +23,7 @@ type NamespaceConfig struct {
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	sourceToWorkspaceIDMap    map[string]string
 
+	Logger            logger.LoggerI
 	Client            *http.Client
 	BasicAuthUsername string
 	BasicAuthPassword string
@@ -29,51 +31,51 @@ type NamespaceConfig struct {
 	ConfigBackendURL  string
 }
 
-func (workspaceConfig *NamespaceConfig) SetUp() {
-	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
+func (nc *NamespaceConfig) SetUp() {
+	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
 
-	if workspaceConfig.Namespace == "" {
-		workspaceConfig.Namespace = config.GetEnv("WORKSPACE_NAMESPACE", "")
+	if nc.Namespace == "" {
+		nc.Namespace = config.GetEnv("WORKSPACE_NAMESPACE", "")
 	}
-	if workspaceConfig.BasicAuthUsername == "" {
-		workspaceConfig.BasicAuthUsername = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "")
+	if nc.BasicAuthUsername == "" {
+		nc.BasicAuthUsername = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "")
 	}
-	if workspaceConfig.BasicAuthPassword == "" {
-		workspaceConfig.BasicAuthPassword = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "")
+	if nc.BasicAuthPassword == "" {
+		nc.BasicAuthPassword = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "")
 	}
-	if workspaceConfig.ConfigBackendURL == "" {
-		workspaceConfig.ConfigBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	if nc.ConfigBackendURL == "" {
+		nc.ConfigBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	}
 
-	if workspaceConfig.Client == nil {
-		workspaceConfig.Client = &http.Client{
+	if nc.Client == nil {
+		nc.Client = &http.Client{
 			Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second),
 		}
 	}
 
+	if nc.Logger == nil {
+		nc.Logger = logger.NewLogger().Child("backend-config")
+	}
+
 }
 
-func (workspaceConfig *NamespaceConfig) AccessToken() string {
-	panic("not supported")
-}
+func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+	nc.workspaceWriteKeysMapLock.RLock()
+	defer nc.workspaceWriteKeysMapLock.RUnlock()
 
-func (workspaceConfig *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
-
-	if workspaceID, ok := workspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+	if workspaceID, ok := nc.writeKeyToWorkspaceIDMap[writeKey]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-func (workspaceConfig *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
+func (nc *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
 	// TODO use another map later
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+	nc.workspaceWriteKeysMapLock.RLock()
+	defer nc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.sourceToWorkspaceIDMap[source]; ok {
+	if workspaceID, ok := nc.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 
@@ -81,23 +83,23 @@ func (workspaceConfig *NamespaceConfig) GetWorkspaceIDForSourceID(source string)
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (nc *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	nc.workspaceWriteKeysMapLock.RLock()
+	defer nc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceLibraries, ok := workspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
+	if workspaceLibraries, ok := nc.workspaceIDToLibrariesMap[workspaceID]; ok {
 		return workspaceLibraries
 	}
 	return LibrariesT{}
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *NamespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
-	return workspaceConfig.getFromAPI(ctx, workspaces)
+func (nc *NamespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+	return nc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *NamespaceConfig) getFromAPI(
+func (nc *NamespaceConfig) getFromAPI(
 	ctx context.Context, workspaceArr string,
 ) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
@@ -110,36 +112,39 @@ func (workspaceConfig *NamespaceConfig) getFromAPI(
 		statusCode int
 	)
 
-	u, err := url.Parse(workspaceConfig.ConfigBackendURL)
+	u, err := url.Parse(nc.ConfigBackendURL)
 	if err != nil {
 		return ConfigT{}, newError(false, err)
 	}
-	u.Path = fmt.Sprintf("/dataPlane/v1/namespace/%s/config", workspaceConfig.Namespace)
+	u.Path = fmt.Sprintf("/dataPlane/v1/namespace/%s/config", nc.Namespace)
 
 	operation := func() error {
 		var fetchError error
-		pkgLogger.Debugf("Fetching config from %s", u.String())
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, u.String())
+		nc.Logger.Debugf("Fetching config from %s", u.String())
+		respBody, statusCode, fetchError = nc.makeHTTPRequest(ctx, u.String())
 		return fetchError
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		nc.Logger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Errorf("Error sending request to the server: %v", err)
+		nc.Logger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, newError(true, err)
 	}
-	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	configEnvHandler := nc.CommonBackendConfig.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
+	}
+	if statusCode != http.StatusOK {
+		return ConfigT{}, newError(true, fmt.Errorf("unexpected status code: %d", statusCode))
 	}
 
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		nc.Logger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
 		return ConfigT{}, newError(true, err)
 	}
 
@@ -148,24 +153,24 @@ func (workspaceConfig *NamespaceConfig) getFromAPI(
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
-	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
-		for _, source := range workspaceConfig.Sources {
+	for workspaceID, nc := range workspaces.WorkspaceSourcesMap {
+		for _, source := range nc.Sources {
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
 			sourceToWorkspaceIDMap[source.ID] = workspaceID
-			workspaceIDToLibrariesMap[workspaceID] = workspaceConfig.Libraries
+			workspaceIDToLibrariesMap[workspaceID] = nc.Libraries
 		}
-		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
+		sourcesJSON.Sources = append(sourcesJSON.Sources, nc.Sources...)
 	}
-	workspaceConfig.workspaceWriteKeysMapLock.Lock()
-	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
+	nc.workspaceWriteKeysMapLock.Lock()
+	nc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	nc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
+	nc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	nc.workspaceWriteKeysMapLock.Unlock()
 
 	return sourcesJSON, nil
 }
 
-func (workspaceConfig *NamespaceConfig) makeHTTPRequest(
+func (nc *NamespaceConfig) makeHTTPRequest(
 	ctx context.Context, url string,
 ) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -173,8 +178,8 @@ func (workspaceConfig *NamespaceConfig) makeHTTPRequest(
 		return []byte{}, 400, err
 	}
 
-	req.SetBasicAuth(workspaceConfig.BasicAuthUsername, workspaceConfig.BasicAuthPassword)
-	resp, err := workspaceConfig.Client.Do(req)
+	req.SetBasicAuth(nc.BasicAuthUsername, nc.BasicAuthPassword)
+	resp, err := nc.Client.Do(req)
 	if err != nil {
 		return []byte{}, 400, err
 	}
@@ -189,6 +194,10 @@ func (workspaceConfig *NamespaceConfig) makeHTTPRequest(
 	return respBody, resp.StatusCode, nil
 }
 
-func (workspaceConfig *NamespaceConfig) IsConfigured() bool {
+func (nc *NamespaceConfig) IsConfigured() bool {
 	return false
+}
+
+func (nc *NamespaceConfig) AccessToken() string {
+	panic("not supported")
 }

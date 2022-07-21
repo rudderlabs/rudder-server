@@ -13,16 +13,17 @@ import (
 )
 
 type backendConfigServer struct {
-	authUser  string
-	authPass  string
 	responses map[string]string
+
+	authUser string
+	authPass string
 }
 
 func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	u, p, ok := req.BasicAuth()
 	if !ok || u != server.authUser || p != server.authPass {
-		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
 		resp.WriteHeader(http.StatusUnauthorized)
+		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
 		return
 	}
 
@@ -49,6 +50,23 @@ func (server *backendConfigServer) AddNamespace(t *testing.T, namespace, path st
 	server.responses["/dataPlane/v1/namespace/"+namespace+"/config"] = string(payload)
 }
 
+func Test_Namespace_SetUp(t *testing.T) {
+	client := &backendconfig.NamespaceConfig{}
+
+	t.Log("test defaults")
+
+	t.Setenv("WORKSPACE_NAMESPACE", "a-testing-namespace")
+	t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "username")
+	t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "password")
+	t.Setenv("CONFIG_BACKEND_URL", "https://api.test.rudderlabs.com")
+
+	client.SetUp()
+
+	require.Equal(t, "username", client.BasicAuthUsername)
+	require.Equal(t, "password", client.BasicAuthPassword)
+	require.Equal(t, "https://api.test.rudderlabs.com", client.ConfigBackendURL)
+	require.Equal(t, "a-testing-namespace", client.Namespace)
+}
 func Test_Namespace_Get(t *testing.T) {
 	logger.Init()
 
@@ -64,6 +82,8 @@ func Test_Namespace_Get(t *testing.T) {
 	defer ts.Close()
 
 	client := &backendconfig.NamespaceConfig{
+		Logger: logger.NewLogger(),
+
 		Client:           ts.Client(),
 		ConfigBackendURL: ts.URL,
 
@@ -111,4 +131,37 @@ func Test_Namespace_Get(t *testing.T) {
 			client.GetWorkspaceLibrariesForWorkspaceID(workspaceID),
 		)
 	}
+
+	t.Run("Invalid credentials", func(t *testing.T) {
+		client := &backendconfig.NamespaceConfig{
+			Client:           ts.Client(),
+			ConfigBackendURL: ts.URL,
+
+			Namespace:         namespace,
+			BasicAuthUsername: "cp-user",
+			BasicAuthPassword: "cp-wrong-password",
+		}
+
+		client.SetUp()
+		c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+		require.EqualError(t, err, "unexpected status code: 401")
+		require.Empty(t, c)
+	})
+
+	t.Run("empty namespace", func(t *testing.T) {
+		client := &backendconfig.NamespaceConfig{
+			Client:           ts.Client(),
+			ConfigBackendURL: ts.URL,
+
+			Namespace:         "namespace-does-not-exist",
+			BasicAuthUsername: "cp-user",
+			BasicAuthPassword: "cp-password",
+		}
+
+		client.SetUp()
+		c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+		require.EqualError(t, err, "unexpected status code: 404")
+		require.Empty(t, c)
+	})
+
 }

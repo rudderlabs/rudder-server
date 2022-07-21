@@ -245,6 +245,8 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 				eb:               pubsub.New(),
 			},
 		}
+		
+
 	// Fallback to dedicated
 	default:
 		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
