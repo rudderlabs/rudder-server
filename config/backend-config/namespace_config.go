@@ -195,7 +195,7 @@ func (nc *NamespaceConfig) makeHTTPRequest(
 }
 
 func (nc *NamespaceConfig) IsConfigured() bool {
-	return false
+	return true
 }
 
 func (nc *NamespaceConfig) AccessToken() string {

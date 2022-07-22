@@ -240,7 +240,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			},
 		}
 	case deployment.MultiTenantType:
-		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
+		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 
 		if isNamespaced {
 			backendConfig = &NamespaceConfig{
