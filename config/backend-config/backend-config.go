@@ -296,6 +296,7 @@ func (bc *CommonBackendConfig) Stop() {
 	if bc.waitForConfigErrs != nil {
 		close(bc.waitForConfigErrs)
 	}
+	bc.waitForConfigErrs = nil
 	curSourceJSON = ConfigT{}
 	bc.initializedLock.Unlock()
 }
@@ -313,8 +314,10 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		pkgLogger.Info("Waiting for initializing backend config")
 		select {
 		case <-ctx.Done():
+			pkgLogger.Info("ctx doneeeeeeeeeeeeee")
 			return ctx.Err()
 		case err, open := <-bc.waitForConfigErrs:
+			pkgLogger.Info("open = %v", open)
 			if !open {
 				return fmt.Errorf("backend config polling stopped")
 			}
