@@ -138,7 +138,7 @@ func TestMultiTenantGateway(t *testing.T) {
 		defer close(done)
 		Run(ctx)
 	}()
-	t.Cleanup(func() { cancel(); <-done })
+	defer func() { cancel(); <-done }()
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
@@ -234,7 +234,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
 		// do not move this test up because the gateway terminates after a configuration error
 		_, err := etcdContainer.Client.Put(ctx,
-			etcdReqKey, `{"workspaces":"`+multiTenantSvcSecret+`","ack_key":"test-ack/3"}`,
+			etcdReqKey, `{"workspaces": "", "ack_key":"test-ack/3"}`,
 		)
 		require.NoError(t, err)
 		select {
@@ -244,7 +244,7 @@ func TestMultiTenantGateway(t *testing.T) {
 			require.Equal(t, "ERROR", v.Status)
 			require.NotEqual(t, "", v.Error)
 		case <-time.After(20 * time.Second):
-			t.Fatal("Timeout waiting for test-ack/2")
+			t.Fatal("Timeout waiting for test-ack/3")
 		}
 	})
 }
