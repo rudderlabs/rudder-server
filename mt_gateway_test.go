@@ -40,10 +40,11 @@ func TestMultiTenantGateway(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		group             errgroup.Group
-		etcdContainer     *thEtcd.Resource
-		postgresContainer *destination.PostgresResource
-		serverInstanceID  = "1"
+		group              errgroup.Group
+		etcdContainer      *thEtcd.Resource
+		postgresContainer  *destination.PostgresResource
+		serverInstanceID   = "1"
+		workspaceNamespace = "test-workspace-namespace"
 	)
 
 	group.Go(func() (err error) {
@@ -77,7 +78,7 @@ func TestMultiTenantGateway(t *testing.T) {
 			})
 		})
 	}
-	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
+	backendConfRouter.HandleFunc("/dataPlane/v1/namespace/"+workspaceNamespace+"/config", func(w http.ResponseWriter, r *http.Request) {
 		n, err := w.Write(marshalledWorkspaces.Bytes())
 		require.NoError(t, err)
 		require.Equal(t, marshalledWorkspaces.Len(), n)
@@ -86,11 +87,6 @@ func TestMultiTenantGateway(t *testing.T) {
 	backendConfigSrv := httptest.NewServer(backendConfRouter)
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
-
-	httpPort, err := testhelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := testhelper.GetFreePort()
-	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
 	require.NoError(t, err)
@@ -107,13 +103,25 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 	t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
+
+	httpPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
+
+	httpAdminPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+
+	debugPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
+
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG", "false")
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", multiTenantSvcSecret)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+	t.Setenv("WORKSPACE_NAMESPACE", workspaceNamespace)
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
