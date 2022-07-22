@@ -182,6 +182,10 @@ func (d *Dynamic) stop() {
 }
 
 func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) error {
+	if workspaces == "" {
+		return fmt.Errorf("workspaceIDs is empty")
+	}
+
 	if d.currentWorkspaceIDs == workspaces {
 		return nil
 	}
