@@ -56,7 +56,6 @@ func (nc *NamespaceConfig) SetUp() {
 	if nc.Logger == nil {
 		nc.Logger = logger.NewLogger().Child("backend-config")
 	}
-
 }
 
 func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
@@ -199,5 +198,5 @@ func (nc *NamespaceConfig) IsConfigured() bool {
 }
 
 func (nc *NamespaceConfig) AccessToken() string {
-	panic("not supported")
+	return ""
 }

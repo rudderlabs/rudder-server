@@ -67,6 +67,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 	require.Equal(t, "https://api.test.rudderlabs.com", client.ConfigBackendURL)
 	require.Equal(t, "a-testing-namespace", client.Namespace)
 }
+
 func Test_Namespace_Get(t *testing.T) {
 	logger.Init()
 
@@ -163,5 +164,4 @@ func Test_Namespace_Get(t *testing.T) {
 		require.EqualError(t, err, "unexpected status code: 404")
 		require.Empty(t, c)
 	})
-
 }
