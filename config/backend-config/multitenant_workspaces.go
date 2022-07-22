@@ -22,12 +22,18 @@ type MultiTenantWorkspacesConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
+func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if workspaceConfig.Token == "" {
 		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
+
+	if workspaceConfig.Token == "" {
+		return fmt.Errorf("HOSTED_MULTITENANT_SERVICE_SECRET is not set")
+	}
+
+	return nil
 }
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
@@ -170,8 +176,4 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (workspaceConfig *MultiTenantWorkspacesConfig) IsConfigured() bool {
-	return workspaceConfig.Token != ""
 }

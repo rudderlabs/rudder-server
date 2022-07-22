@@ -23,26 +23,55 @@ type NamespaceConfig struct {
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	sourceToWorkspaceIDMap    map[string]string
 
-	Logger            logger.LoggerI
-	Client            *http.Client
+	Logger logger.LoggerI
+	Client *http.Client
+
 	BasicAuthUsername string
 	BasicAuthPassword string
-	Namespace         string
-	ConfigBackendURL  string
+
+	// ServiceSecret is used for legacy endpoints, expected to be removed
+	ServiceSecret string
+
+	Namespace        string
+	ConfigBackendURL string
 }
 
-func (nc *NamespaceConfig) SetUp() {
+func (nc *NamespaceConfig) SetUp() error {
 	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if nc.Namespace == "" {
-		nc.Namespace = config.GetEnv("WORKSPACE_NAMESPACE", "")
+		var err error
+
+		nc.Namespace, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
+		if err != nil {
+			return err
+		}
 	}
 	if nc.BasicAuthUsername == "" {
-		nc.BasicAuthUsername = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "")
+		var err error
+
+		nc.BasicAuthUsername, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_USERNAME")
+		if err != nil {
+			return err
+		}
 	}
 	if nc.BasicAuthPassword == "" {
-		nc.BasicAuthPassword = config.GetEnv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "")
+		var err error
+
+		nc.BasicAuthPassword, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_PASSWORD")
+		if err != nil {
+			return err
+		}
 	}
+	if nc.ServiceSecret == "" {
+		var err error
+
+		nc.ServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
+		if err != nil {
+			return err
+		}
+	}
+
 	if nc.ConfigBackendURL == "" {
 		nc.ConfigBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	}
@@ -56,6 +85,8 @@ func (nc *NamespaceConfig) SetUp() {
 	if nc.Logger == nil {
 		nc.Logger = logger.NewLogger().Child("backend-config")
 	}
+
+	return nil
 }
 
 func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
@@ -193,11 +224,6 @@ func (nc *NamespaceConfig) makeHTTPRequest(
 	return respBody, resp.StatusCode, nil
 }
 
-func (nc *NamespaceConfig) IsConfigured() bool {
-	return true
-}
-
 func (nc *NamespaceConfig) AccessToken() string {
-	// TODO: need to resolve this:
-	panic("not supported for namespace config")
+	return nc.ServiceSecret
 }

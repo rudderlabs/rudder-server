@@ -58,14 +58,19 @@ func Test_Namespace_SetUp(t *testing.T) {
 	t.Setenv("WORKSPACE_NAMESPACE", "a-testing-namespace")
 	t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "username")
 	t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "password")
+	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "service-secret")
+
 	t.Setenv("CONFIG_BACKEND_URL", "https://api.test.rudderlabs.com")
 
-	client.SetUp()
+	err := client.SetUp()
+	require.NoError(t, err)
 
 	require.Equal(t, "username", client.BasicAuthUsername)
 	require.Equal(t, "password", client.BasicAuthPassword)
 	require.Equal(t, "https://api.test.rudderlabs.com", client.ConfigBackendURL)
 	require.Equal(t, "a-testing-namespace", client.Namespace)
+	require.Equal(t, "service-secret", client.AccessToken())
+	require.Equal(t, "service-secret", client.ServiceSecret)
 }
 
 func Test_Namespace_Get(t *testing.T) {
@@ -91,9 +96,13 @@ func Test_Namespace_Get(t *testing.T) {
 		Namespace:         namespace,
 		BasicAuthUsername: "cp-user",
 		BasicAuthPassword: "cp-password",
+
+		ServiceSecret: "service-secret",
 	}
 
-	client.SetUp()
+	err := client.SetUp()
+	require.NoError(t, err)
+
 	c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
 	require.NoError(t, err)
 	require.Equal(t, "", c.WorkspaceID)

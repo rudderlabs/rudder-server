@@ -103,6 +103,9 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 	t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
+	t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "username")
+	t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "password")
+	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "service-secret")
 
 	httpPort, err := testhelper.GetFreePort()
 	require.NoError(t, err)

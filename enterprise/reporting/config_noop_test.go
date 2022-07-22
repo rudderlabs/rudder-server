@@ -11,16 +11,12 @@ var _ backendconfig.BackendConfig = &NOOPConfig{}
 
 type NOOPConfig struct{}
 
-func (noop *NOOPConfig) IsConfigured() bool {
-	return true
-}
-
 func (noop *NOOPConfig) AccessToken() string {
 	return ""
 }
 
-func (noop *NOOPConfig) SetUp() {
-	return
+func (noop *NOOPConfig) SetUp() error {
+	return nil
 }
 
 func (noop *NOOPConfig) Get(_ context.Context, _ string) (backendconfig.ConfigT, error) {

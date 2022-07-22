@@ -22,10 +22,20 @@ type SingleWorkspaceConfig struct {
 	workspaceIDLock           sync.RWMutex
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) SetUp() {
+func (workspaceConfig *SingleWorkspaceConfig) SetUp() error {
+	if configFromFile {
+		return nil
+	}
+
 	if workspaceConfig.Token == "" {
 		workspaceConfig.Token = config.GetWorkspaceToken()
 	}
+
+	if workspaceConfig.Token == "" {
+		return fmt.Errorf("backend config token not available")
+	}
+
+	return nil
 }
 
 func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
@@ -153,11 +163,4 @@ func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Contex
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (workspaceConfig *SingleWorkspaceConfig) IsConfigured() bool {
-	if configFromFile {
-		return true
-	}
-	return workspaceConfig.Token != ""
 }
