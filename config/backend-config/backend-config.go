@@ -57,14 +57,16 @@ type BackendConfig interface {
 	IsConfigured() bool
 }
 type CommonBackendConfig struct {
-	eb                *pubsub.PublishSubscriber
-	configEnvHandler  types.ConfigEnvI
-	ctx               context.Context
-	cancel            context.CancelFunc
-	blockChan         chan struct{}
-	waitForConfigErrs chan error
-	initializedLock   sync.RWMutex
-	initialized       bool
+	eb                       *pubsub.PublishSubscriber
+	configEnvHandler         types.ConfigEnvI
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	blockChan                chan struct{}
+	waitForConfigErrs        chan error
+	initializedLock          sync.RWMutex
+	initialized              bool
+	pollConfigUpdatefunclock sync.Mutex
+	pollConfigUpdatefuncbool bool
 }
 
 func loadConfig() {
@@ -164,6 +166,14 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
+	bc.pollConfigUpdatefunclock.Lock()
+	if !bc.pollConfigUpdatefuncbool {
+		bc.pollConfigUpdatefuncbool = true
+		bc.pollConfigUpdatefunclock.Unlock()
+		return
+	}
+	bc.pollConfigUpdatefunclock.Unlock()
+
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
