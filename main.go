@@ -197,13 +197,8 @@ func runAllInit() {
 }
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		cancel()
-	}()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
 	Run(ctx)
 }
@@ -277,26 +272,42 @@ func Run(ctx context.Context) {
 		}))
 	}
 
-	var ctxDoneTime time.Time
-	g.Go(func() error {
-		<-ctx.Done()
-		ctxDoneTime = time.Now()
-		return nil
-	})
-
 	g.Go(func() error {
 		<-ctx.Done()
 		backendconfig.DefaultBackendConfig.Stop()
 		return nil
 	})
 
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		<-time.After(gracefulShutdownTimeout)
+		err := g.Wait()
+		if err != nil && err != context.Canceled {
+			pkgLogger.Error(err)
+		}
+		close(shutdownDone)
+	}()
+
+	<-ctx.Done()
+	ctxDoneTime := time.Now()
+
+	select {
+	case <-shutdownDone:
+		application.Stop()
+		pkgLogger.Infof(
+			"Graceful terminal after %s, with %d go-routines",
+			time.Since(ctxDoneTime),
+			runtime.NumGoroutine(),
+		)
+		// clearing zap Log buffer to std output
+		if logger.Log != nil {
+			_ = logger.Log.Sync()
+		}
+		stats.StopPeriodicStats()
+	case <-time.After(gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
 		pkgLogger.Errorf(
 			"Graceful termination failed after %s, goroutine dump:\n",
-			gracefulShutdownTimeout,
+			time.Since(ctxDoneTime),
 		)
 
 		fmt.Print("\n\n")
@@ -311,23 +322,6 @@ func Run(ctx context.Context) {
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			os.Exit(1)
 		}
-	}()
-
-	err := g.Wait()
-	if err != nil && err != context.Canceled {
-		pkgLogger.Error(err)
 	}
 
-	application.Stop()
-
-	pkgLogger.Infof(
-		"Graceful terminal after %s, with %d go-routines",
-		time.Since(ctxDoneTime),
-		runtime.NumGoroutine(),
-	)
-	// clearing zap Log buffer to std output
-	if logger.Log != nil {
-		_ = logger.Log.Sync()
-	}
-	stats.StopPeriodicStats()
 }
