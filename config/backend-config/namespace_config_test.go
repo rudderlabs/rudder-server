@@ -152,7 +152,8 @@ func Test_Namespace_Get(t *testing.T) {
 			BasicAuthPassword: "cp-wrong-password",
 		}
 
-		client.SetUp()
+		err := client.SetUp()
+		require.Error(t, err)
 		c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
 		require.EqualError(t, err, "unexpected status code: 401")
 		require.Empty(t, c)
@@ -168,7 +169,8 @@ func Test_Namespace_Get(t *testing.T) {
 			BasicAuthPassword: "cp-password",
 		}
 
-		client.SetUp()
+		err := client.SetUp()
+		require.NoError(t, err)
 		c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
 		require.EqualError(t, err, "unexpected status code: 404")
 		require.Empty(t, c)

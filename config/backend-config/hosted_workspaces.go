@@ -43,7 +43,6 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() error {
 	}
 
 	return nil
-
 }
 
 func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
