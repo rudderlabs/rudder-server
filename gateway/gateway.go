@@ -1614,15 +1614,16 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
+	gateway.backgroundCancel = cancel
+	gateway.backgroundWait = g.Wait
+
 	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
 		cancel()
+		gateway.logger.Errorf("Failed to wait for backend config: %v", err)
 		return
 	}
 
 	gateway.initUserWebRequestWorkers()
-
-	gateway.backgroundCancel = cancel
-	gateway.backgroundWait = g.Wait
 
 	g.Go(misc.WithBugsnag(func() error {
 		gateway.runUserWebRequestWorkers(ctx)
