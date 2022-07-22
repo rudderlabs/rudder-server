@@ -150,11 +150,13 @@ func Test_Namespace_Get(t *testing.T) {
 			Namespace:         namespace,
 			BasicAuthUsername: "cp-user",
 			BasicAuthPassword: "cp-wrong-password",
+			ServiceSecret:     "service-secret",
 		}
 
 		err := client.SetUp()
-		require.Error(t, err)
-		c, err := client.Get(context.Background(), "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+		require.NoError(t, err)
+
+		c, err := client.Get(context.Background(), "")
 		require.EqualError(t, err, "unexpected status code: 401")
 		require.Empty(t, c)
 	})
@@ -167,6 +169,7 @@ func Test_Namespace_Get(t *testing.T) {
 			Namespace:         "namespace-does-not-exist",
 			BasicAuthUsername: "cp-user",
 			BasicAuthPassword: "cp-password",
+			ServiceSecret:     "service-secret",
 		}
 
 		err := client.SetUp()
