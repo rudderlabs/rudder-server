@@ -20,7 +20,9 @@ var (
 	originalBackendConfig = backendConfig
 	_                     = Describe("workspace-config", func() {
 		BeforeEach(func() {
-			backendConfig = &SingleWorkspaceConfig{}
+			backendConfig = &SingleWorkspaceConfig{
+				Token: "testToken",
+			}
 			ctrl = gomock.NewController(GinkgoT())
 			mockLogger = mocklogger.NewMockLoggerI(ctrl)
 			pkgLogger = mockLogger
@@ -56,7 +58,7 @@ var (
 				testRequest, _ := http.NewRequest("GET", server.URL, nil)
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
-				config, err := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "")
 				Expect(err).To(BeNil())
 				Expect(config).To(Equal(SampleBackendConfig))
 			})
@@ -102,7 +104,7 @@ var (
 				fileErr := errors.New("TestError")
 				mockLogger.EXPECT().Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, fileErr.Error()).Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, fileErr).Times(1)
-				config, err := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "")
 				Expect(config).To(Equal(ConfigT{}))
 				Expect(err).NotTo(BeNil())
 			})
@@ -113,7 +115,7 @@ var (
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 				mockLogger.EXPECT().Errorf("Unable to parse backend config from file: %s", configJSONPath).Times(1)
-				config, err := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "")
 				Expect(config).To(Equal(ConfigT{}))
 				Expect(err).NotTo(BeNil())
 			})

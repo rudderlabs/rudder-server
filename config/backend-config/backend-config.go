@@ -154,13 +154,13 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
-		bc.initializedLock.Lock()
-		defer bc.initializedLock.Unlock()
-		bc.initialized = true
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
+	bc.initializedLock.Lock()
+	defer bc.initializedLock.Unlock()
+	bc.initialized = true
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
@@ -336,6 +336,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		case <-time.After(pollInterval):
 		}
 	}
+
 	return nil
 }
 

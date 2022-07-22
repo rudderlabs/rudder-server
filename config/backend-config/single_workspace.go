@@ -57,17 +57,18 @@ func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceI
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
+// second argument is ignored in case of single workspace backend
+func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, _ string) (ConfigT, error) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
-		return workspaceConfig.getFromAPI(ctx, workspace)
+		return workspaceConfig.getFromAPI(ctx)
 	}
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, workspace string) (ConfigT, error) {
-	if workspace == "" {
+func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context) (ConfigT, error) {
+	if workspaceConfig.Token == "" {
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace token provided, skipping backend config fetch"))
 	}
 
@@ -79,7 +80,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, wo
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url, workspace)
+		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -129,13 +130,13 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	return configJSON, nil
 }
 
-func (*SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url, workspaceToken string) ([]byte, int, error) {
+func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
 
-	req.SetBasicAuth(workspaceToken, "")
+	req.SetBasicAuth(workspaceConfig.Token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}

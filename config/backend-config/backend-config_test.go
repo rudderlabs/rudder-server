@@ -136,7 +136,10 @@ var _ = Describe("BackendConfig", func() {
 	initBackendConfig()
 
 	BeforeEach(func() {
-		backendConfig = &SingleWorkspaceConfig{CommonBackendConfig: CommonBackendConfig{eb: &originalMockPubSub}}
+		backendConfig = &SingleWorkspaceConfig{
+			CommonBackendConfig: CommonBackendConfig{eb: &originalMockPubSub},
+			Token:               "test_token",
+		}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mocklogger.NewMockLoggerI(ctrl)
 		pkgLogger = mockLogger
@@ -183,7 +186,7 @@ var _ = Describe("BackendConfig", func() {
 				Expect(<-bc.waitForConfigErrs).To(MatchError("TestRequestError"))
 				close(done)
 			}()
-			bc.configUpdate(ctx, statConfigBackendError, "test_token")
+			bc.configUpdate(ctx, statConfigBackendError, "")
 			<-done
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
@@ -191,7 +194,7 @@ var _ = Describe("BackendConfig", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			bc.configUpdate(ctx, statConfigBackendError, "test_token")
+			bc.configUpdate(ctx, statConfigBackendError, "")
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
@@ -209,7 +212,7 @@ var _ = Describe("BackendConfig", func() {
 			chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 			chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
-			bc.configUpdate(ctx, statConfigBackendError, "test_token")
+			bc.configUpdate(ctx, statConfigBackendError, "")
 			Expect(bc.initialized).To(BeTrue())
 
 			Expect((<-chProcess).Data).To(Equal(SampleFilteredSources))

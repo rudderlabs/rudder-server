@@ -101,11 +101,11 @@ func (nc *NamespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT,
 func (nc *NamespaceConfig) getFromAPI(
 	ctx context.Context, workspaceArr string,
 ) (ConfigT, error) {
-	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
-	if workspaceArr == "" {
-		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
+	if nc.Namespace == "" {
+		return ConfigT{}, newError(false, fmt.Errorf("namespace is not configured"))
 	}
 
+	// TODO filter workspaces by workspaceArr
 	var (
 		respBody   []byte
 		statusCode int
@@ -198,5 +198,6 @@ func (nc *NamespaceConfig) IsConfigured() bool {
 }
 
 func (nc *NamespaceConfig) AccessToken() string {
-	return ""
+	// TODO: need to resolve this:
+	panic("not supported for namespace config")
 }

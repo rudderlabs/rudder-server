@@ -78,7 +78,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 	ctx context.Context, workspaceArr string,
 ) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
-	if workspaceArr == workspaceConfig.Token {
+	if workspaceArr == "" {
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
 	}
 
