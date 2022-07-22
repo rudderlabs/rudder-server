@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -161,6 +162,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
+		req.Header.Add("X-SERVERID", config.GetEnv("INSTANCE_ID", "default"))
 
 		resp, err := client.Do(req)
 		if err != nil {
