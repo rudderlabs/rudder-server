@@ -70,6 +70,7 @@ func (*RedshiftTest) SetUpDestination() {
 }
 
 func TestRedshiftIntegration(t *testing.T) {
+	t.Skip()
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  RSTest.DB,

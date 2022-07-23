@@ -70,6 +70,7 @@ func (*SnowflakeTest) SetUpDestination() {
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
+	t.Skip()
 	whDestTest := &testhelper.WareHouseDestinationTest{
 		Client: &client.Client{
 			SQL:  SFTest.DB,

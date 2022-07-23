@@ -2,12 +2,13 @@ package testhelper
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
 	"log"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joho/godotenv"
 
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
