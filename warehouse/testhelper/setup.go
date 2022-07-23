@@ -2,6 +2,7 @@ package testhelper
 
 import (
 	"fmt"
+	"github.com/joho/godotenv"
 	"log"
 	"strconv"
 	"strings"
@@ -87,6 +88,8 @@ func loadEnv() {
 }
 
 func initialize() {
+	loadEnv()
+
 	config.Load()
 	logger.Init()
 
