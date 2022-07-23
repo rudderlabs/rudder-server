@@ -71,8 +71,6 @@ func (*DeltalakeTest) SetUpDestination() {
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
-	t.Skip()
-
 	verify := func() {
 		whDestTest := &testhelper.WareHouseDestinationTest{
 			Client: &client.Client{

@@ -764,8 +764,9 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-func SetString(key, value string) {
+func SetAndWrite(key string, value interface{}) error {
 	viper.Set(key, value)
+	return viper.WriteConfig()
 }
 
 // GetWorkspaceToken returns the workspace token provided in the environment variables
