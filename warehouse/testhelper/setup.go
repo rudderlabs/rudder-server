@@ -57,11 +57,11 @@ func (w *WareHouseDestinationTest) MsgId() string {
 	return w.MessageId
 }
 
-func (w *WareHouseDestinationTest) Reset(destType string, randomProduct bool) {
+func (w *WareHouseDestinationTest) Reset(destType string, randomEvent bool) {
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), randomness)
 
-	if randomProduct {
+	if randomEvent {
 		w.Event = fmt.Sprintf("Product Track %s", randomness)
 	} else {
 		w.Event = "Product Track"
