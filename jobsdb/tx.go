@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// ErrEmptyxTx sentinel error indicating an Empty Tx
-var ErrEmptyxTx = errors.New("jobsdb: empty tx")
+// ErrEmptyTx sentinel error indicating an Empty Tx
+var ErrEmptyTx = errors.New("jobsdb: empty tx")
 
 // TxGetter provides access to an sql.Tx
 type TxGetter interface {
@@ -25,7 +25,7 @@ func EmptyTx() TxGetter {
 }
 
 func (*noTx) Tx() (*sql.Tx, error) {
-	return nil, ErrEmptyxTx
+	return nil, ErrEmptyTx
 }
 
 func (*noTx) MustTx() *sql.Tx {
