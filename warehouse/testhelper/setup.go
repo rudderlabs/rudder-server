@@ -13,7 +13,6 @@ import (
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
-	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -71,8 +70,6 @@ func (w *WareHouseDestinationTest) Reset(destType string, randomEvent bool) {
 }
 
 func Run(m *testing.M, setup ISetup) int {
-	loadEnv()
-
 	initialize()
 
 	jobsDB = setUpJobsDB()
