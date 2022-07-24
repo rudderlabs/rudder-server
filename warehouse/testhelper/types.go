@@ -15,7 +15,7 @@ type JobsDBResource struct {
 
 type EventsCountMap map[string]int
 
-type WareHouseDestinationTest struct {
+type WareHouseTest struct {
 	Client                   *client.Client
 	WriteKey                 string
 	Schema                   string
@@ -29,5 +29,5 @@ type WareHouseDestinationTest struct {
 }
 
 type ISetup interface {
-	SetUpDestination()
+	TestConnection()
 }

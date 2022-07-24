@@ -12,33 +12,29 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type MSSQLTest struct {
-	Credentials *mssql.CredentialsT
-	DB          *sql.DB
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
+type TestHandle struct {
+	DB        *sql.DB
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
-var MTest *MSSQLTest
+var handle *TestHandle
 
-func (*MSSQLTest) SetUpDestination() {
-	MTest.WriteKey = "YSQ3n267l1VQKGNbSuJE9fQbzON"
-	MTest.Credentials = &mssql.CredentialsT{
-		DBName:   "master",
-		Password: "reallyStrongPwd123",
-		User:     "SA",
-		Host:     "mssql",
-		SSLMode:  "disable",
-		Port:     "1433",
-	}
-	MTest.EventsMap = testhelper.DefaultEventMap()
-
+func (*TestHandle) TestConnection() {
 	testhelper.ConnectWithBackoff(func() (err error) {
-		if MTest.DB, err = mssql.Connect(*MTest.Credentials); err != nil {
+		credentials := mssql.CredentialsT{
+			DBName:   "master",
+			Password: "reallyStrongPwd123",
+			User:     "SA",
+			Host:     "mssql",
+			SSLMode:  "disable",
+			Port:     "1433",
+		}
+		if handle.DB, err = mssql.Connect(credentials); err != nil {
 			err = fmt.Errorf("could not connect to warehouse mssql with error: %w", err)
 			return
 		}
-		if err = MTest.DB.Ping(); err != nil {
+		if err = handle.DB.Ping(); err != nil {
 			err = fmt.Errorf("could not connect to warehouse mssql while pinging with error: %w", err)
 			return
 		}
@@ -47,27 +43,30 @@ func (*MSSQLTest) SetUpDestination() {
 }
 
 func TestMSSQLIntegration(t *testing.T) {
-	whDestTest := &testhelper.WareHouseDestinationTest{
+	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  MTest.DB,
+			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 MTest.WriteKey,
+		WriteKey:                 handle.WriteKey,
 		Schema:                   "mssql_wh_integration",
-		EventsCountMap:           MTest.EventsMap,
+		EventsCountMap:           handle.EventsMap,
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
 
-	whDestTest.Reset(warehouseutils.MSSQL, true)
-	testhelper.SendEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.MSSQL, true)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 
-	whDestTest.Reset(warehouseutils.MSSQL, true)
-	testhelper.SendModifiedEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.MSSQL, true)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
-	MTest = &MSSQLTest{}
-	os.Exit(testhelper.Run(m, MTest))
+	handle = &TestHandle{
+		WriteKey:  "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		EventsMap: testhelper.DefaultEventMap(),
+	}
+	os.Exit(testhelper.Run(m, handle))
 }

@@ -51,14 +51,14 @@ var (
 	DatabricksIntegrationTestUserCred = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
 )
 
-func (w *WareHouseDestinationTest) MsgId() string {
+func (w *WareHouseTest) MsgId() string {
 	if w.MessageId == "" {
 		return uuid.Must(uuid.NewV4()).String()
 	}
 	return w.MessageId
 }
 
-func (w *WareHouseDestinationTest) Reset(destType string, randomEvent bool) {
+func (w *WareHouseTest) Reset(destType string, randomEvent bool) {
 	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), randomness)
 
@@ -73,12 +73,9 @@ func (w *WareHouseDestinationTest) Reset(destType string, randomEvent bool) {
 
 func Run(m *testing.M, setup ISetup) int {
 	initialize()
-
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
-
-	setup.SetUpDestination()
-
+	setup.TestConnection()
 	return m.Run()
 }
 
@@ -144,27 +141,27 @@ func enhanceJobsDBWithSQLFunctions() {
 	}
 }
 
-func VerifyingDestination(t testing.TB, wdt *WareHouseDestinationTest) {
+func VerifyingDestination(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Started verifying gateway events")
-	VerifyingGatewayEvents(t, wdt)
+	VerifyingGatewayEvents(t, wareHouseTest)
 	t.Logf("Completed verifying gateway events")
 
 	t.Logf("Started verifying batch router events")
-	VerifyingBatchRouterEvents(t, wdt)
+	VerifyingBatchRouterEvents(t, wareHouseTest)
 	t.Logf("Completed verifying batch router events")
 
 	t.Logf("Started verifying tables events")
-	VerifyingTablesEventCount(t, wdt)
+	VerifyingTablesEventCount(t, wareHouseTest)
 	t.Logf("Completed verifying tables events")
 }
 
-func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	require.Contains(t, wdt.EventsCountMap, "gateway")
-	gwEvents := wdt.EventsCountMap["gateway"]
+func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+	require.Contains(t, wareHouseTest.EventsCountMap, "gateway")
+	gwEvents := wareHouseTest.EventsCountMap["gateway"]
 
 	var count int64
 
-	sqlStatement := fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wdt.UserId, wdt.WriteKey)
+	sqlStatement := fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wareHouseTest.UserId, wareHouseTest.WriteKey)
 	t.Logf("Checking for the gateway jobs for sqlStatement: %s", sqlStatement)
 	operation := func() bool {
 		err := jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -176,7 +173,7 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	var jobIds []string
 	var jobId int64
 
-	sqlStatement = fmt.Sprintf(`select * from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wdt.UserId, wdt.WriteKey)
+	sqlStatement = fmt.Sprintf(`select * from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wareHouseTest.UserId, wareHouseTest.WriteKey)
 	t.Logf("Checking for gateway job ids for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		jobIds = make([]string, 0)
@@ -205,13 +202,13 @@ func VerifyingGatewayEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 }
 
-func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	require.Contains(t, wdt.EventsCountMap, "batchRT")
-	brtEvents := wdt.EventsCountMap["batchRT"]
+func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+	require.Contains(t, wareHouseTest.EventsCountMap, "batchRT")
+	brtEvents := wareHouseTest.EventsCountMap["batchRT"]
 
 	var count int64
 
-	sqlStatement := fmt.Sprintf(`select count(*) from brt_jobs_for_user_id('%s') as job_ids`, wdt.UserId)
+	sqlStatement := fmt.Sprintf(`select count(*) from brt_jobs_for_user_id('%s') as job_ids`, wareHouseTest.UserId)
 	t.Logf("Checking for batch router jobs for sqlStatement: %s", sqlStatement)
 	operation := func() bool {
 		err := jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -223,7 +220,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	var jobIds []string
 	var jobId int64
 
-	sqlStatement = fmt.Sprintf(`select * from brt_jobs_for_user_id('%s') as job_ids`, wdt.UserId)
+	sqlStatement = fmt.Sprintf(`select * from brt_jobs_for_user_id('%s') as job_ids`, wareHouseTest.UserId)
 	t.Logf("Checking for batch router job ids for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		jobIds = make([]string, 0)
@@ -253,25 +250,25 @@ func VerifyingBatchRouterEvents(t testing.TB, wdt *WareHouseDestinationTest) {
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
 }
 
-func VerifyingTablesEventCount(t testing.TB, wdt *WareHouseDestinationTest) {
+func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 	var count int64
-	for _, table := range wdt.Tables {
+	for _, table := range wareHouseTest.Tables {
 		primaryKey := "user_id"
 		if table == "users" {
 			primaryKey = "id"
 		}
 
-		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wdt.Schema, table, primaryKey, wdt.UserId)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wareHouseTest.Schema, table, primaryKey, wareHouseTest.UserId)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
-		require.Contains(t, wdt.EventsCountMap, table)
-		tableCount := wdt.EventsCountMap[table]
+		require.Contains(t, wareHouseTest.EventsCountMap, table)
+		tableCount := wareHouseTest.EventsCountMap[table]
 
 		condition := func() bool {
-			count, _ = queryCount(wdt.Client, sqlStatement)
+			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor5Minute, wdt.VerifyingTablesFrequency)
+		require.Eventually(t, condition, WaitFor5Minute, wareHouseTest.VerifyingTablesFrequency)
 	}
 }
 

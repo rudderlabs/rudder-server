@@ -12,33 +12,29 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type PostgresTest struct {
-	Credentials *postgres.CredentialsT
-	DB          *sql.DB
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
+type TestHandle struct {
+	DB        *sql.DB
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
-var PGTest *PostgresTest
+var handle *TestHandle
 
-func (*PostgresTest) SetUpDestination() {
-	PGTest.WriteKey = "kwzDkh9h2fhfUVuS9jZ8uVbhV3v"
-	PGTest.Credentials = &postgres.CredentialsT{
-		DBName:   "rudderdb",
-		Password: "rudder-password",
-		User:     "rudder",
-		Host:     "postgres",
-		SSLMode:  "disable",
-		Port:     "5432",
-	}
-	PGTest.EventsMap = testhelper.DefaultEventMap()
-
+func (*TestHandle) TestConnection() {
 	testhelper.ConnectWithBackoff(func() (err error) {
-		if PGTest.DB, err = postgres.Connect(*PGTest.Credentials); err != nil {
+		credentials := postgres.CredentialsT{
+			DBName:   "rudderdb",
+			Password: "rudder-password",
+			User:     "rudder",
+			Host:     "postgres",
+			SSLMode:  "disable",
+			Port:     "5432",
+		}
+		if handle.DB, err = postgres.Connect(credentials); err != nil {
 			err = fmt.Errorf("could not connect to warehouse postgres with error: %w", err)
 			return
 		}
-		if err = PGTest.DB.Ping(); err != nil {
+		if err = handle.DB.Ping(); err != nil {
 			err = fmt.Errorf("could not connect to warehouse postgres while pinging with error: %w", err)
 			return
 		}
@@ -47,27 +43,30 @@ func (*PostgresTest) SetUpDestination() {
 }
 
 func TestPostgresIntegration(t *testing.T) {
-	whDestTest := &testhelper.WareHouseDestinationTest{
+	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  PGTest.DB,
+			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 PGTest.WriteKey,
+		WriteKey:                 handle.WriteKey,
 		Schema:                   "postgres_wh_integration",
-		EventsCountMap:           PGTest.EventsMap,
+		EventsCountMap:           handle.EventsMap,
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
 
-	whDestTest.Reset(warehouseutils.POSTGRES, true)
-	testhelper.SendEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.POSTGRES, true)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 
-	whDestTest.Reset(warehouseutils.POSTGRES, true)
-	testhelper.SendModifiedEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.POSTGRES, true)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
-	PGTest = &PostgresTest{}
-	os.Exit(testhelper.Run(m, PGTest))
+	handle = &TestHandle{
+		WriteKey:  "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+		EventsMap: testhelper.DefaultEventMap(),
+	}
+	os.Exit(testhelper.Run(m, handle))
 }

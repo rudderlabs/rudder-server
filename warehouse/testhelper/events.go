@@ -4,7 +4,6 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,7 +43,7 @@ const (
 	  "name": "Home",
 	  "properties": {
 		"title": "Home | RudderStack",
-		"url": "http://www.rudderstack.com"
+		"url": "https://www.rudderstack.com"
 	  }
 	}`
 	ScreenPayload = `{
@@ -115,7 +114,7 @@ const (
 	  "name": "Home",
 	  "properties": {
 		"title": "Home | RudderStack",
-		"url": "http://www.rudderstack.com"
+		"url": "https://www.rudderstack.com"
 	  },
 	  "context": {
 		"ip": "14.5.67.21",
@@ -171,108 +170,112 @@ const (
 	}`
 )
 
-func SendEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
+func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+
+	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending identifies events")
-		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wdt.UserId, wdt.MsgId()))
-			send(payloadIdentify, "identify", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
 
-	if track, exists := wdt.EventsCountMap["tracks"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending tracks events")
-		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wdt.UserId, wdt.MsgId(), wdt.Event))
-			send(payloadTrack, "track", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Event))
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
 
-	if page, exists := wdt.EventsCountMap["pages"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
 		t.Logf("Sending pages events")
-		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wdt.UserId, wdt.MsgId()))
-			send(payloadPage, "page", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
 
-	if screen, exists := wdt.EventsCountMap["screens"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
 		t.Logf("Sending screens events")
-		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wdt.UserId, wdt.MsgId()))
-			send(payloadScreen, "screen", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
 
-	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
 		t.Logf("Sending aliases events")
-		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wdt.UserId, wdt.MsgId()))
-			send(payloadAlias, "alias", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
 
-	if group, exists := wdt.EventsCountMap["groups"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
 		t.Logf("Sending groups events")
-		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wdt.UserId, wdt.MsgId()))
-			send(payloadGroup, "group", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
 		}
 	}
 }
 
-func SendModifiedEvents(t testing.TB, wdt *WareHouseDestinationTest) {
-	if identify, exists := wdt.EventsCountMap["identifies"]; exists {
+func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+
+	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending modified identifies events")
-		for i := 0; i < identify; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			send(payloadIdentify, "identify", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
 
-	if track, exists := wdt.EventsCountMap["tracks"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending modified tracks events")
-		for i := 0; i < track; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String(), wdt.Event))
-			send(payloadTrack, "track", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String(), wareHouseTest.Event))
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
 
-	if page, exists := wdt.EventsCountMap["pages"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
 		t.Logf("Sending modified pages events")
-		for i := 0; i < page; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			send(payloadPage, "page", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
 
-	if screen, exists := wdt.EventsCountMap["screens"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
 		t.Logf("Sending modified screens events")
-		for i := 0; i < screen; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			send(payloadScreen, "screen", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
 
-	if alias, exists := wdt.EventsCountMap["aliases"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
 		t.Logf("Sending modified aliases events")
-		for i := 0; i < alias; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			send(payloadAlias, "alias", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
 
-	if group, exists := wdt.EventsCountMap["groups"]; exists {
+	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
 		t.Logf("Sending modified groups events")
-		for i := 0; i < group; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wdt.UserId, uuid.Must(uuid.NewV4()).String()))
-			send(payloadGroup, "group", wdt.WriteKey)
+		for i := 0; i < count; i++ {
+			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
 		}
 	}
 }
 
-func send(payload *strings.Reader, eventType, writeKey string) {
-	log.Printf("Sending event: %s for writeKey: %s", eventType, writeKey)
+func send(t testing.TB, payload *strings.Reader, eventType, writeKey string) {
+	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
 
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
 	method := "POST"
@@ -280,7 +283,7 @@ func send(payload *strings.Reader, eventType, writeKey string) {
 
 	req, err := http.NewRequest(method, url, payload)
 	if err != nil {
-		log.Printf("Error occurred while creating new http request for sending event with error: %s", err.Error())
+		t.Errorf("Error occurred while creating new http request for sending event with error: %s", err.Error())
 		return
 	}
 
@@ -293,19 +296,19 @@ func send(payload *strings.Reader, eventType, writeKey string) {
 
 	res, err := httpClient.Do(req)
 	if err != nil {
-		log.Printf("Error occurred while making http request for sending event with error: %s", err.Error())
+		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	_, err = io.ReadAll(res.Body)
 	if err != nil {
-		log.Printf("Error occurred while reading http response for sending event with error: %s", err.Error())
+		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
 		return
 	}
 	if res.Status != "200 OK" {
 		return
 	}
 
-	log.Printf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
+	t.Logf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
 }
