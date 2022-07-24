@@ -74,8 +74,6 @@ var (
 var jobsDB *JobsDBResource
 
 var (
-	SnowflakeIntegrationTestUserCred  = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
-	RedshiftIntegrationTestUserCred   = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
 	DatabricksIntegrationTestUserCred = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
 )
 
