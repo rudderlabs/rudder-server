@@ -55,7 +55,7 @@ type WareHouseTest struct {
 }
 
 type ISetup interface {
-	TestConnection()
+	TestConnection() error
 }
 
 var (
@@ -102,7 +102,9 @@ func Run(m *testing.M, setup ISetup) int {
 	initialize()
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
-	setup.TestConnection()
+	if err := setup.TestConnection(); err != nil {
+		log.Fatalf("Could not complete test connection with err: %s", err.Error())
+	}
 	return m.Run()
 }
 
@@ -315,13 +317,9 @@ func JsonEscape(i string) (string, error) {
 	return strings.Trim(string(b), `"`), nil
 }
 
-func ConnectWithBackoff(operation func() error) {
-	var err error
-
+func ConnectWithBackoff(operation func() error) error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(ConnectBackoffDuration), uint64(ConnectBackoffRetryMax))
-	if err = backoff.Retry(operation, backoffWithMaxRetry); err != nil {
-		log.Panicf("could not connect to warehouse with error: %s", err.Error())
-	}
+	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
 func GWJobsForUserIdWriteKey() string {
