@@ -5,13 +5,20 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"text/template"
+)
 
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+var (
+	snowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
+	redshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
+	deltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+	workspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
 )
 
 func main() {
 	log.Println("Started populating workspace config for warehouse integration tests")
+
 	credentials, err := populateCredentials()
 	if err != nil {
 		log.Panicf("Error occurred while populating credentilas with error: %s", err.Error())
@@ -22,9 +29,14 @@ func main() {
 		log.Panicf("Error occurred while parsing files for template path with error: %s", err.Error())
 	}
 
-	f, err := os.Create("warehouse/testdata/workspaceConfig/config.json")
+	err = os.MkdirAll(filepath.Dir(workspaceConfigPath), os.ModePerm)
 	if err != nil {
-		log.Panicf("Error occurred while creating temp path with error: %s", err.Error())
+		log.Panicf("Error occurred while making directory paths error: %s", err.Error())
+	}
+
+	f, err := os.OpenFile(workspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
+	if err != nil {
+		log.Panicf("Error occurred while creating workspaceConfig.json file with error: %s", err.Error())
 	}
 	defer func() { _ = f.Close() }()
 
@@ -32,51 +44,47 @@ func main() {
 	if err != nil {
 		log.Panicf("Error occurred while executing template path files with error: %s", err.Error())
 	}
+
 	log.Println("Completed populating workspace config for warehouse integration tests")
 }
 
 func populateCredentials() (values map[string]string, err error) {
 	values = make(map[string]string)
 
-	log.Println("Populating snowflake credentials")
-	sfCredentials, err := credentialsFromEnv(testhelper.SnowflakeIntegrationTestUserCred)
-	if err != nil {
+	var credentials map[string]string
+	if credentials, err = credentialsFromKey(snowflakeIntegrationTestCredentials); err != nil {
 		return
 	}
-	for k, v := range sfCredentials {
+	for k, v := range credentials {
 		values[fmt.Sprintf("sf_%s", k)] = v
 	}
 
-	log.Println("Populating redshift credentials")
-	rsCredentials, err := credentialsFromEnv(testhelper.RedshiftIntegrationTestUserCred)
-	if err != nil {
+	if credentials, err = credentialsFromKey(redshiftIntegrationTestCredentials); err != nil {
 		return
 	}
-	for k, v := range rsCredentials {
+	for k, v := range credentials {
 		values[fmt.Sprintf("rs_%s", k)] = v
 	}
 
-	log.Println("Populating deltalake credentials")
-	dlCredentials, err := credentialsFromEnv(testhelper.DatabricksIntegrationTestUserCred)
-	if err != nil {
+	if credentials, err = credentialsFromKey(deltalakeIntegrationTestCredentials); err != nil {
 		return
 	}
-	for k, v := range dlCredentials {
+	for k, v := range credentials {
 		values[fmt.Sprintf("dl_%s", k)] = v
 	}
 	return
 }
 
-func credentialsFromEnv(env string) (credentials map[string]string, err error) {
-	cred := os.Getenv(env)
-	if cred == "" {
-		err = fmt.Errorf("error occurred while getting env variable %s", env)
+func credentialsFromKey(key string) (credentials map[string]string, err error) {
+	cred, exists := os.LookupEnv(key)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while setting up the workspace config", key)
 		return
 	}
 
 	err = json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling env variable %s test credentials with error: %w", env, err)
+		err = fmt.Errorf("error occurred while unmarshalling test credentials for key %s with err: %s", key, err.Error())
 		return
 	}
 	return
