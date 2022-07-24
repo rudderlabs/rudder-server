@@ -99,5 +99,5 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration || make logs-warehouse-integration
 
 run-warehouse-integration: setup-warehouse-integration
-	docker-compose -f warehouse/docker-compose.test.yml exec -T backend go test -v ./warehouse/... -p 1 -timeout 30m -tags=whintegration || make logs-warehouse-integration
+	docker-compose -f warehouse/docker-compose.test.yml exec -T backend go test -v ./warehouse/... -p 5 -timeout 30m -count 1 || make logs-warehouse-integration
 	make cleanup-warehouse-integration
