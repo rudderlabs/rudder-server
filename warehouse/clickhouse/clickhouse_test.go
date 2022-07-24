@@ -268,11 +268,11 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 		}
 
-		whDestTest.Reset(warehouseutils.CLICKHOUSE, true)
+		whDestTest.SetUserId(warehouseutils.CLICKHOUSE)
 		testhelper.SendEvents(t, whDestTest)
 		testhelper.VerifyingDestination(t, whDestTest)
 
-		whDestTest.Reset(warehouseutils.CLICKHOUSE, true)
+		whDestTest.SetUserId(warehouseutils.CLICKHOUSE)
 		testhelper.SendModifiedEvents(t, whDestTest)
 		testhelper.VerifyingDestination(t, whDestTest)
 	})
@@ -288,11 +288,11 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 		}
 
-		warehouseTest.Reset(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), false)
+		warehouseTest.SetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.VerifyingDestination(t, warehouseTest)
 
-		warehouseTest.Reset(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), false)
+		warehouseTest.SetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
 		initializeClickhouseClusterMode(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 

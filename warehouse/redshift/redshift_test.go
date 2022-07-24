@@ -74,11 +74,11 @@ func TestRedshiftIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 	}
 
-	warehouseTest.Reset(warehouseutils.RS, true)
+	warehouseTest.SetUserId(warehouseutils.RS)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 
-	warehouseTest.Reset(warehouseutils.RS, true)
+	warehouseTest.SetUserId(warehouseutils.RS)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 }

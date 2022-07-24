@@ -15,7 +15,6 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/gofrs/uuid"
-	"github.com/iancoleman/strcase"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
@@ -49,9 +48,6 @@ type WareHouseTest struct {
 	VerifyingTablesFrequency time.Duration
 	EventsCountMap           EventsCountMap
 	UserId                   string
-	Event                    string
-	Tables                   []string
-	PrimaryKeys              []string
 	MessageId                string
 }
 
@@ -82,17 +78,8 @@ func (w *WareHouseTest) MsgId() string {
 	return w.MessageId
 }
 
-func (w *WareHouseTest) Reset(destType string, randomEvent bool) {
-	randomness := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), randomness)
-
-	if randomEvent {
-		w.Event = fmt.Sprintf("Product Track %s", randomness)
-	} else {
-		w.Event = "Product Track"
-	}
-	w.EventsCountMap[strcase.ToSnake(w.Event)] = 1
-	w.Tables = []string{"identifies", "users", "tracks", strcase.ToSnake(w.Event), "pages", "screens", "aliases", "groups"}
+func (w *WareHouseTest) SetUserId(destType string) {
+	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 }
 
 func Run(m *testing.M, setup ISetup) int {
@@ -277,14 +264,16 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 }
 
 func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
-	var count int64
-	for _, table := range wareHouseTest.Tables {
-		primaryKey := "user_id"
-		if table == "users" {
-			primaryKey = "id"
+	primaryKey := func(tableName string) string {
+		if tableName == "users" {
+			return "id"
 		}
+		return "user_id"
+	}
 
-		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wareHouseTest.Schema, table, primaryKey, wareHouseTest.UserId)
+	var count int64
+	for _, table := range []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"} {
+		sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wareHouseTest.Schema, table, primaryKey(table), wareHouseTest.UserId)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
 		require.Contains(t, wareHouseTest.EventsCountMap, table)
@@ -373,14 +362,15 @@ func BRTJobsForUserId() string {
 
 func DefaultEventMap() EventsCountMap {
 	return EventsCountMap{
-		"identifies": 1,
-		"users":      1,
-		"tracks":     1,
-		"pages":      1,
-		"screens":    1,
-		"aliases":    1,
-		"groups":     1,
-		"gateway":    6,
-		"batchRT":    8,
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"pages":         1,
+		"product_track": 1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       6,
+		"batchRT":       8,
 	}
 }

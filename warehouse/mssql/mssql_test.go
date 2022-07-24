@@ -58,11 +58,11 @@ func TestMSSQLIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
 
-	warehouseTest.Reset(warehouseutils.MSSQL, true)
+	warehouseTest.SetUserId(warehouseutils.MSSQL)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 
-	warehouseTest.Reset(warehouseutils.MSSQL, true)
+	warehouseTest.SetUserId(warehouseutils.MSSQL)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 }

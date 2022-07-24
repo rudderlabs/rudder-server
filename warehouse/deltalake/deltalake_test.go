@@ -3,6 +3,8 @@ package deltalake_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gofrs/uuid"
+	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"testing"
@@ -16,113 +18,150 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
-type DeltalakeCredentials struct {
-	Host          string `json:"host"`
-	Port          string `json:"port"`
-	Path          string `json:"path"`
-	Token         string `json:"token"`
-	AccountName   string `json:"accountName"`
-	AccountKey    string `json:"accountKey"`
-	ContainerName string `json:"containerName"`
+type TestHandle struct {
+	DB        *databricks.DBHandleT
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
-type DeltalakeTest struct {
-	Credentials *DeltalakeCredentials
-	DB          *databricks.DBHandleT
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
-}
+var (
+	handle *TestHandle
+)
 
-var DLTest *DeltalakeTest
+const (
+	TestCredentialsKey = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+)
 
-func credentials() (credentials *DeltalakeCredentials) {
-	cred := os.Getenv(testhelper.DatabricksIntegrationTestUserCred)
-	if cred == "" {
-		log.Panicf("Error occurred while getting env variable %s", testhelper.DatabricksIntegrationTestUserCred)
+func databricksCredentials() (databricksCredentia databricks.CredentialsT, err error) {
+	cred, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Deltalake test", TestCredentialsKey)
+		return
 	}
 
-	var err error
-	err = json.Unmarshal([]byte(cred), &credentials)
+	err = json.Unmarshal([]byte(cred), &databricksCredentia)
 	if err != nil {
-		log.Panicf("Error occurred while unmarshalling deltalake integration test credentials with error: %s", err.Error())
+		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
+		return
 	}
 	return
 }
 
-// Do cleanup once the setup is completed.
-func (*DeltalakeTest) SetUpDestination() {
-	DLTest.WriteKey = "sToFgoilA0U1WxNeW1gdgUVDsEW"
-	DLTest.Credentials = credentials()
-	DLTest.EventsMap = testhelper.DefaultEventMap()
+func (*TestHandle) TestConnection() error {
+	credentials, err := databricksCredentials()
+	if err != nil {
+		return err
+	}
 
-	testhelper.ConnectWithBackoff(func() (err error) {
-		DLTest.DB, err = deltalake.Connect(&databricks.CredentialsT{
-			Host:  DLTest.Credentials.Host,
-			Port:  DLTest.Credentials.Port,
-			Path:  DLTest.Credentials.Path,
-			Token: DLTest.Credentials.Token,
-		}, 0)
+	err = testhelper.ConnectWithBackoff(func() (err error) {
+		handle.DB, err = deltalake.Connect(&credentials, 0)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
 			return
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for deltalake with err: %s", err.Error())
+	}
+	return nil
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
-	t.Skip()
-	verify := func() {
-		whDestTest := &testhelper.WareHouseDestinationTest{
+	t.Run("Merge Mode", func(t *testing.T) {
+		require.NoError(t, config.SetsAndWriteConfig([]config.KeyValue{
+			{
+				Key:   "Warehouse.deltalake.loadTableStrategy",
+				Value: "MERGE",
+			},
+		}))
+
+		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
-				DBHandleT: DLTest.DB,
+				DBHandleT: handle.DB,
 				Type:      client.DBClient,
 			},
-			WriteKey:                 DLTest.WriteKey,
+			WriteKey:                 handle.WriteKey,
 			Schema:                   "deltalake_wh_integration",
-			EventsCountMap:           DLTest.EventsMap,
+			EventsCountMap:           handle.EventsMap,
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 		}
 
-		whDestTest.Reset(warehouseutils.DELTALAKE, true)
-		testhelper.SendEvents(t, whDestTest)
-		testhelper.VerifyingDestination(t, whDestTest)
+		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
+		warehouseTest.SetUserId(warehouseutils.DELTALAKE)
 
-		whDestTest.Reset(warehouseutils.DELTALAKE, true)
-		testhelper.SendModifiedEvents(t, whDestTest)
-		testhelper.VerifyingDestination(t, whDestTest)
-	}
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 
-	// Merge mode
-	t.Run("With Merge Mode With Partition", func(t *testing.T) {
-		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "MERGE")
-		config.SetAndWrite("Warehouse.deltalake.enablePartition", true)
-
-		verify()
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
+		}
+		testhelper.VerifyingDestination(t, warehouseTest)
 	})
-	t.Run("With Merge Mode Without Partition", func(t *testing.T) {
-		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "MERGE")
-		config.SetAndWrite("Warehouse.deltalake.enablePartition", false)
+	t.Run("Append Mode", func(t *testing.T) {
+		require.NoError(t, config.SetsAndWriteConfig([]config.KeyValue{
+			{
+				Key:   "Warehouse.deltalake.loadTableStrategy",
+				Value: "APPEND",
+			},
+		}))
 
-		verify()
-	})
+		warehouseTest := &testhelper.WareHouseTest{
+			Client: &client.Client{
+				DBHandleT: handle.DB,
+				Type:      client.DBClient,
+			},
+			WriteKey:                 handle.WriteKey,
+			Schema:                   "deltalake_wh_integration",
+			EventsCountMap:           handle.EventsMap,
+			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
+		}
 
-	// Append mode
-	t.Run("With Append Mode With Partition", func(t *testing.T) {
-		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "APPEND")
-		config.SetAndWrite("Warehouse.deltalake.enablePartition", true)
+		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
+		warehouseTest.SetUserId(warehouseutils.DELTALAKE)
 
-		verify()
-	})
-	t.Run("With Append Mode Without Partition", func(t *testing.T) {
-		config.SetAndWrite("Warehouse.deltalake.loadTableStrategy", "APPEND")
-		config.SetAndWrite("Warehouse.deltalake.enablePartition", false)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 
-		verify()
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    4,
+			"users":         4,
+			"tracks":        4,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        4,
+			"gateway":       6,
+			"batchRT":       8,
+		}
+		testhelper.VerifyingDestination(t, warehouseTest)
 	})
 }
 
 func TestMain(m *testing.M) {
-	DLTest = &DeltalakeTest{}
-	os.Exit(testhelper.Run(m, DLTest))
+	_, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		log.Println("Skipping Deltalake Test as the Test credentials does not exits.")
+		return
+	}
+
+	handle = &TestHandle{
+		WriteKey:  "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		EventsMap: testhelper.DefaultEventMap(),
+	}
+	os.Exit(testhelper.Run(m, handle))
 }

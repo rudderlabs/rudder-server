@@ -2247,10 +2247,10 @@
       "destinations": [
         {
           "config": {
-            "host": "{{.dl_host}}",
-            "port": "{{.dl_port}}",
-            "path": "{{.dl_path}}",
-            "token": "{{.dl_token}}",
+            "host": "{{.dl_Host}}",
+            "port": "{{.dl_Port}}",
+            "path": "{{.dl_Path}}",
+            "token": "{{.dl_Token}}",
             "namespace": "",
             "bucketProvider": "AZURE_BLOB",
             "containerName": "{{.dl_containerName}}",

@@ -58,11 +58,11 @@ func TestPostgresIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
 	}
 
-	warehouseTest.Reset(warehouseutils.POSTGRES, true)
+	warehouseTest.SetUserId(warehouseutils.POSTGRES)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 
-	warehouseTest.Reset(warehouseutils.POSTGRES, true)
+	warehouseTest.SetUserId(warehouseutils.POSTGRES)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 }

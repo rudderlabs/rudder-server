@@ -56,8 +56,6 @@ var (
 	loadTableStrategy  string
 )
 
-var enablePartition bool
-
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
@@ -138,7 +136,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
-	config.RegisterBoolConfigVariable(true, &enablePartition, true, "Warehouse.deltalake.enablePartition")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -153,7 +150,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
-		if name == "received_at" && enablePartition {
+		if name == "received_at" {
 			generatedColumnSQL := "DATE GENERATED ALWAYS AS ( CAST(received_at AS DATE) )"
 			return fmt.Sprintf(`%s%s %s, %s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]), prefix, "event_date", generatedColumnSQL)
 		}
@@ -764,7 +761,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 	tableLocationSql := dl.getTableLocationSql(tableName)
 	var partitionedSql string
-	if _, ok := columns["received_at"]; ok && enablePartition {
+	if _, ok := columns["received_at"]; ok {
 		partitionedSql = `PARTITIONED BY(event_date)`
 	}
 

@@ -28,7 +28,7 @@ const (
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "track",
-	  "event": "%s",
+	  "event": "Product Track",
 	  "properties": {
 		"review_id": "12345",
 		"product_id": "123",
@@ -92,7 +92,7 @@ const (
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "track",
-	  "event": "%s",
+	  "event": "Product Track",
 	  "properties": {
 		"review_id": "12345",
 		"product_id": "123",
@@ -184,7 +184,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending tracks events")
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Event))
+			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
@@ -236,7 +236,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending modified tracks events")
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String(), wareHouseTest.Event))
+			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}

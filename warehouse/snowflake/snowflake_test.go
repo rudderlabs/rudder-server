@@ -75,11 +75,11 @@ func TestSnowflakeIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 	}
 
-	warehouseTest.Reset(warehouseutils.SNOWFLAKE, true)
+	warehouseTest.SetUserId(warehouseutils.SNOWFLAKE)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 
-	warehouseTest.Reset(warehouseutils.SNOWFLAKE, true)
+	warehouseTest.SetUserId(warehouseutils.SNOWFLAKE)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.VerifyingDestination(t, warehouseTest)
 }
