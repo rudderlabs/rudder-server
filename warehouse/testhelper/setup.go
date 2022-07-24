@@ -1,9 +1,12 @@
 package testhelper
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"strconv"
 	"strings"
@@ -57,9 +60,9 @@ type ISetup interface {
 
 var (
 	WaitFor2Minute            = 2 * time.Minute
-	WaitFor5Minute            = 5 * time.Minute
+	WaitFor10Minute           = 10 * time.Minute
 	DefaultQueryFrequency     = 100 * time.Millisecond
-	LongRunningQueryFrequency = 5000 * time.Millisecond
+	LongRunningQueryFrequency = 10000 * time.Millisecond
 )
 
 var (
@@ -283,7 +286,7 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor5Minute, wareHouseTest.VerifyingTablesFrequency)
+		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.VerifyingTablesFrequency)
 	}
 }
 
@@ -373,4 +376,18 @@ func DefaultEventMap() EventsCountMap {
 		"gateway":       6,
 		"batchRT":       8,
 	}
+}
+
+func SetConfig(kvs []warehouseutils.KeyValue) error {
+	payload, err := json.Marshal(&kvs)
+	if err != nil {
+		return fmt.Errorf("error marshalling while setting config with err: %s", err.Error())
+	}
+
+	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
+	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
+	if err != nil {
+		return fmt.Errorf("error while making post request to set config with err: %s", err.Error())
+	}
+	return nil
 }

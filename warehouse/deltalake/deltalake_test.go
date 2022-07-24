@@ -12,16 +12,14 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
 type TestHandle struct {
-	DB        *databricks.DBHandleT
-	EventsMap testhelper.EventsCountMap
-	WriteKey  string
+	DB       *databricks.DBHandleT
+	WriteKey string
 }
 
 var (
@@ -69,7 +67,7 @@ func (*TestHandle) TestConnection() error {
 
 func TestDeltalakeIntegration(t *testing.T) {
 	t.Run("Merge Mode", func(t *testing.T) {
-		require.NoError(t, config.SetsAndWriteConfig([]config.KeyValue{
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.deltalake.loadTableStrategy",
 				Value: "MERGE",
@@ -83,10 +81,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 			},
 			WriteKey:                 handle.WriteKey,
 			Schema:                   "deltalake_wh_integration",
-			EventsCountMap:           handle.EventsMap,
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 		}
 
+		// Sending the first set of events.
+		// Since we handle dedupe on the staging files we need to check if the first set of events reached the destination.
+		// Later we send the same set of events to verify the Merge.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
 		warehouseTest.SetUserId(warehouseutils.DELTALAKE)
 
@@ -108,9 +109,33 @@ func TestDeltalakeIntegration(t *testing.T) {
 			"batchRT":       32,
 		}
 		testhelper.VerifyingDestination(t, warehouseTest)
+
+		// This time we are not resetting the MessageID as well as the UserID.
+		// We will be using the same one for Merge.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       48,
+			"batchRT":       64,
+		}
+		testhelper.VerifyingDestination(t, warehouseTest)
 	})
+
 	t.Run("Append Mode", func(t *testing.T) {
-		require.NoError(t, config.SetsAndWriteConfig([]config.KeyValue{
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.deltalake.loadTableStrategy",
 				Value: "APPEND",
@@ -124,10 +149,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 			},
 			WriteKey:                 handle.WriteKey,
 			Schema:                   "deltalake_wh_integration",
-			EventsCountMap:           handle.EventsMap,
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 		}
 
+		// Sending the first set of events.
+		// Since we handle dedupe on the staging files we need to check if the first set of events reached the destination.
+		// Later we send the same set of events to verify Append.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
 		warehouseTest.SetUserId(warehouseutils.DELTALAKE)
 
@@ -137,16 +165,39 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         4,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        4,
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
 			"gateway":       24,
 			"batchRT":       32,
+		}
+		testhelper.VerifyingDestination(t, warehouseTest)
+
+		// This time we are not resetting the MessageID as well as the UserID.
+		// We will be using the same one for Append.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    2,
+			"users":         2,
+			"tracks":        2,
+			"product_track": 2,
+			"pages":         2,
+			"screens":       2,
+			"aliases":       2,
+			"groups":        2,
+			"gateway":       48,
+			"batchRT":       64,
 		}
 		testhelper.VerifyingDestination(t, warehouseTest)
 	})
@@ -160,8 +211,7 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey:  "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		EventsMap: testhelper.DefaultEventMap(),
+		WriteKey: "sToFgoilA0U1WxNeW1gdgUVDsEW",
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

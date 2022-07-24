@@ -1,11 +1,15 @@
 package warehouseutils
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha1"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -178,6 +182,11 @@ type (
 	SchemaT      map[string]map[string]string
 	TableSchemaT map[string]string
 )
+
+type KeyValue struct {
+	Key   string
+	Value interface{}
+}
 
 type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
@@ -933,4 +942,28 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
 	}
 	return timeWindowFormat
+}
+
+func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, timeout time.Duration) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return []byte{}, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(config.GetWorkspaceToken(), "")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	var respBody []byte
+	if resp != nil && resp.Body != nil {
+		respBody, _ = io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+
+	return respBody, nil
 }

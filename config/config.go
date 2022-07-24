@@ -32,11 +32,6 @@ type ConfigVar struct {
 	keys            []string
 }
 
-type KeyValue struct {
-	Key   string
-	Value interface{}
-}
-
 func newConfigVar(value, multiplier, defaultValue interface{}, isHotReloadable bool, keys []string) *ConfigVar {
 	return &ConfigVar{
 		value:           value,
@@ -769,11 +764,11 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-func SetsAndWriteConfig(keyValues []KeyValue) error {
-	for _, kv := range keyValues {
-		viper.Set(kv.Key, kv.Value)
-	}
-	return viper.WriteConfig()
+func SetForce(key string, value interface{}) {
+	viper.Set(key, value)
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+	_ = checkAndHotReloadConfig(hotReloadableConfig)
 }
 
 // GetWorkspaceToken returns the workspace token provided in the environment variables
