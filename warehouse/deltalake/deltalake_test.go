@@ -104,8 +104,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
+			"gateway":       24,
+			"batchRT":       32,
 		}
 		testhelper.VerifyingDestination(t, warehouseTest)
 	})
@@ -145,8 +145,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 			"screens":       4,
 			"aliases":       4,
 			"groups":        4,
-			"gateway":       6,
-			"batchRT":       8,
+			"gateway":       24,
+			"batchRT":       32,
 		}
 		testhelper.VerifyingDestination(t, warehouseTest)
 	})
