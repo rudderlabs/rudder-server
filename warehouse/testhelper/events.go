@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/gofrs/uuid"
 )
 
 const (
@@ -228,7 +226,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
 		t.Logf("Sending modified identifies events")
 		for i := 0; i < count; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
@@ -236,7 +234,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
 		t.Logf("Sending modified tracks events")
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
@@ -244,7 +242,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
 		t.Logf("Sending modified pages events")
 		for i := 0; i < count; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
@@ -252,7 +250,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
 		t.Logf("Sending modified screens events")
 		for i := 0; i < count; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
@@ -260,7 +258,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
 		t.Logf("Sending modified aliases events")
 		for i := 0; i < count; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
@@ -268,7 +266,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
 		t.Logf("Sending modified groups events")
 		for i := 0; i < count; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, uuid.Must(uuid.NewV4()).String()))
+			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
 		}
 	}
