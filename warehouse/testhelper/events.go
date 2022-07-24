@@ -275,6 +275,8 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 }
 
 func send(t testing.TB, payload *strings.Reader, eventType, writeKey string) {
+	t.Helper()
+
 	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
 
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
