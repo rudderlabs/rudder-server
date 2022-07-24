@@ -30,14 +30,14 @@ const (
 	TestCredentialsKey = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
 )
 
-func databricksCredentials() (databricksCredentia databricks.CredentialsT, err error) {
+func databricksCredentials() (databricksCredentials databricks.CredentialsT, err error) {
 	cred, exists := os.LookupEnv(TestCredentialsKey)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Deltalake test", TestCredentialsKey)
 		return
 	}
 
-	err = json.Unmarshal([]byte(cred), &databricksCredentia)
+	err = json.Unmarshal([]byte(cred), &databricksCredentials)
 	if err != nil {
 		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
 		return
