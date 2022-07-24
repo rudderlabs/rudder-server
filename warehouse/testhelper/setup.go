@@ -71,10 +71,8 @@ var (
 	ConnectBackoffRetryMax = 5
 )
 
-var jobsDB *JobsDBResource
-
 var (
-	DatabricksIntegrationTestUserCred = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+	jobsDB *JobsDBResource
 )
 
 func (w *WareHouseTest) MsgId() string {

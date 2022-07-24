@@ -20,7 +20,9 @@ type TestHandle struct {
 	WriteKey  string
 }
 
-var handle *TestHandle
+var (
+	handle *TestHandle
+)
 
 const (
 	TestCredentialsKey = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
