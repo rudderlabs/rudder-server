@@ -14,84 +14,84 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type SnowflakeCredentials struct {
-	Account     string `json:"account"`
-	Warehouse   string `json:"warehouse"`
-	Database    string `json:"database"`
-	User        string `json:"user"`
-	Password    string `json:"password"`
-	BucketName  string `json:"bucketName"`
-	AccessKeyID string `json:"accessKeyID"`
-	AccessKey   string `json:"accessKey"`
+type TestHandle struct {
+	DB        *sql.DB
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
-type SnowflakeTest struct {
-	Credentials *SnowflakeCredentials
-	DB          *sql.DB
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
-}
+var handle *TestHandle
 
-var SFTest *SnowflakeTest
+const (
+	TestCredentialsKey = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
+)
 
-func credentials() (sfCredentials *SnowflakeCredentials) {
-	cred := os.Getenv(testhelper.SnowflakeIntegrationTestUserCred)
-	if cred == "" {
-		log.Panicf("Error occurred while getting env variable %s", testhelper.SnowflakeIntegrationTestUserCred)
+func snowflakeCredentials() (snowflakeCredentials snowflake.SnowflakeCredentialsT, err error) {
+	cred, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Snowflake test", TestCredentialsKey)
+		return
 	}
 
-	var err error
-	err = json.Unmarshal([]byte(cred), &sfCredentials)
+	err = json.Unmarshal([]byte(cred), &snowflakeCredentials)
 	if err != nil {
-		log.Panicf("Error occurred while unmarshalling snowflake integration test credentials with error: %s", err.Error())
+		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
+		return
 	}
 	return
 }
 
-func (*SnowflakeTest) SetUpDestination() {
-	SFTest.WriteKey = "2eSJyYtqwcFiUILzXv2fcNIrWO7"
-	SFTest.Credentials = credentials()
-	SFTest.EventsMap = testhelper.DefaultEventMap()
+func (*TestHandle) TestConnection() error {
+	credentials, err := snowflakeCredentials()
+	if err != nil {
+		return err
+	}
 
-	testhelper.ConnectWithBackoff(func() (err error) {
-		SFTest.DB, err = snowflake.Connect(snowflake.SnowflakeCredentialsT{
-			Account:  SFTest.Credentials.Account,
-			WHName:   SFTest.Credentials.Warehouse,
-			DBName:   SFTest.Credentials.Database,
-			Username: SFTest.Credentials.User,
-			Password: SFTest.Credentials.Password,
-		})
+	err = testhelper.ConnectWithBackoff(func() (err error) {
+		handle.DB, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
 			return
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for snowflake with err: %s", err.Error())
+	}
+	return nil
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
-	t.Skip()
-	whDestTest := &testhelper.WareHouseDestinationTest{
+	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  SFTest.DB,
+			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 SFTest.WriteKey,
+		WriteKey:                 handle.WriteKey,
 		Schema:                   "SNOWFLAKE_WH_INTEGRATION",
-		EventsCountMap:           SFTest.EventsMap,
+		EventsCountMap:           handle.EventsMap,
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 	}
 
-	whDestTest.Reset(warehouseutils.SNOWFLAKE, true)
-	testhelper.SendEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.SNOWFLAKE, true)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 
-	whDestTest.Reset(warehouseutils.SNOWFLAKE, true)
-	testhelper.SendModifiedEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.SNOWFLAKE, true)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
-	SFTest = &SnowflakeTest{}
-	os.Exit(testhelper.Run(m, SFTest))
+	_, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		log.Println("Skipping Snowflake Test as the Test credentials does not exits.")
+		return
+	}
+
+	handle = &TestHandle{
+		WriteKey:  "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		EventsMap: testhelper.DefaultEventMap(),
+	}
+	os.Exit(testhelper.Run(m, handle))
 }

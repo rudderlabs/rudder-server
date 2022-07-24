@@ -14,84 +14,85 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type RedshiftCredentials struct {
-	Host        string `json:"host"`
-	Port        string `json:"port"`
-	Database    string `json:"database"`
-	User        string `json:"user"`
-	Password    string `json:"password"`
-	BucketName  string `json:"bucketName"`
-	AccessKeyID string `json:"accessKeyID"`
-	AccessKey   string `json:"accessKey"`
+type TestHandle struct {
+	DB        *sql.DB
+	EventsMap testhelper.EventsCountMap
+	WriteKey  string
 }
 
-type RedshiftTest struct {
-	Credentials *RedshiftCredentials
-	DB          *sql.DB
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
-}
+var (
+	handle *TestHandle
+)
 
-var RSTest *RedshiftTest
+const (
+	TestCredentialsKey = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
+)
 
-func credentials() (rsCredentials *RedshiftCredentials) {
-	cred := os.Getenv(testhelper.RedshiftIntegrationTestUserCred)
-	if cred == "" {
-		log.Panicf("Error occurred while getting env variable %s", testhelper.RedshiftIntegrationTestUserCred)
+func redshiftCredentials() (rsCredentials redshift.RedshiftCredentialsT, err error) {
+	cred, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Redshift test", TestCredentialsKey)
+		return
 	}
 
-	var err error
 	err = json.Unmarshal([]byte(cred), &rsCredentials)
 	if err != nil {
-		log.Panicf("Error occurred while unmarshalling redshift integration test credentials with error: %s", err.Error())
+		err = fmt.Errorf("error occurred while unmarshalling redshift test credentials with err: %s", err.Error())
 	}
 	return
 }
 
-func (*RedshiftTest) SetUpDestination() {
-	RSTest.WriteKey = "JAAwdCxmM8BIabKERsUhPNmMmdf"
-	RSTest.Credentials = credentials()
-	RSTest.EventsMap = testhelper.DefaultEventMap()
+func (*TestHandle) TestConnection() error {
+	credentials, err := redshiftCredentials()
+	if err != nil {
+		return err
+	}
 
-	testhelper.ConnectWithBackoff(func() (err error) {
-		RSTest.DB, err = redshift.Connect(redshift.RedshiftCredentialsT{
-			Host:     RSTest.Credentials.Host,
-			Port:     RSTest.Credentials.Port,
-			DbName:   RSTest.Credentials.Database,
-			Username: RSTest.Credentials.User,
-			Password: RSTest.Credentials.Password,
-		})
+	err = testhelper.ConnectWithBackoff(func() (err error) {
+		handle.DB, err = redshift.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse redshift with error: %w", err)
 			return
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for redshift with err: %s", err.Error())
+	}
+	return nil
 }
 
 func TestRedshiftIntegration(t *testing.T) {
-	t.Skip()
-	whDestTest := &testhelper.WareHouseDestinationTest{
+	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  RSTest.DB,
+			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 RSTest.WriteKey,
+		WriteKey:                 handle.WriteKey,
 		Schema:                   "redshift_wh_integration",
-		EventsCountMap:           RSTest.EventsMap,
+		EventsCountMap:           handle.EventsMap,
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 	}
 
-	whDestTest.Reset(warehouseutils.RS, true)
-	testhelper.SendEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.RS, true)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 
-	whDestTest.Reset(warehouseutils.RS, true)
-	testhelper.SendModifiedEvents(t, whDestTest)
-	testhelper.VerifyingDestination(t, whDestTest)
+	warehouseTest.Reset(warehouseutils.RS, true)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.VerifyingDestination(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
-	RSTest = &RedshiftTest{}
-	os.Exit(testhelper.Run(m, RSTest))
+	_, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		log.Println("Skipping Redshift Test as the Test credentials does not exits.")
+		return
+	}
+
+	handle = &TestHandle{
+		WriteKey:  "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		EventsMap: testhelper.DefaultEventMap(),
+	}
+	os.Exit(testhelper.Run(m, handle))
 }

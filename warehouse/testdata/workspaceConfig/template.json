@@ -1710,11 +1710,11 @@
       "destinations": [
         {
           "config": {
-            "account": "{{.sf_account}}",
-            "database": "{{.sf_database}}",
-            "warehouse": "{{.sf_warehouse}}",
-            "user": "{{.sf_user}}",
-            "password": "{{.sf_password}}",
+            "account": "{{.sf_Account}}",
+            "database": "{{.sf_DBName}}",
+            "warehouse": "{{.sf_WHName}}",
+            "user": "{{.sf_Username}}",
+            "password": "{{.sf_Password}}",
             "cloudProvider": "AWS",
             "bucketName": "{{.sf_bucketName}}",
             "storageIntegration": "",
@@ -2027,11 +2027,11 @@
       "destinations": [
         {
           "config": {
-            "host": "{{.rs_host}}",
-            "port": "{{.rs_port}}",
-            "database": "{{.rs_database}}",
-            "user": "{{.rs_user}}",
-            "password": "{{.rs_password}}",
+            "host": "{{.rs_Host}}",
+            "port": "{{.rs_Port}}",
+            "database": "{{.rs_DbName}}",
+            "user": "{{.rs_Username}}",
+            "password": "{{.rs_Password}}",
             "bucketName": "{{.rs_bucketName}}",
             "accessKeyID": "{{.rs_accessKeyID}}",
             "accessKey": "{{.rs_accessKey}}",

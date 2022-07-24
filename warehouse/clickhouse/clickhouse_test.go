@@ -25,8 +25,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-func (*TestHandle) TestConnection() {
-	testhelper.ConnectWithBackoff(func() (err error) {
+func (*TestHandle) TestConnection() error {
+	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := clickhouse.CredentialsT{
 			Host:          "clickhouse",
 			User:          "rudder",
@@ -47,6 +47,9 @@ func (*TestHandle) TestConnection() {
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for clickhouse normal mode with err: %s", err.Error())
+	}
 
 	clusterCredentials := []struct {
 		Credentials *clickhouse.CredentialsT
@@ -104,7 +107,7 @@ func (*TestHandle) TestConnection() {
 	for i, chResource := range clusterCredentials {
 		var clickhouseDB *sql.DB
 
-		testhelper.ConnectWithBackoff(func() (err error) {
+		err = testhelper.ConnectWithBackoff(func() (err error) {
 			if clickhouseDB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
 				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %w", i, err)
 				return
@@ -115,8 +118,12 @@ func (*TestHandle) TestConnection() {
 			}
 			return
 		})
+		if err != nil {
+			return fmt.Errorf("error while running test connection for clickhouse cluster mode with err: %s", err.Error())
+		}
 		handle.ClusterDBs = append(handle.ClusterDBs, clickhouseDB)
 	}
+	return nil
 }
 
 func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHouseTest) {

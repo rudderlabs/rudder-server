@@ -20,8 +20,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-func (*TestHandle) TestConnection() {
-	testhelper.ConnectWithBackoff(func() (err error) {
+func (*TestHandle) TestConnection() error {
+	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",
@@ -40,6 +40,10 @@ func (*TestHandle) TestConnection() {
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for postgres with err: %s", err.Error())
+	}
+	return nil
 }
 
 func TestPostgresIntegration(t *testing.T) {

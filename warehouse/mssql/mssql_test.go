@@ -20,8 +20,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-func (*TestHandle) TestConnection() {
-	testhelper.ConnectWithBackoff(func() (err error) {
+func (*TestHandle) TestConnection() error {
+	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
@@ -40,6 +40,10 @@ func (*TestHandle) TestConnection() {
 		}
 		return
 	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for mssql with err: %s", err.Error())
+	}
+	return nil
 }
 
 func TestMSSQLIntegration(t *testing.T) {
