@@ -85,7 +85,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		}
 
 		// Sending the first set of events.
-		// Since we handle dedupe on the staging files we need to check if the first set of events reached the destination.
+		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		// Later we send the same set of events to verify the Merge.
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
@@ -153,7 +153,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		}
 
 		// Sending the first set of events.
-		// Since we handle dedupe on the staging files we need to check if the first set of events reached the destination.
+		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		// Later we send the same set of events to verify Append.
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
