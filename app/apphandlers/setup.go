@@ -124,7 +124,10 @@ func StartProcessor(
 	}
 
 	processorInstance := processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
+	processorInstance.Setup(
+		backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB,
+		clearDB, reporting, multitenantStat, transientSources, rsourcesService,
+	)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }

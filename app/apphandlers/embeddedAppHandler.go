@@ -248,7 +248,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, embedded.VersionHandler, rsourcesService)
+		err = gw.Setup(
+			embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
+			&rateLimiter, embedded.VersionHandler, rsourcesService,
+		)
+		if err != nil {
+			return fmt.Errorf("could not setup gateway: %w", err)
+		}
 		defer func() {
 			if err := gw.Shutdown(); err != nil {
 				pkgLogger.Warnf("Gateway shutdown error: %v", err)

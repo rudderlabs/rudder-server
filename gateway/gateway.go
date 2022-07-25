@@ -1436,7 +1436,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	return g.Wait()
 }
 
-// AdminHandler for Admin Operations
+// StartAdminHandler for Admin Operations
 func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
 		return err
@@ -1559,7 +1559,11 @@ Setup initializes this module:
 
 This function will block until backend config is initially received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
+func (gateway *HandleT) Setup(
+	application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
+	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rsourcesService rsources.JobService,
+) error {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
@@ -1602,9 +1606,11 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
 	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
-		rruntime.Go(func() {
-			gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
-		})
+		var err error
+		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		if err != nil {
+			return fmt.Errorf("could not setup suppress user feature: %w", err)
+		}
 	}
 
 	if enableEventSchemasFeature {
@@ -1620,7 +1626,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
 		cancel()
-		return
+		return fmt.Errorf("error while waiting for backend config: %w", err)
 	}
 
 	gateway.initUserWebRequestWorkers()
@@ -1648,6 +1654,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.collectMetrics(ctx)
 		return nil
 	}))
+	return nil
 }
 
 func (gateway *HandleT) Shutdown() error {
