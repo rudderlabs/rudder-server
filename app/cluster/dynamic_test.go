@@ -47,9 +47,10 @@ type mockLifecycle struct {
 	callCount *uint64
 }
 
-func (m *mockLifecycle) Start() {
+func (m *mockLifecycle) Start() error {
 	m.callOrder = atomic.AddUint64(m.callCount, 1)
 	m.status = "start"
+	return nil
 }
 
 func (m *mockLifecycle) Stop() {
