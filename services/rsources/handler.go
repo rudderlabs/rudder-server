@@ -106,7 +106,10 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 	return err
 }
 
-func (*sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) (err error) {
+func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) (err error) {
+	if sh.config.SkipFailedRecordsCollection {
+		return
+	}
 	stmt, err := tx.Prepare(`insert into "rsources_failed_keys" (
 		job_run_id,
 		task_run_id,
@@ -233,7 +236,7 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		return err
 	}
 
-	before := time.Now().Add(-config.GetDuration("RSOURCES_RETENTION", 24, time.Hour))
+	before := time.Now().Add(-config.GetDuration("Rsources.retention", 3*24, time.Hour))
 	sqlStatement := `delete from "%[1]s" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from 
 			(select job_run_id, max(ts) as mts from "%[1]s" group by job_run_id) lastUpdateToJobRunId
@@ -263,7 +266,7 @@ func (sh *sourcesHandler) init() error {
 	ctx := context.TODO()
 	if sh.cleanupTrigger == nil {
 		sh.cleanupTrigger = func() <-chan time.Time {
-			return time.After(config.GetDuration("RSOURCES_STATS_CLEANUP_INTERVAL", 1, time.Hour))
+			return time.After(config.GetDuration("Rsources.stats.cleanup.interval", 1, time.Hour))
 		}
 	}
 	err := setupTables(ctx, sh.localDB, sh.config.LocalHostname)

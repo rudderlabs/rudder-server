@@ -90,11 +90,12 @@ type StatsIncrementer interface {
 }
 
 type JobServiceConfig struct {
-	LocalHostname          string
-	LocalConn              string
-	MaxPoolSize            int
-	SharedConn             string
-	SubscriptionTargetConn string
+	LocalHostname               string
+	LocalConn                   string
+	MaxPoolSize                 int
+	SharedConn                  string
+	SubscriptionTargetConn      string
+	SkipFailedRecordsCollection bool
 }
 
 // JobService manages information about jobs created by rudder-sources
