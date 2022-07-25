@@ -19,8 +19,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/app"
@@ -39,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -1263,7 +1262,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var stagingFile warehouseutils.StagingFileT
-	json.Unmarshal(body, &stagingFile)
+	_ = json.Unmarshal(body, &stagingFile)
 
 	var firstEventAt, lastEventAt interface{}
 	firstEventAt = stagingFile.FirstEventAt

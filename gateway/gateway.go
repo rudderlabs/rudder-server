@@ -1374,7 +1374,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
-
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 

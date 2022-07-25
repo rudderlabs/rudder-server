@@ -654,6 +654,22 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
+func (ms *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		if tb != "rudder_discards" {
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, ms.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+			_, err = ms.Db.Exec(sqlStatement)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
 func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	err = ms.addColumn(ms.Namespace+"."+tableName, columnName, columnType)
 	return err

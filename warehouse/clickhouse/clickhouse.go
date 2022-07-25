@@ -842,6 +842,10 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
+func (ch *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	return false, fmt.Errorf("click err :not implemented")
+}
+
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)

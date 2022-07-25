@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/dedup"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -71,6 +73,7 @@ const (
 	CloudSourceCateogry = "cloud"
 )
 
+var SourceThatRequireDeleteByJobRunID = []string{"singer-google-sheets", "google_sheets"}
 var stateTransitions map[string]*uploadStateT
 
 type uploadStateT struct {
@@ -273,6 +276,31 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	}
 
 	return schemaChanged, nil
+}
+
+func (job *UploadJobT) getStagingFilesForDedup() ([]*StagingFileT, error) {
+	sqlStatement := fmt.Sprintf(`SELECT id, schema
+                                FROM %[1]s
+								WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.metadata ->> 'source_job_run_id' = '%[4]s'
+								ORDER BY id ASC`,
+		"wh_uploads", job.warehouse.Source.ID, job.warehouse.Destination.ID, job.upload.SourceJobRunID)
+	rows, err := job.dbHandle.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+	}
+	defer rows.Close()
+
+	var stagingFilesList []*StagingFileT
+	for rows.Next() {
+		var jsonUpload StagingFileT
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Schema)
+		if err != nil {
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+		}
+		stagingFilesList = append(stagingFilesList, &jsonUpload)
+	}
+
+	return stagingFilesList, nil
 }
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
@@ -525,8 +553,15 @@ func (job *UploadJobT) run() (err error) {
 			}
 			job.generateUploadSuccessMetrics()
 
+			//Based on the role type we will send delete request to clean up the tables (in this case, it will be excel sheets)
+			if contains(SourceThatRequireDeleteByJobRunID, job.warehouse.Source.SourceDefinition.Name) {
+				_, err := job.deleteByJobRunID()
+				if err != nil {
+					err = fmt.Errorf("unable to perform deletebyjobrunid operation: %w", err)
+					break
+				}
+			}
 			newStatus = nextUploadState.completed
-
 		default:
 			// If unknown state, start again
 			newStatus = Waiting
@@ -586,6 +621,35 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	return nil
+}
+
+func (job *UploadJobT) deleteByJobRunID() (bool, error) {
+	warehouseManager, err := manager.NewWarehouseOperations(job.warehouse.Destination.DestinationDefinition.Name)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error creating newwarehouseoperations: %v", err)
+		return false, errors.New("Error creating new warehouse operations")
+	}
+	dedupRequest := dedup.DedupRequest{
+		Destination: job.warehouse.Destination,
+	}
+
+	warehouseManager.Setup(job.warehouse, &dedup.DedupJob{
+		DedupR: &dedupRequest,
+	})
+
+	var tableNames []string
+	var stagingFilesUploaded, _ = job.getStagingFilesForDedup()
+	for _, value := range stagingFilesUploaded {
+		var m map[string][]interface{}
+		json.Unmarshal(value.Schema, &m)
+		for tableName, _ := range m {
+			if tableName != "rudder_discards" && tableName != "RUDDER_DISCARDS" {
+				tableNames = append(tableNames, tableName)
+			}
+		}
+	}
+	success, err := warehouseManager.DeleteByJobRunID(tableNames, job.upload.SourceJobRunID, "abc")
+	return success, err
 }
 
 func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (err error) {
@@ -651,6 +715,15 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 	}
 
 	return
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {

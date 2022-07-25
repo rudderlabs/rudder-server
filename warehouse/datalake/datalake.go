@@ -55,6 +55,10 @@ func (wh *HandleT) DropTable(tableName string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
+func (wh *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	return false, fmt.Errorf("datalake err :not implemented")
+}
+
 func (wh *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	return wh.SchemaRepository.AddColumn(tableName, columnName, columnType)
 }

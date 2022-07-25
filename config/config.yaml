@@ -198,7 +198,7 @@ Processor:
   Stats:
     captureEventName: false
 Dedup:
-  enableDedup: false
+  enableDedup: true
   dedupWindow: 3600s
   memOptimized: true
 BackendConfig:

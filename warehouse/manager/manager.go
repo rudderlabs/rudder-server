@@ -43,6 +43,7 @@ type ManagerI interface {
 
 type WarehouseDelete interface {
 	DropTable(tableName string) (err error)
+	DeleteByJobRunID(tableNames []string, jobRunID string, StartTime string) (success bool, err error)
 }
 
 type WarehouseOperations interface {

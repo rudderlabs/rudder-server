@@ -793,6 +793,10 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
+func (dl *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	return false, fmt.Errorf("delta lake err :not implemented")
+}
+
 // AddColumn adds column for column name and type
 func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
