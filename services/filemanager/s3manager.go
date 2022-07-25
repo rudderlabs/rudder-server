@@ -20,6 +20,8 @@ import (
 	appConfig "github.com/rudderlabs/rudder-server/config"
 )
 
+const crossAccountSTSRoleSessionName = "rudderstack-s3-access"
+
 // Upload passed in file to s3
 func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	splitFileName := strings.Split(file.Name(), "/")
@@ -208,6 +210,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		stsSession := session.Must(session.NewSession(&awsConfig))
 		awsConfig.Credentials = stscreds.NewCredentials(stsSession, manager.Config.IAMRoleARN, func(p *stscreds.AssumeRoleProvider) {
 			p.ExternalID = aws.String(manager.Config.ExternalID)
+			p.RoleSessionName = crossAccountSTSRoleSessionName
 		})
 	}
 
