@@ -728,9 +728,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	if event.SessionID != "" {
-		metadata.SessionID = event.SessionID
-	}
 	event.Metadata = metadata
 }
 
@@ -820,7 +817,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
-		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
 		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
 		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
@@ -1363,10 +1359,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
-			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-				enabledDestinationsMap[destType] = enabledDestinationsList
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for _, destination := range enabledDestinationsList {
 					shallowEventCopy := transformer.TransformerEventT{}
