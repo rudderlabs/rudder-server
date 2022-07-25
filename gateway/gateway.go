@@ -1615,8 +1615,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	g, ctx := errgroup.WithContext(ctx)
 
 	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		gateway.logger.Error("gateway.backendConfig.WaitForConfig failed: %w", err)
-		gateway.logger.Info("returning gatewayyyyyy")
 		cancel()
 		return
 	}

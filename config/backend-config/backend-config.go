@@ -62,7 +62,6 @@ type CommonBackendConfig struct {
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	blockChan                chan struct{}
-	waitForConfigErrs        chan error
 	initializedLock          sync.RWMutex
 	initialized              bool
 	pollConfigUpdatefunclock sync.Mutex
@@ -130,17 +129,6 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	sourceJSON, err := backendConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
-		pkgLogger.Warnf("Error fetching config from backend: %v", err)
-		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
-			select {
-			case bc.waitForConfigErrs <- err:
-			default:
-				// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
-				// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
-				// polling unless we explicitly want to.
-			}
-		}
-		return
 	}
 
 	// sorting the sourceJSON.
@@ -291,7 +279,6 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.waitForConfigErrs = make(chan error, 1)
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -303,10 +290,6 @@ func (bc *CommonBackendConfig) Stop() {
 	<-bc.blockChan
 	bc.initializedLock.Lock()
 	bc.initialized = false
-	if bc.waitForConfigErrs != nil {
-		close(bc.waitForConfigErrs)
-	}
-	bc.waitForConfigErrs = nil
 	curSourceJSON = ConfigT{}
 	bc.initializedLock.Unlock()
 }
@@ -324,15 +307,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		pkgLogger.Info("Waiting for initializing backend config")
 		select {
 		case <-ctx.Done():
-			pkgLogger.Info("ctx doneeeeeeeeeeeeee")
 			return ctx.Err()
-		case err, open := <-bc.waitForConfigErrs:
-			pkgLogger.Info("open = %v", open)
-			if !open {
-				return fmt.Errorf("backend config polling stopped")
-			}
-			pkgLogger.Errorf("backend config WaitForConfig error: %v", err)
-			return err
 		case <-time.After(pollInterval):
 		}
 	}
