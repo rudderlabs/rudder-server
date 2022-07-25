@@ -96,6 +96,23 @@ var _ = Describe("Using sources handler", func() {
 			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
 		})
 
+		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
+			handler := sh.(*sourcesHandler)
+			previous := handler.config.SkipFailedRecordsCollection
+			handler.config.SkipFailedRecordsCollection = true
+			defer func() { handler.config.SkipFailedRecordsCollection = previous }()
+
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
+
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{})
+			Expect(err).To(HaveOccurred(), "it shouldn't be able to get failed records")
+			Expect(failedRecords).To(BeNil(), "it should return nil failed records")
+			Expect(err).To(Equal(ErrOperationNotSupported), "it should return an ErrOperationNotSupported error")
+		})
 		It("should be able to get the status", func() {
 			jobRunId := newJobRunId()
 			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
@@ -406,7 +423,7 @@ var _ = Describe("Using sources handler", func() {
 				[]byte(`{"record-1": "id-1"}`),
 				[]byte(`{"record-2": "id-2"}`),
 			})
-			ts := time.Now().Add(-48 * time.Hour)
+			ts := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+1) * time.Hour)
 			stmt, err := resource.db.Prepare(`update "rsources_stats" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)

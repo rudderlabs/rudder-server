@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,6 +13,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 )
+
+const defaultRetentionPeriodInHours = 3 * 24
+
+// ErrOperationNotSupported sentinel error indicating an unsupported operation
+var ErrOperationNotSupported = errors.New("rsources: operation not supported")
 
 // In postgres, the replication slot name can contain lower-case letters, underscore characters, and numbers.
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
@@ -139,6 +145,9 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 }
 
 func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+	if sh.config.SkipFailedRecordsCollection {
+		return nil, ErrOperationNotSupported
+	}
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
@@ -236,7 +245,7 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		return err
 	}
 
-	before := time.Now().Add(-config.GetDuration("Rsources.retention", 3*24, time.Hour))
+	before := time.Now().Add(-config.GetDuration("Rsources.retention", defaultRetentionPeriodInHours, time.Hour))
 	sqlStatement := `delete from "%[1]s" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from 
 			(select job_run_id, max(ts) as mts from "%[1]s" group by job_run_id) lastUpdateToJobRunId
