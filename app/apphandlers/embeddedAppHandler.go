@@ -148,11 +148,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 				clearDB := false
 				if enableProcessor {
 					g.Go(misc.WithBugsnag(func() error {
-						StartProcessor(
+						return StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
 							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)
-						return nil
 					}))
 				}
 			}
@@ -244,7 +243,9 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		)
 		defer gwDBForProcessor.Close()
-		gatewayDB.Start()
+		if err = gatewayDB.Start(); err != nil {
+			return fmt.Errorf("could not start gateway: %w", err)
+		}
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)

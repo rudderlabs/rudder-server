@@ -34,7 +34,7 @@ func (*LifecycleManager) Run(ctx context.Context) error {
 // Start starts a Router, this is not a blocking call.
 // If the router is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
-func (r *LifecycleManager) Start() {
+func (r *LifecycleManager) Start() error {
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
 	g, _ := errgroup.WithContext(context.Background())
@@ -43,6 +43,7 @@ func (r *LifecycleManager) Start() {
 		r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
 		return nil
 	})
+	return nil
 }
 
 // Stop stops the Router, this is a blocking call.

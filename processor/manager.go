@@ -35,13 +35,15 @@ type LifecycleManager struct {
 // Start starts a processor, this is not a blocking call.
 // If the processor is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
-func (proc *LifecycleManager) Start() {
+func (proc *LifecycleManager) Start() error {
 	if proc.Transformer != nil {
 		proc.HandleT.transformer = proc.Transformer
 	}
 
-	proc.HandleT.Setup(proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
-		proc.errDB, proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.rsourcesService)
+	proc.HandleT.Setup(
+		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
+		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.rsourcesService,
+	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
@@ -49,9 +51,9 @@ func (proc *LifecycleManager) Start() {
 	g, ctx := errgroup.WithContext(currentCtx)
 	proc.waitGroup = g
 	g.Go(func() error {
-		proc.HandleT.Start(ctx)
-		return nil
+		return proc.HandleT.Start(ctx)
 	})
+	return g.Wait()
 }
 
 // Stop stops the processor, this is a blocking call.

@@ -429,7 +429,7 @@ func (proc *HandleT) Setup(
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start(ctx context.Context) {
+func (proc *HandleT) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
@@ -451,7 +451,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	_ = g.Wait()
+	return g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {

@@ -26,7 +26,7 @@ type ChangeEventProvider interface {
 }
 
 type lifecycle interface {
-	Start()
+	Start() error
 	Stop()
 }
 
@@ -142,23 +142,36 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	}
 }
 
-func (d *Dynamic) start() {
+func (d *Dynamic) start() error {
 	if d.GatewayComponent {
-		return
+		return nil
 	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
-	d.ErrorDB.Start()
-	d.GatewayDB.Start()
-	d.RouterDB.Start()
-	d.BatchRouterDB.Start()
-
-	d.MultiTenantStat.Start()
-
-	d.Processor.Start()
-	d.Router.Start()
+	if err := d.ErrorDB.Start(); err != nil {
+		return fmt.Errorf("error db start: %w", err)
+	}
+	if err := d.GatewayDB.Start(); err != nil {
+		return fmt.Errorf("gateway db start: %w", err)
+	}
+	if err := d.RouterDB.Start(); err != nil {
+		return fmt.Errorf("router db start: %w", err)
+	}
+	if err := d.BatchRouterDB.Start(); err != nil {
+		return fmt.Errorf("batch router db start: %w", err)
+	}
+	if err := d.MultiTenantStat.Start(); err != nil {
+		return fmt.Errorf("multi tenant stat start: %w", err)
+	}
+	if err := d.Processor.Start(); err != nil {
+		return fmt.Errorf("processor start: %w", err)
+	}
+	if err := d.Router.Start(); err != nil {
+		return fmt.Errorf("router start: %w", err)
+	}
 	d.serverStartTimeStat.SendTiming(time.Since(start))
 	d.serverStartCountStat.Increment()
+	return nil
 }
 
 func (d *Dynamic) stop() {
@@ -217,7 +230,10 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 		switch newMode {
 		case servermode.NormalMode:
 			d.logger.Info("Transiting the server from DegradedMode to NormalMode")
-			d.start()
+			if err := d.start(); err != nil {
+				d.logger.Errorf("Failed to start the server: %v", err)
+				return fmt.Errorf("failed to start the server: %w", err)
+			}
 		default:
 			d.logger.Errorf("Unsupported transition from DegradedMode to %s \n", newMode)
 			return fmt.Errorf("unsupported transition from DegradedMode to %s", newMode)

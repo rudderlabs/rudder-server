@@ -884,11 +884,11 @@ func (jd *HandleT) workersAndAuxSetup() {
 
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
-func (jd *HandleT) Start() {
+func (jd *HandleT) Start() error {
 	jd.lifecycle.mu.Lock()
 	defer jd.lifecycle.mu.Unlock()
 	if jd.lifecycle.started {
-		return
+		return nil
 	}
 	defer func() { jd.lifecycle.started = true }()
 
@@ -907,6 +907,7 @@ func (jd *HandleT) Start() {
 		// Avoid clearing the database, if .Start() is called again.
 		jd.clearAll = false
 	}
+	return nil
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {

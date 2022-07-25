@@ -1149,7 +1149,7 @@ var _ = Describe("Processor", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancel()
 
-			processor.Start(ctx)
+			Expect(processor.Start(ctx)).To(BeNil())
 		})
 	})
 })
