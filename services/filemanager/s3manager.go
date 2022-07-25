@@ -203,10 +203,8 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		DisableSSL:                    manager.Config.DisableSSL, // TODO: get rid of this options as its risky
 	}
 	if manager.Config.AccessKey != "" && manager.Config.AccessKeyID != "" {
-		pkgLogger.Debug("Credentials found in the destination's config")
 		awsConfig.Credentials = credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, "")
 	} else if manager.Config.IAMRoleARN != "" {
-		pkgLogger.Debugf("Assuming - %s found in the filemanager config", manager.Config.IAMRoleARN)
 		stsSession := session.Must(session.NewSession(&awsConfig))
 		awsConfig.Credentials = stscreds.NewCredentials(stsSession, manager.Config.IAMRoleARN, func(p *stscreds.AssumeRoleProvider) {
 			p.ExternalID = aws.String(manager.Config.ExternalID)

@@ -112,8 +112,6 @@ func GetProviderConfigForBackupsFromEnv() map[string]interface{} {
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
 		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
-			// TODO: move this check to startup
-			backendconfig.WaitForConfig(context.TODO())
 			providerConfig["externalId"] = backendconfig.GetWorkspaceIDForWriteKey("")
 		}
 	case "GCS":
