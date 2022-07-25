@@ -57,14 +57,14 @@ type BackendConfig interface {
 	IsConfigured() bool
 }
 type CommonBackendConfig struct {
-	eb                *pubsub.PublishSubscriber
-	configEnvHandler  types.ConfigEnvI
-	ctx               context.Context
-	cancel            context.CancelFunc
-	blockChan         chan struct{}
-	waitForConfigErrs chan error
-	initializedLock   sync.RWMutex
-	initialized       bool
+	eb               *pubsub.PublishSubscriber
+	configEnvHandler types.ConfigEnvI
+	ctx              context.Context
+	cancel           context.CancelFunc
+	blockChan        chan struct{}
+	initializedLock  sync.RWMutex
+	initialized      bool
+	initializedErr   error
 }
 
 func loadConfig() {
@@ -130,13 +130,10 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
 		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
-			select {
-			case bc.waitForConfigErrs <- err:
-			default:
-				// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
-				// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
-				// polling unless we explicitly want to.
-			}
+			bc.initializedLock.Lock()
+			bc.initialized = false
+			bc.initializedErr = err
+			bc.initializedLock.Unlock()
 		}
 		return
 	}
@@ -157,6 +154,7 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		bc.initializedLock.Lock()
 		defer bc.initializedLock.Unlock()
 		bc.initialized = true
+		bc.initializedErr = nil
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
@@ -265,7 +263,6 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.waitForConfigErrs = make(chan error, 1)
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -277,9 +274,7 @@ func (bc *CommonBackendConfig) Stop() {
 	<-bc.blockChan
 	bc.initializedLock.Lock()
 	bc.initialized = false
-	if bc.waitForConfigErrs != nil {
-		close(bc.waitForConfigErrs)
-	}
+	bc.initializedErr = nil
 	bc.initializedLock.Unlock()
 }
 
@@ -291,18 +286,16 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 			bc.initializedLock.RUnlock()
 			break
 		}
+		if bc.initializedErr != nil {
+			bc.initializedLock.RUnlock()
+			return bc.initializedErr
+		}
 		bc.initializedLock.RUnlock()
 
 		pkgLogger.Info("Waiting for initializing backend config")
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err, open := <-bc.waitForConfigErrs:
-			if !open {
-				return fmt.Errorf("backend config polling stopped")
-			}
-			pkgLogger.Errorf("backend config WaitForConfig error: %v", err)
-			return err
 		case <-time.After(pollInterval):
 		}
 	}

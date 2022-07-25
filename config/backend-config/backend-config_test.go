@@ -178,10 +178,16 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 
 			done := make(chan struct{})
-			bc.waitForConfigErrs = make(chan error, 1)
 			go func() {
-				Expect(<-bc.waitForConfigErrs).To(MatchError("TestRequestError"))
-				close(done)
+				defer close(done)
+				for {
+					bc.initializedLock.RLock()
+					if bc.initializedErr != nil {
+						Expect(bc.initializedErr).To(MatchError("TestRequestError"))
+						return
+					}
+					bc.initializedLock.RUnlock()
+				}
 			}()
 			bc.configUpdate(ctx, statConfigBackendError, "test_token")
 			<-done
