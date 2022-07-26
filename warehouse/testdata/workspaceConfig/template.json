@@ -519,7 +519,7 @@
       "destinations": [
         {
           "config": {
-            "project": "{{.bigqueryProject}}",
+            "project": "{{.bigqueryProjectID}}",
             "location": "{{.bigqueryLocation}}",
             "bucketName": "{{.bigqueryBucketName}}",
             "credentials": "{{.bigqueryCredentials}}",
