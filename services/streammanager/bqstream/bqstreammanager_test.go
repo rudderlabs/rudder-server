@@ -12,8 +12,8 @@ import (
 )
 
 type BigQueryCredentials struct {
-	ProjectID   string                 `json:"projectID"`
-	Credentials map[string]interface{} `json:"credentials"`
+	ProjectID   string `json:"projectID"`
+	Credentials string `json:"credentials"`
 }
 
 func TestTimeout(t *testing.T) {
@@ -32,9 +32,8 @@ func TestTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
-	credentials, _ := json.Marshal(bqCredentials.Credentials)
 	config := Config{
-		Credentials: string(credentials),
+		Credentials: bqCredentials.Credentials,
 		ProjectId:   bqCredentials.ProjectID,
 	}
 	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
