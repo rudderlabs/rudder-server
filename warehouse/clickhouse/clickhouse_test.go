@@ -3,8 +3,10 @@ package clickhouse_test
 import (
 	"database/sql"
 	"fmt"
+	"github.com/gofrs/uuid"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -15,16 +17,19 @@ import (
 )
 
 type TestHandle struct {
-	DB               *sql.DB
-	EventsMap        testhelper.EventsCountMap
-	WriteKey         string
-	ClusterDBs       []*sql.DB
-	ClusterEventsMap testhelper.EventsCountMap
-	ClusterWriteKey  string
+	Schema          string
+	Tables          []string
+	WriteKey        string
+	ClusterWriteKey string
+	DB              *sql.DB
+	ClusterDBs      []*sql.DB
 }
 
-var handle *TestHandle
+var (
+	handle *TestHandle
+)
 
+// TestConnection test connection for clickhouse and clickhouse cluster
 func (*TestHandle) TestConnection() error {
 	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := clickhouse.CredentialsT{
@@ -132,7 +137,6 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 		ColumnType string
 	}
 
-	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	tableColumnInfoMap := map[string][]ColumnInfoT{
 		"identifies": {
 			{
@@ -222,7 +226,7 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 	clusterDB := handle.ClusterDBs[0]
 
 	// Rename tables to tables_shard
-	for _, table := range tables {
+	for _, table := range handle.Tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
@@ -231,7 +235,7 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 	}
 
 	// Create distribution views for tables
-	for _, table := range tables {
+	for _, table := range handle.Tables {
 		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(received_at), id)));", table)
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
@@ -256,70 +260,169 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 func TestClickHouseClusterIntegration(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Normal Mode", func(t *testing.T) {
-		whDestTest := &testhelper.WareHouseTest{
+	t.Run("Single Setup", func(t *testing.T) {
+		// Setting up the warehouseTest
+		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
 				SQL:  handle.DB,
 				Type: client.SQLClient,
 			},
 			WriteKey:                 handle.WriteKey,
-			Schema:                   "rudderdb",
-			EventsCountMap:           handle.EventsMap,
+			Schema:                   handle.Schema,
+			Tables:                   handle.Tables,
+			EventsCountMap:           testhelper.DefaultEventMap(),
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
+			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.CLICKHOUSE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
 		}
 
-		whDestTest.SetUserId(warehouseutils.CLICKHOUSE)
-		testhelper.SendEvents(t, whDestTest)
-		testhelper.VerifyingDestination(t, whDestTest)
+		// Scenario 1
+		// Sending the first set of events.
+		// Since we are sending unique message Ids. These should result in
+		// These should result in events count will be equal to the number of events being sent
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
 
-		whDestTest.SetUserId(warehouseutils.CLICKHOUSE)
-		testhelper.SendModifiedEvents(t, whDestTest)
-		testhelper.VerifyingDestination(t, whDestTest)
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    4,
+			"users":         1,
+			"tracks":        4,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        4,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+		// Scenario 2
+		// Sending the second set of modified events.
+		// Since we are sending unique message Ids.
+		// These should result in events count will be equal to the number of events being sent
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.CLICKHOUSE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    4,
+			"users":         1,
+			"tracks":        4,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        4,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
 	})
-	t.Run("Cluster Mode", func(t *testing.T) {
+
+	t.Run("Cluster Mode Setup", func(t *testing.T) {
+		require.NotNil(t, handle.ClusterDBs)
+		require.NotNil(t, handle.ClusterDBs[0])
+
+		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
 				SQL:  handle.ClusterDBs[0],
 				Type: client.SQLClient,
 			},
 			WriteKey:                 handle.ClusterWriteKey,
-			Schema:                   "rudderdb",
-			EventsCountMap:           handle.ClusterEventsMap,
+			Schema:                   handle.Schema,
+			Tables:                   handle.Tables,
+			EventsCountMap:           testhelper.DefaultEventMap(),
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
+			UserId:                   fmt.Sprintf("userId_%s_%s", fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
 		}
 
-		warehouseTest.SetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+		// Scenario 1
+		// Sending the first set of events.
+		// Since we are sending unique message Ids.
+		// These should result in events count will be equal to the number of events being sent
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.VerifyingDestination(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
 
-		warehouseTest.SetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    4,
+			"users":         1,
+			"tracks":        4,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        4,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+		// Scenario 2
+		// Setting up events count map
+		// Setting up the UserID
+		// Initializing cluster mode setup
+		// Sending the second set of modified events.
+		// Since we are sending unique message Ids.
+		// These should result in events count will be equal to the number of events being sent
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 		initializeClickhouseClusterMode(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 
-		// Update events count Map
-		// This is required as because of the cluster mode setup and distributed view, events are getting duplicated.
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		// With the cluster mode setup, events are getting duplicated.
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    2,
+			"identifies":    8,
 			"users":         2,
-			"tracks":        2,
-			"product_track": 2,
-			"pages":         2,
-			"screens":       2,
-			"aliases":       2,
-			"groups":        2,
-			"gateway":       6,
-			"batchRT":       8,
+			"tracks":        8,
+			"product_track": 8,
+			"pages":         8,
+			"screens":       8,
+			"aliases":       8,
+			"groups":        8,
+			"gateway":       24,
+			"batchRT":       32,
 		}
-		testhelper.VerifyingDestination(t, warehouseTest)
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
 	})
 }
 
 func TestMain(m *testing.M) {
 	handle = &TestHandle{
-		WriteKey:         "C5AWX39IVUWSP2NcHciWvqZTa2N",
-		EventsMap:        testhelper.DefaultEventMap(),
-		ClusterWriteKey:  "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-		ClusterEventsMap: testhelper.DefaultEventMap(),
+		WriteKey:        "C5AWX39IVUWSP2NcHciWvqZTa2N",
+		ClusterWriteKey: "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+		Schema:          "rudderdb",
+		Tables:          []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
