@@ -17,6 +17,7 @@ func (*noop) Stop()                                                        {}
 func (*noop) Status() map[string]map[string]map[string]int {
 	return map[string]map[string]map[string]int{}
 }
+
 func (*noop) GetRouterPickupJobs(_ string, _ int, _ time.Duration, jobQueryBatchSize int, _ float64) (
 	map[string]int, map[string]float64,
 ) {
