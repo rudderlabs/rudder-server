@@ -25,6 +25,8 @@ endif
 coverage:
 	go tool cover -html=coverage.txt -o coverage.html
 
+test-with-coverage: test coverage
+
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
 
 prepare-build: build-sql-migrations enterprise-prepare-build
