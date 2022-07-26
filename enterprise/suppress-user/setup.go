@@ -2,6 +2,7 @@ package suppression
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -28,20 +29,20 @@ func loadConfig() {
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.SuppressUserI, error) {
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
 	if m.EnterpriseToken == "" {
 		pkgLogger.Info("Suppress User feature is enterprise only")
-		return &NOOP{}
+		return &NOOP{}, nil
 	}
 
 	pkgLogger.Info("[[ SuppressUser ]] Setting up Suppress User Feature")
 	loadConfig()
 	ctx := context.Background()
 	if err := backendConfig.WaitForConfig(ctx); err != nil {
-		pkgLogger.Errorf("error initializing backend config: %s", err.Error())
-		return nil
+		pkgLogger.Errorf("error initializing backend config: %v", err)
+		return nil, fmt.Errorf("error initializing backend config: %w", err)
 	}
 	workspaceId := backendConfig.GetWorkspaceIDForWriteKey("")
 	suppressUser := &SuppressRegulationHandler{
@@ -52,5 +53,5 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Suppres
 	}
 	suppressUser.setup(ctx)
 
-	return suppressUser
+	return suppressUser, nil
 }
