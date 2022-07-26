@@ -67,7 +67,7 @@ fmt: install-tools
 	gofumpt -l -w -extra  .
 
 cleanup-warehouse-integration:
-	#docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
+	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
 logs-warehouse-integration:
 	docker logs warehouse_backend_1
