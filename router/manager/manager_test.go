@@ -17,6 +17,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -250,10 +251,10 @@ func TestRouterManager(t *testing.T) {
 	r := New(rtFactory, brtFactory, mockBackendConfig)
 
 	for i := 0; i < 5; i++ {
-		rtDB.Start()
-		brtDB.Start()
-		errDB.Start()
-		r.Start()
+		require.NoError(t, rtDB.Start())
+		require.NoError(t, brtDB.Start())
+		require.NoError(t, errDB.Start())
+		require.NoError(t, r.Start())
 		<-c
 		r.Stop()
 		rtDB.Stop()

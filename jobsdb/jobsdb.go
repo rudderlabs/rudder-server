@@ -777,7 +777,10 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler) {
+func (jd *HandleT) Setup(
+	ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string,
+	registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler,
+) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
@@ -788,7 +791,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.preBackupHandlers = preBackupHandlers
 
 	jd.init()
-	jd.Start()
+	return jd.Start()
 }
 
 func (jd *HandleT) init() {

@@ -272,7 +272,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	if enableReplay {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
+		err := replayDB.Setup(
+			jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention,
+			migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers,
+		)
+		if err != nil {
+			return fmt.Errorf("could not setup replayDB: %w", err)
+		}
 		defer replayDB.TearDown()
 		embedded.App.Features().Replay.Setup(&replayDB, gatewayDB, routerDB, batchRouterDB)
 	}

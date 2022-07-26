@@ -59,7 +59,9 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 	defer gatewayDB.Close()
-	gatewayDB.Start()
+	if err := gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gatewayDB: %w", err)
+	}
 	defer gatewayDB.Stop()
 
 	enableGateway := true

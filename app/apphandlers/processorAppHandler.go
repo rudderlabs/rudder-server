@@ -14,6 +14,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
@@ -168,7 +169,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 				g.Go(func() error {
 					clearDB := false
 					if enableProcessor {
-						StartProcessor(
+						return StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
 							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)

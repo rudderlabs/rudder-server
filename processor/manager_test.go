@@ -17,10 +17,11 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -36,9 +37,9 @@ import (
 )
 
 var (
-	hold   bool
-	DB_DSN = "root@tcp(127.0.0.1:3306)/service"
-	db     *sql.DB
+	hold  bool
+	db    *sql.DB
+	dbDsn = "root@tcp(127.0.0.1:3306)/service"
 )
 
 type reportingNOOP struct{}
@@ -83,19 +84,19 @@ func run(m *testing.M) int {
 		}
 	}()
 
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	fmt.Println("DB_DSN:", DB_DSN)
-	os.Setenv("JOBS_DB_DB_NAME", database)
-	os.Setenv("JOBS_DB_HOST", "localhost")
-	os.Setenv("JOBS_DB_NAME", "jobsdb")
-	os.Setenv("JOBS_DB_USER", "rudder")
-	os.Setenv("JOBS_DB_PASSWORD", "password")
-	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
+	dbDsn = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	fmt.Println("DB_DSN:", dbDsn)
+	_ = os.Setenv("JOBS_DB_DB_NAME", database)
+	_ = os.Setenv("JOBS_DB_HOST", "localhost")
+	_ = os.Setenv("JOBS_DB_NAME", "jobsdb")
+	_ = os.Setenv("JOBS_DB_USER", "rudder")
+	_ = os.Setenv("JOBS_DB_PASSWORD", "password")
+	_ = os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		db, err = sql.Open("postgres", DB_DSN)
+		db, err = sql.Open("postgres", dbDsn)
 		if err != nil {
 			return err
 		}
@@ -179,7 +180,8 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
 	defer tempDB.TearDown()
 
 	customVal := "GW"
@@ -192,7 +194,7 @@ func TestProcessorManager(t *testing.T) {
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err := tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
@@ -215,13 +217,13 @@ func TestProcessorManager(t *testing.T) {
 	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
-		gwDB.Start()
+		require.NoError(t, gwDB.Start())
 		defer gwDB.Stop()
-		rtDB.Start()
+		require.NoError(t, rtDB.Start())
 		defer rtDB.Stop()
-		brtDB.Start()
+		require.NoError(t, brtDB.Start())
 		defer brtDB.Stop()
-		errDB.Start()
+		require.NoError(t, errDB.Start())
 		defer errDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -231,7 +233,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 		processor.BackendConfig = mockBackendConfig
 		processor.HandleT.transformer = mockTransformer
-		processor.Start()
+		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
 			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -243,13 +245,13 @@ func TestProcessorManager(t *testing.T) {
 	})
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
-		gwDB.Start()
+		require.NoError(t, gwDB.Start())
 		defer gwDB.Stop()
-		rtDB.Start()
+		require.NoError(t, rtDB.Start())
 		defer rtDB.Stop()
-		brtDB.Start()
+		require.NoError(t, brtDB.Start())
 		defer brtDB.Stop()
-		errDB.Start()
+		require.NoError(t, errDB.Start())
 		defer errDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -258,7 +260,7 @@ func TestProcessorManager(t *testing.T) {
 		})
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 
-		processor.Start()
+		require.NoError(t, processor.Start())
 		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{

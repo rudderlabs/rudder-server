@@ -334,7 +334,8 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
@@ -354,7 +355,8 @@ var _ = Describe("jobsdb", func() {
 		BeforeEach(func() {
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
@@ -363,14 +365,14 @@ var _ = Describe("jobsdb", func() {
 
 		It("can call Stop before Start without side-effects", func() {
 			jd.Stop()
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			Expect(jd.lifecycle.started).To(Equal(true))
 		})
 
 		It("can call Start twice without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			group1 := jd.backgroundGroup
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			group2 := jd.backgroundGroup
 			Expect(group1).To(Equal(group2))
 			Expect(jd.lifecycle.started).To(Equal(true))
@@ -383,7 +385,7 @@ var _ = Describe("jobsdb", func() {
 			for i := 0; i < 10; i++ {
 				idx := i
 				go func() {
-					jd.Start()
+					Expect(jd.Start()).To(BeNil())
 					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
@@ -396,7 +398,7 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Stop twice without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			Expect(jd.lifecycle.started).To(Equal(true))
 			Expect(jd.backgroundGroup).ToNot(BeNil())
 			jd.Stop()
@@ -410,7 +412,7 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Stop in parallel without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
@@ -425,13 +427,13 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Start & Stop in parallel without problems", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				go func() {
-					jd.Start()
+					Expect(jd.Start()).To(BeNil())
 					jd.Stop()
 					wg.Done()
 				}()
