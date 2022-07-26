@@ -48,8 +48,8 @@ func (r pendingEventsMeasurement) GetName() string {
 
 func (r pendingEventsMeasurement) GetTags() map[string]string {
 	res := map[string]string{
-		"workspace": r.workspace,
-		"destType":  r.destType,
+		"workspaceId": r.workspace,
+		"destType":    r.destType,
 	}
 	return res
 }
