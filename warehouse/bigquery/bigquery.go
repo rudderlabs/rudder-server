@@ -123,7 +123,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return
 	}
 
-	if !isDedupEnabled {
+	if !DedupEnabled() {
 		err = bq.createTableView(tableName, columnMap)
 	}
 	return
@@ -134,7 +134,7 @@ func (bq *HandleT) DropTable(tableName string) (err error) {
 	if err != nil {
 		return
 	}
-	if !isDedupEnabled {
+	if !DedupEnabled() {
 		err = bq.DeleteTable(tableName + "_view")
 	}
 	return
@@ -403,7 +403,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		return
 	}
 
-	if !isDedupEnabled {
+	if !DedupEnabled() {
 		err = loadTableByAppend()
 		return
 	}
@@ -472,7 +472,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", identifyLoadTable.partitionDate)
 	var identifiesFrom string
-	if isDedupEnabled {
+	if DedupEnabled() {
 		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyLoadTable.stagingTableName), loadedAtFilter())
 	} else {
 		identifiesFrom = fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
@@ -592,7 +592,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	if !isDedupEnabled {
+	if !DedupEnabled() {
 		loadUserTableByAppend()
 		return
 	}
@@ -627,7 +627,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false) || isUsersTableDedupEnabled
+	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 }
 
 func Init() {
@@ -659,8 +659,12 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 	return
 }
 
+func DedupEnabled() bool {
+	return isDedupEnabled || isUsersTableDedupEnabled
+}
+
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	if !isDedupEnabled {
+	if !DedupEnabled() {
 		return
 	}
 	bq.Warehouse = warehouse

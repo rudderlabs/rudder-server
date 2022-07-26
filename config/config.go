@@ -764,8 +764,11 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-func SetString(key, value string) {
+func SetForce(key string, value interface{}) {
 	viper.Set(key, value)
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+	_ = checkAndHotReloadConfig(hotReloadableConfig)
 }
 
 // GetWorkspaceToken returns the workspace token provided in the environment variables
