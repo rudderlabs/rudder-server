@@ -231,6 +231,7 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
 	rsourcesConfig.LocalHostname = config.GetEnv("JOBS_DB_HOST", "localhost")
 	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
+	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
 
 	switch deploymentType {
 	case deployment.HostedType, deployment.MultiTenantType:

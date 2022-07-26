@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	RouterUnMarshalErrorCode = 599
 	RouterTimedOutStatusCode = 1113
 )
 
