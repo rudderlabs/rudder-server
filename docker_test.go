@@ -13,6 +13,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"io"
 	"io/ioutil"
 	"net/http"
