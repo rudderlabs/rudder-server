@@ -284,22 +284,22 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 		bc.initializedLock.RLock()
 		if bc.initialized {
 			bc.initializedLock.RUnlock()
-			break
+			return nil
 		}
 		if bc.initializedErr != nil {
+			err := bc.initializedErr
 			bc.initializedLock.RUnlock()
-			return bc.initializedErr
+			return err
 		}
 		bc.initializedLock.RUnlock()
 
-		pkgLogger.Info("Waiting for initializing backend config")
+		pkgLogger.Info("Waiting for backend config")
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(pollInterval):
 		}
 	}
-	return nil
 }
 
 func GetConfigBackendURL() string {
