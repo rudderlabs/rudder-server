@@ -22,7 +22,7 @@ func TestTimeout(t *testing.T) {
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
-	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
+	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_CREDENTIALS")
 	if cred == "" {
 		t.Skip("Skipping bigquery test, since no credentials are available in the environment")
 	}
@@ -30,7 +30,7 @@ func TestTimeout(t *testing.T) {
 	var err error
 	err = json.Unmarshal([]byte(cred), &bqCredentials)
 	if err != nil {
-		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
+		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_CREDENTIALS: %s", err)
 	}
 	config := Config{
 		Credentials: bqCredentials.Credentials,

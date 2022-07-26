@@ -29,7 +29,7 @@ var (
 )
 
 const (
-	TestCredentialsKey = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+	TestCredentialsKey = testhelper.DeltalakeIntegrationTestCredentials
 )
 
 // databricksCredentials extracting deltalake credentials

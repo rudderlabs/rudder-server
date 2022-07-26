@@ -27,7 +27,7 @@ var (
 )
 
 const (
-	TestCredentialsKey = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
+	TestCredentialsKey = testhelper.RedshiftIntegrationTestCredentials
 )
 
 // redshiftCredentials extracting redshift test credentials

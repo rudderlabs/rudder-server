@@ -27,7 +27,7 @@ var (
 )
 
 const (
-	TestCredentialsKey = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
+	TestCredentialsKey = testhelper.SnowflakeIntegrationTestCredentials
 )
 
 // snowflakeCredentials extracting snowflake credentials

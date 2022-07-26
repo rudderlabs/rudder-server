@@ -34,7 +34,6 @@ jobs:
       if: matrix.FEATURES == 'enterprise'
       run: go test -v ./docker_test.go -tags=integration -count 1
       env:
-        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
         ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
 
     - name: Integration test for oss
@@ -65,11 +64,10 @@ jobs:
       - name: Warehouse Integration test
         run: make run-warehouse-integration
         env:
-          RSERVER_ENABLE_MULTITENANCY: false
-          BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
-          REDSHIFT_INTEGRATION_TEST_USER_CRED: ${{ secrets.REDSHIFT_INTEGRATION_TEST_USER_CRED }}
-          SNOWFLAKE_INTEGRATION_TEST_USER_CRED: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_USER_CRED }}
-          DATABRICKS_INTEGRATION_TEST_USER_CRED: ${{ secrets.DATABRICKS_INTEGRATION_TEST_USER_CRED }}
+          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+          REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
+          DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
 
   unit:
     name: Unit

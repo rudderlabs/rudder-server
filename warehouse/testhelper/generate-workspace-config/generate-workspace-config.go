@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,39 +11,27 @@ import (
 	"text/template"
 )
 
-var (
-	snowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
-	redshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
-	deltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
-	bigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_USER_CRED"
-	workspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
-)
-
 func main() {
-	log.Println("Started populating workspace config for warehouse integration tests")
-
-	credentials, err := populateCredentials()
-	if err != nil {
-		log.Panicf("Error occurred while populating credentilas with error: %s", err.Error())
-	}
+	log.Println("Started populating workspace config")
 
 	t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
 	if err != nil {
 		log.Panicf("Error occurred while parsing files for template path with error: %s", err.Error())
 	}
 
-	err = os.MkdirAll(filepath.Dir(workspaceConfigPath), os.ModePerm)
+	err = os.MkdirAll(filepath.Dir(testhelper.WorkspaceConfigPath), os.ModePerm)
 	if err != nil {
 		log.Panicf("Error occurred while making directory paths error: %s", err.Error())
 	}
 
-	f, err := os.OpenFile(workspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
+	f, err := os.OpenFile(testhelper.WorkspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
 	if err != nil {
 		log.Panicf("Error occurred while creating workspaceConfig.json file with error: %s", err.Error())
 	}
 	defer func() { _ = f.Close() }()
 
-	err = t.Execute(f, credentials)
+	templateConfigurations := populateTemplateConfigurations()
+	err = t.Execute(f, templateConfigurations)
 	if err != nil {
 		log.Panicf("Error occurred while executing template path files with error: %s", err.Error())
 	}
@@ -50,59 +39,86 @@ func main() {
 	log.Println("Completed populating workspace config for warehouse integration tests")
 }
 
-func populateCredentials() (values map[string]string, err error) {
-	values = make(map[string]string)
+func populateTemplateConfigurations() map[string]string {
+	values := map[string]string{
+		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
-	var credentials map[string]string
-	if credentials, err = credentialsFromKey(snowflakeIntegrationTestCredentials); err != nil {
-		return
-	}
-	for k, v := range credentials {
-		values[fmt.Sprintf("sf_%s", k)] = v
+		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+		"postgresHost":     "postgres",
+		"postgresDatabase": "rudderdb",
+		"postgresUser":     "rudder",
+		"postgresPassword": "rudder-password",
+		"postgresPort":     "5432",
+
+		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
+		"clickHouseHost":     "clickhouse",
+		"clickHouseDatabase": "rudderdb",
+		"clickHouseUser":     "rudder",
+		"clickHousePassword": "rudder-password",
+		"clickHousePort":     "9000",
+
+		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+		"clickhouseClusterHost":     "clickhouse01",
+		"clickhouseClusterDatabase": "rudderdb",
+		"clickhouseClusterCluster":  "rudder_cluster",
+		"clickhouseClusterUser":     "rudder",
+		"clickhouseClusterPassword": "rudder-password",
+		"clickhouseClusterPort":     "9000",
+
+		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		"mssqlHost":     "mssql",
+		"mssqlDatabase": "master",
+		"mssqlUser":     "SA",
+		"mssqlPassword": "reallyStrongPwd123",
+		"mssqlPort":     "1433",
+
+		"bigqueryWriteKey":  "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		"snowflakeWriteKey": "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		"redshiftWriteKey":  "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		"deltalakeWriteKey": "sToFgoilA0U1WxNeW1gdgUVDsEW",
+
+		"minioBucketName":      "devintegrationtest",
+		"minioAccesskeyID":     "MYACCESSKEY",
+		"minioSecretAccessKey": "MYSECRETKEY",
+		"minioEndpoint":        "minio:9000",
 	}
 
-	if credentials, err = credentialsFromKey(redshiftIntegrationTestCredentials); err != nil {
-		return
+	for k, v := range credentialsFromKey(testhelper.SnowflakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
-	for k, v := range credentials {
-		values[fmt.Sprintf("rs_%s", k)] = v
+	for k, v := range credentialsFromKey(testhelper.RedshiftIntegrationTestCredentials) {
+		values[fmt.Sprintf("redshift%s", k)] = v
 	}
-
-	if credentials, err = credentialsFromKey(deltalakeIntegrationTestCredentials); err != nil {
-		return
+	for k, v := range credentialsFromKey(testhelper.DeltalakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("deltalake%s", k)] = v
 	}
-	for k, v := range credentials {
-		values[fmt.Sprintf("dl_%s", k)] = v
+	for k, v := range credentialsFromKey(testhelper.BigqueryIntegrationTestCredentials) {
+		values[fmt.Sprintf("bigquery%s", k)] = v
 	}
-
-	if credentials, err = credentialsFromKey(bigqueryIntegrationTestCredentials); err != nil {
-		return
-	}
-	for k, v := range credentials {
-		values[fmt.Sprintf("bq_%s", k)] = v
-	}
-	values["bq_Credentials"], _ = jsonEscape(values["bq_Credentials"])
-	return
+	enhanceBQCredentials(values)
+	return values
 }
 
-func jsonEscape(i string) (string, error) {
-	b, err := json.Marshal(i)
-	if err != nil {
-		return "", fmt.Errorf("could not escape big query JSON credentials for workspace config with error: %s", err.Error())
+func enhanceBQCredentials(values map[string]string) {
+	if credentials, exists := values["bqCredentials"]; exists {
+		escapedCredentials, err := json.Marshal(credentials)
+		if err != nil {
+			log.Panicf("error escaping big query JSON credentials while setting up the workspace config with error: %s", err.Error())
+		}
+		values["bq_Credentials"] = strings.Trim(string(escapedCredentials), `"`)
 	}
-	return strings.Trim(string(b), `"`), nil
 }
 
-func credentialsFromKey(key string) (credentials map[string]string, err error) {
+func credentialsFromKey(key string) (credentials map[string]string) {
 	cred, exists := os.LookupEnv(key)
 	if !exists {
-		err = fmt.Errorf("following %s does not exists while setting up the workspace config", key)
+		log.Print(fmt.Errorf("env %s does not exists while setting up the workspace config", key))
 		return
 	}
 
-	err = json.Unmarshal([]byte(cred), &credentials)
+	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling test credentials for key %s with err: %s", key, err.Error())
+		log.Panicf("error occurred while unmarshalling %s for setting up the workspace config", key)
 		return
 	}
 	return

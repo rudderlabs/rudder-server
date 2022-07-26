@@ -59,20 +59,28 @@ type WarehouseTestSetup interface {
 	TestConnection() error
 }
 
-var (
+const (
 	WaitFor2Minute            = 2 * time.Minute
 	WaitFor10Minute           = 10 * time.Minute
 	DefaultQueryFrequency     = 100 * time.Millisecond
 	LongRunningQueryFrequency = 10000 * time.Millisecond
 )
 
-var (
+const (
 	ConnectBackoffDuration = 1 * time.Second
 	ConnectBackoffRetryMax = 5
 )
 
 var (
 	jobsDB *JobsDBResource
+)
+
+const (
+	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
+	RedshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
+	DeltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+	BigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
+	WorkspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
 )
 
 func (w *WareHouseTest) MsgId() string {

@@ -31,7 +31,7 @@ var (
 )
 
 const (
-	TestCredentialsKey = "BIGQUERY_INTEGRATION_TEST_USER_CRED"
+	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
 )
 
 // bigqueryCredentials extracting big query credentials

@@ -186,10 +186,10 @@ services:
       - "8080"
     env_file: testhelper/.env
     environment:
-      - BIGQUERY_INTEGRATION_TEST_USER_CRED
-      - REDSHIFT_INTEGRATION_TEST_USER_CRED
-      - SNOWFLAKE_INTEGRATION_TEST_USER_CRED
-      - DATABRICKS_INTEGRATION_TEST_USER_CRED
+      - BIGQUERY_INTEGRATION_TEST_CREDENTIALS
+      - REDSHIFT_INTEGRATION_TEST_CREDENTIALS
+      - SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS
+      - DATABRICKS_INTEGRATION_TEST_CREDENTIALS
     entrypoint: sh -c 'go run warehouse/testhelper/generate-workspace-config/generate-workspace-config.go && go run main.go'
     volumes:
       - ..:/app
