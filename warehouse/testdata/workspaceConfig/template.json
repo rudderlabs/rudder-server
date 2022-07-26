@@ -1549,10 +1549,10 @@
       "destinations": [
         {
           "config": {
-            "project": "{{.bqProject}}",
-            "location": "{{.bqLocation}}",
-            "bucketName": "{{.bqBucketName}}",
-            "credentials": "{{.bqCredentials}}",
+            "project": "{{.bq_ProjectID}}",
+            "location": "{{.bq_Location}}",
+            "bucketName": "{{.bq_BucketName}}",
+            "credentials": "{{.bq_Credentials}}",
             "prefix": "",
             "namespace": "",
             "syncFrequency": "30"
