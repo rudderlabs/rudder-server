@@ -131,7 +131,9 @@ func (*TestHandle) TestConnection() error {
 	return nil
 }
 
-func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHouseTest) {
+func initializeClickhouseClusterMode(t *testing.T) {
+	t.Helper()
+
 	type ColumnInfoT struct {
 		ColumnName string
 		ColumnType string
@@ -223,6 +225,9 @@ func initializeClickhouseClusterMode(t *testing.T, whDestTest *testhelper.WareHo
 			},
 		},
 	}
+	require.NotNil(t, handle.ClusterDBs)
+	require.NotNil(t, handle.ClusterDBs[0])
+
 	clusterDB := handle.ClusterDBs[0]
 
 	// Rename tables to tables_shard
@@ -389,7 +394,7 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 		// These should result in events count will be equal to the number of events being sent
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
-		initializeClickhouseClusterMode(t, warehouseTest)
+		initializeClickhouseClusterMode(t)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
