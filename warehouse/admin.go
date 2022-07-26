@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 
-	client2 "github.com/rudderlabs/rudder-server/warehouse/client"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -73,7 +71,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	defer client.Close()
 
 	pkgLogger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
-	*reply, err = client.Query(s.SQLStatement, client2.Read)
+	*reply, err = client.Query(s.SQLStatement)
 	return err
 }
 
