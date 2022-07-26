@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/cenkalti/backoff"
 
@@ -71,9 +72,7 @@ const (
 	ConnectBackoffRetryMax = 5
 )
 
-var (
-	jobsDB *JobsDBResource
-)
+var jobsDB *JobsDBResource
 
 const (
 	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"

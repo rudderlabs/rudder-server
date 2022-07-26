@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"

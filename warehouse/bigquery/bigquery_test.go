@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"cloud.google.com/go/bigquery"
 
@@ -26,9 +27,7 @@ type TestHandle struct {
 	Tables   []string
 }
 
-var (
-	handle *TestHandle
-)
+var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials

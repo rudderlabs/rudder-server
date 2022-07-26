@@ -3,11 +3,12 @@ package deltalake_test
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gofrs/uuid"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/gofrs/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -24,9 +25,7 @@ type TestHandle struct {
 	Tables   []string
 }
 
-var (
-	handle *TestHandle
-)
+var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.DeltalakeIntegrationTestCredentials

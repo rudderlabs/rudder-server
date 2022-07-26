@@ -19,9 +19,7 @@ type TestHandle struct {
 	Tables   []string
 }
 
-var (
-	handle *TestHandle
-)
+var handle *TestHandle
 
 // TestConnection test connection for postgres
 func (*TestHandle) TestConnection() error {

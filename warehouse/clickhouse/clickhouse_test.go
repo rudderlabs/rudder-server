@@ -23,9 +23,7 @@ type TestHandle struct {
 	ClusterDBs      []*sql.DB
 }
 
-var (
-	handle *TestHandle
-)
+var handle *TestHandle
 
 // TestConnection test connection for clickhouse and clickhouse cluster
 func (*TestHandle) TestConnection() error {

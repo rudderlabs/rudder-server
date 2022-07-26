@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/gofrs/uuid"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/gofrs/uuid"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
@@ -22,9 +23,7 @@ type TestHandle struct {
 	Tables   []string
 }
 
-var (
-	handle *TestHandle
-)
+var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.RedshiftIntegrationTestCredentials

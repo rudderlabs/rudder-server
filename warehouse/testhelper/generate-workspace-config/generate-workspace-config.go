@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
 func main() {
