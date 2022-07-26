@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	log.Panicf("Hello")
+	log.Fatalf("Hello")
 	//log.Println("Started populating workspace config")
 	//
 	//t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
