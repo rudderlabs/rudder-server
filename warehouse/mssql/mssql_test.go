@@ -3,7 +3,9 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
+	"github.com/gofrs/uuid"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -13,13 +15,17 @@ import (
 )
 
 type TestHandle struct {
-	DB        *sql.DB
-	EventsMap testhelper.EventsCountMap
-	WriteKey  string
+	DB       *sql.DB
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
-var handle *TestHandle
+var (
+	handle *TestHandle
+)
 
+// TestConnection test connection for mssql
 func (*TestHandle) TestConnection() error {
 	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
@@ -47,30 +53,87 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestMSSQLIntegration(t *testing.T) {
+	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
+
 		WriteKey:                 handle.WriteKey,
-		Schema:                   "mssql_wh_integration",
-		EventsCountMap:           handle.EventsMap,
+		Schema:                   handle.Schema,
+		Tables:                   handle.Tables,
+		EventsCountMap:           testhelper.DefaultEventMap(),
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
+		UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.MSSQL), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
 	}
 
-	warehouseTest.SetUserId(warehouseutils.MSSQL)
+	// Scenario 1
+	// Sending the first set of events.
+	// Since we are sending unique message Ids. These should result in
+	// These should result in events count will be equal to the number of events being sent
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.VerifyingDestination(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
 
-	warehouseTest.SetUserId(warehouseutils.MSSQL)
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":    4,
+		"users":         1,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+		"gateway":       24,
+		"batchRT":       32,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+	// Scenario 2
+	// Setting up events count map
+	// Setting up the UserID
+	// Sending the second set of modified events.
+	// Since we are sending unique message Ids.
+	// These should result in events count will be equal to the number of events being sent
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.MSSQL), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.VerifyingDestination(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":    4,
+		"users":         1,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+		"gateway":       24,
+		"batchRT":       32,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
 	handle = &TestHandle{
-		WriteKey:  "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		EventsMap: testhelper.DefaultEventMap(),
+		WriteKey: "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		Schema:   "mssql_wh_integration",
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
