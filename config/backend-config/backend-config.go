@@ -112,7 +112,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	modifiedConfig.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
-		for _, destination := range source.Destinations {
+		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)

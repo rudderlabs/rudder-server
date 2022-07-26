@@ -84,7 +84,7 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
+			for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				// For batch router destinations
 				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
