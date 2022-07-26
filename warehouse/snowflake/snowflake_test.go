@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/gofrs/uuid"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -15,9 +17,10 @@ import (
 )
 
 type TestHandle struct {
-	DB        *sql.DB
-	EventsMap testhelper.EventsCountMap
-	WriteKey  string
+	DB       *sql.DB
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
 var (
@@ -28,6 +31,7 @@ const (
 	TestCredentialsKey = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
 )
 
+// snowflakeCredentials extracting snowflake credentials
 func snowflakeCredentials() (snowflakeCredentials snowflake.SnowflakeCredentialsT, err error) {
 	cred, exists := os.LookupEnv(TestCredentialsKey)
 	if !exists {
@@ -43,6 +47,7 @@ func snowflakeCredentials() (snowflakeCredentials snowflake.SnowflakeCredentials
 	return
 }
 
+// TestConnection test connection for snowflake
 func (*TestHandle) TestConnection() error {
 	credentials, err := snowflakeCredentials()
 	if err != nil {
@@ -64,24 +69,77 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
+	// Setting up the test configuration
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
 		WriteKey:                 handle.WriteKey,
-		Schema:                   "SNOWFLAKE_WH_INTEGRATION",
-		EventsCountMap:           handle.EventsMap,
+		Schema:                   handle.Schema,
+		Tables:                   handle.Tables,
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
+		EventsCountMap:           testhelper.DefaultEventMap(),
+		MessageId:                uuid.Must(uuid.NewV4()).String(),
+		UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.SNOWFLAKE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
 	}
 
-	warehouseTest.SetUserId(warehouseutils.SNOWFLAKE)
+	// Scenario 1
+	// Sending the first set of events.
+	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.VerifyingDestination(t, warehouseTest)
-
-	warehouseTest.SetUserId(warehouseutils.SNOWFLAKE)
+	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.VerifyingDestination(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       24,
+		"batchRT":       32,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+	// Scenario 2
+	// Re-Setting up the events map
+	// Sending the second set of events.
+	// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	// Since because of merge everything comes down to a single event in warehouse
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       48,
+		"batchRT":       64,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
@@ -92,8 +150,9 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey:  "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		EventsMap: testhelper.DefaultEventMap(),
+		WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		Schema:   "SNOWFLAKE_WH_INTEGRATION",
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
