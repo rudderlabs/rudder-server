@@ -3,41 +3,39 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
-	"text/template"
-
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
 func main() {
-	log.Println("Started populating workspace config")
-
-	t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
-	if err != nil {
-		log.Panicf("Error occurred while parsing files for template path with error: %s", err.Error())
-	}
-
-	err = os.MkdirAll(filepath.Dir(testhelper.WorkspaceConfigPath), os.ModePerm)
-	if err != nil {
-		log.Panicf("Error occurred while making directory paths error: %s", err.Error())
-	}
-
-	f, err := os.OpenFile(testhelper.WorkspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
-	if err != nil {
-		log.Panicf("Error occurred while creating workspaceConfig.json file with error: %s", err.Error())
-	}
-	defer func() { _ = f.Close() }()
-
-	templateConfigurations := populateTemplateConfigurations()
-	err = t.Execute(f, templateConfigurations)
-	if err != nil {
-		log.Panicf("Error occurred while executing template path files with error: %s", err.Error())
-	}
-
-	log.Println("Completed populating workspace config for warehouse integration tests")
+	log.Panicf("Hello")
+	//log.Println("Started populating workspace config")
+	//
+	//t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
+	//if err != nil {
+	//	log.Panicf("Error occurred while parsing files for template path with error: %s", err.Error())
+	//}
+	//
+	//err = os.MkdirAll(filepath.Dir(testhelper.WorkspaceConfigPath), os.ModePerm)
+	//if err != nil {
+	//	log.Panicf("Error occurred while making directory paths error: %s", err.Error())
+	//}
+	//
+	//f, err := os.OpenFile(testhelper.WorkspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
+	//if err != nil {
+	//	log.Panicf("Error occurred while creating workspaceConfig.json file with error: %s", err.Error())
+	//}
+	//defer func() { _ = f.Close() }()
+	//
+	//templateConfigurations := populateTemplateConfigurations()
+	//err = t.Execute(f, templateConfigurations)
+	//if err != nil {
+	//	log.Panicf("Error occurred while executing template path files with error: %s", err.Error())
+	//}
+	//
+	//log.Println("Completed populating workspace config for warehouse integration tests")
 }
 
 func populateTemplateConfigurations() map[string]string {
