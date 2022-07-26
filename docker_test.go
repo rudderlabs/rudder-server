@@ -13,7 +13,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -25,6 +24,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
