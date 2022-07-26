@@ -15,9 +15,13 @@ import (
 )
 
 type MINIOResource struct {
-	MinioEndpoint   string
-	MinioBucketName string
-	Port            string
+	Endpoint   string
+	BucketName string
+	Port       string
+	AccessKey  string
+	SecretKey  string
+	SiteRegion string
+	Client     *minio.Client
 }
 
 func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
@@ -37,7 +41,11 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
 		},
-		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
+		Env: []string{
+			"MINIO_ACCESS_KEY=MYACCESSKEY",
+			"MINIO_SECRET_KEY=MYSECRETKEY",
+			"MINIO_SITE_REGION=us-east-1",
+		},
 	}
 
 	minioContainer, err := pool.RunWithOptions(options)
@@ -80,8 +88,12 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		return nil, err
 	}
 	return &MINIOResource{
-		MinioEndpoint:   minioEndpoint,
-		MinioBucketName: minioBucketName,
-		Port:            minioContainer.GetPort("9000/tcp"),
+		Endpoint:   minioEndpoint,
+		BucketName: minioBucketName,
+		Port:       minioContainer.GetPort("9000/tcp"),
+		AccessKey:  "MYACCESSKEY",
+		SecretKey:  "MYSECRETKEY",
+		SiteRegion: "us-east-1",
+		Client:     minioClient,
 	}, nil
 }

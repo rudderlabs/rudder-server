@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -377,12 +378,13 @@ var _ = Describe("jobsdb", func() {
 
 		It("can call Start in parallel without side-effects", func() {
 			var wg sync.WaitGroup
-			var bgGroups []*errgroup.Group
+			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
+				idx := i
 				go func() {
 					jd.Start()
-					bgGroups = append(bgGroups, jd.backgroundGroup)
+					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
 			}
@@ -460,7 +462,7 @@ func BenchmarkSanitizeJson(b *testing.B) {
 	nulls := 100
 
 	// string with nulls
-	inputWithoutNulls := randomString(size - nulls*len(`\u0000`))
+	inputWithoutNulls := rsRand.String(size - nulls*len(`\u0000`))
 	inputWithNulls := insertStringInString(inputWithoutNulls, `\u0000`, nulls)
 	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls)))
 	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls)))
@@ -482,7 +484,7 @@ func BenchmarkSanitizeJson(b *testing.B) {
 	})
 
 	// string without null characters
-	input := randomString(size)
+	input := rsRand.String(size)
 	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d without null characters", size), func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			sanitizedJsonUsingStrings(json.RawMessage(input))
@@ -498,15 +500,6 @@ func BenchmarkSanitizeJson(b *testing.B) {
 			sanitizedJsonUsingRegexp(json.RawMessage(input))
 		}
 	})
-}
-
-func randomString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
 }
 
 func insertStringInString(input, c string, times int) string {

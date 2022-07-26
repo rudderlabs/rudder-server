@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -68,7 +69,16 @@ type DestinationStatus struct {
 	Stats     Stats  `json:"stats"`
 }
 
-type FailedRecords struct{}
+type FailedRecords []FailedRecord
+
+type FailedRecord struct {
+	JobRunID      string          `json:"job_run_id"`
+	TaskRunID     string          `json:"task_run_id"`
+	SourceID      string          `json:"source_id"`
+	DestinationID string          `json:"destination_id"`
+	RecordID      json.RawMessage `json:"record_id"`
+	CreatedAt     time.Time       `json:"-"`
+}
 
 var StatusNotFoundError = errors.New("Status not found")
 
@@ -97,11 +107,11 @@ type JobService interface {
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
 
-	// TODO: future extension
+	// AddFailedRecords adds failed records to the database as part of a transaction
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
 
-	// TODO: future extension
-	GetFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, filter JobFilter) (FailedRecords, error)
+	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
+	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
@@ -156,7 +166,7 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 	return nil
 }
 
-func (*noopService) GetFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ JobFilter) (FailedRecords, error) {
+func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter) (FailedRecords, error) {
 	return FailedRecords{}, nil
 }
 

@@ -107,7 +107,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 			}
 			customManager.client[destID] = customDestination
 		default:
-			return nil, fmt.Errorf("No provider configured for Custom Destination Manager")
+			return nil, fmt.Errorf("no provider configured for Custom Destination Manager")
 		}
 		return nil, err
 	})
@@ -193,7 +193,7 @@ func (customManager *CustomManagerT) close(destID string) {
 		_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
 	case KV:
 		kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
-		kvManager.Close()
+		_ = kvManager.Close()
 	}
 	delete(customManager.client, destID)
 }
@@ -202,14 +202,13 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 	customDestination, ok := customManager.client[destID]
 
 	if ok {
-
 		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
 		switch customManager.managerType {
 		case STREAM:
 			_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
 		case KV:
 			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
-			kvManager.Close()
+			_ = kvManager.Close()
 		}
 	}
 	err := customManager.newClient(destID)
@@ -314,12 +313,18 @@ func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
 	ch := backendconfig.Subscribe(context.TODO(), "backendConfig")
-	for config := range ch {
-		allSources := config.Data.(backendconfig.ConfigT)
+	for conf := range ch {
+		allSources := conf.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
 				if destination.DestinationDefinition.Name == customManager.destType {
-					_ = customManager.onNewDestination(destination)
+					err := customManager.onNewDestination(destination)
+					if err != nil {
+						pkgLogger.Errorf(
+							"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
+							customManager.destType, destination.ID,
+						)
+					}
 				}
 			}
 		}
@@ -333,7 +338,7 @@ func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map
 	relevantConfigs := make(map[string]interface{})
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
-		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)
+		pkgLogger.Errorf("[CDM] DestType: %s. Destination config is not of expected type (map). Returning empty map", customManager.destType)
 		return map[string]interface{}{}
 	}
 

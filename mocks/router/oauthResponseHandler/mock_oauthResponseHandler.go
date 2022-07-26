@@ -36,7 +36,7 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 }
 
 // DisableDestination mocks base method.
-func (m *MockAuthorizer) DisableDestination(arg0 backendconfig.DestinationT, arg1, arg2 string) (int, string) {
+func (m *MockAuthorizer) DisableDestination(arg0 *backendconfig.DestinationT, arg1, arg2 string) (int, string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DisableDestination", arg0, arg1, arg2)
 	ret0, _ := ret[0].(int)

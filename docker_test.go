@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +23,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"text/template"
 	"time"
 
 	redigo "github.com/gomodule/redigo/redis"
@@ -31,17 +30,20 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/phayes/freeport"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -378,6 +380,9 @@ func TestMainFlow(t *testing.T) {
 
 func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	setupStart := time.Now()
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
 
 	config.Load()
 	logger.Init()
@@ -386,25 +391,41 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
+	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	if runtime.GOARCH != "arm64" || overrideArm64Check {
-		kafkaContainer, err = destination.SetupKafka(pool, t,
-			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			destination.WithBrokers(3),
-		)
-		require.NoError(t, err)
+		containersGroup.Go(func() (err error) {
+			kafkaContainer, err = destination.SetupKafka(pool, t,
+				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+				destination.WithBrokers(1),
+			)
+			if err != nil {
+				return err
+			}
+			kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
+			defer kafkaCancel()
+			return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
+		})
 	}
+	containersGroup.Go(func() (err error) {
+		redisContainer, err = destination.SetupRedis(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		postgresContainer, err = destination.SetupPostgres(pool, t)
+		db = postgresContainer.DB
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		transformerContainer, err = destination.SetupTransformer(pool, t)
+		return err
+	})
+	containersGroup.Go(func() (err error) {
+		minioContainer, err = destination.SetupMINIO(pool, t)
+		return err
+	})
+	require.NoError(t, containersGroup.Wait())
 
-	redisContainer, err = destination.SetupRedis(pool, t)
-	require.NoError(t, err)
-
-	postgresContainer, err = destination.SetupPostgres(pool, t)
-	require.NoError(t, err)
-	db = postgresContainer.DB
-
-	transformerContainer, err = destination.SetupTransformer(pool, t)
-	require.NoError(t, err)
-
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
 		time.Minute,
@@ -412,28 +433,25 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"transformer",
 	)
 
-	minioContainer, err = destination.SetupMINIO(pool, t)
-	require.NoError(t, err)
-
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
 	}
 
-	_ = os.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-	_ = os.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
-	_ = os.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
-	_ = os.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	httpPortInt, err := freeport.GetFreePort()
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
-	_ = os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
+	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
 	httpAdminPort, err := freeport.GetFreePort()
 	require.NoError(t, err)
 
-	_ = os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
-	_ = os.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = whUtil.NewRecorder()
 	t.Cleanup(webhook.Close)
@@ -443,8 +461,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
-	writeKey = randString(27)
-	workspaceID = randString(27)
+	writeKey = rand.String(27)
+	workspaceID = rand.String(27)
 	mapWorkspaceConfig := map[string]string{
 		"webhookUrl":                   webhookURL,
 		"disableDestinationwebhookUrl": disableDestinationWebhookURL,
@@ -452,28 +470,26 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"workspaceId":                  workspaceID,
 		"postgresPort":                 postgresContainer.Port,
 		"address":                      redisContainer.RedisAddress,
-		"minioEndpoint":                minioContainer.MinioEndpoint,
-		"minioBucketName":              minioContainer.MinioBucketName,
+		"minioEndpoint":                minioContainer.Endpoint,
+		"minioBucketName":              minioContainer.BucketName,
 	}
 	if runtime.GOARCH != "arm64" || overrideArm64Check {
 		mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Port
 	}
-	workspaceConfigPath := createWorkspaceConfig(
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
 	)
-	t.Cleanup(func() {
-		if err := os.Remove(workspaceConfigPath); err != nil {
-			t.Logf("Error while removing workspace config path: %v", err)
-		}
-	})
-	t.Log("workspace config path:", workspaceConfigPath)
-	_ = os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	if testing.Verbose() {
+		data, err := ioutil.ReadFile(workspaceConfigPath)
+		require.NoError(t, err)
+		t.Logf("Workspace config: %s", string(data))
+	}
 
-	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_test")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
-	_ = os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
+	t.Log("workspace config path:", workspaceConfigPath)
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
 
 	t.Logf("--- Setup done (%s)", time.Since(setupStart))
 
@@ -485,7 +501,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
-	waitUntilReady(
+	health.WaitUntilReady(
 		context.Background(), t,
 		serviceHealthEndpoint,
 		time.Minute,
@@ -633,60 +649,6 @@ func sendEventsToGateway(t *testing.T) {
 	sendPixelEvents(t, writeKey)
 }
 
-func randString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
-
-func createWorkspaceConfig(templatePath string, values map[string]string) string {
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		panic(err)
-	}
-
-	f, err := os.CreateTemp("", "workspaceConfig.*.json")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	err = t.Execute(f, values)
-	if err != nil {
-		panic(err)
-	}
-
-	return f.Name()
-}
-
-func waitUntilReady(ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string) {
-	t.Helper()
-	probe := time.NewTicker(interval)
-	timeout := time.After(atMost)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout:
-			t.Fatalf(
-				"application was not ready after %s, for the end point: %s, caller: %s", atMost, endpoint, caller,
-			)
-		case <-probe.C:
-			resp, err := http.Get(endpoint)
-			if err != nil {
-				continue
-			}
-			if resp.StatusCode == http.StatusOK {
-				t.Log("application ready")
-				return
-			}
-		}
-	}
-}
-
 func blockOnHold(t *testing.T) {
 	t.Helper()
 	if !hold {
@@ -815,6 +777,41 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 	}
 
 	return messages, errors
+}
+
+func waitForKafka(ctx context.Context, t *testing.T, port string) error {
+	kafkaHost := "localhost:" + port
+	ticker := time.NewTicker(250 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("kafka not ready within context: %v", ctx.Err())
+		case <-ticker.C:
+			kc, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
+			if err != nil {
+				t.Log(fmt.Errorf("could not create Kafka client: %v", err))
+				continue
+			}
+			if err := kc.Ping(ctx); err != nil {
+				t.Log(fmt.Errorf("could not ping Kafka: %v", err))
+				continue
+			}
+			tc := testutil.New("tcp", kafkaHost)
+			if err := tc.CreateTopic(ctx, "dumb-topic", 1, 1); err != nil {
+				t.Log(fmt.Errorf("could not create Kafka topic (dumb-topic): %v", err))
+				continue
+			}
+			if topics, err := tc.ListTopics(ctx); err != nil {
+				t.Log(fmt.Errorf("could not list Kafka topics: %v", err))
+				continue
+			} else if len(topics) == 0 {
+				t.Log(fmt.Errorf("kafka topic was not created (dumb-topic missing)"))
+				continue
+			}
+			t.Log("Kafka is ready!")
+			return nil
+		}
+	}
 }
 
 type testLogger struct{ logger.LoggerI }

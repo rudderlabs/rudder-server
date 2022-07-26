@@ -694,7 +694,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
 	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
-	commonMetadata.RecordID = misc.MapLookup(singularEvent, "context", "record_id")
+	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
@@ -728,9 +728,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	if event.SessionID != "" {
-		metadata.SessionID = event.SessionID
-	}
 	event.Metadata = metadata
 }
 
@@ -820,7 +817,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
-		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
 		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
 		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
@@ -979,8 +975,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
-		id := misc.FastUUID()
+		pkgLogger.Debugf(
+			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
+			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
+		)
 
+		id := misc.FastUUID()
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
 			"destination_id":     commonMetaData.DestinationID,
@@ -1359,10 +1359,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
-			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-				enabledDestinationsMap[destType] = enabledDestinationsList
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for _, destination := range enabledDestinationsList {
 					shallowEventCopy := transformer.TransformerEventT{}
@@ -1932,7 +1930,7 @@ func (proc *HandleT) transformSrcDest(
 				&proc.stats.destTransformEventsByTimeTaken,
 			)
 
-			proc.logger.Debug("Dest Transform output size", len(response.Events))
+			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(
@@ -2079,10 +2077,12 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 
+		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
+		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
 			// TODO: error propagation
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
-			return nil
+			return rsourcesStats.Publish(context.TODO(), tx)
 		})
 
 	}
