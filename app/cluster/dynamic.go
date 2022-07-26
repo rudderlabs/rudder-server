@@ -223,7 +223,7 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 			d.logger.Info("Transiting the server from NormalMode to DegradedMode")
 			d.stop()
 		default:
-			d.logger.Errorf("Unsupported transition from NormalMode to %s \n", newMode)
+			d.logger.Errorf("Unsupported transition from NormalMode to %s", newMode)
 			return fmt.Errorf("unsupported transition from NormalMode to %s", newMode)
 		}
 	case servermode.DegradedMode:
@@ -235,7 +235,7 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 				return fmt.Errorf("failed to start the server: %w", err)
 			}
 		default:
-			d.logger.Errorf("Unsupported transition from DegradedMode to %s \n", newMode)
+			d.logger.Errorf("Unsupported transition from DegradedMode to %s", newMode)
 			return fmt.Errorf("unsupported transition from DegradedMode to %s", newMode)
 		}
 	}

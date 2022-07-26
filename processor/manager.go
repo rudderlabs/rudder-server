@@ -2,8 +2,7 @@ package processor
 
 import (
 	"context"
-
-	"golang.org/x/sync/errgroup"
+	"sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -18,7 +17,7 @@ type LifecycleManager struct {
 	HandleT          *HandleT
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
-	waitGroup        *errgroup.Group
+	waitGroup        interface{ Wait() }
 	gatewayDB        *jobsdb.HandleT
 	routerDB         *jobsdb.HandleT
 	batchRouterDB    *jobsdb.HandleT
@@ -48,19 +47,24 @@ func (proc *LifecycleManager) Start() error {
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
 
-	g, ctx := errgroup.WithContext(currentCtx)
-	proc.waitGroup = g
-	g.Go(func() error {
-		return proc.HandleT.Start(ctx)
-	})
-	return g.Wait()
+	var wg sync.WaitGroup
+	proc.waitGroup = &wg
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := proc.HandleT.Start(currentCtx); err != nil {
+			proc.HandleT.logger.Errorf("Error starting processor: %v", err)
+		}
+	}()
+	return nil
 }
 
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
 	proc.HandleT.Shutdown()
-	_ = proc.waitGroup.Wait()
+	proc.waitGroup.Wait()
 }
 
 // New creates a new Processor instance
