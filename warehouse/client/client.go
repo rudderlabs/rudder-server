@@ -50,6 +50,12 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 
 		err = rows.Scan(valuePtrs...)
+		for i := 0; i < colCount; i++ {
+			switch t := values[i].(type) {
+			case []uint8:
+				values[i] = string(t)
+			}
+		}
 		if err != nil {
 			return result, err
 		}
