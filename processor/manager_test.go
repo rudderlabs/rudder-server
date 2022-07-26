@@ -65,7 +65,8 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s", err)
+		return 1
 	}
 
 	database := "jobsdb"
@@ -76,16 +77,17 @@ func run(m *testing.M) int {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Printf("Could not start resource: %s", err)
+		return 1
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			log.Printf("Could not purge resource: %s", err)
 		}
 	}()
 
 	dbDsn = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	fmt.Println("DB_DSN:", dbDsn)
+	log.Println("DB_DSN:", dbDsn)
 	_ = os.Setenv("JOBS_DB_DB_NAME", database)
 	_ = os.Setenv("JOBS_DB_HOST", "localhost")
 	_ = os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -102,7 +104,8 @@ func run(m *testing.M) int {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s", err)
+		return 1
 	}
 
 	code := m.Run()
@@ -116,8 +119,8 @@ func blockOnHold() {
 		return
 	}
 
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
+	log.Println("Test on hold, before cleanup")
+	log.Println("Press Ctrl+C to exit")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
