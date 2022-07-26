@@ -235,13 +235,13 @@ var _ = Describe("Gateway Enterprise", func() {
 		})
 
 		It("should not accept events from suppress users", func() {
-			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
+			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
 		})
 
 		It("should accept events from normal users", func() {
-			allowedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", NormalUserID)
+			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
 
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
