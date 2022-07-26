@@ -373,6 +373,7 @@ func DefaultEventMap() EventsCountMap {
 		"screens":       1,
 		"aliases":       1,
 		"groups":        1,
+		"_groups":       1,
 		"gateway":       6,
 		"batchRT":       8,
 	}
