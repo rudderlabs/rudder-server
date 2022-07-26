@@ -207,7 +207,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
 		c.initializeEnterprizeAppFeatures()
 
-		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser)
+		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
 
@@ -230,7 +230,8 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 
 		It("should not accept events from suppress users", func() {
@@ -281,14 +282,15 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		It("should wait for backend config", func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 	})
 
 	Context("Valid requests", func() {
 		var (
-			gateway               = &HandleT{}
-			gatewayBatchCalls int = 1
+			gateway           = &HandleT{}
+			gatewayBatchCalls = 1
 		)
 
 		// tracks expected batch_id
@@ -299,7 +301,8 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength, batchId int) {
@@ -398,7 +401,8 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
@@ -441,7 +445,8 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 
 		// common tests for all web handlers
@@ -526,7 +531,8 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
 		})
 
 		It("should return a robots.txt", func() {
