@@ -62,7 +62,6 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Warehouse Integration test
-        shell: powershell
         run: make run-warehouse-integration
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
