@@ -77,7 +77,7 @@ type batchWebRequestT struct {
 
 var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort         int
-	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes, maxConcurrentRequests int
+	maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
 	writeKeysSourceMap                                                                map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                         map[string]string
@@ -250,9 +250,8 @@ func (gateway *HandleT) initDBWriterWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxDBWriterProcess; i++ {
 		gateway.logger.Debug("DB Writer Worker Started", i)
-		j := i
 		g.Go(misc.WithBugsnag(func() error {
-			gateway.dbWriterWorkerProcess(j)
+			gateway.dbWriterWorkerProcess()
 			return nil
 		}))
 	}
@@ -300,7 +299,7 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 // sends a map of errors if any(errors mapped to the job.uuid) over the responseQ channel of the webRequestWorker.
 // userWebRequestWorkerProcess method of the webRequestWorker is waiting for this errorMessageMap.
 // This in turn sends the error over the done channel of each respcetive webRequest.
-func (gateway *HandleT) dbWriterWorkerProcess(process int) {
+func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
 		var errorMessagesMap map[uuid.UUID]string
@@ -510,7 +509,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
 				if builtUserID == "" {
-					builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+					if anonIDFromReq != "" {
+						builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+					} else {
+						// Proxy gets the userID from body if there is no anonymousId in body/header
+						builtUserID = userIDFromReq + DELIMITER + userIDFromReq
+					}
 				}
 
 				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
@@ -731,7 +735,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	defer gateway.bodyReadTimeStat.Since(start)
 
 	payload, err := io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if err != nil {
 		gateway.logger.Errorf(
 			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
@@ -1054,7 +1058,7 @@ func (gateway *HandleT) ProcessWebRequest(w *http.ResponseWriter, r *http.Reques
 	return gateway.rrh.ProcessRequest(gateway, w, r, reqType, payload, writeKey)
 }
 
-func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
+func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
 	sourceFailStats := make(map[string]int)
 	var err error
 	writeKey, _, ok := r.BasicAuth()
@@ -1140,7 +1144,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 }
 
 // ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
-func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, _ string, payload []byte, writeKey string) string {
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
@@ -1287,7 +1291,7 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	if queryParams["writeKey"] != nil {
 		writeKey := queryParams["writeKey"]
 		// make a new request
-		req, err := http.NewRequest(http.MethodPost, "", nil)
+		req, err := http.NewRequest(http.MethodPost, "", http.NoBody)
 		if err != nil {
 			sendPixelResponse(w)
 			return
@@ -1333,11 +1337,11 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Robots prevents robots from crawling the gateway endpoints
-func (gateway *HandleT) robots(w http.ResponseWriter, r *http.Request) {
+func (gateway *HandleT) robots(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
 }
 
-func reflectOrigin(origin string) bool {
+func reflectOrigin(_ string) bool {
 	return true
 }
 
@@ -1417,7 +1421,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		WriteTimeout:      WriteTimeout,
 		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    MaxHeaderBytes,
+		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -1499,7 +1503,7 @@ Finds the worker for a particular userID and queues the webrequest with the work
 
 They are further batched together in userWebRequestBatcher
 */
-func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
+func (gateway *HandleT) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
 	// If necessary fetch userID from request body.
 	if userIDHeader == "" {
