@@ -723,10 +723,6 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
 		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	}
-	if err := checkHealth(); err != nil {
-		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
-	}
-
 	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
