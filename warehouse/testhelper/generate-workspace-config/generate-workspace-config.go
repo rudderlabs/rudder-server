@@ -100,12 +100,13 @@ func populateTemplateConfigurations() map[string]string {
 }
 
 func enhanceBQCredentials(values map[string]string) {
-	if credentials, exists := values["bqCredentials"]; exists {
+	key := "bigqueryCredentials"
+	if credentials, exists := values[key]; exists {
 		escapedCredentials, err := json.Marshal(credentials)
 		if err != nil {
 			log.Panicf("error escaping big query JSON credentials while setting up the workspace config with error: %s", err.Error())
 		}
-		values["bq_Credentials"] = strings.Trim(string(escapedCredentials), `"`)
+		values[key] = strings.Trim(string(escapedCredentials), `"`)
 	}
 }
 
