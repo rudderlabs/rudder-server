@@ -7,7 +7,6 @@ import (
 	"github.com/gofrs/uuid"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -81,7 +80,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 		EventsCountMap:           testhelper.DefaultEventMap(),
 		MessageId:                uuid.Must(uuid.NewV4()).String(),
-		UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.SNOWFLAKE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+		UserId:                   testhelper.GetUserId(warehouseutils.SNOWFLAKE),
 	}
 
 	// Scenario 1

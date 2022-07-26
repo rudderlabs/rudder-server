@@ -3,10 +3,8 @@ package clickhouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/gofrs/uuid"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -277,7 +275,7 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 			Tables:                   handle.Tables,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.CLICKHOUSE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(warehouseutils.CLICKHOUSE),
 		}
 
 		// Scenario 1
@@ -313,7 +311,7 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 		// Since we are sending unique message Ids.
 		// These should result in events count will be equal to the number of events being sent
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.CLICKHOUSE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
@@ -354,7 +352,7 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 			Tables:                   handle.Tables,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-			UserId:                   fmt.Sprintf("userId_%s_%s", fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
 		}
 
 		// Scenario 1
@@ -393,7 +391,7 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 		// Since we are sending unique message Ids.
 		// These should result in events count will be equal to the number of events being sent
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
 		initializeClickhouseClusterMode(t)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)

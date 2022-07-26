@@ -3,9 +3,7 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/gofrs/uuid"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -65,7 +63,7 @@ func TestMSSQLIntegration(t *testing.T) {
 		Tables:                   handle.Tables,
 		EventsCountMap:           testhelper.DefaultEventMap(),
 		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-		UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.MSSQL), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+		UserId:                   testhelper.GetUserId(warehouseutils.MSSQL),
 	}
 
 	// Scenario 1
@@ -103,7 +101,7 @@ func TestMSSQLIntegration(t *testing.T) {
 	// Since we are sending unique message Ids.
 	// These should result in events count will be equal to the number of events being sent
 	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-	warehouseTest.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.MSSQL), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)

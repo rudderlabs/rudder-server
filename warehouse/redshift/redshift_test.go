@@ -7,7 +7,6 @@ import (
 	"github.com/gofrs/uuid"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -80,7 +79,7 @@ func TestRedshiftIntegration(t *testing.T) {
 		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 		EventsCountMap:           testhelper.DefaultEventMap(),
 		MessageId:                uuid.Must(uuid.NewV4()).String(),
-		UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.RS), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+		UserId:                   testhelper.GetUserId(warehouseutils.RS),
 	}
 
 	// Scenario 1

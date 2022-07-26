@@ -388,6 +388,10 @@ func DefaultEventMap() EventsCountMap {
 	}
 }
 
+func GetUserId(userType string) string {
+	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+}
+
 func SetConfig(kvs []warehouseutils.KeyValue) error {
 	payload, err := json.Marshal(&kvs)
 	if err != nil {

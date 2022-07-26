@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -92,7 +91,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.DELTALAKE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
@@ -175,7 +174,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.DELTALAKE), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1

@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"cloud.google.com/go/bigquery"
@@ -94,7 +93,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.BQ), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
@@ -178,7 +177,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:           testhelper.DefaultEventMap(),
 			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.BQ), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
