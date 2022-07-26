@@ -158,12 +158,6 @@ func enhanceJobsDBWithSQLFunctions() {
 	}
 }
 
-func VerifyingDestination(t testing.TB, wareHouseTest *WareHouseTest) {
-	VerifyingGatewayEvents(t, wareHouseTest)
-	VerifyingBatchRouterEvents(t, wareHouseTest)
-	VerifyingTablesEventCount(t, wareHouseTest)
-}
-
 func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying gateway events")
