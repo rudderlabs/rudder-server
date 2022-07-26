@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -13,6 +14,7 @@ var (
 	snowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_USER_CRED"
 	redshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_USER_CRED"
 	deltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_USER_CRED"
+	bigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_USER_CRED"
 	workspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
 )
 
@@ -72,7 +74,23 @@ func populateCredentials() (values map[string]string, err error) {
 	for k, v := range credentials {
 		values[fmt.Sprintf("dl_%s", k)] = v
 	}
+
+	if credentials, err = credentialsFromKey(bigqueryIntegrationTestCredentials); err != nil {
+		return
+	}
+	for k, v := range credentials {
+		values[fmt.Sprintf("bq_%s", k)] = v
+	}
+	values["bq_Credentials"], _ = jsonEscape(values["bq_Credentials"])
 	return
+}
+
+func jsonEscape(i string) (string, error) {
+	b, err := json.Marshal(i)
+	if err != nil {
+		return "", fmt.Errorf("could not escape big query JSON credentials for workspace config with error: %s", err.Error())
+	}
+	return strings.Trim(string(b), `"`), nil
 }
 
 func credentialsFromKey(key string) (credentials map[string]string, err error) {
