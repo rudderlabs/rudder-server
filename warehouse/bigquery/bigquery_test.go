@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/bigquery"
 
 	"github.com/gofrs/uuid"
-	"github.com/rudderlabs/rudder-server/config"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -19,23 +20,198 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type BigQueryCredentials struct {
-	ProjectID          string            `json:"projectID"`
-	Credentials        map[string]string `json:"credentials"`
-	Location           string            `json:"location"`
-	Bucket             string            `json:"bucketName"`
-	CredentialsEscaped string
+type TestHandle struct {
+	DB       *bigquery.Client
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
-type BiqQueryTest struct {
-	Credentials *BigQueryCredentials
-	DB          *bigquery.Client
-	EventsMap   testhelper.EventsCountMap
-	WriteKey    string
-	Context     context.Context
+var (
+	handle *TestHandle
+)
+
+const (
+	TestCredentialsKey = "BIGQUERY_INTEGRATION_TEST_USER_CRED"
+)
+
+// bigqueryCredentials extracting big query credentials
+func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
+	cred, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
+		return
+	}
+
+	err = json.Unmarshal([]byte(cred), &bqCredentials)
+	if err != nil {
+		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
+		return
+	}
+	return
 }
 
-var BQTest *BiqQueryTest
+// TestConnection test connection for big query
+func (*TestHandle) TestConnection() error {
+	credentials, err := bigqueryCredentials()
+	if err != nil {
+		return err
+	}
+
+	err = testhelper.ConnectWithBackoff(func() (err error) {
+		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
+		if err != nil {
+			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
+			return
+		}
+		return
+	})
+	if err != nil {
+		return fmt.Errorf("error while running test connection for bigquery with err: %s", err.Error())
+	}
+	return nil
+}
+
+func TestBigQueryIntegration(t *testing.T) {
+	t.Run("Merge Mode", func(t *testing.T) {
+		// Setting up the test configuration
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			{
+				Key:   "Warehouse.bigquery.isDedupEnabled",
+				Value: true,
+			},
+		}))
+
+		// Setting up the warehouseTest
+		warehouseTest := &testhelper.WareHouseTest{
+			Client: &client.Client{
+				BQ:   handle.DB,
+				Type: client.BQClient,
+			},
+			WriteKey:                 handle.WriteKey,
+			Schema:                   handle.Schema,
+			Tables:                   handle.Tables,
+			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:           testhelper.DefaultEventMap(),
+			MessageId:                uuid.Must(uuid.NewV4()).String(),
+			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.BQ), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+		}
+
+		// Scenario 1
+		// Sending the first set of events.
+		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"_groups":       1,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+		// Scenario 2
+		// Re-Setting up the events map
+		// Sending the second set of events.
+		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		// Since because of merge everything comes down to a single event in warehouse
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"_groups":       1,
+			"gateway":       48,
+			"batchRT":       64,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	})
+
+	t.Run("Append Mode", func(t *testing.T) {
+		// Setting up the test configuration
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			{
+				Key:   "Warehouse.bigquery.isDedupEnabled",
+				Value: false,
+			},
+		}))
+
+		// Setting up the warehouseTest
+		warehouseTest := &testhelper.WareHouseTest{
+			Client: &client.Client{
+				BQ:   handle.DB,
+				Type: client.BQClient,
+			},
+			WriteKey:                 handle.WriteKey,
+			Schema:                   handle.Schema,
+			Tables:                   handle.Tables,
+			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:           testhelper.DefaultEventMap(),
+			MessageId:                uuid.Must(uuid.NewV4()).String(),
+			UserId:                   fmt.Sprintf("userId_%s_%s", strings.ToLower(warehouseutils.BQ), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
+		}
+
+		// Scenario 1
+		// Sending the first set of events.
+		// Since we don't handle dedupe on the staging table, we can just send the events.
+		// And then verify the count on the warehouse.
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		// Since because of append events count will be equal to the number of events being sent
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    4,
+			"users":         1,
+			"tracks":        4,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        4,
+			"_groups":       4,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	})
+}
 
 func TestUnsupportedCredentials(t *testing.T) {
 	credentials := bigquery2.BQCredentialsT{
@@ -44,131 +220,21 @@ func TestUnsupportedCredentials(t *testing.T) {
 	}
 
 	_, err := bigquery2.Connect(context.Background(), &credentials)
-
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
 }
 
-func credentials() (bqCredentials *BigQueryCredentials) {
-	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
-	if cred == "" {
-		log.Panic("Error occurred while getting env variable BIGQUERY_INTEGRATION_TEST_USER_CRED")
-	}
-
-	var err error
-	err = json.Unmarshal([]byte(cred), &bqCredentials)
-	if err != nil {
-		log.Panicf("Error occurred while unmarshalling bigquery integration test credentials with error: %s", err.Error())
-	}
-	return
-}
-
-func (*BiqQueryTest) SetUpDestination() {
-	BQTest.WriteKey = "J77aX7tLFJ84qYU6UrN8ctecwZt"
-	BQTest.Credentials = credentials()
-	BQTest.EventsMap = testhelper.DefaultEventMap()
-	BQTest.EventsMap["_groups"] = 1
-	BQTest.Context = context.Background()
-
-	var err error
-
-	// Convert Map to Bytes(which can easily be converted to JSON string)
-	credentials, err := json.Marshal(BQTest.Credentials.Credentials)
-	if err != nil {
-		log.Panicf("Error while unmarshalling credentials for bigquery with error: %s", err.Error())
-	}
-
-	BQTest.Credentials.CredentialsEscaped, err = testhelper.JsonEscape(string(credentials))
-	if err != nil {
-		log.Panicf("Error while doing json ecape for bigquery with error: %s", err.Error())
-	}
-
-	testhelper.ConnectWithBackoff(func() (err error) {
-		BQTest.DB, err = bigquery2.Connect(BQTest.Context,
-			&bigquery2.BQCredentialsT{
-				ProjectID:   BQTest.Credentials.ProjectID,
-				Credentials: string(credentials),
-			})
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
-			return
-		}
-		return
-	})
-}
-
-func TestBigQueryIntegration(t *testing.T) {
-	t.Skip()
-
-	// Disabling big query dedup
-	config.SetAndWrite("Warehouse.bigquery.isDedupEnabled", false)
-
-	whDestTest := &testhelper.WareHouseDestinationTest{
-		Client: &client.Client{
-			BQ:   BQTest.DB,
-			Type: client.BQClient,
-		},
-		WriteKey:                 BQTest.WriteKey,
-		Schema:                   "rudderstack_sample_http_source",
-		EventsCountMap:           BQTest.EventsMap,
-		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-	}
-	whDestTest.Reset(warehouseutils.BQ, true)
-	whDestTest.MessageId = uuid.Must(uuid.NewV4()).String()
-
-	whDestTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies": 2,
-		"tracks":     2,
-		"pages":      2,
-		"screens":    2,
-		"aliases":    2,
-		"groups":     2,
-	}
-	testhelper.SendEvents(t, whDestTest)
-
-	whDestTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    2,
-		"users":         1,
-		"tracks":        2,
-		"product_track": 2,
-		"pages":         2,
-		"screens":       2,
-		"aliases":       2,
-		"_groups":       2,
-		"gateway":       12,
-		"batchRT":       16,
-	}
-	testhelper.VerifyingDestination(t, whDestTest)
-
-	// Enabling big query dedup
-	config.SetAndWrite("Warehouse.bigquery.isDedupEnabled", true)
-
-	whDestTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies": 2,
-		"tracks":     2,
-		"pages":      2,
-		"screens":    2,
-		"aliases":    2,
-		"groups":     2,
-	}
-	testhelper.SendEvents(t, whDestTest)
-
-	whDestTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    2,
-		"users":         1,
-		"tracks":        2,
-		"product_track": 2,
-		"pages":         2,
-		"screens":       2,
-		"aliases":       2,
-		"_groups":       2,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingDestination(t, whDestTest)
-}
-
 func TestMain(m *testing.M) {
-	BQTest = &BiqQueryTest{}
-	os.Exit(testhelper.Run(m, BQTest))
+	_, exists := os.LookupEnv(TestCredentialsKey)
+	if !exists {
+		log.Println("Skipping Bigquery Test as the Test credentials does not exits.")
+		return
+	}
+
+	handle = &TestHandle{
+		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		Schema:   "bigquery_wh_integration",
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+	}
+	os.Exit(testhelper.Run(m, handle))
 }
