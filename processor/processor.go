@@ -2104,15 +2104,15 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 			supportedTypeInterface, ok := supportedTypes.([]interface{})
 			if ok && filterUnsupportedMessageTypes {
 				messageType, typOk := event.Message["type"].(string)
-				if !typOk {
+				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				if !typOk || !event.DestinationEventTypeRulesFilter(messageType) {
 					// add to FailedEvents
-					errMessage = "Invalid message type. Type assertion failed"
+					errMessage = fmt.Sprintf("Invalid/unsupported message type: %q - %s. Type assertion failed", messageType, destinationDef.Name)
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
 
-				messageType = strings.TrimSpace(strings.ToLower(messageType))
 				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
 				if misc.ContainsString(supportedTypesArr, messageType) {
 					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
