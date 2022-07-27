@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	serverConfig "github.com/rudderlabs/rudder-server/config"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -69,31 +66,17 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
-	trimmedStr := strings.TrimSpace(serverConfig.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
-	// if env is not set
-	isEnvEmpty := !router_utils.IsNotEmptyString(trimmedStr)
 	opts := []option.ClientOption{
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	fmt.Printf(`IsEnvEmpty -> %[1]v, TrimmedStr(Env Value) -> %[2]v`, isEnvEmpty, trimmedStr)
-	if isEnvEmpty {
-		var confCreds []byte
-		if config.Credentials == "" {
-			return nil, createErr(err, "credentials not being sent")
-		}
-		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
-			fmt.Printf(`Credentials -> %+v`, config.Credentials)
+	if !googleutils.IsEmptyCredentials(config.Credentials) {
+		confCreds := []byte(config.Credentials)
+		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
+			pkgLogger.Debugf(`[BQStream] Config Credentials -> %+v`, config.Credentials)
 			return nil, createErr(err, "incompatible credentials")
 		}
-		confCreds = []byte(config.Credentials)
-		// We don't need this as we're not trying to check for schema as of this moment
-		// That should be taken care by Google SDK itself
-		// err = json.Unmarshal(confCreds, &credentialsFile)
-		// if err != nil {
-		// 	return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-		// }
 		opts = append(opts, option.WithCredentialsJSON(confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
@@ -111,8 +94,6 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 	dsId := parsedJSON.Get("datasetId").String()
 	tblId := parsedJSON.Get("tableId").String()
 	props := parsedJSON.Get("properties").String()
-
-	fmt.Printf(`[BQStream]JSONData: %+v`, string(jsonData))
 
 	var genericRec *genericRecord
 	err := json.Unmarshal([]byte(props), &genericRec)

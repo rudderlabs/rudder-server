@@ -607,10 +607,14 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
-	if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
-		return nil, err
+	opts := []option.ClientOption{}
+	if !googleutils.IsEmptyCredentials(cred.Credentials) {
+		if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithCredentialsJSON([]byte(cred.Credentials)))
 	}
-	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
+	client, err := bigquery.NewClient(context, cred.ProjectID, opts...)
 	return client, err
 }
 
