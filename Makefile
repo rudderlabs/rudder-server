@@ -75,9 +75,8 @@ setup-warehouse-integration: cleanup-warehouse-integration
 run-warehouse-integration: setup-warehouse-integration
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T backend go test -v ./warehouse/... -tags=warehouse_integration -p 8 -timeout 30m -count 1; then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
-      	docker logs warehouse_backend_1 \
+      	docker logs warehouse_backend_1; \
       	make cleanup-warehouse-integration; \
-      	exit 0; \
     else \
       	echo "Failed set up Warehouse Integration. Getting all logs from all containers"; \
       	docker-compose -f warehouse/docker-compose.test.yml logs; \
