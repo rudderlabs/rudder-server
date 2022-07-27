@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	appConfig "github.com/rudderlabs/rudder-server/config"
 )
@@ -60,7 +59,7 @@ func (manager *S3Manager) Download(ctx context.Context, output *os.File, key str
 		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
-	downloader := s3manager.NewDownloader(sess)
+	downloader := awsS3Manager.NewDownloader(sess)
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
