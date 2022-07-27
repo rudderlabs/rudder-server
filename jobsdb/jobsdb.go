@@ -122,53 +122,6 @@ var getTimeNowFunc = func() time.Time {
 	return time.Now()
 }
 
-// StoreSafeTx sealed interface
-type StoreSafeTx interface {
-	Tx() *sql.Tx
-	storeSafeTxIdentifier() string
-}
-
-type storeSafeTx struct {
-	tx       *sql.Tx
-	identity string
-}
-
-func (r *storeSafeTx) storeSafeTxIdentifier() string {
-	return r.identity
-}
-
-func (r *storeSafeTx) Tx() *sql.Tx {
-	return r.tx
-}
-
-// EmptyStoreSafeTx returns an empty interface usable only for tests
-func EmptyStoreSafeTx() StoreSafeTx {
-	return &storeSafeTx{}
-}
-
-// UpdateSafeTx sealed interface
-type UpdateSafeTx interface {
-	Tx() *sql.Tx
-	updateSafeTxSealIdentifier() string
-}
-type updateSafeTx struct {
-	tx       *sql.Tx
-	identity string
-}
-
-func (r *updateSafeTx) updateSafeTxSealIdentifier() string {
-	return r.identity
-}
-
-func (r *updateSafeTx) Tx() *sql.Tx {
-	return r.tx
-}
-
-// EmptyUpdateSafeTx returns an empty interface usable only for tests
-func EmptyUpdateSafeTx() UpdateSafeTx {
-	return &updateSafeTx{}
-}
-
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -292,7 +245,7 @@ func (jd *HandleT) UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT
 		command := func() interface{} {
 			return jd.internalUpdateJobStatusInTx(tx.Tx(), statusList, customValFilters, parameterFilters)
 		}
-		err, _ := jd.executeDbRequest(newWriteDbRequest("update_job_status", &tags, command)).(error)
+		err, _ := jd.executeDbRequest(newWriteDbRequest("update_job_status", &tags, command, tx.writerQueueToken())).(error)
 		return err
 	}
 
@@ -1945,7 +1898,15 @@ func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { 
 
 func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
 	return jd.inStoreSafeCtx(func() error {
-		return jd.WithTx(func(tx *sql.Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
+		eqt := jd.earlyQueueToken()
+		return jd.WithTx(func(tx *sql.Tx) error {
+			err := f(&storeSafeTx{tx: tx, identity: jd.tablePrefix, eqt: eqt})
+			if eqt != nil && !eqt.redeemed {
+				// make sure we always redeem it no matter what
+				eqt.redeem()
+			}
+			return err
+		})
 	})
 }
 
@@ -1958,8 +1919,25 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 
 func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
 	return jd.inUpdateSafeCtx(func() error {
-		return jd.WithTx(func(tx *sql.Tx) error { return f(&updateSafeTx{tx: tx, identity: jd.tablePrefix}) })
+		eqt := jd.earlyQueueToken()
+		return jd.WithTx(func(tx *sql.Tx) error {
+			err := f(&updateSafeTx{tx: tx, identity: jd.tablePrefix, eqt: eqt})
+			if eqt != nil && !eqt.redeemed {
+				// make sure we always redeem it no matter what
+				eqt.redeem()
+			}
+			return err
+		})
 	})
+}
+
+func (jd *HandleT) earlyQueueToken() *earlyQueueToken {
+	if jd.enableWriterQueue {
+		now := time.Now()
+		jd.writeCapacity <- struct{}{}
+		return &earlyQueueToken{queue: jd.writeCapacity, waitTime: time.Since(now)}
+	}
+	return nil
 }
 
 func (jd *HandleT) inUpdateSafeCtx(f func() error) error {
@@ -3999,7 +3977,7 @@ func (jd *HandleT) StoreInTx(tx StoreSafeTx, jobList []*JobT) error {
 			err := jd.internalStoreJobsInTx(tx.Tx(), dsList[len(dsList)-1], jobList)
 			return err
 		}
-		err, _ := jd.executeDbRequest(newWriteDbRequest("store", nil, command)).(error)
+		err, _ := jd.executeDbRequest(newWriteDbRequest("store", nil, command, tx.writerQueueToken())).(error)
 		return err
 	}
 
@@ -4026,7 +4004,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(tx StoreSafeTx, jobList []*JobT) map[u
 			dsList := jd.getDSList()
 			return jd.internalStoreWithRetryEachInTx(tx.Tx(), dsList[len(dsList)-1], jobList)
 		}
-		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
+		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command, tx.writerQueueToken())).(map[uuid.UUID]string)
 		return nil
 	}
 
@@ -4419,7 +4397,7 @@ func (jd *HandleT) DeleteExecuting() {
 		jd.deleteJobStatus(conditions)
 		return nil
 	}
-	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
+	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command, nil))
 }
 
 /*

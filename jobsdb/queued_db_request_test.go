@@ -84,6 +84,7 @@ func initMocks(t *testing.T) {
 	mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockRudderStats)
 	mockRudderStats.EXPECT().Start().AnyTimes()
 	mockRudderStats.EXPECT().End().AnyTimes()
+	mockRudderStats.EXPECT().SendTiming(gomock.Any()).AnyTimes()
 
 	stats.DefaultStats = mockStats
 }

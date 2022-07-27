@@ -2,12 +2,29 @@ package jobsdb
 
 import (
 	"fmt"
+	"time"
 )
+
+type earlyQueueToken struct {
+	waitTime time.Duration
+	redeemed bool
+	queue    chan struct{}
+}
+
+func (t *earlyQueueToken) redeem() {
+	if !t.redeemed {
+		t.redeemed = true
+		<-t.queue
+	}
+}
 
 func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 	totalTimeStat := jd.getTimerStat(fmt.Sprintf("%s_total_time", c.name), c.tags)
-	totalTimeStat.Start()
-	defer totalTimeStat.End()
+	var waitTime time.Duration
+	now := time.Now()
+	defer func() {
+		totalTimeStat.SendTiming(time.Since(now) + waitTime)
+	}()
 
 	var queueEnabled bool
 	var queueCap chan struct{}
@@ -26,12 +43,17 @@ func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 
 	if queueEnabled {
 		waitTimeStat := jd.getTimerStat(fmt.Sprintf("%s_wait_time", c.name), c.tags)
-		waitTimeStat.Start()
-		queueCap <- struct{}{}
-		defer func() { <-queueCap }()
-		waitTimeStat.End()
+		if c.eqt != nil && !c.eqt.redeemed { // in case we have a token and it isn't redeemed yet we will use it
+			waitTime = c.eqt.waitTime
+			waitTimeStat.SendTiming(waitTime)
+			defer func() { c.eqt.redeem() }()
+		} else {
+			waitTimeStat.Start()
+			queueCap <- struct{}{}
+			waitTimeStat.End()
+			defer func() { <-queueCap }()
+		}
 	}
-
 	return c.command()
 }
 
@@ -47,6 +69,7 @@ type dbRequest struct {
 	reqType dbReqType
 	name    string
 	tags    *statTags
+	eqt     *earlyQueueToken
 	command func() interface{}
 }
 
@@ -59,11 +82,12 @@ func newReadDbRequest(name string, tags *statTags, command func() interface{}) *
 	}
 }
 
-func newWriteDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {
+func newWriteDbRequest(name string, tags *statTags, command func() interface{}, eqt *earlyQueueToken) *dbRequest {
 	return &dbRequest{
 		reqType: writeReqType,
 		name:    name,
 		tags:    tags,
 		command: command,
+		eqt:     eqt,
 	}
 }
