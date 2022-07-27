@@ -19,9 +19,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 		}
 	}()
 
-	curSourceJSONLock.RLock()
-	defer curSourceJSONLock.RUnlock()
-	outputJSON := curSourceJSON
+	outputJSON := GetConfig()
 	if filterProcessor {
 		outputJSON = filterProcessorEnabledDestinations(outputJSON)
 	}
