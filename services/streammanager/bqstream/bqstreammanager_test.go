@@ -78,8 +78,8 @@ func TestUnsupportedCredentials(t *testing.T) {
 	var err error
 	err = json.Unmarshal(
 		[]byte(`{
-			"projectID": "my-project",
-			"credentials": "{\n  \"installed\": {\n    \"client_id\": \"1234.apps.googleusercontent.com\",\n    \"project_id\": \"project_id\",\n    \"auth_uri\": \"https://accounts.google.com/o/oauth2/auth\",\n    \"token_uri\": \"https://oauth2.googleapis.com/token\",\n    \"auth_provider_x509_cert_url\": \"https://www.googleapis.com/oauth2/v1/certs\",\n    \"client_secret\": \"client_secret\",\n    \"redirect_uris\": [\n      \"urn:ietf:wg:oauth:2.0:oob\",\n      \"http://localhost\"\n    ]\n  }\n}"
+            "projectID": "my-project",
+            "credentials": "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}"
 		}`), &bqCredentials)
 	config := Config{
 		Credentials: bqCredentials.Credentials,
