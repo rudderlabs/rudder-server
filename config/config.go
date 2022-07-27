@@ -32,6 +32,30 @@ type ConfigVar struct {
 	keys            []string
 }
 
+func GetTotalHotReloadableConfigVars() int {
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+
+	total := 0
+	for _, configVars := range hotReloadableConfig {
+		total += len(configVars)
+	}
+
+	return total
+}
+
+func GetTotalNonHotReloadableConfigVars() int {
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+
+	total := 0
+	for _, configVars := range nonHotReloadableConfig {
+		total += len(configVars)
+	}
+
+	return total
+}
+
 func newConfigVar(value, multiplier, defaultValue interface{}, isHotReloadable bool, keys []string) *ConfigVar {
 	return &ConfigVar{
 		value:           value,
@@ -477,6 +501,29 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 
 	if !isSet {
 		*ptr = defaultValue * valueScale
+	}
+}
+
+func DeregisterConfigVariableWithPtr(ptr interface{}) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+
+	for key, configVars := range hotReloadableConfig {
+		for _, configvar := range configVars {
+			if configvar.value == ptr {
+				delete(hotReloadableConfig, key)
+				break
+			}
+		}
+	}
+
+	for key, configVars := range nonHotReloadableConfig {
+		for _, configvar := range configVars {
+			if configvar.value == ptr {
+				delete(nonHotReloadableConfig, key)
+				break
+			}
+		}
 	}
 }
 

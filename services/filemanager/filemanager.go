@@ -44,6 +44,7 @@ type FileManager interface {
 	ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
 	SetTimeout(timeout *time.Duration)
+	Dispose()
 }
 
 // SettingsT sets configuration for FileManager

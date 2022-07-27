@@ -196,6 +196,9 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
 		return nil, err
 	}
+
+	defer downloader.Dispose()
+
 	var fileNames []string
 	for _, object := range objects {
 		objectName, err := warehouseutils.GetObjectName(object.Location, ms.Warehouse.Destination.Config, ms.ObjectStorage)
@@ -232,6 +235,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}
 		fileNames = append(fileNames, fileName)
 	}
+
 	return fileNames, nil
 }
 

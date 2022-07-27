@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	SpacesManager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -194,6 +195,10 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 		cancel()
 	}
 	return nil
+}
+
+func (manager *DOSpacesManager) Dispose() {
+	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 
 type DOSpacesManager struct {

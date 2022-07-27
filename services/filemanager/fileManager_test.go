@@ -264,6 +264,29 @@ func TestFileManager(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config.Load()
+
+			fmFactory := filemanager.FileManagerFactoryT{}
+			fm, err := fmFactory.New(&filemanager.SettingsT{
+				Provider: tt.destName,
+				Config:   tt.config,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			len := config.GetTotalNonHotReloadableConfigVars()
+			require.Equal(t, len, 1)
+
+			fm.Dispose()
+
+			len = config.GetTotalNonHotReloadableConfigVars()
+			require.Equal(t, len, 0)
+		})
+	}
+
+	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.skip != "" {
@@ -427,7 +450,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 			"location": "US",
 			"bucketName": "my-bucket",
 			"prefix": "rudder",
-			"namespace": "namespace", 
+			"namespace": "namespace",
 			"credentials":"{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 			"syncFrequency": "1440",
 			"syncStartAt": "09:00"

@@ -393,6 +393,9 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	if err != nil {
 		return "", err
 	}
+
+	defer fm.Dispose()
+
 	return fm.GetObjectNameFromLocation(location)
 }
 

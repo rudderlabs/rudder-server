@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -85,9 +84,11 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
 	if err != nil {
-		err = errors.New(fmt.Sprintf(`Error in creating a file manager for:%s. Error: %v`, config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err))
+		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
 		return
 	}
+
+	defer fManager.Dispose()
 
 	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
@@ -109,9 +110,11 @@ func deleteFilesInStorage(locations []string) error {
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
 	if err != nil {
-		err = errors.New(fmt.Sprintf(`Error in creating a file manager for Rudder Storage. Error: %v`, err))
+		err = fmt.Errorf("Error in creating a file manager for Rudder Storage. Error: %w", err)
 		return err
 	}
+
+	defer fManager.Dispose()
 
 	err = fManager.DeleteObjects(context.TODO(), locations)
 	if err != nil {

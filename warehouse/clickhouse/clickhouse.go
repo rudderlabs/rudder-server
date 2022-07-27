@@ -350,6 +350,9 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
 		return nil, err
 	}
+
+	defer downloader.Dispose()
+
 	var fileNames []string
 	var dErr error
 	var fileNamesLock sync.RWMutex

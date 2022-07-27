@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/rudderlabs/rudder-server/config"
 	appConfig "github.com/rudderlabs/rudder-server/config"
 )
 
@@ -260,6 +261,10 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 
 func (manager *S3Manager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
+}
+
+func (manager *S3Manager) Dispose() {
+	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 
 type S3Manager struct {

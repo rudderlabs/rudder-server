@@ -89,6 +89,18 @@ func (mr *MockFileManagerMockRecorder) DeleteObjects(arg0, arg1 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteObjects", reflect.TypeOf((*MockFileManager)(nil).DeleteObjects), arg0, arg1)
 }
 
+// Dispose mocks base method.
+func (m *MockFileManager) Dispose() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Dispose")
+}
+
+// Dispose indicates an expected call of Dispose.
+func (mr *MockFileManagerMockRecorder) Dispose() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Dispose", reflect.TypeOf((*MockFileManager)(nil).Dispose))
+}
+
 // Download mocks base method.
 func (m *MockFileManager) Download(arg0 context.Context, arg1 *os.File, arg2 string) error {
 	m.ctrl.T.Helper()

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
 
@@ -157,6 +158,10 @@ func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) strin
 	splitStr := strings.Split(location, manager.Config.Bucket)
 	key := strings.TrimLeft(splitStr[len(splitStr)-1], "/")
 	return key
+}
+
+func (manager *GCSManager) Dispose() {
+	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 
 type GCSManager struct {
