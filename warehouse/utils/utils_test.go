@@ -1138,8 +1138,8 @@ func TestGetTimeWindow(t *testing.T) {
 		expected time.Time
 	}{
 		{
-			ts:       time.Date(2020, 0o4, 27, 20, 23, 54, 3424534, time.UTC),
-			expected: time.Date(2020, 0o4, 27, 0, 0, 0, 0, time.UTC),
+			ts:       time.Date(2020, 4, 27, 20, 23, 54, 3424534, time.UTC),
+			expected: time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC),
 		},
 	}
 	for _, input := range inputs {
