@@ -28,7 +28,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 
 	for _, source := range outputJSON.Sources {
 		destinations := make([]interface{}, 0)
-		for _, destination := range source.Destinations {
+		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			destinationConfigCopy := make(map[string]interface{})
 			for k, v := range destination.Config {
 				destinationConfigCopy[k] = v
