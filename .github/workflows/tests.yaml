@@ -45,7 +45,6 @@ jobs:
   warehouse-integration:
     name: Warehouse Service Integration
     runs-on: 'ubuntu-18.04'
-
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
@@ -61,7 +60,7 @@ jobs:
             ${{ runner.os }}-go-
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
-      - name: Warehouse Integration test
+      - name: Warehouse Integration Test
         run: make run-warehouse-integration
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
