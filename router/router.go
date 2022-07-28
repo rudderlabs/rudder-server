@@ -742,6 +742,7 @@ func (worker *workerT) processDestinationJobs() {
 							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
 								"workspaceId":   workspaceID,
 							}).Count(len(result))
 
@@ -754,6 +755,7 @@ func (worker *workerT) processDestinationJobs() {
 							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
+								"workspace":     workspaceID,
 								"workspaceId":   workspaceID,
 							}).Count(len(respBodyArr))
 						}
