@@ -89,8 +89,6 @@ type HandleT struct {
 	maxEventsInABatch              int
 	maxFailedCountForJob           int
 	asyncUploadTimeout             time.Duration
-	jobdDBRequestTimeout           time.Duration
-	jobdDBMaxRetries               int
 	uploadIntervalMap              map[string]time.Duration
 	retryTimeWindow                time.Duration
 	reporting                      types.ReportingI
@@ -125,9 +123,11 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	payloadLimit     int64
-	transientSources transientsource.Service
-	rsourcesService  rsources.JobService
+	payloadLimit         int64
+	transientSources     transientsource.Service
+	rsourcesService      rsources.JobService
+	jobdDBRequestTimeout time.Duration
+	jobdDBMaxRetries     int
 }
 
 type BatchDestinationDataT struct {
