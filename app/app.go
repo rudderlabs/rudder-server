@@ -139,27 +139,43 @@ func New(options *Options) Interface {
 	}
 }
 
-// HealthHandler is the http handler for health endpoint
-func HealthHandler(w http.ResponseWriter, _ *http.Request, jobsDB jobsdb.JobsDB) {
-	dbService := "UP"
-	enabledRouter := "TRUE"
-	backendConfigMode := "API"
-	if jobsDB.Ping() != nil {
-		dbService = "DOWN"
-	}
-	if !config.GetBool("enableRouter", true) {
-		enabledRouter = "FALSE"
-	}
-	if config.GetBool("BackendConfig.configFromFile", false) {
-		backendConfigMode = "JSON"
-	}
+// LivenessHandler is the http handler for the Kubernetes liveness probe
+func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		dbService := "UP"
+		if jobsDB.Ping() != nil {
+			dbService = "DOWN"
+		}
+		enabledRouter := "TRUE"
+		if !config.GetBool("enableRouter", true) {
+			enabledRouter = "FALSE"
+		}
+		backendConfigMode := "API"
+		if config.GetBool("BackendConfig.configFromFile", false) {
+			backendConfigMode = "JSON"
+		}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
-	healthVal := fmt.Sprintf(
-		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
-			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
-		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
-		backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
-	)
-	_, _ = w.Write([]byte(healthVal))
+		appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+		healthVal := fmt.Sprintf(
+			`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
+				`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
+			appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
+			backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
+		)
+		_, _ = w.Write([]byte(healthVal))
+	}
+}
+
+// ReadinessHandler is the http handler for the Kubernetes readiness probe
+func ReadinessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		statusCode := http.StatusOK
+		switch {
+		case jobsDB.Ping() != nil:
+			fallthrough
+		case !backendconfig.DefaultBackendConfig.IsInitialized():
+			statusCode = http.StatusInternalServerError
+		}
+		w.WriteHeader(statusCode)
+	}
 }

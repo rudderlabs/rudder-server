@@ -269,12 +269,13 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
+// TODO test processorAppHandler startup with health handlers
 func startHealthWebHandler(ctx context.Context) error {
 	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", healthHandler)
-	srvMux.HandleFunc("/", healthHandler)
+	srvMux.HandleFunc("/liveness", app.LivenessHandler(gatewayDB))
+	srvMux.HandleFunc("/readiness", app.ReadinessHandler(gatewayDB))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
@@ -294,8 +295,4 @@ func startHealthWebHandler(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, gatewayDB)
 }
