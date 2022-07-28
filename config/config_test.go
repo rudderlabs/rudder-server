@@ -42,12 +42,12 @@ func TestStatic_RegisterAndDeRegister(t *testing.T) {
 	require.Equal(t, len(hotReloadableConfig), 1)
 	require.Equal(t, len(nonHotReloadableConfig), 1)
 
-	DeRegisterConfigVariableWithPtr(&timeout2)
+	DeregisterConfigVariableWithPtr(&timeout2)
 
 	require.Equal(t, len(hotReloadableConfig), 1)
 	require.Equal(t, len(nonHotReloadableConfig), 0)
 
-	DeRegisterConfigVariableWithPtr(&timeout1)
+	DeregisterConfigVariableWithPtr(&timeout1)
 
 	require.Equal(t, len(hotReloadableConfig), 0)
 	require.Equal(t, len(nonHotReloadableConfig), 0)
