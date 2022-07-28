@@ -80,7 +80,7 @@ var (
 				configFromFile = false
 				configBackendURL = ""
 				Http = mockHttp
-				testRequest, _ := http.NewRequest("GET", "", nil)
+				testRequest, _ := http.NewRequest("GET", "", http.NoBody)
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
