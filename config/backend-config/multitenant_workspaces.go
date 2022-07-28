@@ -22,12 +22,15 @@ type MultiTenantWorkspacesConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
+func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
 	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-
 	if workspaceConfig.Token == "" {
 		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
+	if workspaceConfig.Token == "" {
+		return fmt.Errorf("multi tenant workspace: empty workspace config token")
+	}
+	return nil
 }
 
 func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
@@ -78,7 +81,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 	ctx context.Context, workspaceArr string,
 ) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
-	if workspaceArr == workspaceConfig.Token {
+	if workspaceArr == "" {
 		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
 	}
 
@@ -170,8 +173,4 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (workspaceConfig *MultiTenantWorkspacesConfig) IsConfigured() bool {
-	return workspaceConfig.Token != ""
 }

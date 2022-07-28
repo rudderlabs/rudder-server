@@ -32,11 +32,15 @@ type WorkspacesT struct {
 }
 
 // SetUp sets up MultiWorkspaceConfig
-func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() error {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if multiWorkspaceConfig.Token == "" {
 		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
+	if multiWorkspaceConfig.Token == "" {
+		return fmt.Errorf("hosted workspace: empty workspace config token")
+	}
+	return nil
 }
 
 func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
@@ -159,8 +163,4 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (multiWorkspaceConfig *HostedWorkspacesConfig) IsConfigured() bool {
-	return multiWorkspaceConfig.AccessToken() != ""
 }

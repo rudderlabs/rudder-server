@@ -44,7 +44,7 @@ var (
 )
 
 type BackendConfig interface {
-	SetUp()
+	SetUp() error
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
@@ -54,7 +54,6 @@ type BackendConfig interface {
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-	IsConfigured() bool
 }
 type CommonBackendConfig struct {
 	eb               *pubsub.PublishSubscriber
@@ -232,15 +231,10 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		}
 	// Fallback to dedicated
 	default:
-		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
+		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
 	}
 
-	backendConfig.SetUp()
-	if !backendConfig.IsConfigured() {
-		return nil, fmt.Errorf("backend config token not available")
-	}
-
-	return backendConfig, nil
+	return backendConfig, backendConfig.SetUp()
 }
 
 // Setup backend config

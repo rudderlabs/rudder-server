@@ -22,10 +22,17 @@ type SingleWorkspaceConfig struct {
 	workspaceIDLock           sync.RWMutex
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) SetUp() {
+func (workspaceConfig *SingleWorkspaceConfig) SetUp() error {
+	if configFromFile {
+		return nil
+	}
 	if workspaceConfig.Token == "" {
 		workspaceConfig.Token = config.GetWorkspaceToken()
 	}
+	if workspaceConfig.Token == "" {
+		return fmt.Errorf("single workspace: empty workspace config token")
+	}
+	return nil
 }
 
 func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
@@ -152,11 +159,4 @@ func (*SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url, workspac
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (workspaceConfig *SingleWorkspaceConfig) IsConfigured() bool {
-	if configFromFile {
-		return true
-	}
-	return workspaceConfig.Token != ""
 }
