@@ -72,6 +72,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	if testing.Verbose() {
 		backendConfRouter.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// TODO check authentication
 				t.Logf("BackendConfig server call: %+v", r)
 				next.ServeHTTP(w, r)
 			})
@@ -118,13 +119,6 @@ func TestMultiTenantGateway(t *testing.T) {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
 
-	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
-	// TODO: this is to be reviewed after "Review health checkpoint (probes)
-	// https://www.notion.so/rudderstacks/Review-health-checkpoint-probes-ec33b45c1b7541f3bf802f3276667920
-	etcdReqKey := getGatewayWorkspacesReqKey(releaseName, serverInstanceID)
-	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
-	require.NoError(t, err)
-
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -132,13 +126,33 @@ func TestMultiTenantGateway(t *testing.T) {
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
+	livenessProbe := fmt.Sprintf("http://localhost:%d/liveness", httpPort)
+	t.Log("Checking liveness at", livenessProbe)
 	health.WaitUntilReady(ctx, t,
-		serviceHealthEndpoint,
+		livenessProbe,
+		10*time.Minute,
+		250*time.Millisecond,
+		t.Name(),
+	)
+
+	t.Log("Service is live, checking readiness...")
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readiness", httpPort))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusInternalServerError, resp.StatusCode) // no valid workspaces yet
+
+	// push some valid workspaces and check on readiness again
+	t.Log("Service is not ready as expected, pushing valid workspaces...")
+	etcdReqKey := getGatewayWorkspacesReqKey(releaseName, serverInstanceID)
+	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
+	require.NoError(t, err)
+
+	readinessProbe := fmt.Sprintf("http://localhost:%d/readiness", httpPort)
+	t.Log("Checking readiness at", readinessProbe)
+	health.WaitUntilReady(ctx, t,
+		readinessProbe,
 		time.Minute,
 		250*time.Millisecond,
-		"serviceHealthEndpoint",
+		t.Name(),
 	)
 
 	select {
@@ -226,7 +240,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
 		// do not move this test up because the gateway terminates after a configuration error
 		_, err := etcdContainer.Client.Put(ctx,
-			etcdReqKey, `{"workspaces":"`+multiTenantSvcSecret+`","ack_key":"test-ack/3"}`,
+			etcdReqKey, `{"workspaces":"","ack_key":"test-ack/3"}`,
 		)
 		require.NoError(t, err)
 		select {

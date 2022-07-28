@@ -33,6 +33,12 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
 	return nil
 }
 
+func (workspaceConfig *MultiTenantWorkspacesConfig) StartWithIDs(ctx context.Context, workspaces string) {
+	if workspaces != "" {
+		workspaceConfig.startWithIDs(ctx, workspaces)
+	}
+}
+
 func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
 	return workspaceConfig.Token
 }
@@ -82,7 +88,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 ) (ConfigT, error) {
 	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
 	if workspaceArr == "" {
-		return ConfigT{}, newError(false, fmt.Errorf("no workspace IDs provided, skipping backend config fetch"))
+		return ConfigT{}, fmt.Errorf("no workspace IDs provided, skipping backend config fetch")
 	}
 
 	var (
@@ -108,7 +114,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 	})
 	if err != nil {
 		pkgLogger.Errorf("Error sending request to the server: %v", err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
@@ -119,7 +125,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
@@ -151,7 +157,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	if err != nil {
 		return []byte{}, 400, err
 	}
-	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backend config
 	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
 	} else {

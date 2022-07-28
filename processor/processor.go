@@ -433,9 +433,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
-			return err
-		}
+		proc.backendConfig.WaitForConfig(ctx)
 		if enablePipelining {
 			proc.mainPipeline(ctx)
 		} else {

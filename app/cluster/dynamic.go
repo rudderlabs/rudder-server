@@ -34,7 +34,7 @@ type lifecycle interface {
 type configLifecycle interface {
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-	WaitForConfig(ctx context.Context) error
+	WaitForConfig(ctx context.Context)
 }
 
 type Dynamic struct {
@@ -200,7 +200,8 @@ func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) 
 	d.BackendConfig.Stop()
 	d.BackendConfig.StartWithIDs(ctx, workspaces)
 	d.currentWorkspaceIDs = workspaces
-	return d.BackendConfig.WaitForConfig(ctx)
+	d.BackendConfig.WaitForConfig(ctx)
+	return nil
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {

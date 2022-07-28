@@ -50,11 +50,13 @@ type BackendConfig interface {
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
-	WaitForConfig(ctx context.Context) error
+	WaitForConfig(ctx context.Context)
+	IsInitialized() bool
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
 }
+
 type CommonBackendConfig struct {
 	eb               *pubsub.PublishSubscriber
 	configEnvHandler types.ConfigEnvI
@@ -63,14 +65,12 @@ type CommonBackendConfig struct {
 	blockChan        chan struct{}
 	initializedLock  sync.RWMutex
 	initialized      bool
-	initializedErr   error
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
-
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
@@ -128,12 +128,6 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
-		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
-			bc.initializedLock.Lock()
-			bc.initialized = false
-			bc.initializedErr = err
-			bc.initializedLock.Unlock()
-		}
 		return
 	}
 
@@ -144,21 +138,19 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	})
 
 	if !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-		pkgLogger.Info("Workspace Config changed")
+		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
 		curSourceJSONLock.Lock()
 		trackConfig(curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
+		bc.initializedLock.Lock()
+		bc.initialized = true
+		bc.initializedLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
-
-	bc.initializedLock.Lock()
-	bc.initialized = true
-	bc.initializedErr = nil
-	bc.initializedLock.Unlock()
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
@@ -255,7 +247,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *CommonBackendConfig) startWithIDs(ctx context.Context, workspaces string) {
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -267,36 +259,38 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 }
 
 func (bc *CommonBackendConfig) Stop() {
-	bc.cancel()
-	<-bc.blockChan
+	if bc.cancel != nil {
+		bc.cancel()
+		<-bc.blockChan
+	}
 	bc.initializedLock.Lock()
 	bc.initialized = false
-	bc.initializedErr = nil
 	bc.initializedLock.Unlock()
 }
 
 // WaitForConfig waits until backend config has been initialized
-func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
+func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
 	for {
 		bc.initializedLock.RLock()
 		if bc.initialized {
 			bc.initializedLock.RUnlock()
-			return nil
-		}
-		if bc.initializedErr != nil {
-			err := bc.initializedErr
-			bc.initializedLock.RUnlock()
-			return err
+			return
 		}
 		bc.initializedLock.RUnlock()
 
 		pkgLogger.Info("Waiting for backend config")
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func (bc *CommonBackendConfig) IsInitialized() bool {
+	bc.initializedLock.RLock()
+	defer bc.initializedLock.RUnlock()
+	return bc.initialized
 }
 
 func GetConfigBackendURL() string {

@@ -161,11 +161,9 @@ func (mr *MockconfigLifecycleMockRecorder) Stop() *gomock.Call {
 }
 
 // WaitForConfig mocks base method.
-func (m *MockconfigLifecycle) WaitForConfig(ctx context.Context) error {
+func (m *MockconfigLifecycle) WaitForConfig(ctx context.Context) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForConfig", ctx)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "WaitForConfig", ctx)
 }
 
 // WaitForConfig indicates an expected call of WaitForConfig.

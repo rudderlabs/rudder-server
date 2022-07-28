@@ -2,7 +2,6 @@ package suppression
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -39,11 +38,8 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.Suppre
 
 	pkgLogger.Info("[[ SuppressUser ]] Setting up Suppress User Feature")
 	loadConfig()
-	ctx := context.Background()
-	if err := backendConfig.WaitForConfig(ctx); err != nil {
-		pkgLogger.Errorf("error initializing backend config: %v", err)
-		return nil, fmt.Errorf("error initializing backend config: %w", err)
-	}
+	ctx := context.TODO()
+	backendConfig.WaitForConfig(ctx)
 	workspaceId := backendConfig.GetWorkspaceIDForWriteKey("")
 	suppressUser := &SuppressRegulationHandler{
 		RegulationBackendURL:    configBackendURL,

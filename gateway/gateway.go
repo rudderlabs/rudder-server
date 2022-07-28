@@ -1332,10 +1332,6 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 	}
 }
 
-func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, gateway.jobsDB)
-}
-
 // Robots prevents robots from crawling the gateway endpoints
 func (gateway *HandleT) robots(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
@@ -1351,11 +1347,6 @@ Supports CORS from all origins.
 This function will block.
 */
 func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		return err
-	}
-
-	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
@@ -1370,10 +1361,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
+	srvMux.HandleFunc("/liveness", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+	srvMux.HandleFunc("/readiness", app.ReadinessHandler(gateway.jobsDB)).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
-	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
@@ -1433,16 +1424,19 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		return gateway.httpWebServer.ListenAndServe()
 	})
 
+	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("WebHandler Starting on %d", webPort)
+
 	return g.Wait()
 }
 
 // StartAdminHandler for Admin Operations
 func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		return err
-	}
+	gateway.logger.Infof("AdminHandler waiting for BackendConfig before starting on %d", adminWebPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
 
-	gateway.logger.Infof("Starting AdminHandler in %d", adminWebPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
@@ -1624,15 +1618,9 @@ func (gateway *HandleT) Setup(
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		cancel()
-		return fmt.Errorf("error while waiting for backend config: %w", err)
-	}
-
-	gateway.initUserWebRequestWorkers()
-
 	gateway.backgroundCancel = cancel
 	gateway.backgroundWait = g.Wait
+	gateway.initUserWebRequestWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
 		gateway.runUserWebRequestWorkers(ctx)

@@ -35,6 +35,10 @@ func (workspaceConfig *SingleWorkspaceConfig) SetUp() error {
 	return nil
 }
 
+func (workspaceConfig *SingleWorkspaceConfig) StartWithIDs(ctx context.Context, workspaces string) {
+	workspaceConfig.startWithIDs(ctx, workspaces)
+}
+
 func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
 	return workspaceConfig.Token
 }
@@ -73,11 +77,7 @@ func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, workspace string) (ConfigT, error) {
-	if workspace == "" {
-		return ConfigT{}, newError(false, fmt.Errorf("no workspace token provided, skipping backend config fetch"))
-	}
-
+func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	var (
 		respBody   []byte
 		statusCode int
@@ -86,7 +86,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, wo
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url, workspace)
+		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -96,7 +96,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, wo
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 
 	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
@@ -108,7 +108,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, wo
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 
 	workspaceConfig.workspaceIDLock.Lock()
@@ -126,23 +126,23 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
 		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, err.Error())
-		return ConfigT{}, newError(false, err)
+		return ConfigT{}, err
 	}
 	var configJSON ConfigT
 	if err = json.Unmarshal(data, &configJSON); err != nil {
 		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
-		return ConfigT{}, newError(false, err)
+		return ConfigT{}, err
 	}
 	return configJSON, nil
 }
 
-func (*SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url, workspaceToken string) ([]byte, int, error) {
+func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
 
-	req.SetBasicAuth(workspaceToken, "")
+	req.SetBasicAuth(workspaceConfig.Token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}

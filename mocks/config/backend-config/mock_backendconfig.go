@@ -107,6 +107,20 @@ func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
+// IsInitialized mocks base method.
+func (m *MockBackendConfig) IsInitialized() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsInitialized")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsInitialized indicates an expected call of IsInitialized.
+func (mr *MockBackendConfigMockRecorder) IsInitialized() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsInitialized", reflect.TypeOf((*MockBackendConfig)(nil).IsInitialized))
+}
+
 // SetUp mocks base method.
 func (m *MockBackendConfig) SetUp() error {
 	m.ctrl.T.Helper()
@@ -160,11 +174,9 @@ func (mr *MockBackendConfigMockRecorder) Subscribe(arg0, arg1 interface{}) *gomo
 }
 
 // WaitForConfig mocks base method.
-func (m *MockBackendConfig) WaitForConfig(arg0 context.Context) error {
+func (m *MockBackendConfig) WaitForConfig(arg0 context.Context) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForConfig", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "WaitForConfig", arg0)
 }
 
 // WaitForConfig indicates an expected call of WaitForConfig.

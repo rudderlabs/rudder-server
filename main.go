@@ -244,7 +244,7 @@ func Run(ctx context.Context) {
 			return
 		}
 
-		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, backendconfig.DefaultBackendConfig.AccessToken())
+		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 	}
 
 	g, ctx := errgroup.WithContext(ctx)

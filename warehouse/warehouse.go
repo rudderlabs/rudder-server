@@ -23,6 +23,10 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
+	"github.com/thoas/go-funk"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -41,9 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/thoas/go-funk"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -1623,9 +1624,8 @@ func startWebHandler(ctx context.Context) error {
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
-			if err := backendconfig.DefaultBackendConfig.WaitForConfig(ctx); err != nil {
-				return err
-			}
+			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			mux.HandleFunc("/v1/process", processHandler)
 			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
 			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)

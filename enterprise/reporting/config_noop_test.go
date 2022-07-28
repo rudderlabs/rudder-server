@@ -35,9 +35,7 @@ func (noop *NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfi
 	return backendconfig.LibrariesT{}
 }
 
-func (noop *NOOPConfig) WaitForConfig(_ context.Context) error {
-	return nil
-}
+func (noop *NOOPConfig) WaitForConfig(_ context.Context) {}
 
 func (noop *NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {
 	ch := make(chan pubsub.DataEvent)
@@ -49,8 +47,10 @@ func (noop *NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pu
 	return ch
 }
 
-func (noop *NOOPConfig) StartWithIDs(_ context.Context, _ string) {
-	return
+func (noop *NOOPConfig) StartWithIDs(_ context.Context, _ string) {}
+
+func (noop *NOOPConfig) IsInitialized() bool {
+	return true
 }
 
 func (noop *NOOPConfig) Stop() {
