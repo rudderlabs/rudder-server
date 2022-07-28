@@ -1602,7 +1602,10 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		dbService = "UP"
 	}
 
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","pgNotifier":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
+	healthVal := fmt.Sprintf(
+		`{"server":"UP","db":%q,"pgNotifier":%q,"acceptingEvents":"TRUE","warehouseMode":%q,"goroutines":"%d"}`,
+		dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine(),
+	)
 	w.Write([]byte(healthVal))
 }
 
