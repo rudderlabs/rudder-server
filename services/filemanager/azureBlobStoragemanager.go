@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -99,19 +100,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		return UploadOutput{}, err
 	}
 
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
