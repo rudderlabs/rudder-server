@@ -158,7 +158,6 @@ func TestBackupTable(t *testing.T) {
 type backupTestCase struct{}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
@@ -200,7 +199,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 }
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time)
