@@ -277,6 +277,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
 		outputTable := tableName
+
 		// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
@@ -362,38 +363,35 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 			columnsWithValuesList = append(columnsWithValuesList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str))
 		}
 		columnNames := strings.Join(tableColNames, ",")
-		stagingColumnNames := strings.Join(stagingColumnNamesList, ",")
-		columnsWithValues := strings.Join(columnsWithValuesList, ",")
+
+		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
 		var primaryKeyList []string
 		for _, str := range strings.Split(primaryKey, ",") {
-			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " ")))
+			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s)`, strings.Trim(str, " ")))
 		}
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
-		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
-		sqlStatement := fmt.Sprintf(`MERGE INTO %[1]s AS original
-										USING (
-											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
-											) AS q WHERE _rudder_staging_row_number = 1
-										) AS staging
-										ON (%[3]s)
-										WHEN MATCHED THEN
-										UPDATE SET %[6]s
-										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, bqTable(tableName), bqTable(stagingTableName), primaryJoinClause, columnNames, stagingColumnNames, columnsWithValues, partitionKey)
+		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
+			DELETE FROM %[1]s as original
+			where DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH)
+			and EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
+			INSERT INTO %[1]s
+			(_PARTITIONTIME,%[4]s)
+			SELECT TIMESTAMP(CURRENT_DATE),%[4]s FROM %[5]s
+			;
+			COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName))
+
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating merge  load job: %v\n", err)
 			return
 		}
 		status, err = job.Wait(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running merge  load job: %v\n", err)
 			return
 		}
 
@@ -559,15 +557,16 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			}
 		}
 
-		sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
-										USING (
-											SELECT %[3]s FROM %[2]s
-										) AS staging
-										ON (original.%[4]s = staging.%[4]s)
-										WHEN MATCHED THEN
-										UPDATE SET %[5]s
-										WHEN NOT MATCHED THEN
-										INSERT (%[3]s) VALUES (%[6]s)`, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
+		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
+			DELETE FROM %[1]s as original
+			where DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH)
+			and EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
+			INSERT INTO %[1]s
+			(_PARTITIONTIME,%[3]s)
+			SELECT TIMESTAMP(CURRENT_DATE),%[3]s FROM %[2]s
+			;
+			COMMIT TRANSACTION; `, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey)
+
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 
 		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
