@@ -59,6 +59,7 @@ type HandleT struct {
 	logger               logger.LoggerI
 	transientSource      transientsource.Service
 	jobdDBRequestTimeout time.Duration
+	jobdDBMaxRetries     int
 }
 
 func New() *HandleT {
@@ -70,8 +71,8 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.errorDB = errorDB
 	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
-	config.RegisterDurationConfigVariable(5, &st.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Processor." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
-
+	config.RegisterDurationConfigVariable(90, &st.jobdDBRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "CommandRequestTimeout", "JobsDB." + "CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	st.crashRecover()
 }
 
@@ -227,13 +228,13 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	updateCtx, cancelCtx := context.WithTimeout(context.Background(), st.jobdDBRequestTimeout)
-	err := st.errorDB.UpdateJobStatus(updateCtx, statusList, nil, nil)
+	err := misc.RetryWith(context.Background(), st.jobdDBRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+	})
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
-	defer cancelCtx()
 }
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
@@ -310,13 +311,13 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			updateCtx, cancelCtx := context.WithTimeout(context.Background(), st.jobdDBRequestTimeout)
-			err := st.errorDB.UpdateJobStatus(updateCtx, statusList, nil, nil)
+			err := misc.RetryWith(context.Background(), st.jobdDBRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+			})
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
 			}
-			defer cancelCtx()
 
 			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList

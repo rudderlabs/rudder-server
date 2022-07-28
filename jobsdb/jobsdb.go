@@ -205,7 +205,7 @@ type JobsDB interface {
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreWithRetryEachInTx(ctx, tx, jobList)
 	//    })
-	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
+	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error)
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
@@ -2013,7 +2013,7 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	}
 }
 
-func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.Tx, ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.Tx, ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string, err error) {
 	const (
 		savepointSql = "SAVEPOINT storeWithRetryEach"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
@@ -2031,9 +2031,9 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 	queryStat.Start()
 	defer queryStat.End()
 
-	_, err := tx.ExecContext(ctx, savepointSql)
+	_, err = tx.ExecContext(ctx, savepointSql)
 	if err != nil {
-		return failAll(err)
+		return failAll(err), err
 	}
 	err = jd.internalStoreJobsInTx(ctx, tx, ds, jobList)
 	if err == nil {
@@ -2041,7 +2041,7 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 	}
 	_, err = tx.ExecContext(ctx, rollbackSql)
 	if err != nil {
-		return failAll(err)
+		return failAll(err), err
 	}
 	jd.logger.Errorf("Copy In command failed with error %v", err)
 	errorMessagesMap = make(map[uuid.UUID]string)
@@ -2830,7 +2830,7 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT,
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -4016,19 +4016,20 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
 	_ = jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
-		res = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
+		res, _ = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
 		return nil
 	})
 	return res
 }
 
-func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string {
+func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error) {
 	var res map[uuid.UUID]string
-
+	var err error
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList()
-			return jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
+			res, err = jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
+			return res
 		}
 		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
 		return nil
@@ -4036,10 +4037,10 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
 		_ = jd.inStoreSafeCtx(storeCmd)
-		return res
+		return res, err
 	}
 	_ = storeCmd()
-	return res
+	return res, err
 }
 
 /*

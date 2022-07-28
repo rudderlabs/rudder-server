@@ -184,6 +184,7 @@ type HandleT struct {
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
 	jobdDBRequestTimeout                                       time.Duration
+	jobdDBMaxRetries                                           int
 	rsourcesService                                            rsources.JobService
 }
 
@@ -307,26 +308,27 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
-		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			if gwAllowPartialWriteWithErrors {
-				storeCtx, cancelCtx := context.WithTimeout(context.Background(), gateway.jobdDBRequestTimeout)
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(storeCtx, tx, jobList)
-				cancelCtx()
-			} else {
-				storeCtx, cancelCtx := context.WithTimeout(context.Background(), gateway.jobdDBRequestTimeout)
-				err := gateway.jobsDB.StoreInTx(storeCtx, tx, jobList)
-				cancelCtx()
-				if err != nil {
-					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
-					gateway.logger.Errorf("JobList: %+v", jobList)
-					return err
-				}
-			}
 
-			// rsources stats
-			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
-			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
-			return rsourcesStats.Publish(context.TODO(), tx.Tx())
+		err := misc.RetryWith(context.Background(), gateway.jobdDBRequestTimeout, gateway.jobdDBMaxRetries, func(ctx context.Context) error {
+			return gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+				var err error
+				if gwAllowPartialWriteWithErrors {
+					errorMessagesMap, err = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)
+					return err
+				} else {
+					err := gateway.jobsDB.StoreInTx(ctx, tx, jobList)
+					if err != nil {
+						gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
+						gateway.logger.Errorf("JobList: %+v", jobList)
+						return err
+					}
+				}
+
+				// rsources stats
+				rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
+				rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
+				return rsourcesStats.Publish(context.TODO(), tx.Tx())
+			})
 		})
 		if err != nil {
 			panic(err)
@@ -1583,8 +1585,8 @@ func (gateway *HandleT) Setup(
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
-	config.RegisterDurationConfigVariable(5, &gateway.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Gateway." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
-
+	config.RegisterDurationConfigVariable(90, &gateway.jobdDBRequestTimeout, true, time.Second, []string{"JobsDB." + "Gateway." + "CommandRequestTimeout", "JobsDB." + "CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &gateway.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Gateway." + "MaxRetry", "JobsDB." + "MaxRetry"}...)
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)

@@ -114,6 +114,7 @@ type HandleT struct {
 	retryTimeWindow                        time.Duration
 	routerTimeout                          time.Duration
 	jobdDBRequestTimeout                   time.Duration
+	jobdDBMaxRetries                       int
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	Reporting                              reporter
@@ -1608,34 +1609,34 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			storeCtx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBRequestTimeout)
-			err := rt.errorDB.Store(storeCtx, routerAbortedJobs)
+			err := misc.RetryWith(context.Background(), rt.jobdDBRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+				return rt.errorDB.Store(ctx, routerAbortedJobs)
+			})
 			if err != nil {
 				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
 			}
-			defer cancelCtx()
 		}
 		// Update the status
-		err := rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			updateCtx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBRequestTimeout)
-			err := rt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, statusList, []string{rt.destName}, nil)
-			defer cancelCtx()
-			if err != nil {
-				return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
-			}
+		err := misc.RetryWith(context.Background(), rt.jobdDBRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
+				if err != nil {
+					return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
+				}
 
-			// rsources stats
-			err = rt.updateRudderSourcesStats(context.TODO(), tx, completedJobsList, statusList)
-			if err != nil {
-				return err
-			}
+				// rsources stats
+				err = rt.updateRudderSourcesStats(context.TODO(), tx, completedJobsList, statusList)
+				if err != nil {
+					return err
+				}
 
-			// Save msg ids of aborted jobs
-			if len(jobRunIDAbortedEventsMap) > 0 {
-				GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
-			}
-			rt.Reporting.Report(reportMetrics, tx.Tx())
-			return nil
+				// Save msgids of aborted jobs
+				if len(jobRunIDAbortedEventsMap) > 0 {
+					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+				}
+				rt.Reporting.Report(reportMetrics, tx.Tx())
+				return nil
+			})
 		})
 		if err != nil {
 			panic(err)
@@ -2018,23 +2019,23 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
-	updateCtx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBRequestTimeout)
-	err := rt.jobsDB.UpdateJobStatus(updateCtx, statusList, []string{rt.destName}, nil)
+	err := misc.RetryWith(context.Background(), rt.jobdDBRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
+	})
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
 	}
-	defer cancelCtx()
 
 	// Mark the jobs as aborted
 	if len(drainList) > 0 {
-		storeCtx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBRequestTimeout)
-		err = rt.errorDB.Store(storeCtx, drainJobList)
+		err := misc.RetryWith(context.Background(), rt.jobdDBRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+			return rt.errorDB.Store(ctx, drainJobList)
+		})
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		defer cancelCtx()
 		// REPORTING - ROUTER - START
 		utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
@@ -2056,21 +2057,21 @@ func (rt *HandleT) readAndProcess() int {
 		}
 		// REPORTING - ROUTER - END
 
-		err = rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-			updateCtx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBRequestTimeout)
-			err := rt.jobsDB.UpdateJobStatusInTx(updateCtx, tx, drainList, []string{rt.destName}, nil)
-			defer cancelCtx()
-			if err != nil {
-				return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
-			}
-			// rsources stats
-			err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
-			if err != nil {
-				return err
-			}
+		err = misc.RetryWith(context.Background(), rt.jobdDBRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{rt.destName}, nil)
+				if err != nil {
+					return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
+				}
+				// rsources stats
+				err = rt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
+				if err != nil {
+					return err
+				}
 
-			rt.Reporting.Report(reportMetrics, tx.Tx())
-			return nil
+				rt.Reporting.Report(reportMetrics, tx.Tx())
+				return nil
+			})
 		})
 		if err != nil {
 			panic(err)
@@ -2209,8 +2210,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
-	config.RegisterDurationConfigVariable(5, &rt.jobdDBRequestTimeout, true, time.Minute, []string{"JobsDB." + "Router." + "RequestTimeout", "JobsDB." + "RequestTimeout"}...)
-
+	config.RegisterDurationConfigVariable(90, &rt.jobdDBRequestTimeout, true, time.Second, []string{"JobsDB." + "Router." + "CommandRequestTimeout", "JobsDB." + "CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
