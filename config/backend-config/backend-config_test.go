@@ -127,7 +127,7 @@ var _ = Describe("newForDeployment", func() {
 	It("return err for unsupported type", func() {
 		config, err := newForDeployment("UNSUPPORTED_TYPE", nil)
 
-		Expect(err).To(MatchError("Deployment type \"UNSUPPORTED_TYPE\" not supported"))
+		Expect(err).To(MatchError(`deployment type "UNSUPPORTED_TYPE" not supported`))
 		Expect(config).To(BeNil())
 	})
 })
@@ -192,7 +192,7 @@ var _ = Describe("BackendConfig", func() {
 			pubSub := pubsub.PublishSubscriber{}
 			bc := &CommonBackendConfig{eb: &pubSub}
 			curSourceJSON = SampleBackendConfig2
-			mockLogger.EXPECT().Info(gomock.Any()).Times(1)
+			mockLogger.EXPECT().Infof("Workspace Config changed: %s", "test_token").Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 
