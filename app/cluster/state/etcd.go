@@ -172,6 +172,8 @@ func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 			if err != nil {
 				manager.logger.Errorf("Failed to acknowledge mode change for key: %s", req.AckKey)
 				return fmt.Errorf("put value to ack key %q: %w", req.AckKey, err)
+			} else {
+				manager.logger.Debugf("Mode change for key %q acknowledged", req.AckKey)
 			}
 			return err
 		})
