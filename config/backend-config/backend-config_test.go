@@ -176,21 +176,8 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Warnf("Error fetching config from backend: %v", gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				for {
-					bc.initializedLock.RLock()
-					if bc.initializedErr != nil {
-						Expect(bc.initializedErr).To(MatchError("TestRequestError"))
-						return
-					}
-					bc.initializedLock.RUnlock()
-				}
-			}()
 			bc.configUpdate(ctx, statConfigBackendError, "test_token")
-			<-done
+			Expect(bc.initialized).To(BeFalse())
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
@@ -265,7 +252,7 @@ var _ = Describe("BackendConfig", func() {
 		It("Should not wait if initialized is true", func() {
 			bc.initialized = true
 			mockLogger.EXPECT().Info("Waiting for backend config").Times(0)
-			_ = bc.WaitForConfig(context.TODO())
+			bc.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
 			bc.initialized = false
@@ -277,7 +264,7 @@ var _ = Describe("BackendConfig", func() {
 					bc.initialized = true
 				}
 			}).Times(5)
-			_ = bc.WaitForConfig(context.TODO())
+			bc.WaitForConfig(context.TODO())
 		})
 	})
 })

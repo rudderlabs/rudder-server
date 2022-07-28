@@ -137,7 +137,7 @@ func (c *testContext) Setup() {
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config")
-	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1).Do(func(interface{}) { tFunc() })
+	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1).Do(func(interface{}) { tFunc() })
 
 	tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
 

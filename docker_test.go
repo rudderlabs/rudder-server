@@ -722,7 +722,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		close(svcDone)
 	}()
 
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
+	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/readiness", httpPort)
 	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
 	health.WaitUntilReady(
 		context.Background(), t,
