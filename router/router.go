@@ -648,7 +648,7 @@ func (worker *workerT) processDestinationJobs() {
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspace":   workspaceID,
+					"workspaceId": workspaceID,
 				})
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
@@ -743,6 +743,7 @@ func (worker *workerT) processDestinationJobs() {
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
+								"workspaceId":   workspaceID,
 							}).Count(len(result))
 
 							pkgLogger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
@@ -755,6 +756,7 @@ func (worker *workerT) processDestinationJobs() {
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
+								"workspaceId":   workspaceID,
 							}).Count(len(respBodyArr))
 						}
 					}
@@ -1221,7 +1223,7 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
-		"workspace":      status.WorkspaceId,
+		"workspaceId":    status.WorkspaceId,
 	})
 	routerResponseStat.Count(1)
 }
@@ -1234,7 +1236,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
-			"workspace":      status.WorkspaceId,
+			"workspaceId":    status.WorkspaceId,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -1246,7 +1248,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
-						"workspace":      status.WorkspaceId,
+						"workspaceId":    status.WorkspaceId,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
@@ -2115,11 +2117,11 @@ func (rt *HandleT) readAndProcess() int {
 		rt.updateProcessedEventsMetrics(drainList)
 		for destID, destDrainStat := range drainStatsbyDest {
 			drainedJobsStat := stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
-				"destType":  rt.destName,
-				"destId":    destID,
-				"module":    "router",
-				"reasons":   strings.Join(destDrainStat.Reasons, ", "),
-				"workspace": destDrainStat.Workspace,
+				"destType":    rt.destName,
+				"destId":      destID,
+				"module":      "router",
+				"reasons":     strings.Join(destDrainStat.Reasons, ", "),
+				"workspaceId": destDrainStat.Workspace,
 			})
 			drainedJobsStat.Count(destDrainStat.Count)
 			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))

@@ -204,7 +204,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":        destination.ID,
 		"destType":           destination.DestinationDefinition.Name,
 		"source":             sourceID,
-		"workspace":          workspaceID,
+		"workspaceId":        workspaceID,
 		"transformationType": transformationType,
 	}
 }

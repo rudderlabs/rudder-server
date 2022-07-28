@@ -1540,7 +1540,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 		"module":      "batch_router",
 		"destType":    brt.destType,
 		"destination": destinationTag,
-		"workspace":   destination.Source.WorkspaceID,
+		"workspaceId": destination.Source.WorkspaceID,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
@@ -1550,7 +1550,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 			"module":      "batch_router",
 			"destType":    brt.destType,
 			"destination": destinationTag,
-			"workspace":   destination.Source.WorkspaceID,
+			"workspaceId": destination.Source.WorkspaceID,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
@@ -1734,11 +1734,11 @@ func (worker *workerT) workerProcess() {
 				brt.updateProcessedEventsMetrics(statusList)
 				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-						"destType":  brt.destType,
-						"destId":    destID,
-						"module":    "batchrouter",
-						"reasons":   strings.Join(destDrainStat.Reasons, ", "),
-						"workspace": destDrainStat.Workspace,
+						"destType":    brt.destType,
+						"destId":      destID,
+						"module":      "batchrouter",
+						"reasons":     strings.Join(destDrainStat.Reasons, ", "),
+						"workspaceId": destDrainStat.Workspace,
 					})
 					brt.drainedJobsStat.Count(destDrainStat.Count)
 					metric.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(drainStatsbyDest[destID].Count))
