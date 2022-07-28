@@ -32,16 +32,20 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("firehose")
 }
 
+type FireHoseProducer struct {
+	client *firehose.Firehose
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*FireHoseProducer, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return firehose.Firehose{}, fmt.Errorf("[FireHose] Error while marshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[FireHose] Error while marshalling destination config :: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return firehose.Firehose{}, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
+		return nil, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
 	}
 	var s *session.Session
 	httpClient := &http.Client{
@@ -60,19 +64,16 @@ func NewProducer(destinationConfig interface{}, o Opts) (firehose.Firehose, erro
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
 		}))
 	}
-	var fh *firehose.Firehose = firehose.New(s)
-	return *fh, nil
+	return &FireHoseProducer{client: firehose.New(s)}, nil
 }
 
 // Produce creates a producer and send data to Firehose.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	var putOutput *firehose.PutRecordOutput
 	var errorRec error
-
-	fh, ok := producer.(firehose.Firehose)
-
-	if !ok {
+	client := producer.client
+	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error :: Could not create producer"
 		return 400, respStatus, responseMessage
@@ -126,7 +127,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 			return 400, respStatus, responseMessage
 		}
 
-		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
+		putOutput, errorRec = client.PutRecord(&firehose.PutRecordInput{
 			DeliveryStreamName: aws.String(deliveryStreamMapToInputString),
 			Record:             &firehose.Record{Data: value},
 		})

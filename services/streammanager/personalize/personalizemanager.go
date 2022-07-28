@@ -32,15 +32,19 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
 
-func NewProducer(destinationConfig interface{}, o Opts) (personalizeevents.PersonalizeEvents, error) {
+type PersonalizeProducer struct {
+	client *personalizeevents.PersonalizeEvents
+}
+
+func NewProducer(destinationConfig interface{}, o Opts) (*PersonalizeProducer, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig) // produces json
 	if err != nil {
-		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while marshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[Personalize] Error while marshalling destination config :: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while unmarshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[Personalize] Error while unmarshalling destination config :: %w", err)
 	}
 	httpClient := &http.Client{
 		Timeout: o.Timeout,
@@ -58,11 +62,10 @@ func NewProducer(destinationConfig interface{}, o Opts) (personalizeevents.Perso
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, ""),
 		}))
 	}
-	var client *personalizeevents.PersonalizeEvents = personalizeevents.New(s)
-	return *client, nil
+	return &PersonalizeProducer{client: personalizeevents.New(s)}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessag string) {
+func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (statusCode int, respStatus, responseMessag string) {
 	var resEvent *personalizeevents.PutEventsOutput
 	var resUser *personalizeevents.PutUsersOutput
 	var resItem *personalizeevents.PutItemsOutput
@@ -73,8 +76,8 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 	eventChoice := parsedJSON.Get("choice").String()
 	eventPayload := parsedJSON.Get("payload").String()
 
-	client, ok := producer.(personalizeevents.PersonalizeEvents)
-	if (!ok || client == personalizeevents.PersonalizeEvents{}) {
+	client := producer.client 
+	if client == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer for Personalize", "Could not create producer for Personalize"
 	}

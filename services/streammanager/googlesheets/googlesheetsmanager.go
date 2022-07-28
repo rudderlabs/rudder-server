@@ -58,8 +58,12 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlesheets")
 }
 
+type GoogleSheetsProducer struct {
+	client *Client
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -103,11 +107,11 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	// Inserting header to the sheet
 	err = insertHeaderDataToSheet(client, config.SheetId, config.SheetName, headerRow)
 
-	return client, err
+	return &GoogleSheetsProducer{client}, err
 }
 
-func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int, respStatus, responseMessage string) {
-	client := producer.(*Client)
+func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	client := producer.client
 	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"

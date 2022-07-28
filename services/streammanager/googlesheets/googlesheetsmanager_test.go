@@ -52,11 +52,11 @@ func Test_Timeout(t *testing.T) {
 		},
 		TestConfig: testConfig,
 	}
-	client, err := NewProducer(config, Opts{Timeout: 10 * time.Second})
+	producer, err := NewProducer(config, Opts{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf(" %+v", err)
 	}
-	client.opts = Opts{Timeout: 1 * time.Microsecond}
+	producer.client.opts = Opts{Timeout: 1 * time.Microsecond}
 	json := fmt.Sprintf(`{
 		"spreadSheetId": "%s",
 		"spreadSheet": "%s",
@@ -65,7 +65,7 @@ func Test_Timeout(t *testing.T) {
 			"1": { "attributeKey": "%s", "attributeValue": "5900"}
 		}
 	}`, sheetId, sheetName, header1, header2)
-	statusCode, respStatus, responseMessage := Produce([]byte(json), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(json), nil)
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {
 		t.Errorf("Expected status code %d, got %d.", expectedStatusCode, statusCode)

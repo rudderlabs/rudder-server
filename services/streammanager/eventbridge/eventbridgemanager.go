@@ -31,17 +31,21 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("eventbridge")
 }
 
+type EventBridgeProducer struct {
+	client *eventbridge.EventBridge
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (eventbridge.EventBridge, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*EventBridgeProducer, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while marshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[EventBridge] Error while marshalling destination config :: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
+		return nil, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
 	}
 	httpClient := &http.Client{
 		Timeout: o.Timeout,
@@ -60,19 +64,17 @@ func NewProducer(destinationConfig interface{}, o Opts) (eventbridge.EventBridge
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
 		}))
 	}
-	var ebc *eventbridge.EventBridge = eventbridge.New(s)
-	return *ebc, nil
+	return &EventBridgeProducer{client: eventbridge.New(s)}, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
+func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	// get producer
-	ebc, ok := producer.(eventbridge.EventBridge)
-	if (!ok || ebc == eventbridge.EventBridge{}) {
+	client := producer.client
+	if client == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer for EventBridge", "Could not create producer for EventBridge"
 	}
-
 	// create eventbridge event
 	putRequestEntry := eventbridge.PutEventsRequestEntry{}
 	err := json.Unmarshal(jsonData, &putRequestEntry)
@@ -86,7 +88,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 	requestInput.SetEntries(putRequestEntryList)
 
 	// send request to event bridge
-	putEventsOutput, err := ebc.PutEvents(&requestInput)
+	putEventsOutput, err := client.PutEvents(&requestInput)
 	if err != nil {
 		pkgLogger.Errorf("[EventBridge] Error while sending event :: %v", err)
 

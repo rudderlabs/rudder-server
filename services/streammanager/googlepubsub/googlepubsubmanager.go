@@ -44,8 +44,12 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlepubsub")
 }
 
+type GooglePubSubProducer struct {
+	client *PubsubClient
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (*GooglePubSubProducer, error) {
 	var config Config
 	ctx := context.Background()
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -80,16 +84,15 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 		topic.PublishSettings.DelayThreshold = 0
 		topicMap[s["to"]] = topic
 	}
-	pbsClient := &PubsubClient{client, topicMap, o}
-	return pbsClient, nil
+	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
-	pbs, ok := producer.(*PubsubClient)
+	pbs := producer.client
 	ctx, cancel := context.WithTimeout(context.Background(), pbs.opts.Timeout)
 	defer cancel()
-	if !ok {
+	if pbs == nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error :: Could not create producer"
 		return 400, respStatus, responseMessage
@@ -180,22 +183,19 @@ func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int,
 }
 
 // CloseProducer closes a given producer
-func CloseProducer(producer interface{}) error {
-	client, ok := producer.(*PubsubClient)
-	if ok {
-		var err error
-		if client != nil {
-			for _, s := range client.topicMap {
-				s.Stop()
-			}
-			err := client.pbs.Close()
-			if err != nil {
-				pkgLogger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
-			}
+func (producer *GooglePubSubProducer) CloseProducer() error {
+	var err error
+	client := producer.client
+	if client != nil {
+		for _, s := range client.topicMap {
+			s.Stop()
 		}
-		return err
+		err := client.pbs.Close()
+		if err != nil {
+			pkgLogger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
+		}
 	}
-	return fmt.Errorf("error while closing producer")
+	return err
 }
 
 func getError(err error) (statusCode int) {

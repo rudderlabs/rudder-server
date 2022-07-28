@@ -144,7 +144,7 @@ func TestNewProducer(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.client.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -216,7 +216,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.client.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -301,7 +301,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.client.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -399,15 +399,16 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 func TestCloseProducer(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), 1)
-
-		err := CloseProducer(context.Background(), nil)
+		kp := &KafkaProducer{}
+		err := kp.CloseProducer()
 		require.EqualError(t, err, "error while closing producer")
 	})
 	t.Run("not initialized", func(t *testing.T) {
 		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), 1)
 
-		p := &producerImpl{p: &client.Producer{}}
-		err := CloseProducer(context.Background(), p)
+		client := &producerImpl{p: &client.Producer{}}
+		kp := &KafkaProducer{client}
+		err := kp.CloseProducer()
 		require.NoError(t, err)
 	})
 	t.Run("correct", func(t *testing.T) {
@@ -417,14 +418,16 @@ func TestCloseProducer(t *testing.T) {
 		require.NoError(t, err)
 		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
 		require.NoError(t, err)
-		err = CloseProducer(context.Background(), &producerImpl{p: p})
+		kp := &KafkaProducer{&producerImpl{p: p}}
+		err = kp.CloseProducer()
 		require.NoError(t, err)
 	})
 	t.Run("error", func(t *testing.T) {
 		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), 1)
 
 		var p producer = &pMockErr{error: fmt.Errorf("a bad error")}
-		err := CloseProducer(context.Background(), p)
+		kp := &KafkaProducer{p}
+		err := kp.CloseProducer()
 		require.EqualError(t, err, "a bad error")
 	})
 }
@@ -432,8 +435,8 @@ func TestCloseProducer(t *testing.T) {
 func TestProduce(t *testing.T) {
 	t.Run("invalid producer", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), 1)
-
-		sc, res, err := Produce(nil, nil, nil)
+		kp := KafkaProducer{}
+		sc, res, err := kp.Produce(nil, nil)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Could not create producer", res)
 		require.Equal(t, "Could not create producer", err)
@@ -442,9 +445,9 @@ func TestProduce(t *testing.T) {
 	t.Run("invalid destination configuration", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), 1)
 
-		p := &pMockErr{}
+		kp := KafkaProducer{client: &pMockErr{}}
 		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
-		sc, res, err := Produce(nil, p, destConfig)
+		sc, res, err := kp.Produce(nil, destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
 		require.Equal(t, "json: unsupported type: chan struct {}", err)
@@ -453,9 +456,9 @@ func TestProduce(t *testing.T) {
 	t.Run("empty destination configuration", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), 1)
 
-		p := &pMockErr{}
+		kp := KafkaProducer{client: &pMockErr{}}
 		destConfig := map[string]interface{}{"foo": "bar"}
-		sc, res, err := Produce(json.RawMessage(""), p, destConfig)
+		sc, res, err := kp.Produce(json.RawMessage(""), destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
 		require.Equal(t, "invalid destination configuration: no topic", err)
@@ -464,9 +467,9 @@ func TestProduce(t *testing.T) {
 	t.Run("invalid message", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), 1)
 
-		p := &pMockErr{}
+		kp := &KafkaProducer{client: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := Produce(json.RawMessage(""), p, destConfig)
+		sc, res, err := kp.Produce(json.RawMessage(""), destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -477,9 +480,9 @@ func TestProduce(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, 1)
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, 1)
 
-		p := &pMockErr{error: fmt.Errorf("super bad")}
+		kp := &KafkaProducer{client: &pMockErr{error: fmt.Errorf("super bad")}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		sc, res, err := kp.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "super bad error occurred.", res)
 		require.Equal(t, "super bad", err)
@@ -490,9 +493,9 @@ func TestProduce(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, 1)
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, 1)
 
-		p := &pMockErr{error: kafka.LeaderNotAvailable}
+		kp := &KafkaProducer{client: &pMockErr{error: kafka.LeaderNotAvailable}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		sc, res, err := kp.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 500, sc)
 		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
 		require.Equal(t, kafka.LeaderNotAvailable.Error(), err)
@@ -503,9 +506,9 @@ func TestProduce(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, 1)
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, 1)
 
-		p := &pMockErr{}
+		kp := &KafkaProducer{client: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := Produce(json.RawMessage(`{"message":"ciao"}`), p, destConfig)
+		sc, res, err := kp.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)

@@ -39,12 +39,12 @@ func Test_Timeout(t *testing.T) {
 		TestConfig: testConfig,
 	}
 
-	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %s.", err)
 	}
 	json := `{"topicId": "my-topic", "message": "{}"}`
-	statusCode, respStatus, responseMessage := Produce([]byte(json), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(json), nil)
 
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {

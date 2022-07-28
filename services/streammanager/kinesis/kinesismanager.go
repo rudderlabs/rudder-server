@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -45,17 +46,21 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kinesis")
 }
 
+type KinesisProducer struct {
+	client *kinesis.Kinesis
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (kinesis.Kinesis, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (common.StreamProducer, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while marshalling destination config %+v. Error: %w", destinationConfig, err)
+		return nil, fmt.Errorf("[KinesisManager] Error while marshalling destination config %+v. Error: %w", destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while unmarshalling destination config. Error: %w", err)
+		return nil, fmt.Errorf("[KinesisManager] Error while unmarshalling destination config. Error: %w", err)
 	}
 	httpClient := &http.Client{
 		Timeout: o.Timeout,
@@ -74,16 +79,14 @@ func NewProducer(destinationConfig interface{}, o Opts) (kinesis.Kinesis, error)
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
 		}))
 	}
-	var kc *kinesis.Kinesis = kinesis.New(s)
-	return *kc, err
+	return &KinesisProducer{client: kinesis.New(s)}, err
 }
 
 // Produce creates a producer and send data to Kinesis.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
+func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
-
-	kc, ok := producer.(kinesis.Kinesis)
-	if !ok {
+	client := producer.client 
+	if client == nil {
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
@@ -107,7 +110,10 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 	if err != nil {
 		return GetStatusCodeFromError(err), err.Error(), err.Error()
 	}
-	var userID string
+	var (
+		userID string
+		ok     bool
+	)
 	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
 		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
@@ -119,7 +125,7 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 		partitionKey = aws.String(messageID)
 	}
 
-	putOutput, err := kc.PutRecord(&kinesis.PutRecordInput{
+	putOutput, err := client.PutRecord(&kinesis.PutRecordInput{
 		Data:         value,
 		StreamName:   streamName,
 		PartitionKey: partitionKey,

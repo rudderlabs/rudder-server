@@ -37,7 +37,7 @@ func TestTimeout(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
-	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
@@ -51,7 +51,7 @@ func TestTimeout(t *testing.T) {
 			"value": "value"
 		}
 	}`
-	statusCode, respStatus, responseMessage := Produce([]byte(payload), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(payload), nil)
 
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {

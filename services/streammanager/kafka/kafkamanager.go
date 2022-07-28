@@ -228,8 +228,12 @@ func Init() {
 	}
 }
 
+type KafkaProducer struct {
+	client producer
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducer(destConfigJSON interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
@@ -319,11 +323,11 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
@@ -370,11 +374,11 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
@@ -422,7 +426,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
@@ -506,17 +510,17 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 }
 
 // CloseProducer closes a given producer
-func CloseProducer(ctx context.Context, pi interface{}) error {
+func (producer *KafkaProducer) CloseProducer() error {
 	start := now()
 	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
 
-	p, ok := pi.(producer)
-	if !ok {
+	client := producer.client
+	if client == nil {
 		return fmt.Errorf("error while closing producer")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err := p.Close(ctx)
+	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	err := client.Close(ctx)
 	cancel()
 	if err != nil {
 		pkgLogger.Errorf("error in closing Kafka producer: %v", err)
@@ -525,12 +529,12 @@ func CloseProducer(ctx context.Context, pi interface{}) error {
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string, string) {
+func (producer *KafkaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
-
-	p, ok := pi.(producer)
-	if !ok {
+	client := producer.client 
+	if client == nil {
+		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
@@ -548,12 +552,12 @@ func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string,
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
+	ctx, cancel := context.WithTimeout(context.TODO(), client.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, client, conf.Topic)
 	}
-	return sendMessage(ctx, jsonData, p, conf.Topic)
+	return sendMessage(ctx, jsonData, client, conf.Topic)
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
