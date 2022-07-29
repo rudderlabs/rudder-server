@@ -198,9 +198,9 @@ func runAllInit() {
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	os.Exit(Run(ctx))
+	exitCode := Run(ctx)
+	cancel()
+	os.Exit(exitCode)
 }
 
 func Run(ctx context.Context) int {
