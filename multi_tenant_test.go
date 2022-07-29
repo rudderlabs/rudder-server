@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -32,7 +33,15 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
-func TestMultiTenantGateway(t *testing.T) {
+func TestMultiTenant(t *testing.T) {
+	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
+		t.Run(appType, func(t *testing.T) {
+			testMultiTenant(t, appType)
+		})
+	}
+}
+
+func testMultiTenant(t *testing.T, appType string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -103,7 +112,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
 	releaseName := t.Name()
-	t.Setenv("APP_TYPE", app.GATEWAY)
+	t.Setenv("APP_TYPE", appType)
 	t.Setenv("INSTANCE_ID", serverInstanceID)
 	t.Setenv("RELEASE_NAME", releaseName)
 	t.Setenv("ETCD_HOSTS", etcdContainer.Hosts[0])
@@ -126,7 +135,26 @@ func TestMultiTenantGateway(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = Run(ctx)
+		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
+		cmd.Env = os.Environ()
+
+		stdout, err := cmd.StdoutPipe()
+		require.NoError(t, err)
+		stderr, err := cmd.StderrPipe()
+		require.NoError(t, err)
+
+		defer func() {
+			_ = stdout.Close()
+			_ = stderr.Close()
+		}()
+		require.NoError(t, cmd.Start())
+		if testing.Verbose() {
+			go func() { _, _ = io.Copy(os.Stdout, stdout) }()
+			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
+		}
+
+		err = cmd.Wait()
+		t.Logf("Error running main.go: %v", err)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
@@ -146,7 +174,7 @@ func TestMultiTenantGateway(t *testing.T) {
 
 	// push some valid workspaces and check on readiness again
 	t.Log("Service is not ready as expected, pushing valid workspaces...")
-	etcdReqKey := getGatewayWorkspacesReqKey(releaseName, serverInstanceID)
+	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
 	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
 	require.NoError(t, err)
 
@@ -257,10 +285,6 @@ func TestMultiTenantGateway(t *testing.T) {
 			t.Fatal("Timeout waiting for test-ack/2")
 		}
 	})
-}
-
-func getGatewayWorkspacesReqKey(releaseName, instance string) string {
-	return getETCDWorkspacesReqKey(releaseName, instance, app.GATEWAY)
 }
 
 func getETCDServerModeReqKey(releaseName, instance string) string {

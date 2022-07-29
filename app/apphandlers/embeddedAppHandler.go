@@ -32,7 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
-// EmbeddedApp is the type for embedded type implemention
+// EmbeddedApp is the type for embedded type implementation
 type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -43,7 +43,7 @@ func (*EmbeddedApp) GetAppType() string {
 }
 
 func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
-	pkgLogger.Info("Main starting")
+	pkgLogger.Info("Embedded mode: Starting Rudder Core")
 
 	rudderCoreDBValidator()
 	rudderCoreWorkSpaceTableSetup()
