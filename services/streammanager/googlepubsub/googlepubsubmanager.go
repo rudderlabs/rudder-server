@@ -72,7 +72,12 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 			return nil, err
 		}
 	} else { // No configuration
-		return nil, fmt.Errorf("invalid configuration provided, missing credentials")
+		if config.Credentials == "" {
+			return nil, fmt.Errorf("invalid configuration provided, missing credentials")
+		}
+		if client, err = pubsub.NewClient(ctx, config.ProjectId); err != nil {
+			return nil, err
+		}
 	}
 	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
