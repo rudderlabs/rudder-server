@@ -274,8 +274,8 @@ func startHealthWebHandler(ctx context.Context) error {
 	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/liveness", app.LivenessHandler(gatewayDB))
-	srvMux.HandleFunc("/readiness", app.ReadinessHandler(gatewayDB))
+	srvMux.HandleFunc("/live", app.LivenessHandler(gatewayDB))
+	srvMux.HandleFunc("/health", app.ReadinessHandler(gatewayDB))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),

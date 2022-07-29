@@ -126,7 +126,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
-	livenessProbe := fmt.Sprintf("http://localhost:%d/liveness", httpPort)
+	livenessProbe := fmt.Sprintf("http://localhost:%d/live", httpPort)
 	t.Log("Checking liveness at", livenessProbe)
 	health.WaitUntilReady(ctx, t,
 		livenessProbe,
@@ -136,7 +136,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	)
 
 	t.Log("Service is live, checking readiness...")
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readiness", httpPort))
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/health", httpPort))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode) // no valid workspaces yet
 
@@ -146,7 +146,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
 	require.NoError(t, err)
 
-	readinessProbe := fmt.Sprintf("http://localhost:%d/readiness", httpPort)
+	readinessProbe := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	t.Log("Checking readiness at", readinessProbe)
 	health.WaitUntilReady(ctx, t,
 		readinessProbe,
