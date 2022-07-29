@@ -2,6 +2,7 @@ package cluster_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -196,6 +197,30 @@ func TestDynamicCluster(t *testing.T) {
 		case <-chACK:
 		case <-time.After(time.Second):
 			t.Fatal("Did not get acknowledgement within 1 second")
+		}
+	})
+
+	t.Run("Update workspaceIDs with error", func(t *testing.T) {
+		chACK := make(chan struct{})
+		backendConfig.EXPECT().Stop().Times(0)
+		backendConfig.EXPECT().StartWithIDs(gomock.Any(), gomock.Any()).Times(0)
+		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(0)
+
+		provider.sendWorkspaceIDs(
+			workspace.NewWorkspacesRequest([]string{},
+				func(ctx context.Context, err error) error {
+					require.EqualError(
+						t, errors.New("cannot handle workspace change: empty workspaces"), err.Error(),
+					)
+					close(chACK)
+					return nil
+				}),
+		)
+
+		select {
+		case <-chACK:
+		case <-time.After(time.Second):
+			t.Fatal("Did not get acknowledgement error within 1 second")
 		}
 	})
 
