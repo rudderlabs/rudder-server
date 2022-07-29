@@ -72,13 +72,18 @@ func TestMultiTenantGateway(t *testing.T) {
 	if testing.Verbose() {
 		backendConfRouter.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// TODO check authentication
 				t.Logf("BackendConfig server call: %+v", r)
 				next.ServeHTTP(w, r)
 			})
 		})
 	}
+
+	multiTenantSvcSecret := "so-secret"
 	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
+		authorizationHeader := b64.StdEncoding.EncodeToString([]byte(multiTenantSvcSecret + ":"))
+		require.Equalf(t, "Basic "+authorizationHeader, r.Header.Get("Authorization"),
+			"Expected HTTP basic authentication to be %q, got %q instead",
+			"Basic "+authorizationHeader, r.Header.Get("Authorization"))
 		n, err := w.Write(marshalledWorkspaces.Bytes())
 		require.NoError(t, err)
 		require.Equal(t, marshalledWorkspaces.Len(), n)
@@ -98,7 +103,6 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
 	releaseName := t.Name()
-	multiTenantSvcSecret := "so-secret"
 	t.Setenv("APP_TYPE", app.GATEWAY)
 	t.Setenv("INSTANCE_ID", serverInstanceID)
 	t.Setenv("RELEASE_NAME", releaseName)
