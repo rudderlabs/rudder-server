@@ -36,12 +36,12 @@ import (
 func TestMultiTenant(t *testing.T) {
 	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
 		t.Run(appType, func(t *testing.T) {
-			testMultiTenant(t, appType)
+			testMultiTenantByAppType(t, appType)
 		})
 	}
 }
 
-func testMultiTenant(t *testing.T, appType string) {
+func testMultiTenantByAppType(t *testing.T, appType string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
