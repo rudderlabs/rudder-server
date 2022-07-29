@@ -353,6 +353,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 
 		tableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
 		var tableColNames []string
+
 		for colName := range tableColMap {
 			tableColNames = append(tableColNames, colName)
 		}
@@ -362,7 +363,14 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 			stagingColumnNamesList = append(stagingColumnNamesList, fmt.Sprintf(`staging.%s`, str))
 			columnsWithValuesList = append(columnsWithValuesList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str))
 		}
-		columnNames := strings.Join(tableColNames, ",")
+
+		var partitionWhereClause, columnNames string
+
+		if !customPartitionsEnabled {
+			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
+			columnNames = fmt.Sprintf("_PARTITIONTIME,")
+		}
+		columnNames = fmt.Sprintf("%s %s", columnNames, strings.Join(tableColNames, ","))
 
 		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
@@ -373,14 +381,13 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 
 		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
-			DELETE FROM %[1]s as original
-			where DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH)
-			and EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
-			INSERT INTO %[1]s
-			(_PARTITIONTIME,%[4]s)
-			SELECT TIMESTAMP(CURRENT_DATE),%[4]s FROM %[5]s
-			;
-			COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName))
+		DELETE FROM %[1]s as original
+		where %[6]s EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
+		INSERT INTO %[1]s
+		(_PARTITIONTIME,%[4]s)
+		SELECT TIMESTAMP(CURRENT_DATE),%[4]s FROM %[5]s
+		;
+		COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName), partitionWhereClause)
 
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 		q := bq.Db.Query(sqlStatement)
@@ -546,7 +553,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 		primaryKey := `ID`
 		columnNames := append([]string{`ID`}, userColNames...)
-		columnNamesStr := strings.Join(columnNames, ",")
+
 		var columnsWithValues, stagingColumnValues string
 		for idx, colName := range columnNames {
 			columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
@@ -557,15 +564,21 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			}
 		}
 
+		var partitionWhereClause, columnNamesStr string
+		if !customPartitionsEnabled {
+			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
+			columnNamesStr = fmt.Sprintf("_PARTITIONTIME,")
+		}
+		columnNamesStr = fmt.Sprintf("%s %s", columnNamesStr, strings.Join(columnNames, ","))
+
 		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
 			DELETE FROM %[1]s as original
-			where DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH)
-			and EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
+			where %[5]s EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
 			INSERT INTO %[1]s
-			(_PARTITIONTIME,%[3]s)
+			(%[3]s)
 			SELECT TIMESTAMP(CURRENT_DATE),%[3]s FROM %[2]s
 			;
-			COMMIT TRANSACTION; `, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey)
+			COMMIT TRANSACTION; `, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, partitionWhereClause)
 
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 
