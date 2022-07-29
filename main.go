@@ -200,16 +200,16 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	Run(ctx)
+	os.Exit(Run(ctx))
 }
 
-func Run(ctx context.Context) {
+func Run(ctx context.Context) int {
 	runAllInit()
 
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()
-		return
+		return 0
 	}
 
 	options.EnterpriseToken = enterpriseToken
@@ -241,7 +241,7 @@ func Run(ctx context.Context) {
 	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {
 			pkgLogger.Errorf("Unable to setup backend config: %s", err)
-			return
+			return 1
 		}
 
 		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
@@ -320,7 +320,9 @@ func Run(ctx context.Context) {
 		}
 		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
-			os.Exit(1)
+			return 1
 		}
 	}
+
+	return 0
 }

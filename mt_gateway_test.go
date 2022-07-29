@@ -126,7 +126,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Run(ctx)
+		_ = Run(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
