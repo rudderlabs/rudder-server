@@ -142,40 +142,40 @@ func New(options *Options) Interface {
 // LivenessHandler is the http handler for the Kubernetes liveness probe
 func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		dbService := "UP"
-		if jobsDB.Ping() != nil {
-			dbService = "DOWN"
-		}
-		enabledRouter := "TRUE"
-		if !config.GetBool("enableRouter", true) {
-			enabledRouter = "FALSE"
-		}
-		backendConfigMode := "API"
-		if config.GetBool("BackendConfig.configFromFile", false) {
-			backendConfigMode = "JSON"
-		}
-
-		appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
-		healthVal := fmt.Sprintf(
-			`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
-				`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
-			appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
-			backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
-		)
-		_, _ = w.Write([]byte(healthVal))
+		_, _ = w.Write([]byte(getHealthVal(jobsDB)))
 	}
 }
 
 // ReadinessHandler is the http handler for the Kubernetes readiness probe
 func ReadinessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		statusCode := http.StatusOK
-		switch {
-		case jobsDB.Ping() != nil:
-			fallthrough
-		case !backendconfig.DefaultBackendConfig.IsInitialized():
-			statusCode = http.StatusInternalServerError
+		if !backendconfig.DefaultBackendConfig.IsInitialized() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(getHealthVal(jobsDB)))
 	}
+}
+
+func getHealthVal(jobsDB jobsdb.JobsDB) string {
+	dbService := "UP"
+	if jobsDB.Ping() != nil {
+		dbService = "DOWN"
+	}
+	enabledRouter := "TRUE"
+	if !config.GetBool("enableRouter", true) {
+		enabledRouter = "FALSE"
+	}
+	backendConfigMode := "API"
+	if config.GetBool("BackendConfig.configFromFile", false) {
+		backendConfigMode = "JSON"
+	}
+
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+	return fmt.Sprintf(
+		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
+			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
+		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
+		backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
+	)
 }
