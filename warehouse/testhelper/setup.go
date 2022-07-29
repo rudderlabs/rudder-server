@@ -189,7 +189,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		require.Equal(t, err, nil)
 		return count == int64(gwEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs count is %d", gwEvents, count))
 
 	sqlStatement = fmt.Sprintf(`select * from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wareHouseTest.UserId, wareHouseTest.WriteKey)
 	t.Logf("Checking for gateway job ids for sqlStatement: %s", sqlStatement)
@@ -208,7 +208,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		}
 		return gwEvents == len(jobIds)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs status count is %d", gwEvents, count))
 
 	sqlStatement = fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 	t.Logf("Checking for gateway jobs state for sqlStatement: %s", sqlStatement)
@@ -217,7 +217,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		require.Equal(t, nil, err)
 		return count == int64(gwEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs succeeded count is %d", gwEvents, count))
 
 	t.Logf("Completed verifying gateway events")
 }
@@ -246,7 +246,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		require.Equal(t, err, nil)
 		return count == int64(brtEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs count is %d", brtEvents, count))
 
 	sqlStatement = fmt.Sprintf(`select * from brt_jobs_for_user_id('%s') as job_ids`, wareHouseTest.UserId)
 	t.Logf("Checking for batch router job ids for sqlStatement: %s", sqlStatement)
@@ -265,7 +265,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		}
 		return brtEvents == len(jobIds)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs status count is %d", brtEvents, count))
 
 	// Checking for the batch router jobs state
 	sqlStatement = fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
@@ -275,7 +275,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		require.Equal(t, err, nil)
 		return count == int64(brtEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency)
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs succeeded count is %d", brtEvents, count))
 
 	t.Logf("Completed verifying batch router events")
 }
@@ -308,7 +308,7 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.VerifyingTablesFrequency)
+		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.VerifyingTablesFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
 	}
 
 	t.Logf("Completed verifying tables events")
