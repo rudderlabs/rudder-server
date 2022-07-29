@@ -60,7 +60,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 		return nil, fmt.Errorf("invalid configuration provided, missing projectId")
 	}
 	var client *pubsub.Client
-	if config.Credentials != "" { // Normal configuration requires credentials
+	if !googleutils.IsEmptyCredentials(config.Credentials) { // Normal configuration requires credentials
 		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
 			return nil, err
 		}
