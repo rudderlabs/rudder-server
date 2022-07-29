@@ -2194,12 +2194,16 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 		eventCount = 0
 	}
 
-	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList, err := proc.gatewayDB.GetUnprocessed(context.TODO(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
 		JobsLimit:        maxEventsToProcess,
 		EventsLimit:      eventCount,
 		PayloadSizeLimit: proc.payloadLimit,
 	})
+	if err != nil {
+		proc.logger.Errorf("Failed to get unprocessed jobs: %v", err)
+		panic(err)
+	}
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)

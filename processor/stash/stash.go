@@ -255,14 +255,21 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			toRetry := st.errorDB.GetToRetry(queryParams)
+			toRetry, err := st.errorDB.GetToRetry(context.TODO(), queryParams)
+			if err != nil {
+				panic(err)
+			}
+
 			combinedList := toRetry.Jobs
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				unprocessed := st.errorDB.GetUnprocessed(queryParams)
+				unprocessed, err := st.errorDB.GetUnprocessed(context.TODO(), queryParams)
+				if err != nil {
+					panic(err)
+				}
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 
@@ -311,7 +318,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+			err = misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			})
 			if err != nil {

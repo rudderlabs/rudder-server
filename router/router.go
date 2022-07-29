@@ -1825,7 +1825,8 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
-	combinedList := rt.jobsDB.GetAllJobs(
+	combinedList, err := rt.jobsDB.GetAllJobs(
+		context.TODO(),
 		pickupMap,
 		jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{rt.destName},
@@ -1834,6 +1835,10 @@ func (rt *HandleT) readAndProcess() int {
 		},
 		rt.maxDSQuerySize,
 	)
+	if err != nil {
+		rt.logger.Errorf("[%v Router] :: Error getting jobs from DB: %v", rt.destName, err)
+		panic(err)
+	}
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -1959,7 +1964,7 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
-	err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err = misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
 	})
 	if err != nil {

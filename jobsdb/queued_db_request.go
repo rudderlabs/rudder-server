@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
+func (jd *HandleT) executeDbRequest(c *dbRequest) (interface{}) {
 	totalTimeStat := jd.getTimerStat(fmt.Sprintf("%s_total_time", c.name), c.tags)
 	totalTimeStat.Start()
 	defer totalTimeStat.End()

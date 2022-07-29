@@ -3,6 +3,7 @@
 package multitenant
 
 import (
+	"context"
 	"math"
 	"sort"
 	"sync"
@@ -57,8 +58,10 @@ func (t *Stats) Start() error {
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
 	for dbPrefix := range t.RouterDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap := make(map[string]map[string]int)
-		t.RouterDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
+		pileUpStatMap, err := t.RouterDBs[dbPrefix].GetPileUpCounts(context.TODO())
+		if err != nil {
+			return err
+		}
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
 				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
@@ -89,8 +92,11 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	t.RouterDBs = routerDBs
 	for dbPrefix := range routerDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap := make(map[string]map[string]int)
-		routerDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
+		pileUpStatMap, err := routerDBs[dbPrefix].GetPileUpCounts(context.TODO())
+		if err != nil {
+			pkgLogger.Errorf("Error getting pile up counts for db prefix %s: %s", dbPrefix, err.Error())
+			panic(err)
+		}
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
 				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
