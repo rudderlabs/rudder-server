@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"io"
 	"net/http"
 	"net/url"
@@ -147,6 +148,8 @@ var (
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
 	parquetParallelWriters int64
+
+	Http sysUtils.HttpI = sysUtils.NewHttp()
 )
 
 var (
@@ -881,8 +884,8 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 	return timeWindowFormat
 }
 
-func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func GetRequestWithTimeout(ctx context.Context, url string) ([]byte, error) {
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -890,7 +893,7 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte{}, err
