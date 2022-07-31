@@ -60,6 +60,11 @@ jobs:
             ${{ runner.os }}-go-
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: rudderlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Warehouse Integration Test
         run: make run-warehouse-integration
         env:
