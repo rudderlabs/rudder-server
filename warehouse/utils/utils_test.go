@@ -19,9 +19,11 @@ import (
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestConfigKeys(t *testing.T) {
+func TestDestinationConfigKeys(t *testing.T) {
 	for _, whType := range WarehouseDestinations {
 		t.Run(whType, func(t *testing.T) {
+			require.Contains(t, WHDestNameMap, whType)
+
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
 			got := config.TransformKey(configKey)
