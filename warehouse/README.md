@@ -28,48 +28,48 @@
 
 | Config                         | Default Value | Hot Reloadable | Multiplier                                                         | Description                                                              |
 |--------------------------------|---------------|----------------|--------------------------------------------------------------------|--------------------------------------------------------------------------|
-| Warehouse.webPort | 8082          | false          | 1                                                                  |                                                                          |
-| Warehouse.noOfSlaveWorkerRoutines | 4             | true           | 1                                                                  |                                                                          |
-| Warehouse.stagingFilesBatchSize | 960           | true           | 1                                                                  |                                                                          |
-| Warehouse.uploadFreqInS | 1800          | true           | 1                                                                  |                                                                          |
-| Warehouse.mode | embedded      | false          |                                                                    |                                                                          |
-| Warehouse.warehouseSyncPreFetchCount | 10            | true           | 1                                                                  |                                                                          |
-| Warehouse.stagingFilesSchemaPaginationSize | 100           | true           | 1                                                                  |                                                                          |
-| Warehouse.warehouseSyncFreqIgnore | false         | true           |                                                                    |                                                                          |
-| Warehouse.minRetryAttempts | 3             | true           | 1                                                                  |                                                                          |
-| Warehouse.numLoadFileUploadWorkers | 8             | true           | 1                                                                  |                                                                          |
-| SQLMigrator.forceSetLowerVersion | true          | false          |                                                                    |                                                                          |
-| Reporting.enabled | true          | false          |                                                                    |                                                                          |
-| Warehouse.skipDeepEqualSchemas | false         | true           |                                                                    |                                                                          |
-| Warehouse.enableJitterForSyncs | false         | true           |                                                                    |                                                                          |
-| Warehouse.useParquetLoadFilesRS | false         | true           |                                                                    |                                                                          |
-| Warehouse.enableIDResolution | false         | false          |                                                                    |                                                                          |
-| Warehouse.archiveUploadRelatedRecords | 5             | true           | 1                                                                  |                                                                          |
-| Warehouse.uploadsArchivalTimeInDays | true          | true           |                                                                    |                                                                          |
-| Warehouse.populateHistoricIdentities | false         | false          |                                                                    |                                                                          |
-| Warehouse.enableConstraintsViolations | true          | true           |                                                                    |                                                                          |
-| Warehouse.alwaysRegenerateAllLoadFiles | true          | false          |                                                                    |                                                                          |
-| Warehouse.generateTableLoadCountMetrics | true          | false          |                                                                    |                                                                          |
-| Warehouse.skipMetricTagForEachEventTable | false          | false          |                                                                    |                                                                          |
-| Warehouse.uploadBufferTimeInMin | 180           | false          | 1                                                                  |                                                                          |
-| Warehouse.pgNotifierPublishBatchSize | 100           | false          |  | Controls batching of staging files to be sent over to pg_notifier queue. |
-| Warehouse.Archiver.backupRowsBatchSize| 100           | false          |                                                                    |                                                                          |
-| Warehouse.maxParallelJobCreation | 8             | true           | 1                                                                  |                                                                          |
-| Warehouse.parquetParallelWriters | 8             | true           | 1                                                                  |                                                                          |
-| Warehouse.awsCredsExpiryInS | 3600          | true           | 1  | Expiry time for AWS session Token in seconds                             |
-| Warehouse.maxStagingFileReadBufferCapacityInK | 10240         | false          | 1                                                                  |                                                                          |
-| Warehouse.minUploadBackoff<br/>Warehouse.minUploadBackoffInS | 60            | true           | 1                                                                  |                                                                          |
-| Warehouse.minUploadBackoff<br/>Warehouse.minUploadBackoffInS | 60            | true           | 1                                                                  |                                                                          |
-| Warehouse.archiverTickerTime<br/>Warehouse.archiverTickerTimeInMin | 360           | true           | 1                                                                  |                                                                          |
-| Warehouse.waitForConfig<br/>Warehouse.waitForConfigInS | 5             | false          | 1                                                                  |                                                                          |
-| Warehouse.waitForWorkerSleep<br/>Warehouse.waitForWorkerSleepInS | 5             | false          | 1                                                                  |                                                                          |
-| Warehouse.uploadAllocatorSleep<br/>Warehouse.uploadAllocatorSleepInS | 5             | false          | 1                                                                  |                                                                          |
-| Warehouse.uploadStatusTrackFrequency<br/>Warehouse.uploadStatusTrackFrequencyInMin | 30            | false          | 1                                                                  |                                                                          |
-| Warehouse.maxStagingFileReadBufferCapacityInK | 10240         | true           | 1                                                                  |                                                                          |
-| Warehouse.slaveUploadTimeout<br/>Warehouse.slaveUploadTimeoutInMin | 10            | true           | 1                                                                  |                                                                          |
-| Warehouse.longRunningUploadStatThreshold<br/>Warehouse.longRunningUploadStatThresholdInMin | 120           | true           | 1                                                                  |                                                                          |
-| Warehouse.retryTimeWindow<br/>Warehouse.retryTimeWindowInMins | 180           | true           | 1                                                                  |                                                                          |
-| Warehouse.mainLoopSleepInS<br/>Warehouse.mainLoopSleepInS | 5             | true           | 1                                                                  |                                                                          |
+| Warehouse.webPort | 8082          | ❌              | 1                                                                  |                                                                          |
+| Warehouse.noOfSlaveWorkerRoutines | 4             | ✅              | 1                                                                  |                                                                          |
+| Warehouse.stagingFilesBatchSize | 960           | ✅              | 1                                                                  |                                                                          |
+| Warehouse.uploadFreqInS | 1800          | ✅       1      | 1                                                                  |                                                                          |
+| Warehouse.mode | embedded      | ❌              |                                                                    |                                                                          |
+| Warehouse.warehouseSyncPreFetchCount | 10            | ✅              | 1                                                                  |                                                                          |
+| Warehouse.stagingFilesSchemaPaginationSize | 100           | ✅              | 1                                                                  |                                                                          |
+| Warehouse.warehouseSyncFreqIgnore | false         | ✅              |                                                                    |                                                                          |
+| Warehouse.minRetryAttempts | 3             | ✅              | 1                                                                  |                                                                          |
+| Warehouse.numLoadFileUploadWorkers | 8             | ✅              | 1                                                                  |                                                                          |
+| SQLMigrator.forceSetLowerVersion | true          | ❌              |                                                                    |                                                                          |
+| Reporting.enabled | true          | ❌              |                                                                    |                                                                          |
+| Warehouse.skipDeepEqualSchemas | false         | ✅              |                                                                    |                                                                          |
+| Warehouse.enableJitterForSyncs | false         | ✅              |                                                                    |                                                                          |
+| Warehouse.useParquetLoadFilesRS | false         | ✅              |                                                                    |                                                                          |
+| Warehouse.enableIDResolution | false         | ❌              |                                                                    |                                                                          |
+| Warehouse.archiveUploadRelatedRecords | 5             | ✅              | 1                                                                  |                                                                          |
+| Warehouse.uploadsArchivalTimeInDays | true          | ✅              |                                                                    |                                                                          |
+| Warehouse.populateHistoricIdentities | false         | ❌              |                                                                    |                                                                          |
+| Warehouse.enableConstraintsViolations | true          | ✅              |                                                                    |                                                                          |
+| Warehouse.alwaysRegenerateAllLoadFiles | true          | ❌              |                                                                    |                                                                          |
+| Warehouse.generateTableLoadCountMetrics | true          | ❌              |                                                                    |                                                                          |
+| Warehouse.skipMetricTagForEachEventTable | false          | ❌              |                                                                    |                                                                          |
+| Warehouse.uploadBufferTimeInMin | 180           | ❌              | 1                                                                  |                                                                          |
+| Warehouse.pgNotifierPublishBatchSize | 100           | ❌              |  | Controls batching of staging files to be sent over to pg_notifier queue. |
+| Warehouse.Archiver.backupRowsBatchSize| 100           | ❌              |                                                                    |                                                                          |
+| Warehouse.maxParallelJobCreation | 8             | ✅              | 1                                                                  |                                                                          |
+| Warehouse.parquetParallelWriters | 8             | ✅              | 1                                                                  |                                                                          |
+| Warehouse.awsCredsExpiryInS | 3600          | ✅              | 1  | Expiry time for AWS session Token in seconds                             |
+| Warehouse.maxStagingFileReadBufferCapacityInK | 10240         | ❌              | 1                                                                  |                                                                          |
+| Warehouse.minUploadBackoff<br/>Warehouse.minUploadBackoffInS | 60            | ✅              | 1                                                                  |                                                                          |
+| Warehouse.minUploadBackoff<br/>Warehouse.minUploadBackoffInS | 60            | ✅              | 1                                                                  |                                                                          |
+| Warehouse.archiverTickerTime<br/>Warehouse.archiverTickerTimeInMin | 360           | ✅              | 1                                                                  |                                                                          |
+| Warehouse.waitForConfig<br/>Warehouse.waitForConfigInS | 5             | ❌              | 1                                                                  |                                                                          |
+| Warehouse.waitForWorkerSleep<br/>Warehouse.waitForWorkerSleepInS | 5             | ❌              | 1                                                                  |                                                                          |
+| Warehouse.uploadAllocatorSleep<br/>Warehouse.uploadAllocatorSleepInS | 5             | ❌              | 1                                                                  |                                                                          |
+| Warehouse.uploadStatusTrackFrequency<br/>Warehouse.uploadStatusTrackFrequencyInMin | 30            | ❌              | 1                                                                  |                                                                          |
+| Warehouse.maxStagingFileReadBufferCapacityInK | 10240         | ✅              | 1                                                                  |                                                                          |
+| Warehouse.slaveUploadTimeout<br/>Warehouse.slaveUploadTimeoutInMin | 10            | ✅              | 1                                                                  |                                                                          |
+| Warehouse.longRunningUploadStatThreshold<br/>Warehouse.longRunningUploadStatThresholdInMin | 120           | ✅              | 1                                                                  |                                                                          |
+| Warehouse.retryTimeWindow<br/>Warehouse.retryTimeWindowInMins | 180           | ✅              | 1                                                                  |                                                                          |
+| Warehouse.mainLoopSleepInS<br/>Warehouse.mainLoopSleepInS | 5             | ✅              | 1                                                                  |                                                                          |
 
 ### Across All Destination
 
@@ -89,9 +89,9 @@ Please add corresponding destination type. Corresponding values includes:
 
 | Config                          | Default Value | Hot Reloadable | Multiplier | Description |
 |---------------------------------|--------------| --- |----------| --- |
-| Warehouse.{destType}.noOfWorkers<br/>Warehouse.noOfWorkers | 8            | true | 1        |             |
-| Warehouse.{destType}.maxConcurrentUploadJobs | 1            | false | 1        |             |
-| Warehouse.{destType}.allowMultipleSourcesForJobsPickup | false            | false |          |             |
+| Warehouse.{destType}.noOfWorkers<br/>Warehouse.noOfWorkers | 8            | ✅ | 1        |             |
+| Warehouse.{destType}.maxConcurrentUploadJobs | 1            |  ❌ | 1        |             |
+| Warehouse.{destType}.allowMultipleSourcesForJobsPickup | false            |  ❌ |          |             |
 
 ### Destination specific
 
@@ -99,109 +99,109 @@ Please add corresponding destination type. Corresponding values includes:
 
 | Config                                           | Default Value | Hot Reloadable | Multiplier | Description |
 |--------------------------------------------------|---------------| --- | --- | --- |
-| Warehouse.redshift.skipComputingUserLatestTraits | false         | true |          |             |
-| Warehouse.redshift.setVarCharMax                 | false         | false | 1         |             |
-| Warehouse.redshift.maxParallelLoads              | 3             | false          |            |             |
-| Warehouse.redshift.columnCountThreshold          | 1200          | false          |            |             |
-| Warehouse.redshift.columnCountThreshold          | 1200          | false          |            |             |
-| Warehouse.redshift.customDatasetPrefix           |           | false          |            |             |
+| Warehouse.redshift.skipComputingUserLatestTraits | false         | ✅ |          |             |
+| Warehouse.redshift.setVarCharMax                 | false         |  ❌ | 1         |             |
+| Warehouse.redshift.maxParallelLoads              | 3             |  ❌          |            |             |
+| Warehouse.redshift.columnCountThreshold          | 1200          |  ❌          |            |             |
+| Warehouse.redshift.columnCountThreshold          | 1200          |  ❌          |            |             |
+| Warehouse.redshift.customDatasetPrefix           |           |  ❌          |            |             |
 
 ### SNOWFLAKE
 
 | Config                                   | Default Value | Hot Reloadable | Multiplier | Description |
 |------------------------------------------|---------------| --- | --- | --- |
-| Warehouse.snowflake.maxParallelLoads     | 3             | false          |            |             |
-| Warehouse.snowflake.columnCountThreshold | 1600          | false          |            |             |
-| Warehouse.snowflake.customDatasetPrefix  |           | false          |            |             |
+| Warehouse.snowflake.maxParallelLoads     | 3             |  ❌          |            |             |
+| Warehouse.snowflake.columnCountThreshold | 1600          |  ❌          |            |             |
+| Warehouse.snowflake.customDatasetPrefix  |           |  ❌          |            |             |
 
 ### POSTGRES
 
 | Config                                             | Default Value | Hot Reloadable | Multiplier | Description |
 |----------------------------------------------------|---------------| --- | --- | --- |
-| Warehouse.postgres.skipComputingUserLatestTraits   | false         | true |          |             |
-| Warehouse.postgres.txnRollbackTimeout              | 30            | true | 1         |             |
-| Warehouse.postgres.enableSQLStatementExecutionPlan | false         | true |          |             |
-| Warehouse.postgres.maxParallelLoads                | 3             | false          |            |             |
-| Warehouse.postgres.columnCountThreshold            | 1200          | false          |            |             |
-| Warehouse.postgres.customDatasetPrefix             |           | false          |            |             |
+| Warehouse.postgres.skipComputingUserLatestTraits   | false         | ✅ |          |             |
+| Warehouse.postgres.txnRollbackTimeout              | 30            | ✅ | 1         |             |
+| Warehouse.postgres.enableSQLStatementExecutionPlan | false         | ✅ |          |             |
+| Warehouse.postgres.maxParallelLoads                | 3             |  ❌          |            |             |
+| Warehouse.postgres.columnCountThreshold            | 1200          |  ❌          |            |             |
+| Warehouse.postgres.customDatasetPrefix             |           |  ❌          |            |             |
 
 ### DELTALAKE
 
 | Config                                  | Default Value | Hot Reloadable | Multiplier | Description |
 |-----------------------------------------| --- | --- |------------| --- |
-| Warehouse.deltalake.schema              | default       | false          |            |             |
-| Warehouse.deltalake.sparkServerType     | 3             | false          | 1          |             |
-| Warehouse.deltalake.authMech            | 3             | false          |            |             |
-| Warehouse.deltalake.uid                 | token         | false          |            |             |
-| Warehouse.deltalake.thriftTransport     | 2             | false          |            |             |
-| Warehouse.deltalake.ssl                 | 1             | false          |            |             |
-| Warehouse.deltalake.userAgent           | RudderStack   | false          |            |             |
-| Warehouse.deltalake.grpcTimeout         | 2             | false          | 1          |             |
-| Warehouse.deltalake.healthTimeout       | 15            | false          | 1          |             |
-| Warehouse.deltalake.loadTableStrategy   | MERGE         | true           | 1          |             |
-| Warehouse.deltalake.maxParallelLoads    | 3             | false          |            |             |
-| Warehouse.deltalake.customDatasetPrefix |           | false          |            |             |
+| Warehouse.deltalake.schema              | default       |  ❌          |            |             |
+| Warehouse.deltalake.sparkServerType     | 3             |  ❌          | 1          |             |
+| Warehouse.deltalake.authMech            | 3             |  ❌          |            |             |
+| Warehouse.deltalake.uid                 | token         |  ❌          |            |             |
+| Warehouse.deltalake.thriftTransport     | 2             |  ❌          |            |             |
+| Warehouse.deltalake.ssl                 | 1             |  ❌          |            |             |
+| Warehouse.deltalake.userAgent           | RudderStack   |  ❌          |            |             |
+| Warehouse.deltalake.grpcTimeout         | 2             |  ❌          | 1          |             |
+| Warehouse.deltalake.healthTimeout       | 15            |  ❌          | 1          |             |
+| Warehouse.deltalake.loadTableStrategy   | MERGE         | ✅           | 1          |             |
+| Warehouse.deltalake.maxParallelLoads    | 3             |  ❌          |            |             |
+| Warehouse.deltalake.customDatasetPrefix |           |  ❌          |            |             |
 
 ### BIGQUERY
 
 | Config                                                   | Default Value | Hot Reloadable | Multiplier | Description |
 |----------------------------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter | true          | true |         |             |
-| Warehouse.bigquery.customPartitionsEnabled               | false         | true |         |             |
-| Warehouse.bigquery.isUsersTableDedupEnabled              | false         | true |         |             |
-| Warehouse.bigquery.isUsersTableDedupEnabled              | false         | true |         |             |
-| Warehouse.bigquery.maxParallelLoads                      | 20            | false          |            |             |
-| Warehouse.bigquery.columnCountThreshold                  | 8000          | false          |            |             |
-| Warehouse.bogquery.customDatasetPrefix                   |           | false          |            |             |
+| Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter | true          | ✅ |         |             |
+| Warehouse.bigquery.customPartitionsEnabled               | false         | ✅ |         |             |
+| Warehouse.bigquery.isUsersTableDedupEnabled              | false         | ✅ |         |             |
+| Warehouse.bigquery.isUsersTableDedupEnabled              | false         | ✅ |         |             |
+| Warehouse.bigquery.maxParallelLoads                      | 20            |  ❌          |            |             |
+| Warehouse.bigquery.columnCountThreshold                  | 8000          |  ❌          |            |             |
+| Warehouse.bogquery.customDatasetPrefix                   |           |  ❌          |            |             |
 
 ### Clickhouse
 
 | Config                                           | Default Value | Hot Reloadable | Multiplier | Description |
 |--------------------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.clickhouse.queryDebugLogs              | false         | true |          |             |
-| Warehouse.clickhouse.blockSize                   | 1000000       | true | 1         |             |
-| Warehouse.clickhouse.poolSize                    | 100           | true |          |             |
-| Warehouse.clickhouse.disableNullable             | false         | false |         |             |
-| Warehouse.clickhouse.readTimeout                 | 300           | true |   |             |
-| Warehouse.clickhouse.writeTimeout                | 1800          | true |   |             |
-| Warehouse.clickhouse.compress                    | false         | true |   |             |
-| Warehouse.clickhouse.execTimeOutInSeconds        | 600           | true | 1   |             |
-| Warehouse.clickhouse.commitTimeOutInSeconds      | 600           | true | 1   |             |
-| Warehouse.clickhouse.loadTableFailureRetries     | 3             | true | 1 |             |
-| Warehouse.clickhouse.numWorkersDownloadLoadFiles | 8             | true | 1   |             |
-| Warehouse.clickhouse.maxParallelLoads            | 3             | false          |            |             |
-| Warehouse.clickhouse.columnCountThreshold        | 800           | false          |            |             |
-| Warehouse.clickhouse.customDatasetPrefix         |           | false          |            |             |
+| Warehouse.clickhouse.queryDebugLogs              | false         | ✅ |          |             |
+| Warehouse.clickhouse.blockSize                   | 1000000       | ✅ | 1         |             |
+| Warehouse.clickhouse.poolSize                    | 100           | ✅ |          |             |
+| Warehouse.clickhouse.disableNullable             | false         |  ❌ |         |             |
+| Warehouse.clickhouse.readTimeout                 | 300           | ✅ |   |             |
+| Warehouse.clickhouse.writeTimeout                | 1800          | ✅ |   |             |
+| Warehouse.clickhouse.compress                    | false         | ✅ |   |             |
+| Warehouse.clickhouse.execTimeOutInSeconds        | 600           | ✅ | 1   |             |
+| Warehouse.clickhouse.commitTimeOutInSeconds      | 600           | ✅ | 1   |             |
+| Warehouse.clickhouse.loadTableFailureRetries     | 3             | ✅ | 1 |             |
+| Warehouse.clickhouse.numWorkersDownloadLoadFiles | 8             | ✅ | 1   |             |
+| Warehouse.clickhouse.maxParallelLoads            | 3             |  ❌          |            |             |
+| Warehouse.clickhouse.columnCountThreshold        | 800           |  ❌          |            |             |
+| Warehouse.clickhouse.customDatasetPrefix         |           |  ❌          |            |             |
 
 ### MSSQL
 
 | Config                               | Default Value | Hot Reloadable | Multiplier | Description |
 |--------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.mssql.maxParallelLoads     | 3             | false          |            |             |
-| Warehouse.mssql.columnCountThreshold | 800           | false          |            |             |
-| Warehouse.mssql.customDatasetPrefix  |           | false          |            |             |
+| Warehouse.mssql.maxParallelLoads     | 3             |  ❌          |            |             |
+| Warehouse.mssql.columnCountThreshold | 800           |  ❌          |            |             |
+| Warehouse.mssql.customDatasetPrefix  |           |  ❌          |            |             |
 
 ### AZURE SYNAPSE
 
 | Config                                   | Default Value | Hot Reloadable | Multiplier | Description |
 |------------------------------------------|--------------| --- |-------------| --- |
-| Warehouse.azure_synapse.maxParallelLoads | 3            | false          |            |             |
-| Warehouse.azure_synapse.customDatasetPrefix |           | false          |            |             |
+| Warehouse.azure_synapse.maxParallelLoads | 3            |  ❌          |            |             |
+| Warehouse.azure_synapse.customDatasetPrefix |           |  ❌          |            |             |
 
 ### GCS DATALAKE
 
 | Config                                     | Default Value | Hot Reloadable | Multiplier | Description |
 |--------------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.gcs_datalake.customDatasetPrefix |           | false          |            |             |
+| Warehouse.gcs_datalake.customDatasetPrefix |           |  ❌          |            |             |
 
 ### AZURE DATALAKE
 
 | Config                                       | Default Value | Hot Reloadable | Multiplier | Description |
 |----------------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.azure_datalake.customDatasetPrefix |           | false          |            |             |
+| Warehouse.azure_datalake.customDatasetPrefix |           |  ❌          |            |             |
 
 ### S3 DATALAKE
 
 | Config                                      | Default Value | Hot Reloadable | Multiplier | Description |
 |---------------------------------------------|---------------| --- |-------------| --- |
-| Warehouse.sq_datalake.customDatasetPrefix   |           | false          |            |             |
+| Warehouse.sq_datalake.customDatasetPrefix   |           |  ❌          |            |             |
