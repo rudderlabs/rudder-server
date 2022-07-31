@@ -12,8 +12,8 @@ import (
 )
 
 type BigQueryCredentials struct {
-	ProjectID   string `json:"projectID"`
-	Credentials string `json:"credentials"`
+	ProjectID   string                 `json:"projectID"`
+	Credentials map[string]interface{} `json:"credentials"`
 }
 
 func TestTimeout(t *testing.T) {
@@ -22,7 +22,7 @@ func TestTimeout(t *testing.T) {
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
-	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_CREDENTIALS")
+	cred := os.Getenv("BIGQUERY_INTEGRATION_TEST_USER_CRED")
 	if cred == "" {
 		t.Skip("Skipping bigquery test, since no credentials are available in the environment")
 	}
@@ -30,10 +30,11 @@ func TestTimeout(t *testing.T) {
 	var err error
 	err = json.Unmarshal([]byte(cred), &bqCredentials)
 	if err != nil {
-		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_CREDENTIALS: %s", err)
+		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
+	credentials, _ := json.Marshal(bqCredentials.Credentials)
 	config := Config{
-		Credentials: bqCredentials.Credentials,
+		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
 	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
@@ -78,11 +79,26 @@ func TestUnsupportedCredentials(t *testing.T) {
 	var err error
 	err = json.Unmarshal(
 		[]byte(`{
-            "projectID": "my-project",
-            "credentials": "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}"
+			"projectID": "my-project",
+			"credentials": {
+				"installed": {
+					"client_id": "1234.apps.googleusercontent.com",
+					"project_id": "project_id",
+					"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+					"token_uri": "https://oauth2.googleapis.com/token",
+					"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+					"client_secret": "client_secret",
+					"redirect_uris": [
+						"urn:ietf:wg:oauth:2.0:oob",
+						"http://localhost"
+					]
+				}
+			}
 		}`), &bqCredentials)
+	assert.NoError(t, err)
+	credentials, _ := json.Marshal(bqCredentials.Credentials)
 	config := Config{
-		Credentials: bqCredentials.Credentials,
+		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
 	_, err = NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
