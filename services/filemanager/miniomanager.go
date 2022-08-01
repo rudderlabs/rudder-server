@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -40,20 +41,7 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 		}
 	}
 
-	fileName := ""
-	splitFileName := strings.Split(file.Name(), "/")
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	_, err = minioClient.FPutObjectWithContext(ctx, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
