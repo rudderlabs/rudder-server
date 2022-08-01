@@ -1855,6 +1855,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			rt.stopWorkers()
 			return
 		case pause := <-rt.generatorPauseChannel:
 			pkgLogger.Infof("Generator loop is paused. Dest type: %s", rt.destName)
@@ -2333,8 +2334,6 @@ func (rt *HandleT) Start() {
 
 func (rt *HandleT) Shutdown() {
 	rt.backgroundCancel()
-	rt.stopWorkers()
-
 	_ = rt.backgroundWait()
 }
 
