@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,20 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestDestinationConfigKeys(t *testing.T) {
+	for _, whType := range WarehouseDestinations {
+		t.Run(whType, func(t *testing.T) {
+			require.Contains(t, WHDestNameMap, whType)
+
+			whName := WHDestNameMap[whType]
+			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
+			got := config.TransformKey(configKey)
+			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
+			require.Equal(t, got, expected)
+		})
+	}
+}
 
 func TestGetS3Location(t *testing.T) {
 	inputs := []struct {

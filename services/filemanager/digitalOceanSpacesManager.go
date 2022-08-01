@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -40,19 +41,7 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
 
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	uploadInput := &SpacesManager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
@@ -179,10 +168,7 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
-				default:
-					pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
-				}
+				pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
 			} else {
 				// Print the error, cast err to awserr.Error to get the Code and
 				// Message from an error.
