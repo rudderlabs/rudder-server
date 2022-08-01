@@ -60,24 +60,20 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 		return nil, fmt.Errorf("invalid configuration provided, missing projectId")
 	}
 	var client *pubsub.Client
+	var options []option.ClientOption
 	if !googleutils.IsEmptyCredentials(config.Credentials) { // Normal configuration requires credentials
-		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
+		credsBytes := []byte(config.Credentials)
+		if err = googleutils.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
 			return nil, err
 		}
-		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithCredentialsJSON([]byte(config.Credentials))); err != nil {
-			return nil, err
-		}
+		options = append(options, option.WithCredentialsJSON(credsBytes))
 	} else if config.TestConfig.Endpoint != "" { // Test configuration requires a custom endpoint
-		if client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())), option.WithEndpoint(config.TestConfig.Endpoint)); err != nil {
-			return nil, err
-		}
-	} else { // No configuration
-		if config.Credentials == "" {
-			return nil, fmt.Errorf("invalid configuration provided, missing credentials")
-		}
-		if client, err = pubsub.NewClient(ctx, config.ProjectId); err != nil {
-			return nil, err
-		}
+		options = append(options, option.WithoutAuthentication())
+		options = append(options, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+		options = append(options, option.WithEndpoint(config.TestConfig.Endpoint))
+	}
+	if client, err = pubsub.NewClient(ctx, config.ProjectId, options...); err != nil {
+		return nil, err
 	}
 	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
