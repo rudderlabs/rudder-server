@@ -52,14 +52,15 @@ type StoreErrorOutputT struct {
 }
 
 type HandleT struct {
-	errorDB              jobsdb.JobsDB
-	errProcessQ          chan []*jobsdb.JobT
-	errFileUploader      filemanager.FileManager
-	statErrDBR           stats.RudderStats
-	logger               logger.LoggerI
-	transientSource      transientsource.Service
-	jobsDBCommandTimeout time.Duration
-	jobdDBMaxRetries     int
+	errorDB                   jobsdb.JobsDB
+	errProcessQ               chan []*jobsdb.JobT
+	errFileUploader           filemanager.FileManager
+	statErrDBR                stats.RudderStats
+	logger                    logger.LoggerI
+	transientSource           transientsource.Service
+	jobsDBCommandTimeout      time.Duration
+	jobdDBQueryRequestTimeout time.Duration
+	jobdDBMaxRetries          int
 }
 
 func New() *HandleT {
@@ -73,6 +74,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.transientSource = transientSource
 	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
+	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
 	st.crashRecover()
 }
 
@@ -255,21 +257,24 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			toRetry, err := st.errorDB.GetToRetry(context.TODO(), queryParams)
+			getQueryCtx, cancelCtx := context.WithTimeout(ctx, st.jobdDBQueryRequestTimeout)
+			toRetry, err := st.errorDB.GetToRetry(getQueryCtx, queryParams)
 			if err != nil {
 				panic(err)
 			}
-
+			cancelCtx()
 			combinedList := toRetry.Jobs
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				unprocessed, err := st.errorDB.GetUnprocessed(context.TODO(), queryParams)
+				getUnprocessedQueryCtx, cancelCtx := context.WithTimeout(ctx, st.jobdDBQueryRequestTimeout)
+				unprocessed, err := st.errorDB.GetUnprocessed(getUnprocessedQueryCtx, queryParams)
 				if err != nil {
 					panic(err)
 				}
+				cancelCtx()
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 

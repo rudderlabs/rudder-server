@@ -95,6 +95,7 @@ type HandleT struct {
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
 	backendProxyTimeout                    time.Duration
+	jobdDBQueryRequestTimeout              time.Duration
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
@@ -1825,8 +1826,9 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
+	ctx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBQueryRequestTimeout)
 	combinedList, err := rt.jobsDB.GetAllJobs(
-		context.TODO(),
+		ctx,
 		pickupMap,
 		jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{rt.destName},
@@ -1839,6 +1841,7 @@ func (rt *HandleT) readAndProcess() int {
 		rt.logger.Errorf("[%v Router] :: Error getting jobs from DB: %v", rt.destName, err)
 		panic(err)
 	}
+	cancelCtx()
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -2104,6 +2107,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
+	config.RegisterDurationConfigVariable(60, &rt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Router." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)

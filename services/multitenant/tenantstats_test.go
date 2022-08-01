@@ -1,7 +1,6 @@
 package multitenant
 
 import (
-	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -54,7 +53,7 @@ var _ = Describe("tenantStats", func() {
 				mockCtrl := gomock.NewController(GinkgoT())
 				mockRouterJobsDB := mocksJobsDB.NewMockMultiTenantJobsDB(mockCtrl)
 				// crash recovery check
-				mockRouterJobsDB.EXPECT().GetPileUpCounts(context.Background()).Times(1)
+				mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
 				tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"rt": mockRouterJobsDB})
 			})
 

@@ -54,32 +54,33 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 
 // HandleT is a handle to this object used in main.go
 type HandleT struct {
-	backendConfig        backendconfig.BackendConfig
-	transformer          transformer.Transformer
-	lastJobID            int64
-	gatewayDB            jobsdb.JobsDB
-	routerDB             jobsdb.JobsDB
-	batchRouterDB        jobsdb.JobsDB
-	errorDB              jobsdb.JobsDB
-	logger               logger.LoggerI
-	eventSchemaHandler   types.EventSchemasI
-	dedupHandler         dedup.DedupI
-	reporting            types.ReportingI
-	reportingEnabled     bool
-	multitenantI         multitenant.MultiTenantI
-	backgroundWait       func() error
-	backgroundCancel     context.CancelFunc
-	transformerFeatures  json.RawMessage
-	readLoopSleep        time.Duration
-	maxLoopSleep         time.Duration
-	storeTimeout         time.Duration
-	statsFactory         stats.Stats
-	stats                processorStats
-	payloadLimit         int64
-	jobsDBCommandTimeout time.Duration
-	jobdDBMaxRetries     int
-	transientSources     transientsource.Service
-	rsourcesService      rsources.JobService
+	backendConfig             backendconfig.BackendConfig
+	transformer               transformer.Transformer
+	lastJobID                 int64
+	gatewayDB                 jobsdb.JobsDB
+	routerDB                  jobsdb.JobsDB
+	batchRouterDB             jobsdb.JobsDB
+	errorDB                   jobsdb.JobsDB
+	logger                    logger.LoggerI
+	eventSchemaHandler        types.EventSchemasI
+	dedupHandler              dedup.DedupI
+	reporting                 types.ReportingI
+	reportingEnabled          bool
+	multitenantI              multitenant.MultiTenantI
+	backgroundWait            func() error
+	backgroundCancel          context.CancelFunc
+	transformerFeatures       json.RawMessage
+	readLoopSleep             time.Duration
+	maxLoopSleep              time.Duration
+	storeTimeout              time.Duration
+	statsFactory              stats.Stats
+	stats                     processorStats
+	payloadLimit              int64
+	jobsDBCommandTimeout      time.Duration
+	jobdDBQueryRequestTimeout time.Duration
+	jobdDBMaxRetries          int
+	transientSources          transientsource.Service
+	rsourcesService           rsources.JobService
 }
 
 type processorStats struct {
@@ -315,6 +316,7 @@ func (proc *HandleT) Setup(
 	rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
+	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -2194,7 +2196,8 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 		eventCount = 0
 	}
 
-	unprocessedList, err := proc.gatewayDB.GetUnprocessed(context.TODO(), jobsdb.GetQueryParamsT{
+	unprocessedCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBQueryRequestTimeout)
+	unprocessedList, err := proc.gatewayDB.GetUnprocessed(unprocessedCtx, jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
 		JobsLimit:        maxEventsToProcess,
 		EventsLimit:      eventCount,
@@ -2204,6 +2207,7 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 		proc.logger.Errorf("Failed to get unprocessed jobs: %v", err)
 		panic(err)
 	}
+	cancelCtx()
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)

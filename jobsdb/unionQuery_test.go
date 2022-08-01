@@ -63,7 +63,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
-	require.NoError(t, err)
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 0, len(unprocessedListEmpty))
 
 	err = jobDB.Store(context.Background(), []*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
@@ -77,7 +77,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
-	require.NoError(t, err)
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 3, len(unprocessedList))
 
 	status1 := JobStatusT{
@@ -114,6 +114,6 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
-	require.NoError(t, err)
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 3, len(jobs))
 }
