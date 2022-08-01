@@ -2,21 +2,30 @@ package backendconfig
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/md5"
+	"crypto/sha1"
+	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/config/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -87,6 +96,7 @@ var sampleBackendConfig2 = ConfigT{
 
 func TestBadResponse(t *testing.T) {
 	initBackendConfig()
+	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "10ms")
 
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -110,6 +120,7 @@ func TestBadResponse(t *testing.T) {
 			configBackendURL: parsedURL,
 		},
 	}
+	disableCache()
 
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
@@ -119,6 +130,7 @@ func TestBadResponse(t *testing.T) {
 
 			bc := &backendConfigImpl{
 				workspaceConfig: conf,
+				eb:              pubsub.New(),
 			}
 			bc.StartWithIDs(ctx, "")
 			go bc.WaitForConfig(ctx)
@@ -176,16 +188,21 @@ func TestConfigUpdate(t *testing.T) {
 			ctrl       = gomock.NewController(t)
 			ctx        = context.Background()
 			fakeError  = errors.New("fake error")
+			cacheError = errors.New("cache error")
 			workspaces = "foo"
+			cacheStore = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
-		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
-		bc := &backendConfigImpl{workspaceConfig: wc}
-		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		bc := &backendConfigImpl{
+			workspaceConfig: wc,
+			cache:           cacheStore,
+		}
+		cacheStore.EXPECT().Get(ctx).Return([]byte{}, cacheError).Times(1)
+		bc.configUpdate(ctx, workspaces)
 		require.False(t, bc.initialized)
 	})
 
@@ -194,18 +211,19 @@ func TestConfigUpdate(t *testing.T) {
 			ctrl       = gomock.NewController(t)
 			ctx        = context.Background()
 			workspaces = "foo"
+			cacheStore = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
 			curSourceJSON:   sampleBackendConfig, // same as the one returned by the workspace config
+			cache:           cacheStore,
 		}
-		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		bc.configUpdate(ctx, workspaces)
 		require.True(t, bc.initialized)
 	})
 
@@ -214,25 +232,26 @@ func TestConfigUpdate(t *testing.T) {
 			ctrl        = gomock.NewController(t)
 			ctx, cancel = context.WithCancel(context.Background())
 			workspaces  = "foo"
+			cacheStore  = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
 			eb:              &pubSub,
 			workspaceConfig: wc,
+			cache:           cacheStore,
 		}
 		bc.curSourceJSON = sampleBackendConfig2
 
 		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
-		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		bc.configUpdate(ctx, workspaces)
 		require.True(t, bc.initialized)
 		require.Equal(t, (<-chProcess).Data, sampleFilteredSources)
 		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
@@ -328,9 +347,178 @@ func TestWaitForConfig(t *testing.T) {
 	})
 }
 
+func TestCache(t *testing.T) {
+	initBackendConfig()
+	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "10ms")
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		defer atomic.AddInt32(&calls, 1)
+		t.Log("Server got called")
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	// set up database
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		t.Fatalf("Could not connect to docker: %s\n", err)
+	}
+	database := "jobsdb"
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+		"POSTGRES_PASSWORD=password",
+		"POSTGRES_DB=" + database,
+		"POSTGRES_USER=rudder",
+	})
+	if err != nil {
+		t.Fatalf("Could not start resource: %s\n", err)
+	}
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			t.Fatalf("Could not purge resource: %s \n", err)
+		}
+	}()
+	port := resourcePostgres.GetPort("5432/tcp")
+	DB_DSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
+	fmt.Println("DB_DSN:", DB_DSN)
+	t.Setenv("JOBS_DB_DB_NAME", database)
+	t.Setenv("JOBS_DB_HOST", "localhost")
+	t.Setenv("JOBS_DB_NAME", database)
+	t.Setenv("JOBS_DB_USER", "rudder")
+	t.Setenv("JOBS_DB_PASSWORD", "password")
+	t.Setenv("JOBS_DB_PORT", port)
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	var db *sql.DB
+	if err := pool.Retry(func() error {
+		var err error
+		db, err = sql.Open("postgres", DB_DSN)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		t.Fatalf("Could not connect to docker: %s\n", err)
+	}
+
+	t.Run("initialize from cache when a call to control plane fails", func(t *testing.T) {
+		var (
+			ctrl        = gomock.NewController(t)
+			ctx, cancel = context.WithCancel(context.Background())
+			workspaces  = "foo"
+			cacheStore  = cache.NewMockCache(ctrl)
+		)
+		defer ctrl.Finish()
+		defer cancel()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, errors.New("control plane down")).Times(1)
+		sampleBackendConfigBytes, _ := json.Marshal(sampleBackendConfig)
+		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return(sampleBackendConfigBytes, nil).Times(1)
+		pubSub := pubsub.PublishSubscriber{}
+		bc := &backendConfigImpl{
+			eb:              &pubSub,
+			workspaceConfig: wc,
+			cache:           cacheStore,
+		}
+		bc.curSourceJSON = sampleBackendConfig2
+
+		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
+		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
+
+		bc.configUpdate(ctx, workspaces)
+		require.True(t, bc.initialized)
+		require.Equal(t, (<-chProcess).Data, sampleFilteredSources)
+		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
+	})
+
+	t.Run("not initialized from cache when a call to control plane fails and nothing exists in cache", func(t *testing.T) {
+		var (
+			ctrl        = gomock.NewController(t)
+			ctx, cancel = context.WithCancel(context.Background())
+			workspaces  = "foo"
+			cacheStore  = cache.NewMockCache(ctrl)
+		)
+		defer ctrl.Finish()
+		defer cancel()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, errors.New("control plane down")).Times(1)
+		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return([]byte{}, sql.ErrNoRows).Times(1)
+		pubSub := pubsub.PublishSubscriber{}
+		bc := &backendConfigImpl{
+			eb:              &pubSub,
+			workspaceConfig: wc,
+			cache:           cacheStore,
+		}
+		bc.curSourceJSON = sampleBackendConfig2
+
+		bc.configUpdate(ctx, workspaces)
+		require.False(t, bc.initialized)
+	})
+
+	t.Run("caches config to database", func(t *testing.T) {
+		var (
+			ctrl       = gomock.NewController(t)
+			ctx        = context.Background()
+			workspaces = "foo"
+			// cacheStore  = NewMockCache(ctrl)
+			accessToken = `accessToken`
+		)
+		defer ctrl.Finish()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().AccessToken().Return(accessToken).Times(1)
+		wc.EXPECT().Get(gomock.Any(), workspaces).Return(sampleBackendConfig, nil).AnyTimes()
+		bc := &backendConfigImpl{
+			workspaceConfig: wc,
+			eb:              pubsub.New(),
+		}
+		bc.StartWithIDs(ctx, workspaces)
+		bc.WaitForConfig(ctx)
+		var (
+			configBytes []byte
+			config      ConfigT
+			cipherBlock cipher.Block
+		)
+		key := []byte(fmt.Sprintf(`%x`, md5.Sum([]byte(accessToken)))) // skipcq: GSC-G401, GO-S1025
+		cipherBlock, err = aes.NewCipher(key)
+		require.NoError(t, err)
+		gcm, err := cipher.NewGCM(cipherBlock)
+		require.NoError(t, err)
+		nonceSize := gcm.NonceSize()
+		require.Eventually(t, func() bool {
+			err = db.QueryRowContext(
+				ctx,
+				`SELECT config FROM config_cache WHERE key = $1`,
+				fmt.Sprintf(`%x`, sha1.Sum([]byte(workspaces))),
+			).Scan(&configBytes)
+			if err != nil {
+				t.Logf("error while fetching config from cache: %v", err)
+				return false
+			}
+			nonce, ciphertext := configBytes[:nonceSize], configBytes[nonceSize:]
+			out, err := gcm.Open(nil, nonce, ciphertext, nil)
+			if err != nil {
+				t.Logf("error while decrypting config: %v", err)
+				return false
+			}
+			require.NoError(t, err)
+			err = json.Unmarshal(out, &config)
+			if err != nil {
+				t.Logf("error while unmarshaling config: %v", err)
+				return false
+			}
+			return reflect.DeepEqual(config, sampleBackendConfig)
+		},
+			10*time.Second,
+			100*time.Millisecond,
+		)
+	})
+}
+
 func initBackendConfig() {
 	config.Reset()
 	adminpkg.Init()
+	cacheOverride = nil
 	diagnostics.Init()
 	logger.Reset()
 	Init()

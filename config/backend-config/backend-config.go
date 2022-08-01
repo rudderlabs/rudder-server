@@ -5,6 +5,8 @@ package backendconfig
 
 import (
 	"context"
+	"crypto/sha1" // skipcq: GSC-G505
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -14,6 +16,7 @@ import (
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/config/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -43,7 +46,18 @@ var (
 	pkgLogger            = logger.NewLogger().Child("backend-config")
 	IoUtil               = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
+	cacheOverride        cache.Cache
 )
+
+func disableCache() {
+	cacheOverride = new(noCache)
+}
+
+type noCache struct{}
+
+func (c *noCache) Get(context.Context) ([]byte, error) {
+	return nil, nil
+}
 
 type workspaceConfig interface {
 	SetUp() error
@@ -74,6 +88,8 @@ type backendConfigImpl struct {
 	initialized       bool
 	curSourceJSON     ConfigT
 	curSourceJSONLock sync.RWMutex
+	usingCache        bool
+	cache             cache.Cache
 }
 
 func loadConfig() {
@@ -132,12 +148,48 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.Measurement, workspaces string) {
-	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
+func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string) {
+	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
+
+	var (
+		sourceJSON ConfigT
+		err        error
+	)
+	defer func() {
+		cacheConfigGauge := stats.Default.NewStat("config_from_cache", stats.GaugeType)
+		if bc.usingCache {
+			cacheConfigGauge.Gauge(1)
+		} else {
+			cacheConfigGauge.Gauge(0)
+		}
+	}()
+
+	sourceJSON, err = bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
-		return
+
+		bc.initializedLock.RLock()
+		if bc.initialized {
+			bc.initializedLock.RUnlock()
+			return
+		}
+		bc.initializedLock.RUnlock()
+
+		// try to get config from cache
+		sourceJSONBytes, cacheErr := bc.cache.Get(ctx)
+		if cacheErr != nil {
+			pkgLogger.Warnf("Error fetching config from cache: %v", cacheErr)
+			return
+		}
+		err = json.Unmarshal(sourceJSONBytes, &sourceJSON)
+		if err != nil {
+			pkgLogger.Warnf("Error unmarshalling cached config: %v", cacheErr)
+			return
+		}
+		bc.usingCache = true
+	} else {
+		bc.usingCache = false
 	}
 
 	// sorting the sourceJSON.
@@ -171,9 +223,8 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackend
 }
 
 func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
-	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 	for {
-		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		bc.configUpdate(ctx, workspaces)
 
 		select {
 		case <-ctx.Done():
@@ -192,11 +243,17 @@ func getConfig() ConfigT {
 
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
+
 Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
+
 Data of the DataEvent should be a backendconfig.ConfigT struct.
+
 Available topics are:
+
 - TopicBackendConfig: Will receive complete backend configuration
+
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+
 - TopicRegulations: Will receive all regulations
 */
 func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
@@ -255,6 +312,16 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
+	bc.cache = cacheOverride
+	if bc.cache == nil {
+		cacheKey := fmt.Sprintf(`%x`, sha1.Sum([]byte(workspaces))) // using a fixed size key	// skipcq: GSC-G401, GO-S1025
+		bc.cache = cache.Start(
+			ctx,
+			bc.Identity().ID(),
+			cacheKey,
+			bc.Subscribe(ctx, TopicBackendConfig),
+		)
+	}
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
