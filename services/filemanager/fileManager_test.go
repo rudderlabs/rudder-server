@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -283,10 +284,12 @@ func TestFileManager(t *testing.T) {
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
 				require.NoError(t, err, "error while opening testData file to upload")
-				uploadOutput, err := fm.Upload(context.TODO(), filePtr)
+				uploadOutput, err := fm.Upload(context.TODO(), filePtr, "another-prefix1", "another-prefix2")
 				if err != nil {
 					t.Fatal(err)
 				}
+				require.Equal(t, path.Join("some-prefix/another-prefix1/another-prefix2/", path.Base(file)),
+					uploadOutput.ObjectName)
 				uploadOutputs = append(uploadOutputs, uploadOutput)
 				filePtr.Close()
 			}
