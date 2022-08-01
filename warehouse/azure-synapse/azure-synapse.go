@@ -197,7 +197,7 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 
-	defer downloader.Dispose()
+	defer downloader.Close()
 
 	var fileNames []string
 	for _, object := range objects {

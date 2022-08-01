@@ -251,7 +251,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		return "", err
 	}
 
-	defer uploader.Dispose()
+	defer uploader.Close()
 
 	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
 	if err != nil {

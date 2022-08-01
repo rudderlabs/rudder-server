@@ -204,7 +204,7 @@ func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location 
 	return str[len(str)-1]
 }
 
-func (manager *AzureBlobStorageManager) Dispose() {
+func (manager *AzureBlobStorageManager) Close() {
 	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 

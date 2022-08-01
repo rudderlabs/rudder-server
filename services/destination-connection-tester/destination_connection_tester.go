@@ -145,7 +145,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		panic(err)
 	}
 
-	defer uploader.Dispose()
+	defer uploader.Close()
 
 	uploadFile, err := os.Open(filename)
 	if err != nil {

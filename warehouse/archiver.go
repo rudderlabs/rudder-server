@@ -88,7 +88,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		return
 	}
 
-	defer fManager.Dispose()
+	defer fManager.Close()
 
 	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
@@ -114,7 +114,7 @@ func deleteFilesInStorage(locations []string) error {
 		return err
 	}
 
-	defer fManager.Dispose()
+	defer fManager.Close()
 
 	err = fManager.DeleteObjects(context.TODO(), locations)
 	if err != nil {

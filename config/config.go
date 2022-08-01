@@ -512,7 +512,7 @@ func DeregisterConfigVariableWithPtr(ptr interface{}) {
 		for _, configvar := range configVars {
 			if configvar.value == ptr {
 				delete(hotReloadableConfig, key)
-				break
+				return
 			}
 		}
 	}
@@ -521,7 +521,7 @@ func DeregisterConfigVariableWithPtr(ptr interface{}) {
 		for _, configvar := range configVars {
 			if configvar.value == ptr {
 				delete(nonHotReloadableConfig, key)
-				break
+				return
 			}
 		}
 	}

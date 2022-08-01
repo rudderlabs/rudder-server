@@ -197,7 +197,7 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 	return nil
 }
 
-func (manager *DOSpacesManager) Dispose() {
+func (manager *DOSpacesManager) Close() {
 	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 

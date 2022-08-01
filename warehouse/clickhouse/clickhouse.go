@@ -351,7 +351,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 
-	defer downloader.Dispose()
+	defer downloader.Close()
 
 	var fileNames []string
 	var dErr error

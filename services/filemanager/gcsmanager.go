@@ -160,7 +160,7 @@ func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) strin
 	return key
 }
 
-func (manager *GCSManager) Dispose() {
+func (manager *GCSManager) Close() {
 	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 

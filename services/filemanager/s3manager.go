@@ -263,7 +263,7 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }
 
-func (manager *S3Manager) Dispose() {
+func (manager *S3Manager) Close() {
 	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 

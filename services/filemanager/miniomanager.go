@@ -207,7 +207,7 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 }
 
-func (manager *MinioManager) Dispose() {
+func (manager *MinioManager) Close() {
 	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 

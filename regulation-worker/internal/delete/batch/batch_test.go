@@ -170,7 +170,7 @@ type mockFileManager struct {
 	listCalled         bool
 }
 
-func (fm *mockFileManager) Dispose() {
+func (fm *mockFileManager) Close() {
 }
 
 func (fm *mockFileManager) SetTimeout(_ *time.Duration) {}

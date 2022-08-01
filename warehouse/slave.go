@@ -137,7 +137,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			return err
 		}
 
-		defer downloader.Dispose()
+		defer downloader.Close()
 
 		timer := jobRun.timerStat("download_staging_file_time")
 		timer.Start()

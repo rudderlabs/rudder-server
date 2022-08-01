@@ -387,7 +387,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			return nil, err
 		}
 
-		defer downloader.Dispose()
+		defer downloader.Close()
 
 		err = downloader.Download(context.TODO(), objectFile, objectName)
 		if err != nil {
@@ -423,7 +423,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		return err
 	}
 
-	defer uploader.Dispose()
+	defer uploader.Close()
 
 	output, err := uploader.Upload(context.TODO(), outputFile, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
 	if err != nil {

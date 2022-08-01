@@ -87,7 +87,7 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 		pkgLogger.Errorf("[Archiver]: Error in creating a file manager for :%s: , %v", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
 	}
 
-	defer fManager.Dispose()
+	defer fManager.Close()
 
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,

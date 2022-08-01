@@ -279,7 +279,7 @@ func TestFileManager(t *testing.T) {
 			len := config.GetTotalNonHotReloadableConfigVars()
 			require.Equal(t, len, 1)
 
-			fm.Dispose()
+			fm.Close()
 
 			len = config.GetTotalNonHotReloadableConfigVars()
 			require.Equal(t, len, 0)
