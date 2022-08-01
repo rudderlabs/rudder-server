@@ -49,10 +49,6 @@ func (*NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.
 
 func (*NOOPConfig) StartWithIDs(_ context.Context, _ string) {}
 
-func (*NOOPConfig) IsInitialized() bool {
-	return true
-}
-
 func (*NOOPConfig) Stop() {
 	return
 }

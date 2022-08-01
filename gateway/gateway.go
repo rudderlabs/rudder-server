@@ -1347,6 +1347,10 @@ Supports CORS from all origins.
 This function will block.
 */
 func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
+	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("WebHandler Starting on %d", webPort)
+
 	srvMux := mux.NewRouter()
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
@@ -1361,8 +1365,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/live", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
-	srvMux.HandleFunc("/health", app.ReadinessHandler(gateway.jobsDB)).Methods("GET")
+	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
@@ -1423,10 +1426,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	g.Go(func() error {
 		return gateway.httpWebServer.ListenAndServe()
 	})
-
-	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
-	gateway.backendConfig.WaitForConfig(ctx)
-	gateway.logger.Infof("WebHandler Starting on %d", webPort)
 
 	return g.Wait()
 }

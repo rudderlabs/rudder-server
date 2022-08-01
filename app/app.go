@@ -146,17 +146,6 @@ func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
 	}
 }
 
-// ReadinessHandler is the http handler for the Kubernetes readiness probe
-func ReadinessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		if !backendconfig.DefaultBackendConfig.IsInitialized() {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		_, _ = w.Write([]byte(getHealthVal(jobsDB)))
-	}
-}
-
 func getHealthVal(jobsDB jobsdb.JobsDB) string {
 	dbService := "UP"
 	if jobsDB.Ping() != nil {

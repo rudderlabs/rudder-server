@@ -51,7 +51,6 @@ type BackendConfig interface {
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context)
-	IsInitialized() bool
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
@@ -144,13 +143,14 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
-		bc.initializedLock.Lock()
-		bc.initialized = true
-		bc.initializedLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
+
+	bc.initializedLock.Lock()
+	bc.initialized = true
+	bc.initializedLock.Unlock()
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
@@ -247,7 +247,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *CommonBackendConfig) startWithIDs(ctx context.Context, workspaces string) {
+func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -285,12 +285,6 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
 		case <-time.After(pollInterval):
 		}
 	}
-}
-
-func (bc *CommonBackendConfig) IsInitialized() bool {
-	bc.initializedLock.RLock()
-	defer bc.initializedLock.RUnlock()
-	return bc.initialized
 }
 
 func GetConfigBackendURL() string {

@@ -33,12 +33,6 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
 	return nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) StartWithIDs(ctx context.Context, workspaces string) {
-	if workspaces != "" {
-		workspaceConfig.startWithIDs(ctx, workspaces)
-	}
-}
-
 func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
 	return workspaceConfig.Token
 }
@@ -83,14 +77,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, wor
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(
-	ctx context.Context, workspaceArr string,
-) (ConfigT, error) {
-	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
-	if workspaceArr == "" {
-		return ConfigT{}, fmt.Errorf("no workspace IDs provided, skipping backend config fetch")
-	}
-
+func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	var (
 		url        string
 		respBody   []byte

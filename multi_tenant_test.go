@@ -158,32 +158,23 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
-	livenessProbe := fmt.Sprintf("http://localhost:%d/live", httpPort)
-	t.Log("Checking liveness at", livenessProbe)
-	health.WaitUntilReady(ctx, t,
-		livenessProbe,
-		10*time.Minute,
-		250*time.Millisecond,
-		t.Name(),
-	)
+	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
+	healthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	resp, err := http.Get(healthEndpoint)
+	require.ErrorContains(t, err, "connection refused")
+	require.Nil(t, resp)
 
-	t.Log("Service is live, checking readiness...")
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/health", httpPort))
-	require.NoError(t, err)
-	require.Equal(t, http.StatusInternalServerError, resp.StatusCode) // no valid workspaces yet
-
-	// push some valid workspaces and check on readiness again
-	t.Log("Service is not ready as expected, pushing valid workspaces...")
+	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
 	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
 	require.NoError(t, err)
 
-	readinessProbe := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	t.Log("Checking readiness at", readinessProbe)
+	// Checking now that the configuration has been processed and the server can start
+	t.Log("Checking health endpoint at", healthEndpoint)
 	health.WaitUntilReady(ctx, t,
-		readinessProbe,
-		time.Minute,
-		250*time.Millisecond,
+		healthEndpoint,
+		3*time.Minute,
+		100*time.Millisecond,
 		t.Name(),
 	)
 
@@ -268,9 +259,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		}, time.Minute, 50*time.Millisecond)
 	})
 
-	// Checking that Workspace Changes errors are handled
-	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
-		// do not move this test up because the gateway terminates after a configuration error
+	// Checking that an empty WorkspaceChange is OK.
+	// For now, it will be up to the Proxy to do the routing properly until we make RudderServer aware of what
+	// workspaces it is serving.
+	t.Run("EmptyWorkspacesAreValid", func(t *testing.T) {
 		_, err := etcdContainer.Client.Put(ctx,
 			etcdReqKey, `{"workspaces":"","ack_key":"test-ack/3"}`,
 		)
@@ -279,10 +271,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/3"):
 			v, err := unmarshalWorkspaceAckValue(t, &ack)
 			require.NoError(t, err)
-			require.Equal(t, "ERROR", v.Status)
-			require.NotEqual(t, "", v.Error)
+			require.Equal(t, "RELOADED", v.Status)
+			require.Equal(t, "", v.Error)
 		case <-time.After(20 * time.Second):
-			t.Fatal("Timeout waiting for test-ack/2")
+			t.Fatal("Timeout waiting for test-ack/3")
 		}
 	})
 }

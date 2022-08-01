@@ -43,10 +43,6 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() error {
 	return nil
 }
 
-func (multiWorkspaceConfig *HostedWorkspacesConfig) StartWithIDs(ctx context.Context, workspaces string) {
-	multiWorkspaceConfig.startWithIDs(ctx, workspaces)
-}
-
 func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
 	return multiWorkspaceConfig.Token
 }

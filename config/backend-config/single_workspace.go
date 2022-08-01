@@ -35,10 +35,6 @@ func (workspaceConfig *SingleWorkspaceConfig) SetUp() error {
 	return nil
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) StartWithIDs(ctx context.Context, workspaces string) {
-	workspaceConfig.startWithIDs(ctx, workspaces)
-}
-
 func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
 	return workspaceConfig.Token
 }
