@@ -1188,10 +1188,6 @@ func TestJSONSchemaToMap(t *testing.T) {
 	}
 }
 
-func TestGetObjectName(t *testing.T) {
-
-}
-
 func TestMain(m *testing.M) {
 	config.Load()
 	Init()
