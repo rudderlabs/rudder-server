@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-type Type string
+type Type string // skipcq: RVV-B0009
 
 const (
 	DedicatedType Type = "DEDICATED"
