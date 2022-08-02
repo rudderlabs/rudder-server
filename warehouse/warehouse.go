@@ -776,7 +776,6 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 	sqlStatement := fmt.Sprintf(`
 			SELECT
 					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, timings, COALESCE(metadata->>'priority', '100')::int, first_event_at, last_event_at
-					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, timings, COALESCE(metadata->>'priority', '100')::int
 				FROM (
 					SELECT
 						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
