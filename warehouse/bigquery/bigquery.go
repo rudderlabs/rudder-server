@@ -608,7 +608,7 @@ type BQCredentialsT struct {
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
 	opts := []option.ClientOption{}
-	if !googleutils.IsCredentialsStringEmpty(cred.Credentials) {
+	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
 		if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
 			return nil, err
 		}

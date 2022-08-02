@@ -7,7 +7,7 @@ enableStats: true
 statsTagsFormat: influxdb
 workloadIdentity:
   type: GKE
-  projectId: proj
+  gwiProjectId: proj
   gsaName: gsa
   gsaProjectId: proj
 HttpClient:

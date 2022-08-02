@@ -71,7 +71,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	if !googleutils.IsCredentialsStringEmpty(config.Credentials) {
+	if !googleutils.ShouldSkipCredentialsInit(config.Credentials) {
 		confCreds := []byte(config.Credentials)
 		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
 			return nil, createErr(err, "incompatible credentials")

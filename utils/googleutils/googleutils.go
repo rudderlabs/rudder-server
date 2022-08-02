@@ -19,6 +19,10 @@ func CompatibleGoogleCredentialsJSON(jsonKey []byte) error {
 	return nil
 }
 
+func ShouldSkipCredentialsInit(credentials string) bool {
+	return IsGKEEnabledWorkload() && IsCredentialsStringEmpty(credentials)
+}
+
 /*
 	The credentials are deemed to be empty when either the field credentials is
 	sent as empty string or when the field is set with "{}"
@@ -26,30 +30,25 @@ func CompatibleGoogleCredentialsJSON(jsonKey []byte) error {
 	Note: This is true only for workload identity enabled rudderstack data-plane deployments
 */
 func IsCredentialsStringEmpty(credentials string) bool {
-	return IsValidWorkloadIdentityConfiguration() && (credentials == "" || credentials == EMPTY_CREDS)
+	return (credentials == "" || credentials == EMPTY_CREDS)
 }
 
 /*
 	We would check for rudder-server configuration for workload identity for google destinations
 */
-func IsValidWorkloadIdentityConfiguration() bool {
+func IsGKEEnabledWorkload() bool {
 	workloadType := config.GetString(fmt.Sprintf("%s.type", WI_CONFIG_KEY), "")
-	switch workloadType {
-	case "EKS":
-		/*
-			The workload when deployed in Amazon EKS cluster, this is to be used
-		*/
-		return true
-	case "GKE":
+	if workloadType == "GKE" {
 		/*
 			The workload when deployed in Google GKE cluster, this is to be used
 
 			workloadIdentity.projectId -> The project which contains the workload identity pool in GKE
 			workloadIdentity.gsaName -> The google IAM Service account name
 			workloadIdentity.gsaProjectId -> The project in which the mentioned google IAM service account is present
-			**Note**: We are currently only validating the schema rather than the values
+
+			Note: We are currently only validating the schema rather than the values
 		*/
-		workloadProjectId := config.GetString(fmt.Sprintf("%s.projectId", WI_CONFIG_KEY), "")
+		workloadProjectId := config.GetString(fmt.Sprintf("%s.gwiProjectId", WI_CONFIG_KEY), "")
 		workloadGsaName := config.GetString(fmt.Sprintf("%s.gsaName", WI_CONFIG_KEY), "")
 		workloadGsaProjectId := config.GetString(fmt.Sprintf("%s.gsaProjectId", WI_CONFIG_KEY), "")
 		return workloadProjectId != "" && workloadGsaName != "" && workloadGsaProjectId != ""
