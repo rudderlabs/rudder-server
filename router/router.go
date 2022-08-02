@@ -56,12 +56,6 @@ type tenantStats interface {
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }
 
-type PauseT struct {
-	respChannel   chan bool
-	wg            *sync.WaitGroup
-	waitForResume bool
-}
-
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
 	destinationJob types.DestinationJobT
@@ -73,10 +67,6 @@ type HandleDestOAuthRespParamsT struct {
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	generatorPauseChannel                  chan *PauseT
-	generatorResumeChannel                 chan bool
-	statusLoopPauseChannel                 chan *PauseT
-	statusLoopResumeChannel                chan bool
 	responseQ                              chan jobResponseT
 	jobsDB                                 jobsdb.MultiTenantJobsDB
 	errorDB                                jobsdb.JobsDB
@@ -186,8 +176,6 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	pauseChannel               chan *PauseT
-	resumeChannel              chan bool
 	channel                    chan workerMessageT     // the worker job channel
 	workerID                   int                     // identifies the worker
 	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
@@ -408,24 +396,6 @@ func (worker *workerT) workerProcess() {
 	timeout := time.After(jobsBatchTimeout)
 	for {
 		select {
-		case pause := <-worker.pauseChannel:
-			// Drain the channel
-			for len(worker.channel) > 0 {
-				<-worker.channel
-			}
-
-			// Clear buffers
-			worker.routerJobs = make([]types.RouterJobT, 0)
-			worker.destinationJobs = make([]types.DestinationJobT, 0)
-			worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
-
-			pkgLogger.Infof("Router worker %d is paused. Dest type: %s", worker.workerID, worker.rt.destName)
-			pause.wg.Done()
-			pause.respChannel <- true
-			if pause.waitForResume {
-				<-worker.resumeChannel
-				pkgLogger.Infof("Router worker %d is resumed. Dest type: %s", worker.workerID, worker.rt.destName)
-			}
 		case message, hasMore := <-worker.channel:
 			if !hasMore {
 				if len(worker.routerJobs) == 0 {
@@ -648,7 +618,7 @@ func (worker *workerT) processDestinationJobs() {
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"workspace":   workspaceID,
+					"workspaceId": workspaceID,
 				})
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
@@ -743,6 +713,7 @@ func (worker *workerT) processDestinationJobs() {
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
+								"workspaceId":   workspaceID,
 							}).Count(len(result))
 
 							pkgLogger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
@@ -755,6 +726,7 @@ func (worker *workerT) processDestinationJobs() {
 								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
+								"workspaceId":   workspaceID,
 							}).Count(len(respBodyArr))
 						}
 					}
@@ -1221,7 +1193,7 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
-		"workspace":      status.WorkspaceId,
+		"workspaceId":    status.WorkspaceId,
 	})
 	routerResponseStat.Count(1)
 }
@@ -1234,7 +1206,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
-			"workspace":      status.WorkspaceId,
+			"workspaceId":    status.WorkspaceId,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -1246,7 +1218,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
-						"workspace":      status.WorkspaceId,
+						"workspaceId":    status.WorkspaceId,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
@@ -1348,8 +1320,6 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			pauseChannel:              make(chan *PauseT),
-			resumeChannel:             make(chan bool),
 			channel:                   make(chan workerMessageT, noOfJobsPerChannel),
 			failedJobIDMap:            make(map[string]int64),
 			retryForJobMap:            make(map[int64]time.Time),
@@ -1709,19 +1679,6 @@ func (rt *HandleT) statusInsertLoop() {
 	for {
 		rt.perfStats.Start()
 		select {
-		case pause := <-rt.statusLoopPauseChannel:
-			// Commit the buffer to disc
-			pkgLogger.Infof("[Router] flushing statuses to disc. Dest type: %s", rt.destName)
-			statusStat.Start()
-			rt.commitStatusList(&responseList)
-			responseList = nil
-			lastUpdate = time.Now()
-			countStat.Count(len(responseList))
-			statusStat.End()
-			pkgLogger.Infof("statusInsertLoop loop is paused. Dest type: %s", rt.destName)
-			pause.respChannel <- true
-			<-rt.statusLoopResumeChannel
-			pkgLogger.Infof("statusInsertLoop loop is resumed. Dest type: %s", rt.destName)
 		case jobStatus, hasMore := <-rt.responseQ:
 			if !hasMore {
 				if len(responseList) == 0 {
@@ -1863,11 +1820,6 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case pause := <-rt.generatorPauseChannel:
-			pkgLogger.Infof("Generator loop is paused. Dest type: %s", rt.destName)
-			pause.respChannel <- true
-			<-rt.generatorResumeChannel
-			pkgLogger.Infof("Generator loop is resumed. Dest type: %s", rt.destName)
 		case <-timeout:
 			timeout = time.After(10 * time.Millisecond)
 
@@ -2115,11 +2067,11 @@ func (rt *HandleT) readAndProcess() int {
 		rt.updateProcessedEventsMetrics(drainList)
 		for destID, destDrainStat := range drainStatsbyDest {
 			drainedJobsStat := stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
-				"destType":  rt.destName,
-				"destId":    destID,
-				"module":    "router",
-				"reasons":   strings.Join(destDrainStat.Reasons, ", "),
-				"workspace": destDrainStat.Workspace,
+				"destType":    rt.destName,
+				"destId":      destID,
+				"module":      "router",
+				"reasons":     strings.Join(destDrainStat.Reasons, ", "),
+				"workspaceId": destDrainStat.Workspace,
 			})
 			drainedJobsStat.Count(destDrainStat.Count)
 			metric.DecreasePendingEvents("rt", destDrainStat.Workspace, rt.destName, float64(drainStatsbyDest[destID].Count))
@@ -2182,10 +2134,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.lastResultSet = &resultSetT{}
 
 	rt.backendConfig = backendConfig
-	rt.generatorPauseChannel = make(chan *PauseT)
-	rt.generatorResumeChannel = make(chan bool)
-	rt.statusLoopPauseChannel = make(chan *PauseT)
-	rt.statusLoopResumeChannel = make(chan bool)
 	rt.workspaceSet = make(map[string]struct{})
 
 	destName := destinationDefinition.Name

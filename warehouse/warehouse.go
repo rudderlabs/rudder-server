@@ -1065,7 +1065,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType, whName string) {
+func (wh *HandleT) Setup(whType string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
@@ -1075,6 +1075,8 @@ func (wh *HandleT) Setup(whType, whName string) {
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
+
+	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
@@ -1194,7 +1196,7 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 					wh = &HandleT{}
 					wh.configSubscriberLock.Lock()
-					wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
+					wh.Setup(destination.DestinationDefinition.Name)
 					wh.configSubscriberLock.Unlock()
 					dstToWhRouter[destination.DestinationDefinition.Name] = wh
 				} else {
