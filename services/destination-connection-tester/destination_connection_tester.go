@@ -144,7 +144,6 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
-
 	uploadFile, err := os.Open(filename)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)

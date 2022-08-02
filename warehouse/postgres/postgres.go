@@ -190,7 +190,6 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
 		return nil, err
 	}
-
 	var fileNames []string
 	for _, object := range objects {
 		objectName, err := warehouseutils.GetObjectName(object.Location, pg.Warehouse.Destination.Config, pg.ObjectStorage)
@@ -227,7 +226,6 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}
 		fileNames = append(fileNames, fileName)
 	}
-
 	return fileNames, nil
 }
 

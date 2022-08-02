@@ -3558,7 +3558,6 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file 
 	if err != nil {
 		return filemanager.UploadOutput{}, err
 	}
-
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = jd.maxBackupRetryTime

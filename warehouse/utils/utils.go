@@ -393,7 +393,6 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	if err != nil {
 		return "", err
 	}
-
 	return fm.GetObjectNameFromLocation(location)
 }
 
