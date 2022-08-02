@@ -757,7 +757,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
 	// Executing the load users table sql statement
-	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)), tableName)
+	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)), warehouseutils.UsersTable)
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
