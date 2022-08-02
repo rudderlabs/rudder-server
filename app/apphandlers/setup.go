@@ -165,7 +165,7 @@ func StartRouter(
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batchRouterFactory *batchrouter.Factory) {
-	ch := backendconfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)

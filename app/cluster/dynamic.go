@@ -168,7 +168,6 @@ func (d *Dynamic) stop() {
 	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
-	d.serverStopTimeStat.Start()
 	d.Processor.Stop()
 	d.Router.Stop()
 	d.MultiTenantStat.Stop()
@@ -177,7 +176,7 @@ func (d *Dynamic) stop() {
 	d.BatchRouterDB.Stop()
 	d.ErrorDB.Stop()
 	d.GatewayDB.Stop()
-	d.serverStopTimeStat.SendTiming(time.Since(start))
+	d.serverStopTimeStat.Since(start)
 	d.serverStopCountStat.Increment()
 }
 
