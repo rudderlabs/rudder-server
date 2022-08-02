@@ -179,6 +179,8 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Warnf("Error fetching config from backend: %v", gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
+
+			bc.initialized = false
 			bc.configUpdate(ctx, statConfigBackendError, "")
 			Expect(bc.initialized).To(BeFalse())
 		})
