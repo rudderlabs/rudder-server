@@ -8,6 +8,9 @@ import (
 )
 
 func RetryWith(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) error) error {
+	if parentContext.Err() != nil {
+		return parentContext.Err()
+	}
 	attempt := 1
 	if maxAttempts < 1 {
 		return fmt.Errorf("invalid parameter maxAttempts: %d", maxAttempts)

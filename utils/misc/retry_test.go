@@ -2,6 +2,7 @@ package misc_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,52 +11,64 @@ import (
 )
 
 func TestRetryWith(t *testing.T) {
-
 	t.Run("ideal case: no timeout", func(t *testing.T) {
-		err := misc.RetryWith(context.Background(), time.Second, 2, func(ctx context.Context) error {
-			return nil
-		})
+		var op operation
+		err := misc.RetryWith(context.Background(), time.Millisecond, 3, op.do)
 		require.NoError(t, err)
 	})
 
 	t.Run("error returned after maximum retry i.e. 3", func(t *testing.T) {
-		attempt := 0
-		err := misc.RetryWith(context.Background(), time.Second, 3, func(ctx context.Context) error {
-			attempt++
-			return context.DeadlineExceeded
-		})
-		require.Equal(t, 3, attempt)
+		op := operation{
+			timeout: 2 * time.Millisecond,
+		}
+		err := misc.RetryWith(context.Background(), time.Millisecond, 3, op.do)
 		require.Error(t, err)
+		require.True(t, errors.Is(err, context.DeadlineExceeded))
+		require.Equal(t, 3, op.attempts)
 	})
 
-	t.Run("parents context canceled", func(t *testing.T) {
-		attempt := 0
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		go func() {
-			time.Sleep(time.Second * 1)
-			cancel()
-		}()
-		err := misc.RetryWith(ctx, time.Second, 5, func(ctx context.Context) error {
-			attempt++
-			time.Sleep(time.Second * 1)
-			return context.DeadlineExceeded
-		})
-		require.Equal(t, 1, attempt)
+	t.Run("parent context canceled", func(t *testing.T) {
+		op := operation{
+			timeout: 2 * time.Millisecond,
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := misc.RetryWith(ctx, time.Millisecond, 5, op.do)
 		require.Error(t, err)
+		require.True(t, errors.Is(err, context.Canceled))
+		require.Equal(t, 0, op.attempts)
 	})
 
 	t.Run("1st attempt failed & 2nd attempt succeeded", func(t *testing.T) {
-		attempt := 0
-		err := misc.RetryWith(context.Background(), time.Second, 5, func(ctx context.Context) error {
-
-			attempt++
-			if attempt == 1 {
-				return context.DeadlineExceeded
-			}
-			return nil
-		})
-		require.Equal(t, 2, attempt)
+		op := operation{
+			timeout:             2 * time.Millisecond,
+			timeoutAfterAttempt: 1,
+		}
+		err := misc.RetryWith(context.Background(), time.Millisecond, 3, op.do)
+		require.Equal(t, 2, op.attempts)
 		require.NoError(t, err)
 	})
+}
 
+type operation struct {
+	attempts            int
+	timeout             time.Duration
+	timeoutAfterAttempt int
+}
+
+func (o *operation) do(ctx context.Context) error {
+	o.attempts++
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if o.timeoutAfterAttempt > 0 && o.attempts > o.timeoutAfterAttempt {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(o.timeout):
+		return nil
+	}
 }

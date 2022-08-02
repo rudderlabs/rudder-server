@@ -58,7 +58,7 @@ type HandleT struct {
 	statErrDBR           stats.RudderStats
 	logger               logger.LoggerI
 	transientSource      transientsource.Service
-	jobdDBRequestTimeout time.Duration
+	jobsDBCommandTimeout time.Duration
 	jobdDBMaxRetries     int
 }
 
@@ -71,8 +71,8 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.errorDB = errorDB
 	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
-	config.RegisterDurationConfigVariable(90, &st.jobdDBRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "CommandRequestTimeout", "JobsDB." + "CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	st.crashRecover()
 }
 
@@ -228,7 +228,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := misc.RetryWith(context.Background(), st.jobdDBRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 	})
 	if err != nil {
@@ -311,7 +311,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			err := misc.RetryWith(context.Background(), st.jobdDBRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			})
 			if err != nil {

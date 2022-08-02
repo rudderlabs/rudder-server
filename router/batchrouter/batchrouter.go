@@ -72,51 +72,49 @@ var (
 )
 
 type HandleT struct {
-	destType                       string
-	destinationsMap                map[string]*router_utils.BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
-	netHandle                      *http.Client
-	processQ                       chan *BatchDestinationDataT
-	jobsDB                         jobsdb.JobsDB
-	errorDB                        jobsdb.JobsDB
-	isEnabled                      bool
-	batchRequestsMetricLock        sync.RWMutex
-	multitenantI                   multitenant.MultiTenantI
-	diagnosisTicker                *time.Ticker
-	batchRequestsMetric            []batchRequestMetric
-	logger                         logger.LoggerI
-	noOfWorkers                    int
-	maxEventsInABatch              int
-	maxFailedCountForJob           int
-	asyncUploadTimeout             time.Duration
-	uploadIntervalMap              map[string]time.Duration
-	retryTimeWindow                time.Duration
-	reporting                      types.ReportingI
-	reportingEnabled               bool
-	workers                        []*workerT
-	drainedJobsStat                stats.RudderStats
-	backendConfig                  backendconfig.BackendConfig
-	fileManagerFactory             filemanager.FileManagerFactory
-	inProgressMap                  map[string]bool
-	inProgressMapLock              sync.RWMutex
-	lastExecMap                    map[string]int64
-	lastExecMapLock                sync.RWMutex
-	configSubscriberLock           sync.RWMutex
-	encounteredMergeRuleMap        map[string]map[string]bool
-	uploadedRawDataJobsCache       map[string]map[string]bool
-	encounteredMergeRuleMapLock    sync.RWMutex
-	isBackendConfigInitialized     bool
-	backendConfigInitialized       chan bool
-	asyncDestinationStruct         map[string]*asyncdestinationmanager.AsyncDestinationStruct
-	jobQueryBatchSize              int
-	pollStatusLoopSleep            time.Duration
-	asyncUploadWorkerResumeChannel chan bool
-	pollAsyncStatusResumeChannel   chan bool
-	pollTimeStat                   stats.RudderStats
-	failedJobsTimeStat             stats.RudderStats
-	successfulJobCount             stats.RudderStats
-	failedJobCount                 stats.RudderStats
-	abortedJobCount                stats.RudderStats
+	destType                    string
+	destinationsMap             map[string]*router_utils.BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap    map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	netHandle                   *http.Client
+	processQ                    chan *BatchDestinationDataT
+	jobsDB                      jobsdb.JobsDB
+	errorDB                     jobsdb.JobsDB
+	isEnabled                   bool
+	batchRequestsMetricLock     sync.RWMutex
+	multitenantI                multitenant.MultiTenantI
+	diagnosisTicker             *time.Ticker
+	batchRequestsMetric         []batchRequestMetric
+	logger                      logger.LoggerI
+	noOfWorkers                 int
+	maxEventsInABatch           int
+	maxFailedCountForJob        int
+	asyncUploadTimeout          time.Duration
+	uploadIntervalMap           map[string]time.Duration
+	retryTimeWindow             time.Duration
+	reporting                   types.ReportingI
+	reportingEnabled            bool
+	workers                     []*workerT
+	drainedJobsStat             stats.RudderStats
+	backendConfig               backendconfig.BackendConfig
+	fileManagerFactory          filemanager.FileManagerFactory
+	inProgressMap               map[string]bool
+	inProgressMapLock           sync.RWMutex
+	lastExecMap                 map[string]int64
+	lastExecMapLock             sync.RWMutex
+	configSubscriberLock        sync.RWMutex
+	encounteredMergeRuleMap     map[string]map[string]bool
+	uploadedRawDataJobsCache    map[string]map[string]bool
+	encounteredMergeRuleMapLock sync.RWMutex
+	isBackendConfigInitialized  bool
+	backendConfigInitialized    chan bool
+	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
+	jobQueryBatchSize           int
+	pollStatusLoopSleep         time.Duration
+	pollTimeStat                stats.RudderStats
+	failedJobsTimeStat          stats.RudderStats
+	successfulJobCount          stats.RudderStats
+	failedJobCount              stats.RudderStats
+	abortedJobCount             stats.RudderStats
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -126,7 +124,7 @@ type HandleT struct {
 	payloadLimit         int64
 	transientSources     transientsource.Service
 	rsourcesService      rsources.JobService
-	jobdDBRequestTimeout time.Duration
+	jobsDBCommandTimeout time.Duration
 	jobdDBMaxRetries     int
 }
 
@@ -417,7 +415,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											statusList = append(statusList, status)
 										}
 										brt.failedJobCount.Count(len(statusList))
-										err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+										err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 											return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 												err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 												if err != nil {
@@ -467,14 +465,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								brt.abortedJobCount.Count(len(abortedJobs))
 
 								if len(abortedJobs) > 0 {
-									err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+									err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 										return brt.errorDB.Store(ctx, abortedJobs)
 									})
 									if err != nil {
 										panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 									}
 								}
-								err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+								err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 									return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 										err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 										if err != nil {
@@ -482,7 +480,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										}
 
 										// rsources stats
-										return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
+										return brt.updateRudderSourcesStats(ctx, tx, importingList, statusList)
 									})
 								})
 								if err != nil {
@@ -533,7 +531,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									brt.failedJobCount.Count(len(importingList))
 								}
 								if len(abortedJobs) > 0 {
-									err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+									err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 										return brt.errorDB.Store(ctx, abortedJobs)
 									})
 									if err != nil {
@@ -541,14 +539,14 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 								}
 
-								err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+								err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 									return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 										err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 										if err != nil {
 											return fmt.Errorf("updating %s job statuses: %w", brt.destType, err)
 										}
 										// rsources stats
-										return brt.updateRudderSourcesStats(context.TODO(), tx, importingList, statusList)
+										return brt.updateRudderSourcesStats(ctx, tx, importingList, statusList)
 									})
 								})
 								if err != nil {
@@ -1288,7 +1286,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	// Store the aborted jobs to errorDB
 	if abortedEvents != nil {
-		err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return brt.errorDB.Store(ctx, abortedEvents)
 		})
 		if err != nil {
@@ -1325,7 +1323,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 	// REPORTING - END
 
 	// Mark the status of the jobs
-	err = misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err = misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
@@ -1443,7 +1441,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	}
 
 	// Mark the status of the jobs
-	err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
@@ -1695,21 +1693,21 @@ func (worker *workerT) workerProcess() {
 		}
 		// Mark the drainList jobs as Aborted
 		if len(drainList) > 0 {
-			err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 				return brt.errorDB.Store(ctx, drainJobList)
 			})
 			if err != nil {
 				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 			}
 
-			err = misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err = misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 				return brt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 					err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
 					if err != nil {
 						return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 					}
 					// rsources stats
-					return brt.updateRudderSourcesStats(context.TODO(), tx, drainJobList, drainList)
+					return brt.updateRudderSourcesStats(ctx, tx, drainJobList, drainList)
 				})
 			})
 			if err != nil {
@@ -1729,7 +1727,7 @@ func (worker *workerT) workerProcess() {
 			}
 		}
 		// Mark the jobs as executing
-		err := misc.RetryWith(context.Background(), brt.jobdDBRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWith(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
 		})
 		if err != nil {
@@ -2256,8 +2254,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "PayloadLimit", "BatchRouter.PayloadLimit"}...)
-	config.RegisterDurationConfigVariable(90, &brt.jobdDBRequestTimeout, true, time.Second, []string{"JobsDB." + "BatchRouter." + "CommandRequestTimeout", "JobsDB." + "CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "BatchRouter." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	config.RegisterDurationConfigVariable(90, &brt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
 	brt.uploadIntervalMap = map[string]time.Duration{}
 
 	tr := &http.Transport{}
