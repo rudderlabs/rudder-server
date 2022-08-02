@@ -127,7 +127,7 @@ var _ = Describe("newForDeployment", func() {
 	It("return err for unsupported type", func() {
 		config, err := newForDeployment("UNSUPPORTED_TYPE", nil)
 
-		Expect(err).To(MatchError("Deployment type \"UNSUPPORTED_TYPE\" not supported"))
+		Expect(err).To(MatchError(`deployment type "UNSUPPORTED_TYPE" not supported`))
 		Expect(config).To(BeNil())
 	})
 })
@@ -176,15 +176,8 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Warnf("Error fetching config from backend: %v", gomock.Any()).Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-
-			done := make(chan struct{})
-			bc.waitForConfigErrs = make(chan error, 1)
-			go func() {
-				Expect(<-bc.waitForConfigErrs).To(MatchError("TestRequestError"))
-				close(done)
-			}()
 			bc.configUpdate(ctx, statConfigBackendError, "test_token")
-			<-done
+			Expect(bc.initialized).To(BeFalse())
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
@@ -199,7 +192,7 @@ var _ = Describe("BackendConfig", func() {
 			pubSub := pubsub.PublishSubscriber{}
 			bc := &CommonBackendConfig{eb: &pubSub}
 			curSourceJSON = SampleBackendConfig2
-			mockLogger.EXPECT().Info(gomock.Any()).Times(1)
+			mockLogger.EXPECT().Infof("Workspace Config changed: %s", "test_token").Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 
@@ -258,20 +251,20 @@ var _ = Describe("BackendConfig", func() {
 
 		It("Should not wait if initialized is true", func() {
 			bc.initialized = true
-			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
-			_ = bc.WaitForConfig(context.TODO())
+			mockLogger.EXPECT().Info("Waiting for backend config").Times(0)
+			bc.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
 			bc.initialized = false
 			pollInterval = 2000
 			count := 0
-			mockLogger.EXPECT().Info("Waiting for initializing backend config").Do(func(v string) {
+			mockLogger.EXPECT().Info("Waiting for backend config").Do(func(v string) {
 				count++
 				if count == 5 {
 					bc.initialized = true
 				}
 			}).Times(5)
-			_ = bc.WaitForConfig(context.TODO())
+			bc.WaitForConfig(context.TODO())
 		})
 	})
 })

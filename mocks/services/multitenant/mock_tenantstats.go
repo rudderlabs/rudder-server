@@ -74,9 +74,11 @@ func (mr *MockMultiTenantIMockRecorder) ReportProcLoopAddStats(arg0, arg1 interf
 }
 
 // Start mocks base method.
-func (m *MockMultiTenantI) Start() {
+func (m *MockMultiTenantI) Start() error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Start")
+	ret := m.ctrl.Call(m, "Start")
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Start indicates an expected call of Start.

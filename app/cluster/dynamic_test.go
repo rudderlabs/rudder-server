@@ -2,7 +2,6 @@ package cluster_test
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -47,9 +46,10 @@ type mockLifecycle struct {
 	callCount *uint64
 }
 
-func (m *mockLifecycle) Start() {
+func (m *mockLifecycle) Start() error {
 	m.callOrder = atomic.AddUint64(m.callCount, 1)
 	m.status = "start"
+	return nil
 }
 
 func (m *mockLifecycle) Stop() {
@@ -199,17 +199,16 @@ func TestDynamicCluster(t *testing.T) {
 		}
 	})
 
-	t.Run("Update workspaceIDs with error", func(t *testing.T) {
+	t.Run("Empty workspaces triggers a reload", func(t *testing.T) {
 		chACK := make(chan struct{})
-		waitForConfigErr := errors.New("foo")
 		backendConfig.EXPECT().Stop().Times(1)
-		backendConfig.EXPECT().StartWithIDs(gomock.Any(), "d,e,f").Times(1)
-		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(waitForConfigErr).Times(1)
+		backendConfig.EXPECT().StartWithIDs(gomock.Any(), gomock.Any()).Times(1)
+		backendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
 		provider.sendWorkspaceIDs(
-			workspace.NewWorkspacesRequest([]string{"d", "e", "f"},
+			workspace.NewWorkspacesRequest([]string{},
 				func(ctx context.Context, err error) error {
-					require.EqualError(t, waitForConfigErr, err.Error())
+					require.NoError(t, err)
 					close(chACK)
 					return nil
 				}),

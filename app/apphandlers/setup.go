@@ -117,16 +117,19 @@ func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service, rsourcesService rsources.JobService,
-) {
+) error {
 	if !processorLoaded.First() {
-		pkgLogger.Debug("processor started by an other go routine")
-		return
+		pkgLogger.Debug("processor started by another go routine")
+		return nil
 	}
 
 	processorInstance := processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
+	processorInstance.Setup(
+		backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB,
+		clearDB, reporting, multitenantStat, transientSources, rsourcesService,
+	)
 	defer processorInstance.Shutdown()
-	processorInstance.Start(ctx)
+	return processorInstance.Start(ctx)
 }
 
 // StartRouter atomically starts router process if not already started

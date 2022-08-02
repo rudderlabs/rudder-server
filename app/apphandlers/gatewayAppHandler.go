@@ -59,7 +59,9 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 	defer gatewayDB.Close()
-	gatewayDB.Start()
+	if err := gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gatewayDB: %w", err)
+	}
 	defer gatewayDB.Stop()
 
 	enableGateway := true
@@ -108,7 +110,13 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		if err != nil {
 			return err
 		}
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsourcesService)
+		err = gw.Setup(
+			gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB,
+			&rateLimiter, gatewayApp.VersionHandler, rsourcesService,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to setup gateway: %w", err)
+		}
 		defer func() {
 			if err := gw.Shutdown(); err != nil {
 				pkgLogger.Warnf("Gateway shutdown error: %v", err)

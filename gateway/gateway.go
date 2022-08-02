@@ -1332,10 +1332,6 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 	}
 }
 
-func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, gateway.jobsDB)
-}
-
 // Robots prevents robots from crawling the gateway endpoints
 func (gateway *HandleT) robots(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
@@ -1351,11 +1347,10 @@ Supports CORS from all origins.
 This function will block.
 */
 func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		return err
-	}
+	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("WebHandler Starting on %d", webPort)
 
-	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
@@ -1370,10 +1365,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
+	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
-	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
@@ -1436,13 +1430,12 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	return g.Wait()
 }
 
-// AdminHandler for Admin Operations
+// StartAdminHandler for Admin Operations
 func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		return err
-	}
+	gateway.logger.Infof("AdminHandler waiting for BackendConfig before starting on %d", adminWebPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
 
-	gateway.logger.Infof("Starting AdminHandler in %d", adminWebPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
@@ -1559,7 +1552,11 @@ Setup initializes this module:
 
 This function will block until backend config is initially received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request), rsourcesService rsources.JobService) {
+func (gateway *HandleT) Setup(
+	application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
+	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rsourcesService rsources.JobService,
+) error {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
@@ -1602,9 +1599,11 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
 	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
-		rruntime.Go(func() {
-			gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
-		})
+		var err error
+		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		if err != nil {
+			return fmt.Errorf("could not setup suppress user feature: %w", err)
+		}
 	}
 
 	if enableEventSchemasFeature {
@@ -1618,15 +1617,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
-		cancel()
-		return
-	}
-
-	gateway.initUserWebRequestWorkers()
-
 	gateway.backgroundCancel = cancel
 	gateway.backgroundWait = g.Wait
+	gateway.initUserWebRequestWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
 		gateway.runUserWebRequestWorkers(ctx)
@@ -1648,6 +1641,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.collectMetrics(ctx)
 		return nil
 	}))
+	return nil
 }
 
 func (gateway *HandleT) Shutdown() error {
