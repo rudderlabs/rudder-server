@@ -380,6 +380,24 @@ func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	return
 }
 
+// ExecuteSQL1 executes sql using grpc Client
+func (dl *HandleT) ExecuteSQL1(sqlStatement, queryType, tableName string) (err error) {
+	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"destination": dl.Warehouse.Destination.ID,
+		"destType":    dl.Warehouse.Type,
+		"source":      dl.Warehouse.Source.ID,
+		"namespace":   dl.Warehouse.Namespace,
+		"identifier":  dl.Warehouse.Identifier,
+		"queryType":   queryType,
+		"tableName":   tableName,
+	})
+	execSqlStatTime.Start()
+	defer execSqlStatTime.End()
+
+	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
+	return
+}
+
 // ExecuteSQLClient executes sql client using grpc Client
 func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
 	executeResponse, err := dbClient.Client.Execute(dbClient.Context, &proto.ExecuteRequest{
@@ -634,7 +652,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
 	// Executing load table sql statement
-	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)))
+	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)), tableName)
 	if err != nil {
 		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -739,7 +757,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
 	// Executing the load users table sql statement
-	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)))
+	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)), tableName)
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
