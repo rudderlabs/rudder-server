@@ -592,7 +592,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	if !isDedupEnabled {
+	if !isUsersTableDedupEnabled {
 		loadUserTableByAppend()
 		return
 	}
@@ -627,7 +627,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false) || isUsersTableDedupEnabled
+	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false)
 }
 
 func Init() {
