@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
+	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
@@ -63,6 +64,10 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		return bqstream.NewProducer(destinationConfig, bqstream.Opts{
 			Timeout: o.Timeout,
 		})
+	case "LAMBDA":
+		return lambda.NewProducer(destinationConfig, lambda.Opts{
+			Timeout: o.Timeout,
+		})
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
@@ -71,7 +76,7 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 // CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
 func CloseProducer(producer interface{}, destType string) error { // TODO check if it's possible to pass a context
 	switch destType {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
+	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS", "LAMBDA":
 		return nil
 	case "BQSTREAM":
 		return bqstream.CloseProducer(producer)
@@ -95,6 +100,8 @@ func Produce(jsonData json.RawMessage, destType string, producer, config interfa
 		return kinesis.Produce(jsonData, producer, config)
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		return kafka.Produce(jsonData, producer, config)
+	case "LAMBDA":
+		return lambda.Produce(jsonData, producer, config)
 	case "FIREHOSE":
 		return firehose.Produce(jsonData, producer, config)
 	case "EVENTBRIDGE":
