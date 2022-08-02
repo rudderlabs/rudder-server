@@ -71,7 +71,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	if !googleutils.IsEmptyCredentials(config.Credentials) {
+	if !googleutils.IsCredentialsStringEmpty(config.Credentials) {
 		confCreds := []byte(config.Credentials)
 		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
 			pkgLogger.Debugf(`[BQStream] Config Credentials -> %+v`, config.Credentials)

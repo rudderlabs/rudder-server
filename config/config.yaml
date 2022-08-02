@@ -5,6 +5,11 @@ enableProcessor: true
 enableRouter: true
 enableStats: true
 statsTagsFormat: influxdb
+workloadIdentity:
+  type: GKE
+  projectId: proj
+  gsaName: gsa
+  gsaProjectId: proj
 HttpClient:
   timeout: 30s
 Http:
