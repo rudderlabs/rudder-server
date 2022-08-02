@@ -951,6 +951,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	failedCountMap := make(map[string]int64)
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
+		if failedEvent.StatusCode == transformer.DROP_STATUS_CODE {
+			continue
+		}
 		var messages []types.SingularEventT
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
 			messageIds := failedEvent.Metadata.MessageIDs
@@ -981,10 +984,6 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
 			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
-
-		if failedEvent.StatusCode == transformer.DROP_STATUS_CODE {
-			continue
-		}
 
 		id := misc.FastUUID()
 		params := map[string]interface{}{
