@@ -9,7 +9,8 @@ import (
 type Type string
 
 const (
-	DedicatedType   Type = "DEDICATED"
+	DedicatedType Type = "DEDICATED"
+	// HostedType is DEPRECATED: Use MultiTenantType instead
 	HostedType      Type = "HOSTED"
 	MultiTenantType Type = "MULTITENANT"
 )
