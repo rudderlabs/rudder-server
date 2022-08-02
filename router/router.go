@@ -604,7 +604,7 @@ func (worker *workerT) processDestinationJobs() {
 		var attemptedToSendTheJob bool
 		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
+			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, &destinationJob) {
 				diagnosisStartTime := time.Now()
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 
@@ -785,10 +785,10 @@ func (worker *workerT) processDestinationJobs() {
 		_destinationJob := destinationJob
 
 		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
-			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
+			_destinationJobMetadata := destinationJobMetadata
+			handledJobMetadatas[destinationJobMetadata.JobID] = &_destinationJobMetadata
 			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
-			_destinationJobMetadata := destinationJobMetadata
 
 			routerJobResponses = append(routerJobResponses, &JobResponse{
 				jobID:                  destinationJobMetadata.JobID,
@@ -910,7 +910,7 @@ func (worker *workerT) processDestinationJobs() {
 	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
 }
 
-func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
+func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob *types.DestinationJobT) bool {
 	if prevRespStatusCode == 0 {
 		return true
 	}
@@ -1285,7 +1285,7 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 	return
 }
 
-func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
+func (rt *HandleT) addToFailedList(jobStatus *jobsdb.JobStatusT) {
 	rt.failedEventsListMutex.Lock()
 	defer rt.failedEventsListMutex.Unlock()
 	if rt.failedEventsList.Len() == failedEventsCacheSize {
@@ -1297,19 +1297,14 @@ func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
 
 func (rt *HandleT) readFailedJobStatusChan() {
 	for jobStatus := range rt.failedEventsChan {
-		rt.addToFailedList(jobStatus)
+		rt.addToFailedList(&jobStatus)
 	}
 }
 
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 	if diagnostics.EnableRouterMetric {
 		rt.requestsMetricLock.Lock()
-		if rt.requestsMetric == nil {
-			var requestsMetric []requestMetric
-			rt.requestsMetric = append(requestsMetric, reqMetric)
-		} else {
-			rt.requestsMetric = append(rt.requestsMetric, reqMetric)
-		}
+		rt.requestsMetric = append(rt.requestsMetric, reqMetric)
 		rt.requestsMetricLock.Unlock()
 	}
 }
@@ -1819,6 +1814,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			rt.stopWorkers()
 			return
 		case <-timeout:
 			timeout = time.After(10 * time.Millisecond)
@@ -2286,7 +2282,6 @@ func (rt *HandleT) Start() {
 
 func (rt *HandleT) Shutdown() {
 	rt.backgroundCancel()
-	rt.stopWorkers()
 
 	_ = rt.backgroundWait()
 }

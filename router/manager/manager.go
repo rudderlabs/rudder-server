@@ -27,7 +27,7 @@ type LifecycleManager struct {
 	waitGroup     *errgroup.Group
 }
 
-func (*LifecycleManager) Run(ctx context.Context) error {
+func (*LifecycleManager) Run(_ context.Context) error {
 	return nil
 }
 
