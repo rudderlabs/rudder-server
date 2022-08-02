@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -202,10 +201,6 @@ func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location strin
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
 	str := strings.Split(location, fmt.Sprintf("%s/", manager.Config.Container))
 	return str[len(str)-1]
-}
-
-func (manager *AzureBlobStorageManager) Close() {
-	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 
 type AzureBlobStorageManager struct {

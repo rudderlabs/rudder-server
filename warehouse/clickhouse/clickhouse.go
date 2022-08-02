@@ -351,8 +351,6 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 
-	defer downloader.Close()
-
 	var fileNames []string
 	var dErr error
 	var fileNamesLock sync.RWMutex

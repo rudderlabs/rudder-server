@@ -197,8 +197,6 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 
-	defer downloader.Close()
-
 	var fileNames []string
 	for _, object := range objects {
 		objectName, err := warehouseutils.GetObjectName(object.Location, ms.Warehouse.Destination.Config, ms.ObjectStorage)

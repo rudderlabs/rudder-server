@@ -2,7 +2,6 @@ package config
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,31 +23,4 @@ func TestStatic_checkAndHotReloadConfig(t *testing.T) {
 	varptr2 := getConfigValue(configVar2).(*string)
 	require.Equal(t, *varptr1, "value_changed")
 	require.Equal(t, *varptr2, "value_changed")
-}
-
-func TestStatic_RegisterAndDeRegister(t *testing.T) {
-	hotReloadableConfig = make(map[string][]*ConfigVar)
-	nonHotReloadableConfig = make(map[string][]*ConfigVar)
-
-	var timeout1 time.Duration
-	RegisterDurationConfigVariable(10, &timeout1, true, time.Second, []string{"KEY_VAR"}...)
-
-	require.Equal(t, len(hotReloadableConfig), 1)
-	require.Equal(t, len(nonHotReloadableConfig), 0)
-
-	var timeout2 time.Duration
-	RegisterDurationConfigVariable(10, &timeout2, false, time.Second, []string{"KEY_VAR"}...)
-
-	require.Equal(t, len(hotReloadableConfig), 1)
-	require.Equal(t, len(nonHotReloadableConfig), 1)
-
-	DeregisterConfigVariableWithPtr(&timeout2)
-
-	require.Equal(t, len(hotReloadableConfig), 1)
-	require.Equal(t, len(nonHotReloadableConfig), 0)
-
-	DeregisterConfigVariableWithPtr(&timeout1)
-
-	require.Equal(t, len(hotReloadableConfig), 0)
-	require.Equal(t, len(nonHotReloadableConfig), 0)
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v6"
-	"github.com/rudderlabs/rudder-server/config"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
@@ -205,10 +204,6 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		SecretAccessKey: secretAccessKey,
 		UseSSL:          useSSL,
 	}
-}
-
-func (manager *MinioManager) Close() {
-	config.DeregisterConfigVariableWithPtr(manager.Timeout)
 }
 
 type MinioManager struct {

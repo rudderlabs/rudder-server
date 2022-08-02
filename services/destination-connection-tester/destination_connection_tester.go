@@ -145,8 +145,6 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 		panic(err)
 	}
 
-	defer uploader.Close()
-
 	uploadFile, err := os.Open(filename)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)

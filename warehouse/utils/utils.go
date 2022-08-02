@@ -394,8 +394,6 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 		return "", err
 	}
 
-	defer fm.Close()
-
 	return fm.GetObjectNameFromLocation(location)
 }
 

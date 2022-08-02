@@ -88,8 +88,6 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		return
 	}
 
-	defer fManager.Close()
-
 	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,
@@ -113,8 +111,6 @@ func deleteFilesInStorage(locations []string) error {
 		err = fmt.Errorf("Error in creating a file manager for Rudder Storage. Error: %w", err)
 		return err
 	}
-
-	defer fManager.Close()
 
 	err = fManager.DeleteObjects(context.TODO(), locations)
 	if err != nil {

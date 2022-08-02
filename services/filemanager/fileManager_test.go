@@ -264,29 +264,6 @@ func TestFileManager(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config.Load()
-
-			fmFactory := filemanager.FileManagerFactoryT{}
-			fm, err := fmFactory.New(&filemanager.SettingsT{
-				Provider: tt.destName,
-				Config:   tt.config,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			len := config.GetTotalNonHotReloadableConfigVars()
-			require.Equal(t, len, 1)
-
-			fm.Close()
-
-			len = config.GetTotalNonHotReloadableConfigVars()
-			require.Equal(t, len, 0)
-		})
-	}
-
-	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.skip != "" {
