@@ -79,18 +79,14 @@ func Test_Namespace_Get(t *testing.T) {
 	require.Len(t, c.Sources, 3)
 
 	t.Log("correct writeKey to workspaceID mapping")
-	{
-		require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCggSFf....jBLNxmXtSlvZ"))
-		require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCgpXME....WBD9C5nQtsFg"))
-		require.Equal(t, workspaceID2, client.GetWorkspaceIDForWriteKey("2CChOrwP....9qESA9FgLFXL"))
-	}
+	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCggSFf....jBLNxmXtSlvZ"))
+	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCgpXME....WBD9C5nQtsFg"))
+	require.Equal(t, workspaceID2, client.GetWorkspaceIDForWriteKey("2CChOrwP....9qESA9FgLFXL"))
 
 	t.Log("correct sourceID to workspaceID mapping")
-	{
-		require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
-		require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
-		require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
-	}
+	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
+	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
+	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,
