@@ -170,7 +170,8 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, nc := range workspaces.WorkspaceSourcesMap {
-		for _, source := range nc.Sources {
+		for i := range nc.Sources {
+			source := &nc.Sources[i]
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
 			sourceToWorkspaceIDMap[source.ID] = workspaceID
 			workspaceIDToLibrariesMap[workspaceID] = nc.Libraries
