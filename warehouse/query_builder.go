@@ -26,7 +26,7 @@ func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struc
 		  AND source_id = $3
 		  AND destination_id = $4
 		  AND metadata ->> 'destination_revision_id' IS NOT NULL
-          AND metadata ->> 'destination_revision_id' != '';
+          AND metadata ->> 'destination_revision_id' <> '';
 	`,
 		warehouseutils.WarehouseStagingFilesTable,
 	)
