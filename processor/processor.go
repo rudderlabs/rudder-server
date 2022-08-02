@@ -982,7 +982,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
 
-		if failedEvent.StatusCode == 722 {
+		if failedEvent.StatusCode == transformer.DROP_STATUS_CODE {
 			continue
 		}
 

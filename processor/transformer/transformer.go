@@ -29,6 +29,7 @@ const (
 	EventFilterStage            = "event_filter"
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
+	DROP_STATUS_CODE            = 722
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
