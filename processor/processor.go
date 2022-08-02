@@ -982,6 +982,10 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
 		)
 
+		if failedEvent.StatusCode == 722 {
+			continue
+		}
+
 		id := misc.FastUUID()
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
