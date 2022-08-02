@@ -164,7 +164,7 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
-	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
+	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 
@@ -194,14 +194,6 @@ func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
-Deprecated: Use an instance of BackendConfig instead of static function
-*/
-func Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
-	return backendConfig.Subscribe(ctx, topic)
-}
-
-/*
-Subscribe subscribes a channel to a specific topic of backend config updates.
 Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
 Data of the DataEvent should be a backendconfig.ConfigT struct.
 Available topics are:
@@ -211,14 +203,6 @@ Available topics are:
 */
 func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
-}
-
-/*
-WaitForConfig waits until backend config has been initialized
-Deprecated: Use an instance of BackendConfig instead of static function
-*/
-func WaitForConfig(ctx context.Context) error {
-	return backendConfig.WaitForConfig(ctx)
 }
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {

@@ -1738,7 +1738,7 @@ func (worker *workerT) workerProcess() {
 			rruntime.Go(func() {
 				switch {
 				case misc.ContainsString(objectStorageDestinations, brt.destType):
-					destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, true, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
@@ -1755,7 +1755,7 @@ func (worker *workerT) workerProcess() {
 				case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
-					destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 					destUploadStat.Start()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
@@ -1775,7 +1775,7 @@ func (worker *workerT) workerProcess() {
 					}
 					destUploadStat.End()
 				case misc.ContainsString(asyncDestinations, brt.destType):
-					destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					brt.sendJobsToStorage(batchJobs)
 					destUploadStat.End()

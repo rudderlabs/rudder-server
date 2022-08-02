@@ -112,18 +112,6 @@ func (mr *MockRudderStatsMockRecorder) Count(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockRudderStats)(nil).Count), arg0)
 }
 
-// DeferredTimer mocks base method.
-func (m *MockRudderStats) DeferredTimer() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "DeferredTimer")
-}
-
-// DeferredTimer indicates an expected call of DeferredTimer.
-func (mr *MockRudderStatsMockRecorder) DeferredTimer() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeferredTimer", reflect.TypeOf((*MockRudderStats)(nil).DeferredTimer))
-}
-
 // End mocks base method.
 func (m *MockRudderStats) End() {
 	m.ctrl.T.Helper()
