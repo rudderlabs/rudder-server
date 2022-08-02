@@ -74,7 +74,6 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if !googleutils.IsCredentialsStringEmpty(config.Credentials) {
 		confCreds := []byte(config.Credentials)
 		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
-			pkgLogger.Debugf(`[BQStream] Config Credentials -> %+v`, config.Credentials)
 			return nil, createErr(err, "incompatible credentials")
 		}
 		opts = append(opts, option.WithCredentialsJSON(confCreds))
