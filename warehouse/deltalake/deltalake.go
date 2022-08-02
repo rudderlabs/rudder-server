@@ -43,18 +43,19 @@ const (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
-	schema             string
-	sparkServerType    string
-	authMech           string
-	uid                string
-	thriftTransport    string
-	ssl                string
-	userAgent          string
-	grpcTimeout        time.Duration
-	healthTimeout      time.Duration
-	loadTableStrategy  string
+	stagingTablePrefix     string
+	pkgLogger              logger.LoggerI
+	schema                 string
+	sparkServerType        string
+	authMech               string
+	uid                    string
+	thriftTransport        string
+	ssl                    string
+	userAgent              string
+	grpcTimeout            time.Duration
+	healthTimeout          time.Duration
+	loadTableStrategy      string
+	enablePartitionPruning bool
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -137,6 +138,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(2, &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 	config.RegisterDurationConfigVariable(15, &healthTimeout, false, time.Second, "Warehouse.deltalake.healthTimeout")
 	config.RegisterStringConfigVariable("MERGE", &loadTableStrategy, true, "Warehouse.deltalake.loadTableStrategy")
+	config.RegisterBoolConfigVariable(true, &enablePartitionPruning, true, "Warehouse.deltalake.enablePartitionPruning")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -338,6 +340,10 @@ func isPartitionedByEventDate(partitionedColumns []string) bool {
 
 // partitionedQuery partition query
 func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) {
+	if !enablePartitionPruning {
+		return
+	}
+
 	partitionedColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
 	if err != nil {
 		pkgLogger.Errorf("error while fetching partitioned query with %s", err.Error())
