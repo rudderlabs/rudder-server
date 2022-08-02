@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
-
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -149,8 +147,6 @@ var (
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
 	parquetParallelWriters int64
-
-	Http sysUtils.HttpI = sysUtils.NewHttp()
 )
 
 var (
@@ -885,8 +881,8 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFo
 	return timeWindowFormat
 }
 
-func GetRequestWithTimeout(ctx context.Context, url string) ([]byte, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
+func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -894,7 +890,7 @@ func GetRequestWithTimeout(ctx context.Context, url string) ([]byte, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte{}, err

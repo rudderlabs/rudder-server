@@ -1653,7 +1653,7 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		}
 
 		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
-		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr)
+		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
 		if err == nil {
 			var destination backendconfig.DestinationT
 			err = json.Unmarshal(response, &destination)
