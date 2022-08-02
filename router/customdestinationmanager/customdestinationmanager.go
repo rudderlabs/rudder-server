@@ -312,7 +312,7 @@ func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} 
 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
-	ch := backendconfig.Subscribe(context.TODO(), "backendConfig")
+	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), "backendConfig")
 	for conf := range ch {
 		allSources := conf.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {

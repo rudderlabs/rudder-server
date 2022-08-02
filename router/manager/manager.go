@@ -62,7 +62,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	}
 }
 
-// Gets the config from config backend and extracts enabled writekeys
+// Gets the config from config backend and extracts enabled write-keys
 func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory,
 ) {

@@ -245,7 +245,7 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for config := range ch {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
@@ -1121,7 +1121,7 @@ func (wh *HandleT) resetInProgressJobs() {
 }
 
 func minimalConfigSubscriber() {
-	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for config := range ch {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
@@ -1165,7 +1165,7 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(ctx context.Context) {
-	ch := backendconfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
 	for config := range ch {
@@ -1623,7 +1623,7 @@ func startWebHandler(ctx context.Context) error {
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
-			if err := backendconfig.WaitForConfig(ctx); err != nil {
+			if err := backendconfig.DefaultBackendConfig.WaitForConfig(ctx); err != nil {
 				return err
 			}
 			mux.HandleFunc("/v1/process", processHandler)
