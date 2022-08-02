@@ -154,7 +154,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 }
 
 func backendConfigSubscriber() {
-	ch := backendconfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for config := range ch {
 		updateConfig(config.Data.(backendconfig.ConfigT))
 	}
