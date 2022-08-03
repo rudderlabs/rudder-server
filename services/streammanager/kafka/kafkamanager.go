@@ -14,13 +14,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
-
-type Opts struct {
-	Timeout time.Duration
-}
 
 // schema is the AVRO schema required to convert the data to AVRO
 type avroSchema struct {
@@ -233,7 +230,7 @@ type KafkaProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducer(destConfigJSON interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
@@ -327,7 +324,7 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*KafkaProducer, error) { /
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForAzureEventHubs(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
@@ -378,7 +375,7 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*Kafka
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForConfluentCloud(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
@@ -532,7 +529,7 @@ func (producer *KafkaProducer) CloseProducer() error {
 func (producer *KafkaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
-	client := producer.client 
+	client := producer.client
 	if client == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"

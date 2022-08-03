@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mockStats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -49,7 +50,7 @@ func TestNewProducer(t *testing.T) {
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), 1)
 
 		var destConfig func()
-		p, err := NewProducer(destConfig, Opts{})
+		p, err := NewProducer(destConfig, common.Opts{})
 		require.Nil(t, p)
 		require.EqualError(t, err, "[Kafka] Error while marshaling destination configuration <nil>, "+
 			"got error: json: unsupported type: func()")
@@ -60,7 +61,7 @@ func TestNewProducer(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), 1)
 
 			var destConfig interface{}
-			p, err := NewProducer(destConfig, Opts{})
+			p, err := NewProducer(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
 		})
@@ -70,7 +71,7 @@ func TestNewProducer(t *testing.T) {
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
 			}
-			p, err := NewProducer(destConfig, Opts{})
+			p, err := NewProducer(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: hostname cannot be empty")
 		})
@@ -81,7 +82,7 @@ func TestNewProducer(t *testing.T) {
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
 			}
-			p, err := NewProducer(destConfig, Opts{})
+			p, err := NewProducer(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, `invalid configuration: invalid port: strconv.Atoi: parsing "": invalid syntax`)
 		})
@@ -93,7 +94,7 @@ func TestNewProducer(t *testing.T) {
 				"hostname": "some-hostname",
 				"port":     "0",
 			}
-			p, err := NewProducer(destConfig, Opts{})
+			p, err := NewProducer(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, `invalid configuration: invalid port: 0`)
 		})
@@ -112,7 +113,7 @@ func TestNewProducer(t *testing.T) {
 					},
 				},
 			}
-			p, err := NewProducer(destConfig, Opts{})
+			p, err := NewProducer(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
 		})
@@ -138,7 +139,7 @@ func TestNewProducer(t *testing.T) {
 			"hostname": "localhost",
 			"port":     kafkaContainer.Port,
 		}
-		p, err := NewProducer(destConfig, Opts{})
+		p, err := NewProducer(destConfig, common.Opts{})
 		require.NotNil(t, p)
 		require.NoError(t, err)
 
@@ -156,7 +157,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 		kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), 1)
 
 		var destConfig func()
-		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+		p, err := NewProducerForAzureEventHubs(destConfig, common.Opts{})
 		require.Nil(t, p)
 		require.EqualError(t, err, "[Azure Event Hubs] Error while marshaling destination configuration <nil>, "+
 			"got error: json: unsupported type: func()")
@@ -167,7 +168,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), 1)
 
 			var destConfig interface{}
-			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			p, err := NewProducerForAzureEventHubs(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
 		})
@@ -177,7 +178,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
 			}
-			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			p, err := NewProducerForAzureEventHubs(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: bootstrap server cannot be empty")
 		})
@@ -188,7 +189,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 				"topic":           "some-topic",
 				"bootstrapServer": "some-server",
 			}
-			p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+			p, err := NewProducerForAzureEventHubs(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: connection string cannot be empty")
 		})
@@ -210,7 +211,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			"bootstrapServer":           "bad-host," + kafkaHost + "," + kafkaHost,
 			"eventHubsConnectionString": azureEventHubsConnString,
 		}
-		p, err := NewProducerForAzureEventHubs(destConfig, Opts{})
+		p, err := NewProducerForAzureEventHubs(destConfig, common.Opts{})
 		require.NotNil(t, p)
 		require.NoError(t, err)
 
@@ -228,7 +229,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 		kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), 1)
 
 		var destConfig func()
-		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+		p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 		require.Nil(t, p)
 		require.EqualError(t, err, "[Confluent Cloud] Error while marshaling destination configuration <nil>, "+
 			"got error: json: unsupported type: func()")
@@ -239,7 +240,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), 1)
 
 			var destConfig interface{}
-			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: topic cannot be empty")
 		})
@@ -249,7 +250,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
 			}
-			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: bootstrap server cannot be empty")
 		})
@@ -260,7 +261,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 				"topic":           "some-topic",
 				"bootstrapServer": "some-server",
 			}
-			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: API key cannot be empty")
 		})
@@ -272,7 +273,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 				"bootstrapServer": "some-server",
 				"apiKey":          "secret-key",
 			}
-			p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+			p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 			require.Nil(t, p)
 			require.EqualError(t, err, "invalid configuration: API secret cannot be empty")
 		})
@@ -295,7 +296,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			"apiKey":          confluentCloudKey,
 			"apiSecret":       confluentCloudSecret,
 		}
-		p, err := NewProducerForConfluentCloud(destConfig, Opts{})
+		p, err := NewProducerForConfluentCloud(destConfig, common.Opts{})
 		require.NoError(t, err)
 		require.NotNil(t, p)
 

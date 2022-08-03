@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,7 +38,7 @@ func TestTimeout(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
-	producer, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
@@ -101,8 +102,8 @@ func TestUnsupportedCredentials(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
-	_, err = NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	_, err = NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "[BQStream] error :: incompatible credentials:: Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "incompatible credentials")
 }

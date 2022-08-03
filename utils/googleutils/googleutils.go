@@ -8,7 +8,7 @@ import (
 
 func CompatibleGoogleCredentialsJSON(jsonKey []byte) error {
 	if _, err := google.ConfigFromJSON(jsonKey); err == nil {
-		return fmt.Errorf("Google Developers Console client_credentials.json file is not supported")
+		return fmt.Errorf("google developers console client_credentials.json file is not supported")
 	}
 	return nil
 }

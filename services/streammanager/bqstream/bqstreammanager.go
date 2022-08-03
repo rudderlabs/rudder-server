@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"cloud.google.com/go/bigquery"
+
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -31,10 +32,7 @@ type Credentials struct {
 
 type Client struct {
 	bqClient *bigquery.Client
-	opts     Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts     common.Opts
 }
 
 // https://stackoverflow.com/questions/55951812/insert-into-bigquery-without-a-well-defined-struct
@@ -59,7 +57,7 @@ type BQStreamProducer struct {
 	client *Client
 }
 
-func NewProducer(destinationConfig interface{}, o Opts) (*BQStreamProducer, error) {
+func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
 	var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)

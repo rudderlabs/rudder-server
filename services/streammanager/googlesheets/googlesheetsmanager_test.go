@@ -16,6 +16,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
@@ -52,11 +53,11 @@ func Test_Timeout(t *testing.T) {
 		},
 		TestConfig: testConfig,
 	}
-	producer, err := NewProducer(config, Opts{Timeout: 10 * time.Second})
+	producer, err := NewProducer(config, common.Opts{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf(" %+v", err)
 	}
-	producer.client.opts = Opts{Timeout: 1 * time.Microsecond}
+	producer.client.opts = common.Opts{Timeout: 1 * time.Microsecond}
 	json := fmt.Sprintf(`{
 		"spreadSheetId": "%s",
 		"spreadSheet": "%s",

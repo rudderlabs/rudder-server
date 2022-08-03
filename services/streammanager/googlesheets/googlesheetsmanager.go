@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
@@ -20,6 +19,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -46,10 +46,7 @@ type Credentials struct {
 
 type Client struct {
 	service *sheets.Service
-	opts    Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts    common.Opts
 }
 
 var pkgLogger logger.LoggerI
@@ -63,7 +60,7 @@ type GoogleSheetsProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*GoogleSheetsProducer, error) {
+func NewProducer(destinationConfig interface{}, o common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
 	jsonConfig, err := json.Marshal(destinationConfig)

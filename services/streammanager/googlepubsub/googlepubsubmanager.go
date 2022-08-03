@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -31,11 +31,7 @@ type TestConfig struct {
 type PubsubClient struct {
 	pbs      *pubsub.Client
 	topicMap map[string]*pubsub.Topic
-	opts     Opts
-}
-
-type Opts struct {
-	Timeout time.Duration
+	opts     common.Opts
 }
 
 var pkgLogger logger.LoggerI
@@ -49,7 +45,7 @@ type GooglePubSubProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*GooglePubSubProducer, error) {
+func NewProducer(destinationConfig interface{}, o common.Opts) (*GooglePubSubProducer, error) {
 	var config Config
 	ctx := context.Background()
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -90,13 +86,14 @@ func NewProducer(destinationConfig interface{}, o Opts) (*GooglePubSubProducer, 
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs := producer.client
-	ctx, cancel := context.WithTimeout(context.Background(), pbs.opts.Timeout)
-	defer cancel()
 	if pbs == nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error :: Could not create producer"
 		return 400, respStatus, responseMessage
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), pbs.opts.Timeout)
+	defer cancel()
+
 	var data interface{}
 	if parsedJSON.Get("message").Value() != nil {
 		data = parsedJSON.Get("message").Value()

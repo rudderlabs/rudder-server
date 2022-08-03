@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -17,53 +16,29 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
-type Opts struct {
-	Timeout time.Duration
-}
-
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig interface{}, destType string, o Opts) (common.StreamProducer, error) {
+func NewProducer(destinationConfig interface{}, destType string, opts common.Opts) (common.StreamProducer, error) {
 	switch destType {
 	case "AZURE_EVENT_HUB":
-		return kafka.NewProducerForAzureEventHubs(destinationConfig, kafka.Opts{
-			Timeout: o.Timeout,
-		})
+		return kafka.NewProducerForAzureEventHubs(destinationConfig, opts)
 	case "CONFLUENT_CLOUD":
-		return kafka.NewProducerForConfluentCloud(destinationConfig, kafka.Opts{
-			Timeout: o.Timeout,
-		})
+		return kafka.NewProducerForConfluentCloud(destinationConfig, opts)
 	case "EVENTBRIDGE":
-		return eventbridge.NewProducer(destinationConfig, eventbridge.Opts{
-			Timeout: o.Timeout,
-		})
+		return eventbridge.NewProducer(destinationConfig, opts)
 	case "FIREHOSE":
-		return firehose.NewProducer(destinationConfig, firehose.Opts{
-			Timeout: o.Timeout,
-		})
+		return firehose.NewProducer(destinationConfig, opts)
 	case "KAFKA":
-		return kafka.NewProducer(destinationConfig, kafka.Opts{
-			Timeout: o.Timeout,
-		})
+		return kafka.NewProducer(destinationConfig, opts)
 	case "KINESIS":
-		return kinesis.NewProducer(destinationConfig, kinesis.Opts{
-			Timeout: o.Timeout,
-		})
+		return kinesis.NewProducer(destinationConfig, opts)
 	case "GOOGLEPUBSUB":
-		return googlepubsub.NewProducer(destinationConfig, googlepubsub.Opts{
-			Timeout: o.Timeout,
-		})
+		return googlepubsub.NewProducer(destinationConfig, opts)
 	case "GOOGLESHEETS":
-		return googlesheets.NewProducer(destinationConfig, googlesheets.Opts{
-			Timeout: o.Timeout,
-		})
+		return googlesheets.NewProducer(destinationConfig, opts)
 	case "PERSONALIZE":
-		return personalize.NewProducer(destinationConfig, personalize.Opts{
-			Timeout: o.Timeout,
-		})
+		return personalize.NewProducer(destinationConfig, opts)
 	case "BQSTREAM":
-		return bqstream.NewProducer(destinationConfig, bqstream.Opts{
-			Timeout: o.Timeout,
-		})
+		return bqstream.NewProducer(destinationConfig, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
@@ -77,7 +52,7 @@ func CloseProducer(producer interface{}, destType string) error { // TODO check 
 	case "BQSTREAM", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "GOOGLEPUBSUB":
 		streamProducer, ok := producer.(common.ClosableStreamProducer)
 		if !ok {
-			return errors.New("Producer is not closable")
+			return errors.New("producer is not closable")
 		}
 		return streamProducer.CloseProducer()
 	default:
