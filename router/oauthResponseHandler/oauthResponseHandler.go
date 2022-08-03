@@ -104,7 +104,7 @@ const (
 
 type RefreshTokenBodyParams struct {
 	HasExpired    bool   `json:"hasExpired"`
-	ExpiredSecret string `json:"expiredSecret"`
+	ExpiredSecret []byte `json:"expiredSecret"`
 }
 
 type tokenProvider interface {
@@ -172,7 +172,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if router_utils.IsNotEmptyString(string(refTokenParams.Secret)) {
 		refTokenBody = RefreshTokenBodyParams{
 			HasExpired:    true,
-			ExpiredSecret: string(refTokenParams.Secret),
+			ExpiredSecret: refTokenParams.Secret,
 		}
 	}
 	accountMutex.RLock()
