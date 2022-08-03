@@ -47,7 +47,7 @@ func (worker *SourceWorkerT) workerProcess() {
 			ErrorResponse: []byte(`{}`), // check
 			Parameters:    []byte(`{}`), // check
 		}
-		worker.replayer.db.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		worker.replayer.db.UpdateJobStatus(context.TODO(), []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
 	}
 }
 
@@ -179,7 +179,7 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 	}
 	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayer.toDB.Identifier())
 
-	err = worker.replayer.toDB.Store(jobs)
+	err = worker.replayer.toDB.Store(context.TODO(), jobs)
 	if err != nil {
 		panic(err)
 	}

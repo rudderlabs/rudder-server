@@ -261,7 +261,7 @@ func (exp *failedKeysExporterT) SetupFKExporter(migrator *FailedKeysMigratorT, p
 	exp.crashRecover()
 	exp.migrator = migrator
 	exp.statVal = fmt.Sprintf("%s-exporter", "failed_keys")
-	exp.eventStat = stats.NewStat("fk_export_events", stats.GaugeType)
+	exp.eventStat = stats.DefaultStats.NewStat("fk_export_events", stats.GaugeType)
 
 	exp.pf = pf
 
@@ -493,7 +493,7 @@ func (imp *failedKeysImporterT) SetupFKImporter(migrator *FailedKeysMigratorT) {
 	imp.crashRecover()
 	imp.migrator = migrator
 	imp.statVal = `failed_keys-importer`
-	imp.eventStat = stats.NewStat("import-events", stats.GaugeType)
+	imp.eventStat = stats.DefaultStats.NewStat("import-events", stats.GaugeType)
 	imp.logger.Info(`[[ failed_keys-Import-Migrator ]] setup`)
 	imp.importWaitGroup = sync.WaitGroup{}
 

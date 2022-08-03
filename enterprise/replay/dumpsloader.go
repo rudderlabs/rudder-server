@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -141,7 +142,7 @@ func (handle *GWReplayRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHand
 		}
 
 		pkgLogger.Info("Total gw_dumps count from S3 : ", len(objects))
-		err = handleDump.DbHandle.Store(jobs)
+		err = handleDump.DbHandle.Store(context.TODO(), jobs)
 		if err != nil {
 			panic(fmt.Errorf("Failed to write gw_dumps locations to DB with error: %w", err))
 		}
@@ -212,7 +213,7 @@ func (handle *ProcErrorRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHan
 
 		pkgLogger.Info("Total proc_error_dumps count from S3 : ", len(objects))
 		if len(jobs) > 0 {
-			err = handleDump.DbHandle.Store(jobs)
+			err = handleDump.DbHandle.Store(context.TODO(), jobs)
 			if err != nil {
 				panic(fmt.Errorf("Failed to write proc_error_dumps locations to DB with error: %w", err))
 			}
