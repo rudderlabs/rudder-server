@@ -24,17 +24,18 @@ func ShouldSkipCredentialsInit(credentials string) bool {
 }
 
 /*
-	The credentials are deemed to be empty when either the field credentials is
-	sent as empty string or when the field is set with "{}"
+IsCredentialsStringEmpty checks for empty credentials.
+The credentials are deemed to be empty when either the field credentials is
+sent as empty string or when the field is set with "{}"
 
-	Note: This is true only for workload identity enabled rudderstack data-plane deployments
+Note: This is true only for workload identity enabled rudderstack data-plane deployments
 */
 func IsCredentialsStringEmpty(credentials string) bool {
 	return (credentials == "" || credentials == EMPTY_CREDS)
 }
 
 /*
-	We would check for rudder-server configuration for workload identity for google destinations
+	IsGKEEnabledWorkload  checks against rudder-server configuration to find if workload identity for google destinations is enabled
 */
 func IsGKEEnabledWorkload() bool {
 	workloadType := config.GetString(fmt.Sprintf("%s.type", WI_CONFIG_KEY), "")

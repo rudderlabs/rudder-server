@@ -57,7 +57,6 @@ func init() {
 
 func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	var config Config
-	// var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
