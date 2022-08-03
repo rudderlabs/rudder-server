@@ -14,6 +14,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
@@ -168,7 +169,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 				g.Go(func() error {
 					clearDB := false
 					if enableProcessor {
-						StartProcessor(
+						return StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
 							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)
@@ -272,8 +273,8 @@ func startHealthWebHandler(ctx context.Context) error {
 	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", healthHandler)
-	srvMux.HandleFunc("/", healthHandler)
+	srvMux.HandleFunc("/health", app.LivenessHandler(gatewayDB))
+	srvMux.HandleFunc("/", app.LivenessHandler(gatewayDB))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
@@ -293,8 +294,4 @@ func startHealthWebHandler(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, gatewayDB)
 }

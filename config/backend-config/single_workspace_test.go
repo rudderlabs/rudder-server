@@ -20,7 +20,9 @@ var (
 	originalBackendConfig = backendConfig
 	_                     = Describe("workspace-config", func() {
 		BeforeEach(func() {
-			backendConfig = &SingleWorkspaceConfig{}
+			backendConfig = &SingleWorkspaceConfig{
+				Token: "testToken",
+			}
 			ctrl = gomock.NewController(GinkgoT())
 			mockLogger = mocklogger.NewMockLoggerI(ctrl)
 			pkgLogger = mockLogger
@@ -53,10 +55,13 @@ var (
 				}))
 				defer server.Close()
 
-				testRequest, _ := http.NewRequest("GET", server.URL, nil)
-				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+				testRequest, err := http.NewRequest("GET", server.URL, http.NoBody)
+				Expect(err).To(BeNil())
+				mockHttp.EXPECT().NewRequestWithContext(
+					ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil,
+				).Return(testRequest, nil).Times(1)
 
-				config, err := backendConfig.Get(ctx, "testToken")
+				config, err := backendConfig.Get(ctx, "")
 				Expect(err).To(BeNil())
 				Expect(config).To(Equal(SampleBackendConfig))
 			})
@@ -75,7 +80,7 @@ var (
 				configFromFile = false
 				configBackendURL = ""
 				Http = mockHttp
-				testRequest, _ := http.NewRequest("GET", "", nil)
+				testRequest, _ := http.NewRequest("GET", "", http.NoBody)
 				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)

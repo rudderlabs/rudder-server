@@ -429,13 +429,11 @@ func (proc *HandleT) Setup(
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start(ctx context.Context) {
+func (proc *HandleT) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
-			return err
-		}
+		proc.backendConfig.WaitForConfig(ctx)
 		if enablePipelining {
 			proc.mainPipeline(ctx)
 		} else {
@@ -451,7 +449,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	_ = g.Wait()
+	return g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {
@@ -2268,7 +2266,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 	}
 
 	proc.logger.Info("Processor loop started")
-	currLoopSleep := time.Duration(0)
+	var currLoopSleep time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -2277,19 +2275,32 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			if isUnLocked {
 				found := proc.handlePendingGatewayJobs()
 				if found {
-					currLoopSleep = time.Duration(0)
+					currLoopSleep = 0
 				} else {
 					currLoopSleep = 2*currLoopSleep + loopSleep
 					if currLoopSleep > maxLoopSleep {
 						currLoopSleep = maxLoopSleep
 					}
-					time.Sleep(currLoopSleep)
+					if sleepTrueOnDone(ctx, currLoopSleep) {
+						return
+					}
 				}
-				time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-			} else {
-				time.Sleep(fixedLoopSleep)
+				if sleepTrueOnDone(ctx, fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
+					return
+				}
+			} else if sleepTrueOnDone(ctx, fixedLoopSleep) {
+				return
 			}
 		}
+	}
+}
+
+func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-time.After(duration):
+		return false
 	}
 }
 
@@ -2348,7 +2359,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		defer close(chProc)

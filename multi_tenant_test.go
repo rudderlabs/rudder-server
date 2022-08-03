@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -32,7 +33,15 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
-func TestMultiTenantGateway(t *testing.T) {
+func TestMultiTenant(t *testing.T) {
+	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
+		t.Run(appType, func(t *testing.T) {
+			testMultiTenantByAppType(t, appType)
+		})
+	}
+}
+
+func testMultiTenantByAppType(t *testing.T, appType string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -77,7 +86,13 @@ func TestMultiTenantGateway(t *testing.T) {
 			})
 		})
 	}
+
+	multiTenantSvcSecret := "so-secret"
 	backendConfRouter.HandleFunc("/hostedWorkspaceConfig", func(w http.ResponseWriter, r *http.Request) {
+		authorizationHeader := b64.StdEncoding.EncodeToString([]byte(multiTenantSvcSecret + ":"))
+		require.Equalf(t, "Basic "+authorizationHeader, r.Header.Get("Authorization"),
+			"Expected HTTP basic authentication to be %q, got %q instead",
+			"Basic "+authorizationHeader, r.Header.Get("Authorization"))
 		n, err := w.Write(marshalledWorkspaces.Bytes())
 		require.NoError(t, err)
 		require.Equal(t, marshalledWorkspaces.Len(), n)
@@ -97,8 +112,7 @@ func TestMultiTenantGateway(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
 	releaseName := t.Name()
-	multiTenantSvcSecret := "so-secret"
-	t.Setenv("APP_TYPE", app.GATEWAY)
+	t.Setenv("APP_TYPE", appType)
 	t.Setenv("INSTANCE_ID", serverInstanceID)
 	t.Setenv("RELEASE_NAME", releaseName)
 	t.Setenv("ETCD_HOSTS", etcdContainer.Hosts[0])
@@ -118,27 +132,50 @@ func TestMultiTenantGateway(t *testing.T) {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
 
-	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
-	// TODO: this is to be reviewed after "Review health checkpoint (probes)
-	// https://www.notion.so/rudderstacks/Review-health-checkpoint-probes-ec33b45c1b7541f3bf802f3276667920
-	etcdReqKey := getGatewayWorkspacesReqKey(releaseName, serverInstanceID)
-	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
-	require.NoError(t, err)
-
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Run(ctx)
+		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
+		cmd.Env = os.Environ()
+
+		stdout, err := cmd.StdoutPipe()
+		require.NoError(t, err)
+		stderr, err := cmd.StderrPipe()
+		require.NoError(t, err)
+
+		defer func() {
+			_ = stdout.Close()
+			_ = stderr.Close()
+		}()
+		require.NoError(t, cmd.Start())
+		if testing.Verbose() {
+			go func() { _, _ = io.Copy(os.Stdout, stdout) }()
+			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
+		}
+
+		err = cmd.Wait()
+		t.Logf("Error running main.go: %v", err)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	t.Log("serviceHealthEndpoint", serviceHealthEndpoint)
+	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
+	healthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	resp, err := http.Get(healthEndpoint)
+	require.ErrorContains(t, err, "connection refused")
+	require.Nil(t, resp)
+
+	// Pushing valid configuration via ETCD
+	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
+	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
+	require.NoError(t, err)
+
+	// Checking now that the configuration has been processed and the server can start
+	t.Log("Checking health endpoint at", healthEndpoint)
 	health.WaitUntilReady(ctx, t,
-		serviceHealthEndpoint,
-		time.Minute,
-		250*time.Millisecond,
-		"serviceHealthEndpoint",
+		healthEndpoint,
+		3*time.Minute,
+		100*time.Millisecond,
+		t.Name(),
 	)
 
 	select {
@@ -222,27 +259,24 @@ func TestMultiTenantGateway(t *testing.T) {
 		}, time.Minute, 50*time.Millisecond)
 	})
 
-	// Checking that Workspace Changes errors are handled
-	t.Run("InvalidWorkspaceChangeTermination", func(t *testing.T) {
-		// do not move this test up because the gateway terminates after a configuration error
+	// Checking that an empty WorkspaceChange is OK.
+	// For now, it will be up to the Proxy to do the routing properly until we make RudderServer aware of what
+	// workspaces it is serving.
+	t.Run("EmptyWorkspacesAreValid", func(t *testing.T) {
 		_, err := etcdContainer.Client.Put(ctx,
-			etcdReqKey, `{"workspaces":"`+multiTenantSvcSecret+`","ack_key":"test-ack/3"}`,
+			etcdReqKey, `{"workspaces":"","ack_key":"test-ack/3"}`,
 		)
 		require.NoError(t, err)
 		select {
 		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/3"):
 			v, err := unmarshalWorkspaceAckValue(t, &ack)
 			require.NoError(t, err)
-			require.Equal(t, "ERROR", v.Status)
-			require.NotEqual(t, "", v.Error)
+			require.Equal(t, "RELOADED", v.Status)
+			require.Equal(t, "", v.Error)
 		case <-time.After(20 * time.Second):
-			t.Fatal("Timeout waiting for test-ack/2")
+			t.Fatal("Timeout waiting for test-ack/3")
 		}
 	})
-}
-
-func getGatewayWorkspacesReqKey(releaseName, instance string) string {
-	return getETCDWorkspacesReqKey(releaseName, instance, app.GATEWAY)
 }
 
 func getETCDServerModeReqKey(releaseName, instance string) string {

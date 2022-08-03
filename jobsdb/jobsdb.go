@@ -777,7 +777,10 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler) {
+func (jd *HandleT) Setup(
+	ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string,
+	registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler,
+) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
@@ -788,7 +791,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.preBackupHandlers = preBackupHandlers
 
 	jd.init()
-	jd.Start()
+	return jd.Start()
 }
 
 func (jd *HandleT) init() {
@@ -854,7 +857,7 @@ func (jd *HandleT) workersAndAuxSetup() {
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
-	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statTableCount = stats.DefaultStats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":     "nonterminal",
@@ -884,11 +887,11 @@ func (jd *HandleT) workersAndAuxSetup() {
 
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
 // Start should be called before any other jobsdb methods are called.
-func (jd *HandleT) Start() {
+func (jd *HandleT) Start() error {
 	jd.lifecycle.mu.Lock()
 	defer jd.lifecycle.mu.Unlock()
 	if jd.lifecycle.started {
-		return
+		return nil
 	}
 	defer func() { jd.lifecycle.started = true }()
 
@@ -907,6 +910,7 @@ func (jd *HandleT) Start() {
 		// Avoid clearing the database, if .Start() is called again.
 		jd.clearAll = false
 	}
+	return nil
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
@@ -1094,7 +1098,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM "%s"`, ds.JobTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
 		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
 		rows, err := jd.dbHandle.Query(sqlStatement)
 		jd.assertError(err)
@@ -1144,14 +1148,14 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	queryStat.Start()
 	defer queryStat.End()
 	var delCount, totalCount, statusCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from "%s"`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
 	jd.assertError(err)
 
 	// Jobs which have either succeeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
-                                      from "%s"
+                                      from %q
                                       WHERE job_state IN ('%s')`,
 		ds.JobStatusTable, strings.Join(getValidTerminalStates(), "', '"))
 	row = jd.dbHandle.QueryRow(sqlStatement)
@@ -1160,7 +1164,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 
 	// Total number of job status. If this table grows too big (e.g. lot of retries)
 	// we migrate to a new table and get rid of old job status
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&statusCount)
 	jd.assertError(err)
@@ -1174,7 +1178,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	// gateway DB where records are kept to dedup
 
 	var lastUpdate time.Time
-	sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from "%s"`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&lastUpdate)
 	jd.assertError(err)
@@ -1192,7 +1196,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 func (jd *HandleT) getTableRowCount(jobTable string) int {
 	var count int
 
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from "%s"`, jobTable)
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, jobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&count)
 	jd.assertError(err)
@@ -1508,7 +1512,7 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
 	// Create the jobs and job_status tables
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%s" (
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %q (
                                       job_id BIGSERIAL PRIMARY KEY,
 									  workspace_id TEXT NOT NULL DEFAULT '',
 									  uuid UUID NOT NULL,
@@ -1525,14 +1529,14 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "customval_workspace_%s" ON "%s" (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "customval_workspace_%s" ON %q (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE "%s" (
+	sqlStatement = fmt.Sprintf(`CREATE TABLE %q (
                                      id BIGSERIAL,
-                                     job_id BIGINT REFERENCES "%s"(job_id),
+                                     job_id BIGINT REFERENCES %q(job_id),
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
@@ -1638,16 +1642,16 @@ func (jd *HandleT) mustDropDS(ds dataSetT) {
 func (jd *HandleT) dropDS(ds dataSetT) error {
 	return jd.WithTx(func(tx *sql.Tx) error {
 		var err error
-		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, ds.JobStatusTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobStatusTable)); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, ds.JobTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobTable)); err != nil {
 			return err
 		}
 		jd.postDropDs(ds)
@@ -1661,15 +1665,15 @@ func (jd *HandleT) dropDSForRecovery(ds dataSetT) {
 	var err error
 	tx, err := jd.dbHandle.Begin()
 	jd.assertError(err)
-	sqlStatement = fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
 	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE "%s" IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
 	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
 
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.JobStatusTable)
 	jd.prepareAndExecStmtInTx(tx, sqlStatement)
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.JobTable)
 	jd.prepareAndExecStmtInTx(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
@@ -1707,12 +1711,12 @@ func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *sql.Tx) error {
-		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
 		_, err := tx.Exec(sqlStatement)
 		if err != nil {
 			return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
 		}
-		sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobTable, renamedJobTable)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
@@ -1724,17 +1728,17 @@ func (jd *HandleT) mustRenameDS(ds dataSetT) error {
 			}
 		}
 		// if jobs table is left empty after prebackup handlers, drop the dataset
-		sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM "%s") THEN 1 ELSE 0 END`, renamedJobTable)
+		sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM %q) THEN 1 ELSE 0 END`, renamedJobTable)
 		row := tx.QueryRow(sqlStatement)
 		var count int
 		if err = row.Scan(&count); err != nil {
 			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 		}
 		if count == 0 {
-			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobStatusTable)); err != nil {
+			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobStatusTable)); err != nil {
 				return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
 			}
-			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE "%s"`, renamedJobTable)); err != nil {
+			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobTable)); err != nil {
 				return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
 			}
 		}
@@ -1748,13 +1752,13 @@ func (jd *HandleT) renameDS(ds dataSetT) error {
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
 	return jd.WithTx(func(tx *sql.Tx) error {
-		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobStatusTable, renamedJobStatusTable)
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
 		_, err := tx.Exec(sqlStatement)
 		if err != nil {
 			return err
 		}
 
-		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS "%s" RENAME TO "%s"`, ds.JobTable, renamedJobTable)
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %q RENAME TO %q`, ds.JobTable, renamedJobTable)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			return err
@@ -1824,7 +1828,7 @@ func (jd *HandleT) dropMigrationCheckpointTables() {
 	}
 
 	for _, tableName := range migrationCheckPointTables {
-		sqlStatement := fmt.Sprintf(`DROP TABLE "%s"`, tableName)
+		sqlStatement := fmt.Sprintf(`DROP TABLE %q`, tableName)
 		_, err := jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -2231,7 +2235,7 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = txHandler.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobTable))
+	_, err = txHandler.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 	return err
 }
 
@@ -2260,7 +2264,7 @@ func (jd *HandleT) doStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*JobT) err
 			return err
 		}
 		if len(jobList) > jd.analyzeThreshold {
-			_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobTable))
+			_, err = tx.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 		}
 
 		return err
@@ -2289,7 +2293,7 @@ func (jd *HandleT) doStoreJobsInTx(tx *sql.Tx, ds dataSetT, jobList []*JobT) err
 }
 
 func (jd *HandleT) storeJob(tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
 	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.Prepare(sqlStatement)
 	jd.assertError(err)
@@ -2826,7 +2830,7 @@ func (jd *HandleT) copyJobStatusDS(tx *sql.Tx, ds dataSetT, statusList []*JobSta
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobStatusTable))
+	_, err = tx.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 	if err != nil {
 		return err
 	}
@@ -2886,7 +2890,7 @@ func (jd *HandleT) updateJobStatusDSInTx(tx *sql.Tx, ds dataSetT, statusList []*
 		}
 
 		if len(statusList) > jd.analyzeThreshold {
-			_, err = tx.Exec(fmt.Sprintf(`ANALYZE "%s"`, ds.JobStatusTable))
+			_, err = tx.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 		}
 
 		return err
@@ -3405,7 +3409,7 @@ func isBackupConfigured() bool {
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	var count sql.NullInt64
-	sqlStatement := fmt.Sprintf(`SELECT count(*) from "%s"`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`SELECT count(*) from %q`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&count)
 	jd.assertError(err)
@@ -3443,13 +3447,13 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
 		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State)
 		// checked failed and aborted state
-		countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s" where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
+		countStmt = fmt.Sprintf(`SELECT COUNT(*) from %q where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
 	} else {
 		if isJobStatusTable {
 			tableName = backupDSRange.ds.JobStatusTable
 			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
 			path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
-			countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, tableName)
+			countStmt = fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
 		} else {
 			tableName = backupDSRange.ds.JobTable
 			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
@@ -3461,7 +3465,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 				backupDSRange.startTime,
 				backupDSRange.endTime,
 			)
-			countStmt = fmt.Sprintf(`SELECT COUNT(*) from "%s"`, tableName)
+			countStmt = fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
 		}
 	}
 
@@ -3601,13 +3605,13 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	}
 
 	var minID, maxID sql.NullInt64
-	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from "%s"`, backupDS.JobTable)
+	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from %q`, backupDS.JobTable)
 	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
 	err := row.Scan(&minID, &maxID)
 	jd.assertError(err)
 
 	var minCreatedAt, maxCreatedAt time.Time
-	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from "%s"`, backupDS.JobTable)
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, backupDS.JobTable)
 	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
 	err = row.Scan(&minCreatedAt, &maxCreatedAt)
 	jd.assertError(err)
@@ -4224,7 +4228,7 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " WHERE " +
-			constructQuery(jd, fmt.Sprintf(`"%s".custom_val`, ds.JobTable),
+			constructQuery(jd, fmt.Sprintf(`%q.custom_val`, ds.JobTable),
 				customValFilters, "OR")
 	} else {
 		customValQuery = ""

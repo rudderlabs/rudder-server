@@ -55,7 +55,7 @@ func (exp *exporterT) Setup(migrator *MigratorT, pf pathfinder.ClusterStateT) {
 	exp.crashRecover()
 	exp.migrator = migrator
 	exp.statVal = fmt.Sprintf("%s-exporter", exp.migrator.jobsDB.GetTablePrefix())
-	exp.eventStat = stats.NewStat("export_events", stats.GaugeType)
+	exp.eventStat = stats.DefaultStats.NewStat("export_events", stats.GaugeType)
 
 	exp.logger.Infof("[[ %s-Export-Migrator ]] setup for jobsdb", migrator.jobsDB.GetTablePrefix())
 	exp.pf = pf
@@ -96,8 +96,9 @@ func (exp *exporterT) preExport() {
 
 func (exp *exporterT) export() {
 	queryStat := stats.NewTaggedStat("export_main", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-	queryStat.Start()
-	defer queryStat.End()
+
+	start := time.Now()
+	defer queryStat.Since(start)
 
 	if exp.isExportDone() {
 		return
@@ -133,8 +134,8 @@ func (exp *exporterT) export() {
 
 func (exp *exporterT) groupByNode(jobList []*jobsdb.JobT) map[string][]*jobsdb.JobT {
 	queryStat := stats.NewTaggedStat("group_by_node", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-	queryStat.Start()
-	defer queryStat.End()
+	start := time.Now()
+	defer queryStat.Since(start)
 	exp.logger.Infof("[[ %s-Export-migrator ]] Grouping a batch by destination nodes", exp.migrator.jobsDB.GetTablePrefix())
 	filteredData := make(map[string][]*jobsdb.JobT)
 	for _, job := range jobList {
@@ -167,15 +168,15 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 	destNodeID := uploadWorker.nodeID
 	for {
 		waitStat := stats.NewTaggedStat("upload_worker_wait_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-		waitStat.Start()
+		start := time.Now()
 		var jobList []*jobsdb.JobT
 		{
 			jobList = <-uploadWorker.channel
 		}
-		waitStat.End()
+		waitStat.Since(start)
 
 		queryStat := stats.NewTaggedStat("upload_worker_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-		queryStat.Start()
+		queryStart := time.Now()
 		exp.logger.Infof("[[ %s-Export-migrator ]] Received a batch for node:%s to be written to file and upload it", exp.migrator.jobsDB.GetTablePrefix(), destNodeID)
 
 		var statusList []*jobsdb.JobStatusT
@@ -185,12 +186,12 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 				statusList = append(statusList, jobsdb.BuildStatus(job, jobsdb.WontMigrate.State))
 			}
 			exp.migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
-			queryStat.End()
+			queryStat.Since(queryStart)
 			continue
 		}
 
 		marshalStat := stats.NewTaggedStat("marshalling_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-		marshalStat.Start()
+		marshalStart := time.Now()
 		contentSlice := make([][]byte, len(jobList))
 		for idx, job := range jobList {
 			m, err := json.Marshal(job)
@@ -201,7 +202,7 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 			contentSlice[idx] = m
 			statusList = append(statusList, jobsdb.BuildStatus(job, jobsdb.Migrated.State))
 		}
-		marshalStat.End()
+		marshalStat.Since(marshalStart)
 
 		exp.logger.Info(destNodeID, len(jobList))
 
@@ -220,7 +221,7 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 
 		os.Remove(exportFilePath)
 
-		queryStat.End()
+		queryStat.Since(queryStart)
 	}
 }
 
@@ -250,8 +251,8 @@ func writeContentToFile(content []byte, fileName string) string {
 
 func (exp *exporterT) upload(exportFilePath string) filemanager.UploadOutput {
 	queryStat := stats.NewTaggedStat("upload_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
-	queryStat.Start()
-	defer queryStat.End()
+	start := time.Now()
+	defer queryStat.Since(start)
 
 	file, err := os.Open(exportFilePath)
 	if err != nil {

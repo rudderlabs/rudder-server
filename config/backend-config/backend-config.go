@@ -44,34 +44,32 @@ var (
 )
 
 type BackendConfig interface {
-	SetUp()
+	SetUp() error
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
-	WaitForConfig(ctx context.Context) error
+	WaitForConfig(ctx context.Context)
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-	IsConfigured() bool
 }
+
 type CommonBackendConfig struct {
-	eb                *pubsub.PublishSubscriber
-	configEnvHandler  types.ConfigEnvI
-	ctx               context.Context
-	cancel            context.CancelFunc
-	blockChan         chan struct{}
-	waitForConfigErrs chan error
-	initializedLock   sync.RWMutex
-	initialized       bool
+	eb               *pubsub.PublishSubscriber
+	configEnvHandler types.ConfigEnvI
+	ctx              context.Context
+	cancel           context.CancelFunc
+	blockChan        chan struct{}
+	initializedLock  sync.RWMutex
+	initialized      bool
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
-
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
@@ -112,7 +110,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	modifiedConfig.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
-		for _, destination := range source.Destinations {
+		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
@@ -129,15 +127,6 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
-		if bcErr, ok := err.(*Error); ok && !bcErr.IsRetryable() {
-			select {
-			case bc.waitForConfigErrs <- err:
-			default:
-				// ignore if the channel is full, one error is enough for propagation to WaitForConfig().
-				// also keep in mind that WaitForConfig() might not always be running, and we don't want to block the
-				// polling unless we explicitly want to.
-			}
-		}
 		return
 	}
 
@@ -148,23 +137,24 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	})
 
 	if !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-		pkgLogger.Info("Workspace Config changed")
+		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
 		curSourceJSONLock.Lock()
 		trackConfig(curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
-		bc.initializedLock.Lock()
-		defer bc.initializedLock.Unlock()
-		bc.initialized = true
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
+
+	bc.initializedLock.Lock()
+	bc.initialized = true
+	bc.initializedLock.Unlock()
 }
 
 func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
-	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
+	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 
@@ -177,6 +167,8 @@ func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces 
 }
 
 func GetConfig() ConfigT {
+	curSourceJSONLock.RLock()
+	defer curSourceJSONLock.RUnlock()
 	return curSourceJSON
 }
 
@@ -194,14 +186,6 @@ func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
 
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
-Deprecated: Use an instance of BackendConfig instead of static function
-*/
-func Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
-	return backendConfig.Subscribe(ctx, topic)
-}
-
-/*
-Subscribe subscribes a channel to a specific topic of backend config updates.
 Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
 Data of the DataEvent should be a backendconfig.ConfigT struct.
 Available topics are:
@@ -211,14 +195,6 @@ Available topics are:
 */
 func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
-}
-
-/*
-WaitForConfig waits until backend config has been initialized
-Deprecated: Use an instance of BackendConfig instead of static function
-*/
-func WaitForConfig(ctx context.Context) error {
-	return backendConfig.WaitForConfig(ctx)
 }
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
@@ -247,15 +223,10 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		}
 	// Fallback to dedicated
 	default:
-		return nil, fmt.Errorf("Deployment type %q not supported", deploymentType)
+		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
 	}
 
-	backendConfig.SetUp()
-	if !backendConfig.IsConfigured() {
-		return nil, fmt.Errorf("backend config token not available")
-	}
-
-	return backendConfig, nil
+	return backendConfig, backendConfig.SetUp()
 }
 
 // Setup backend config
@@ -281,7 +252,6 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.waitForConfigErrs = make(chan error, 1)
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -289,40 +259,32 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 }
 
 func (bc *CommonBackendConfig) Stop() {
-	bc.cancel()
-	<-bc.blockChan
+	if bc.cancel != nil {
+		bc.cancel()
+		<-bc.blockChan
+	}
 	bc.initializedLock.Lock()
 	bc.initialized = false
-	if bc.waitForConfigErrs != nil {
-		close(bc.waitForConfigErrs)
-	}
 	bc.initializedLock.Unlock()
 }
 
 // WaitForConfig waits until backend config has been initialized
-func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
+func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
 	for {
 		bc.initializedLock.RLock()
 		if bc.initialized {
 			bc.initializedLock.RUnlock()
-			break
+			return
 		}
 		bc.initializedLock.RUnlock()
 
-		pkgLogger.Info("Waiting for initializing backend config")
+		pkgLogger.Info("Waiting for backend config")
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case err, open := <-bc.waitForConfigErrs:
-			if !open {
-				return fmt.Errorf("backend config polling stopped")
-			}
-			pkgLogger.Errorf("backend config WaitForConfig error: %v", err)
-			return err
+			return
 		case <-time.After(pollInterval):
 		}
 	}
-	return nil
 }
 
 func GetConfigBackendURL() string {

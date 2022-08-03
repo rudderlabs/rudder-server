@@ -32,11 +32,15 @@ type WorkspacesT struct {
 }
 
 // SetUp sets up MultiWorkspaceConfig
-func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() error {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if multiWorkspaceConfig.Token == "" {
 		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
+	if multiWorkspaceConfig.Token == "" {
+		return fmt.Errorf("hosted workspace: empty workspace config token")
+	}
+	return nil
 }
 
 func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
@@ -102,13 +106,13 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(ctx context.Context, _ s
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, newError(true, err)
+		return ConfigT{}, err
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
@@ -159,8 +163,4 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (multiWorkspaceConfig *HostedWorkspacesConfig) IsConfigured() bool {
-	return multiWorkspaceConfig.AccessToken() != ""
 }
