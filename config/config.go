@@ -764,7 +764,11 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-func SetForce(key string, value interface{}) {
+func SetString(key, value string) {
+	viper.Set(key, value)
+}
+
+func SetHotReloadablesForcefully(key string, value interface{}) {
 	viper.Set(key, value)
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()

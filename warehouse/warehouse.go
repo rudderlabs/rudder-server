@@ -1330,7 +1330,7 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, kv := range kvs {
-		config.SetForce(kv.Key, kv.Value)
+		config.SetHotReloadablesForcefully(kv.Key, kv.Value)
 	}
 	w.WriteHeader(http.StatusOK)
 }

@@ -123,7 +123,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return
 	}
 
-	if !DedupEnabled() {
+	if !dedupEnabled() {
 		err = bq.createTableView(tableName, columnMap)
 	}
 	return
@@ -134,7 +134,7 @@ func (bq *HandleT) DropTable(tableName string) (err error) {
 	if err != nil {
 		return
 	}
-	if !DedupEnabled() {
+	if !dedupEnabled() {
 		err = bq.DeleteTable(tableName + "_view")
 	}
 	return
@@ -403,7 +403,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		return
 	}
 
-	if !DedupEnabled() {
+	if !dedupEnabled() {
 		err = loadTableByAppend()
 		return
 	}
@@ -472,7 +472,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", identifyLoadTable.partitionDate)
 	var identifiesFrom string
-	if DedupEnabled() {
+	if dedupEnabled() {
 		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyLoadTable.stagingTableName), loadedAtFilter())
 	} else {
 		identifiesFrom = fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
@@ -592,7 +592,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	if !DedupEnabled() {
+	if !dedupEnabled() {
 		loadUserTableByAppend()
 		return
 	}
@@ -659,12 +659,12 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 	return
 }
 
-func DedupEnabled() bool {
+func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	if !DedupEnabled() {
+	if !dedupEnabled() {
 		return
 	}
 	bq.Warehouse = warehouse
