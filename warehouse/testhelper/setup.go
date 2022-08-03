@@ -133,12 +133,6 @@ func initialize() {
 }
 
 func initJobsDB() {
-	jobsDBLock.Lock()
-	defer jobsDBLock.Unlock()
-
-	if jobsDB != nil {
-		return
-	}
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 }

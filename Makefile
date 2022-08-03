@@ -70,7 +70,7 @@ cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
 setup-warehouse-integration: cleanup-warehouse-integration
-	docker-compose -f warehouse/docker-compose.test.yml up --build start_integration
+	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration
 
 run-warehouse-integration: setup-warehouse-integration
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T backend go test -v ./warehouse/... -tags=warehouse_integration -p 8 -timeout 30m -count 1; then \
