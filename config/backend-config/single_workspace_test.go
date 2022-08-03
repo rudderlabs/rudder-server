@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,17 +12,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
 
 var (
 	originalBackendConfig = backendConfig
 	_                     = Describe("workspace-config", func() {
 		BeforeEach(func() {
-			backendConfig = &SingleWorkspaceConfig{}
+			backendConfig = &SingleWorkspaceConfig{
+				Token: "testToken",
+			}
 			ctrl = gomock.NewController(GinkgoT())
-			mockLogger = mock_logger.NewMockLoggerI(ctrl)
+			mockLogger = mocklogger.NewMockLoggerI(ctrl)
 			pkgLogger = mockLogger
 		})
 		AfterEach(func() {
@@ -31,9 +34,10 @@ var (
 		})
 
 		Context("getFromAPI method", func() {
-			var mockHttp *mock_sysUtils.MockHttpI
+			ctx := context.Background()
+			var mockHttp *mocksysutils.MockHttpI
 			BeforeEach(func() {
-				mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
+				mockHttp = mocksysutils.NewMockHttpI(ctrl)
 				Http = mockHttp
 			})
 			It("Expect to execute request with the correct body and headers and return successful response", func() {
@@ -51,43 +55,47 @@ var (
 				}))
 				defer server.Close()
 
-				testRequest, _ := http.NewRequest("GET", server.URL, nil)
-				mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+				testRequest, err := http.NewRequest("GET", server.URL, http.NoBody)
+				Expect(err).To(BeNil())
+				mockHttp.EXPECT().NewRequestWithContext(
+					ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil,
+				).Return(testRequest, nil).Times(1)
 
-				config, ok := backendConfig.Get("testToken")
-				Expect(ok).To(BeTrue())
+				config, err := backendConfig.Get(ctx, "")
+				Expect(err).To(BeNil())
 				Expect(config).To(Equal(SampleBackendConfig))
 			})
 			It("Expect to make the correct actions if fail to create the request", func() {
 				configFromFile = false
 				configBackendURL = "http://rudderstack.com"
-				mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
+				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-				config, ok := backendConfig.Get("testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 
 			It("Expect to make the correct actions if fail to send the request", func() {
 				configFromFile = false
 				configBackendURL = ""
 				Http = mockHttp
-				testRequest, _ := http.NewRequest("GET", "", nil)
-				mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
+				testRequest, _ := http.NewRequest("GET", "", http.NoBody)
+				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
 				mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-				config, ok := backendConfig.Get("testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 		})
 
 		Context("getFromFile method", func() {
-			var mockIoUtil *mock_sysUtils.MockIoUtilI
+			ctx := context.Background()
+			var mockIoUtil *mocksysutils.MockIoUtilI
 			originalIoUtil := IoUtil
 			BeforeEach(func() {
-				mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
+				mockIoUtil = mocksysutils.NewMockIoUtilI(ctrl)
 				IoUtil = mockIoUtil
 			})
 			AfterEach(func() {
@@ -99,9 +107,9 @@ var (
 				fileErr := errors.New("TestError")
 				mockLogger.EXPECT().Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, fileErr.Error()).Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, fileErr).Times(1)
-				config, ok := backendConfig.Get("testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 
 			It("Expect to make the correct actions in case of successful reading but failed parsing", func() {
@@ -110,9 +118,9 @@ var (
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 				mockLogger.EXPECT().Errorf("Unable to parse backend config from file: %s", configJSONPath).Times(1)
-				config, ok := backendConfig.Get("testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(ConfigT{}))
-				Expect(ok).To(BeFalse())
+				Expect(err).NotTo(BeNil())
 			})
 			It("Expect to make the correct actions in case of successful reading of the config file and return the correct value", func() {
 				configFromFile = true
@@ -144,9 +152,9 @@ var (
 		}`)
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
-				config, ok := backendConfig.Get("testToken")
+				config, err := backendConfig.Get(ctx, "testToken")
 				Expect(config).To(Equal(SampleBackendConfig))
-				Expect(ok).To(BeTrue())
+				Expect(err).To(BeNil())
 			})
 		})
 	})

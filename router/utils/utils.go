@@ -101,10 +101,12 @@ func GetAuthType(dest backendconfig.DestinationT) (authType string) {
 	var lookupErr error
 	var authValue interface{}
 	if authValue, lookupErr = misc.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
-		// pkgLogger.Infof(`OAuthsupport for %s not supported`, dest.DestinationDefinition.Name)
 		return ""
 	}
-	authType = authValue.(string)
+	authType, ok := authValue.(string)
+	if !ok {
+		return ""
+	}
 	return authType
 }
 

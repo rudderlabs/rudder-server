@@ -1,16 +1,17 @@
 package backendconfig
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/config"
-
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 // HostedWorkspacesConfig is a struct to hold variables necessary for supporting multiple workspaces.
@@ -31,11 +32,15 @@ type WorkspacesT struct {
 }
 
 // SetUp sets up MultiWorkspaceConfig
-func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) SetUp() error {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if multiWorkspaceConfig.Token == "" {
 		multiWorkspaceConfig.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
+	if multiWorkspaceConfig.Token == "" {
+		return fmt.Errorf("hosted workspace: empty workspace config token")
+	}
+	return nil
 }
 
 func (multiWorkspaceConfig *HostedWorkspacesConfig) AccessToken() string {
@@ -54,7 +59,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForWriteKey(wr
 	return ""
 }
 
-// GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+// GetWorkspaceIDForSourceID returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceIDForSourceID(sourceID string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -78,7 +83,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) GetWorkspaceLibrariesForWork
 }
 
 // Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool) {
+func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(ctx context.Context, _ string) (ConfigT, error) {
 	var url string
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
 		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
@@ -91,7 +96,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -101,13 +106,13 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, false
+		return ConfigT{}, err
 	}
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
-		return ConfigT{}, false
+		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		return ConfigT{}, err
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
@@ -130,11 +135,13 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) Get(_ string) (ConfigT, bool
 	multiWorkspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Unlock()
 
-	return sourcesJSON, true
+	return sourcesJSON, nil
 }
 
-func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) ([]byte, int, error) {
-	req, err := Http.NewRequest("GET", url, nil)
+func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(
+	ctx context.Context, url string,
+) ([]byte, int, error) {
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return []byte{}, 400, err
 	}
@@ -148,7 +155,7 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) 
 		return []byte{}, 400, err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -156,8 +163,4 @@ func (multiWorkspaceConfig *HostedWorkspacesConfig) makeHTTPRequest(url string) 
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func (multiWorkspaceConfig *HostedWorkspacesConfig) IsConfigured() bool {
-	return multiWorkspaceConfig.AccessToken() != ""
 }

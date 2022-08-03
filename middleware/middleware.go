@@ -34,7 +34,7 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 
 func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := stats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := stats.DefaultStats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
 	go func() {
 		for {
 			select {

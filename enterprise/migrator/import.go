@@ -46,7 +46,7 @@ func (imp *importerT) Setup(migrator *MigratorT) {
 	imp.crashRecover()
 	imp.migrator = migrator
 	imp.statVal = fmt.Sprintf("%s-importer", imp.migrator.jobsDB.GetTablePrefix())
-	imp.eventStat = stats.NewStat("import_events", stats.GaugeType)
+	imp.eventStat = stats.DefaultStats.NewStat("import_events", stats.GaugeType)
 	imp.logger.Infof("[[ %s-Import-Migrator ]] setup for jobsdb", migrator.jobsDB.GetTablePrefix())
 	imp.importWorkers = make(map[string]*importWorkerT)
 	imp.migrator.jobsDB.SetupForImport()

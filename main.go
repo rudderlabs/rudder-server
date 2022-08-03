@@ -13,14 +13,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/admin/profiler"
+	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/apphandlers"
+	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -28,9 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -38,45 +39,32 @@ import (
 	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
-
-	event_schema "github.com/rudderlabs/rudder-server/event-schema"
-
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/admin/profiler"
-
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/app/apphandlers"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
-
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-
-	destination_connection_tester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
-
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 )
 
 var (
@@ -120,7 +108,7 @@ func versionInfo() map[string]interface{} {
 	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}
 }
 
-func versionHandler(w http.ResponseWriter, r *http.Request) {
+func versionHandler(w http.ResponseWriter, _ *http.Request) {
 	version := versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
 	_, _ = w.Write(versionFormatted)
@@ -165,7 +153,7 @@ func runAllInit() {
 	jobsdb.Init()
 	jobsdb.Init2()
 	jobsdb.Init3()
-	destination_connection_tester.Init()
+	destinationconnectiontester.Init()
 	warehouse.Init()
 	warehouse.Init2()
 	warehouse.Init3()
@@ -186,8 +174,8 @@ func runAllInit() {
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
 	dedup.Init()
-	event_schema.Init()
-	event_schema.Init2()
+	eventschema.Init()
+	eventschema.Init2()
 	stash.Init()
 	transformationdebugger.Init()
 	processor.Init()
@@ -209,24 +197,19 @@ func runAllInit() {
 }
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		cancel()
-	}()
-
-	Run(ctx)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	exitCode := Run(ctx)
+	cancel()
+	os.Exit(exitCode)
 }
 
-func Run(ctx context.Context) {
+func Run(ctx context.Context) int {
 	runAllInit()
 
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()
-		return
+		return 0
 	}
 
 	options.EnterpriseToken = enterpriseToken
@@ -258,10 +241,10 @@ func Run(ctx context.Context) {
 	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {
 			pkgLogger.Errorf("Unable to setup backend config: %s", err)
-			return
+			return 1
 		}
 
-		backendconfig.DefaultBackendConfig.StartWithIDs(backendconfig.DefaultBackendConfig.AccessToken())
+		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -289,26 +272,42 @@ func Run(ctx context.Context) {
 		}))
 	}
 
-	var ctxDoneTime time.Time
-	g.Go(func() error {
-		<-ctx.Done()
-		ctxDoneTime = time.Now()
-		return nil
-	})
-
 	g.Go(func() error {
 		<-ctx.Done()
 		backendconfig.DefaultBackendConfig.Stop()
 		return nil
 	})
 
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		<-time.After(gracefulShutdownTimeout)
+		err := g.Wait()
+		if err != nil && err != context.Canceled {
+			pkgLogger.Error(err)
+		}
+		close(shutdownDone)
+	}()
+
+	<-ctx.Done()
+	ctxDoneTime := time.Now()
+
+	select {
+	case <-shutdownDone:
+		application.Stop()
+		pkgLogger.Infof(
+			"Graceful terminal after %s, with %d go-routines",
+			time.Since(ctxDoneTime),
+			runtime.NumGoroutine(),
+		)
+		// clearing zap Log buffer to std output
+		if logger.Log != nil {
+			_ = logger.Log.Sync()
+		}
+		stats.StopPeriodicStats()
+	case <-time.After(gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
 		pkgLogger.Errorf(
 			"Graceful termination failed after %s, goroutine dump:\n",
-			gracefulShutdownTimeout,
+			time.Since(ctxDoneTime),
 		)
 
 		fmt.Print("\n\n")
@@ -321,25 +320,9 @@ func Run(ctx context.Context) {
 		}
 		stats.StopPeriodicStats()
 		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
-			os.Exit(1)
+			return 1
 		}
-	}()
-
-	err := g.Wait()
-	if err != nil && err != context.Canceled {
-		pkgLogger.Error(err)
 	}
 
-	application.Stop()
-
-	pkgLogger.Infof(
-		"Graceful terminal after %s, with %d go-routines",
-		time.Since(ctxDoneTime),
-		runtime.NumGoroutine(),
-	)
-	// clearing zap Log buffer to std output
-	if logger.Log != nil {
-		_ = logger.Log.Sync()
-	}
-	stats.StopPeriodicStats()
+	return 0
 }

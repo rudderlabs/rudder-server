@@ -128,7 +128,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
-				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
+				uploadStat := stats.DefaultStats.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
 				st.setErrJobStatus(jobs, output)

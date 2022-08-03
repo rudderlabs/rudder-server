@@ -492,7 +492,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.JobID).To(Equal(int64(0)))
 				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
@@ -692,7 +692,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
@@ -1149,7 +1149,7 @@ var _ = Describe("Processor", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancel()
 
-			processor.Start(ctx)
+			Expect(processor.Start(ctx)).To(BeNil())
 		})
 	})
 })
@@ -1403,13 +1403,22 @@ type transformExpectation struct {
 }
 
 func createMessagePayload(e mockEventData) string {
-	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s","recordId":{"id":"record_id_1"},"context":{"sources": {"task_run_id":"task_run_id_1","batch_id":"batch_id_1","job_run_id":"job_run_id_1","task_id":"task_id_1","job_id":"job_id_1"}}}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
+	integrationsBytes, _ := json.Marshal(e.integrations)
+	return fmt.Sprintf(
+		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
+			`"originalTimestamp":%q,"sentAt":%q,"recordId":{"id":"record_id_1"},"context":{"sources":`+
+			`{"task_run_id":"task_run_id_1","batch_id":"batch_id_1","job_run_id":"job_run_id_1",`+
+			`"task_id":"task_id_1","job_id":"job_id_1"}}}`,
+		e.id, integrationsBytes, e.id, e.originalTimestamp, e.sentAt,
+	)
 }
 
 func createMessagePayloadWithSameMessageId(e mockEventData) string {
-	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, "some-id", integrations, e.id, e.originalTimestamp, e.sentAt)
+	integrationsBytes, _ := json.Marshal(e.integrations)
+	return fmt.Sprintf(
+		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
+			`"originalTimestamp":%q,"sentAt":%q}`, "some-id", integrationsBytes, e.id, e.originalTimestamp, e.sentAt,
+	)
 }
 
 func createBatchPayloadWithSameMessageId(writeKey, receivedAt string, events []mockEventData) []byte {
@@ -1418,7 +1427,9 @@ func createBatchPayloadWithSameMessageId(writeKey, receivedAt string, events []m
 		payloads = append(payloads, createMessagePayloadWithSameMessageId(event))
 	}
 	batch := strings.Join(payloads, ",")
-	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
+	return []byte(fmt.Sprintf(
+		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
+	))
 }
 
 func createBatchPayload(writeKey, receivedAt string, events []mockEventData) []byte {
@@ -1427,11 +1438,13 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData) []b
 		payloads = append(payloads, createMessagePayload(event))
 	}
 	batch := strings.Join(payloads, ",")
-	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
+	return []byte(fmt.Sprintf(
+		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
+	))
 }
 
 func createBatchParameters(sourceId string) []byte {
-	return []byte(fmt.Sprintf(`{"source_id": "%s"}`, sourceId))
+	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {

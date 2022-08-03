@@ -2,6 +2,7 @@ package state_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -12,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	etcd "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -47,39 +48,17 @@ func run(m *testing.M) int {
 		return 1
 	}
 
-	container, err := pool.Run("bitnami/etcd", "3.4", []string{
-		"ALLOW_NONE_AUTHENTICATION=yes",
-	})
-	if err != nil {
-		log.Printf("Could not start resource: %s", err)
+	cleaner := &testhelper.Cleanup{}
+	defer cleaner.Run()
+
+	var etcdRes *thEtcd.Resource
+	if etcdRes, err = thEtcd.Setup(pool, cleaner); err != nil {
+		log.Printf("Could not setup ETCD: %v", err)
 		return 1
 	}
 
-	defer func() {
-		if err := pool.Purge(container); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	etcdHosts = []string{"http://localhost:" + container.GetPort("2379/tcp")}
-	if err := pool.Retry(func() error {
-		var err error
-
-		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints: etcdHosts,
-			DialOptions: []grpc.DialOption{
-				grpc.WithBlock(), // block until the underlying connection is up
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}); err != nil {
-		log.Printf("Could not connect to dockerized etcd: %s \n", err)
-		return 1
-	}
+	etcdHosts = etcdRes.Hosts
+	etcdClient = etcdRes.Client
 
 	code := m.Run()
 	blockOnHold()
@@ -272,7 +251,7 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 
-		require.ErrorAs(t, m.Ack(ctx), &context.DeadlineExceeded)
+		require.ErrorAs(t, m.Ack(ctx, nil), &context.DeadlineExceeded)
 	})
 
 	provider := state.ETCDManager{
@@ -301,11 +280,11 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -322,11 +301,11 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("update should be received")
@@ -338,11 +317,28 @@ func Test_Workspaces(t *testing.T) {
 		require.True(t, ok)
 		require.NoError(t, m.Err())
 		require.Equal(t, []string{"1", "2", "5"}, m.WorkspaceIDs())
-		require.NoError(t, m.Ack(ctx))
+		require.NoError(t, m.Ack(ctx, nil))
 
 		resp, err := etcdClient.Get(ctx, "test-ack/2")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"status":"RELOADED"}`, string(resp.Kvs[0].Value))
+		require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
+	}
+
+	t.Log("acknowledge with error")
+	{
+		_, err := etcdClient.Put(ctx, requestKey, `{"workspaces": "a,b,c", "ack_key": "test-ack/3"}`)
+		require.NoError(t, err)
+
+		m, ok := <-ch
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, []string{"a", "b", "c"}, m.WorkspaceIDs())
+		fakeErr := errors.New("fake error")
+		require.NoError(t, m.Ack(ctx, fakeErr))
+
+		resp, err := etcdClient.Get(ctx, "test-ack/3")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"ERROR","error":"`+fakeErr.Error()+`"}`, string(resp.Kvs[0].Value))
 	}
 
 	t.Log("error if update with invalid JSON ")

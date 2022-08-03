@@ -204,7 +204,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":        destination.ID,
 		"destType":           destination.DestinationDefinition.Name,
 		"source":             sourceID,
-		"workspace":          workspaceID,
+		"workspaceId":        workspaceID,
 		"transformationType": transformationType,
 	}
 }
@@ -429,13 +429,11 @@ func (proc *HandleT) Setup(
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start(ctx context.Context) {
+func (proc *HandleT) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
-			return err
-		}
+		proc.backendConfig.WaitForConfig(ctx)
 		if enablePipelining {
 			proc.mainPipeline(ctx)
 		} else {
@@ -451,7 +449,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	_ = g.Wait()
+	return g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {
@@ -728,9 +726,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	if event.SessionID != "" {
-		metadata.SessionID = event.SessionID
-	}
 	event.Metadata = metadata
 }
 
@@ -820,7 +815,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
-		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
 		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
 		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
@@ -979,8 +973,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
-		id := misc.FastUUID()
+		pkgLogger.Debugf(
+			"[Processor: getFailedEventJobs] Error [%d] for source %q and destination %q: %s",
+			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
+		)
 
+		id := misc.FastUUID()
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
 			"destination_id":     commonMetaData.DestinationID,
@@ -1359,10 +1357,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
-			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-				enabledDestinationsMap[destType] = enabledDestinationsList
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for _, destination := range enabledDestinationsList {
 					shallowEventCopy := transformer.TransformerEventT{}
@@ -1932,7 +1928,7 @@ func (proc *HandleT) transformSrcDest(
 				&proc.stats.destTransformEventsByTimeTaken,
 			)
 
-			proc.logger.Debug("Dest Transform output size", len(response.Events))
+			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(
@@ -2270,7 +2266,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 	}
 
 	proc.logger.Info("Processor loop started")
-	currLoopSleep := time.Duration(0)
+	var currLoopSleep time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -2279,19 +2275,32 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			if isUnLocked {
 				found := proc.handlePendingGatewayJobs()
 				if found {
-					currLoopSleep = time.Duration(0)
+					currLoopSleep = 0
 				} else {
 					currLoopSleep = 2*currLoopSleep + loopSleep
 					if currLoopSleep > maxLoopSleep {
 						currLoopSleep = maxLoopSleep
 					}
-					time.Sleep(currLoopSleep)
+					if sleepTrueOnDone(ctx, currLoopSleep) {
+						return
+					}
 				}
-				time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-			} else {
-				time.Sleep(fixedLoopSleep)
+				if sleepTrueOnDone(ctx, fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
+					return
+				}
+			} else if sleepTrueOnDone(ctx, fixedLoopSleep) {
+				return
 			}
 		}
+	}
+}
+
+func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-time.After(duration):
+		return false
 	}
 }
 
@@ -2350,7 +2359,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		defer close(chProc)
