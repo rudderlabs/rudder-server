@@ -264,8 +264,6 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Single Setup", func(t *testing.T) {
-		t.Skip()
-
 		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
