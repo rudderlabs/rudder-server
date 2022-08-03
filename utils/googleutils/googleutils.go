@@ -38,20 +38,5 @@ func IsCredentialsStringEmpty(credentials string) bool {
 */
 func IsGKEEnabledWorkload() bool {
 	workloadType := config.GetString(fmt.Sprintf("%s.type", WI_CONFIG_KEY), "")
-	if workloadType == "GKE" {
-		/*
-			The workload when deployed in Google GKE cluster, this is to be used
-
-			workloadIdentity.projectId -> The project which contains the workload identity pool in GKE
-			workloadIdentity.gsaName -> The google IAM Service account name
-			workloadIdentity.gsaProjectId -> The project in which the mentioned google IAM service account is present
-
-			Note: We are currently only validating the schema rather than the values
-		*/
-		workloadProjectId := config.GetString(fmt.Sprintf("%s.gwiProjectId", WI_CONFIG_KEY), "")
-		workloadGsaName := config.GetString(fmt.Sprintf("%s.gsaName", WI_CONFIG_KEY), "")
-		workloadGsaProjectId := config.GetString(fmt.Sprintf("%s.gsaProjectId", WI_CONFIG_KEY), "")
-		return workloadProjectId != "" && workloadGsaName != "" && workloadGsaProjectId != ""
-	}
-	return false
+	return workloadType == "GKE"
 }
