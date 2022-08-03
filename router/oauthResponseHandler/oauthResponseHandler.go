@@ -103,8 +103,8 @@ const (
 )
 
 type RefreshTokenBodyParams struct {
-	HasExpired    bool   `json:"hasExpired"`
-	ExpiredSecret []byte `json:"expiredSecret"`
+	HasExpired    bool            `json:"hasExpired"`
+	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }
 
 type tokenProvider interface {
