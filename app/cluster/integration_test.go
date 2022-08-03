@@ -290,8 +290,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		return nil
 	}))
 	require.Eventually(t, func() bool {
+		t.Logf("mode: %v", dCM.Mode())
 		return dCM.Mode() == servermode.DegradedMode
-	}, time.Second, time.Millisecond)
+	}, 10*time.Second, time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		<-chACK
