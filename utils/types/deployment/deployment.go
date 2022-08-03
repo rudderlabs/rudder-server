@@ -9,7 +9,7 @@ import (
 type Type string // skipcq: RVV-B0009
 
 const (
-	DedicatedType Type = "DEDICATED"
+	DedicatedType   Type = "DEDICATED"
 	MultiTenantType Type = "MULTITENANT"
 )
 

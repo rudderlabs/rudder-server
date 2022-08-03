@@ -48,7 +48,6 @@ func Test_GetFromEnv(t *testing.T) {
 			expectedType: deployment.DedicatedType,
 		},
 
-
 		// MultiTenantType:
 		{
 			envs: map[string]string{
