@@ -9,9 +9,17 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// WorkspacesT holds sources of workspaces
+type WorkspacesT struct {
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
+}
 
 type MultiTenantWorkspacesConfig struct {
 	CommonBackendConfig

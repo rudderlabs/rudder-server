@@ -237,7 +237,7 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
 
 	switch deploymentType {
-	case deployment.HostedType, deployment.MultiTenantType:
+	case deployment.MultiTenantType:
 		// For specific deployment types we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
 		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
