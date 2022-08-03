@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -434,7 +434,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
-		respData, ioUtilReadErr = ioutil.ReadAll(resp.Body)
+		respData, ioUtilReadErr = io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
@@ -460,7 +460,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		reqBody = bytes.NewBufferString(cpReq.Body)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
 	} else {
-		req, err = http.NewRequest(cpReq.Method, cpReq.Url, nil)
+		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
