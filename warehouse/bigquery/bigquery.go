@@ -543,7 +543,9 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			errorMap[warehouseutils.UsersTable] = status.Err()
 			return
 		}
-		defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
+		if isDedupEnabled {
+			defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
+		}
 		defer bq.dropStagingTable(stagingTableName)
 
 		primaryKey := `ID`
