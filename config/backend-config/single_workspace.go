@@ -133,7 +133,7 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 }
 
 func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
