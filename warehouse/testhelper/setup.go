@@ -64,7 +64,7 @@ type WarehouseTestSetup interface {
 const (
 	WaitFor2Minute            = 2 * time.Minute
 	WaitFor10Minute           = 10 * time.Minute
-	DefaultQueryFrequency     = 100 * time.Millisecond
+	DefaultQueryFrequency     = 1000 * time.Millisecond
 	LongRunningQueryFrequency = 10000 * time.Millisecond
 )
 
@@ -133,6 +133,13 @@ func initialize() {
 }
 
 func initJobsDB() {
+	// TODO: @achetty
+	//jobsDBLock.Lock()
+	//defer jobsDBLock.Unlock()
+
+	//if jobsDB != nil {
+	//	return
+	//}
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 }
@@ -313,7 +320,7 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 		tableCount := wareHouseTest.EventsCountMap[table]
 
 		condition = func() bool {
-			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
+			count, _ = queryCount(t, wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
 		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.VerifyingTablesFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
@@ -322,8 +329,11 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying tables events")
 }
 
-func queryCount(cl *client.Client, statement string) (int64, error) {
+func queryCount(t testing.TB, cl *client.Client, statement string) (int64, error) {
+	t.Helper()
+
 	result, err := cl.Query(statement)
+	t.Log(result)
 	if err != nil || result.Values == nil {
 		return 0, err
 	}
