@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func Test_GetFromEnv(t *testing.T) {

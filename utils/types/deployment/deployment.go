@@ -6,10 +6,11 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-type Type string
+type Type string // skipcq: RVV-B0009
 
 const (
-	DedicatedType   Type = "DEDICATED"
+	DedicatedType Type = "DEDICATED"
+	// HostedType is DEPRECATED: Use MultiTenantType instead
 	HostedType      Type = "HOSTED"
 	MultiTenantType Type = "MULTITENANT"
 )
