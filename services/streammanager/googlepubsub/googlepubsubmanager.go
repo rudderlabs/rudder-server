@@ -62,9 +62,12 @@ func NewProducer(destinationConfig interface{}, o Opts) (*PubsubClient, error) {
 	var client *pubsub.Client
 	var options []option.ClientOption
 	if config.TestConfig.Endpoint != "" { // Normal configuration requires credentials
-		options = append(options, option.WithoutAuthentication())
-		options = append(options, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
-		options = append(options, option.WithEndpoint(config.TestConfig.Endpoint))
+		opts := []option.ClientOption{
+			option.WithoutAuthentication(),
+			option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+			option.WithEndpoint(config.TestConfig.Endpoint),
+		}
+		options = append(options, opts...)
 	} else if !googleutils.ShouldSkipCredentialsInit(config.Credentials) { // Test configuration requires a custom endpoint
 		credsBytes := []byte(config.Credentials)
 		if err = googleutils.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
