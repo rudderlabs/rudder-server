@@ -27,8 +27,8 @@ type LifecycleManager struct {
 	waitGroup     *errgroup.Group
 }
 
-func (*LifecycleManager) Run(_ context.Context) error {
-	return nil
+func (*LifecycleManager) Run(ctx context.Context) error {
+	return ctx.Err()
 }
 
 // Start starts a Router, this is not a blocking call.
