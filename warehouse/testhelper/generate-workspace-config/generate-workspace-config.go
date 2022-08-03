@@ -25,7 +25,7 @@ func main() {
 		log.Panicf("Error occurred while making directory paths error: %s", err.Error())
 	}
 
-	f, err := os.OpenFile(testhelper.WorkspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o755)
+	f, err := os.OpenFile(testhelper.WorkspaceConfigPath, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		log.Panicf("Error occurred while creating workspaceConfig.json file with error: %s", err.Error())
 	}
