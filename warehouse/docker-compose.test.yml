@@ -1,8 +1,8 @@
 version: "2.1"
 
 services:
-  jobsDb:
-    container_name: jobsDb
+  wh-jobsDb:
+    container_name: wh-jobsDb
     image: postgres:11-alpine
     environment:
       - POSTGRES_DB=jobsdb
@@ -14,8 +14,8 @@ services:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
       retries: 25
-  transformer:
-    container_name: transformer
+  wh-transformer:
+    container_name: wh-transformer
     image: rudderlabs/rudder-transformer:latest
     ports:
       - "9090"
@@ -23,18 +23,18 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
       interval: 1s
       retries: 25
-  databricks-connector:
+  wh-databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.2.0
-    container_name: databricks-connector
+    container_name: wh-databricks-connector
     ports:
       - "50051"
     healthcheck:
       test: /bin/grpc_health_probe -addr=localhost:50051
       interval: 1s
       retries: 25
-  minio:
+  wh-minio:
     image: minio/minio:latest
-    container_name: minio
+    container_name: wh-minio
     ports:
       - "9000/tcp"
     environment:
@@ -45,8 +45,8 @@ services:
       test: curl --fail http://localhost:9000/minio/health/live || exit 1
       interval: 1s
       retries: 25
-  postgres:
-    container_name: postgres
+  wh-postgres:
+    container_name: wh-postgres
     image: postgres:11-alpine
     environment:
       - POSTGRES_DB=rudderdb
@@ -58,8 +58,8 @@ services:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
       retries: 25
-  clickhouse:
-    container_name: clickhouse
+  wh-clickhouse:
+    container_name: wh-clickhouse
     image: yandex/clickhouse-server:21-alpine
     environment:
       - CLICKHOUSE_DB=rudderdb
@@ -71,8 +71,8 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  mssql:
-    container_name: mssql
+  wh-mssql:
+    container_name: wh-mssql
     image: mcr.microsoft.com/azure-sql-edge:1.0.5
     environment:
       - ACCEPT_EULA=Y
@@ -85,100 +85,101 @@ services:
       test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
       interval: 1s
       retries: 25
-  zookeeper:
+  wh-zookeeper:
     image: zookeeper:3.5
-    container_name: clickhouse-zookeeper
-    hostname: clickhouse-zookeeper
+    container_name: wh-clickhouse-zookeeper
+    hostname: wh-clickhouse-zookeeper
     healthcheck:
       test: nc -z localhost 2181 || exit 1
       interval: 1s
       retries: 25
-  clickhouse01:
+  wh-clickhouse01:
     image: yandex/clickhouse-server:21-alpine
-    container_name: clickhouse01
+    container_name: wh-clickhouse01
     ports:
       - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
     depends_on:
-      - zookeeper
+      - wh-zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  clickhouse02:
+  wh-clickhouse02:
     image: yandex/clickhouse-server:21-alpine
-    container_name: clickhouse02
-    hostname: clickhouse02
+    container_name: wh-clickhouse02
+    hostname: wh-clickhouse02
     ports:
       - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
     depends_on:
-      - zookeeper
+      - wh-zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  clickhouse03:
+  wh-clickhouse03:
     image: yandex/clickhouse-server:21-alpine
-    container_name: clickhouse03
-    hostname: clickhouse03
+    container_name: wh-clickhouse03
+    hostname: wh-clickhouse03
     ports:
       - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
     depends_on:
-      - zookeeper
+      - wh-zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  clickhouse04:
+  wh-clickhouse04:
     image: yandex/clickhouse-server:21-alpine
-    container_name: clickhouse04
-    hostname: clickhouse04
+    container_name: wh-clickhouse04
+    hostname: wh-clickhouse04
     ports:
       - "9000"
     volumes:
       - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
-      - zookeeper
+      - wh-zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  backend:
+  wh-backend:
+    container_name: wh-backend
     depends_on:
-      jobsDb:
+      wh-jobsDb:
         condition: service_healthy
-      transformer:
+      wh-transformer:
         condition: service_healthy
-      databricks-connector:
+      wh-databricks-connector:
         condition: service_healthy
-      minio:
+      wh-minio:
         condition: service_healthy
-      postgres:
+      wh-postgres:
         condition: service_healthy
-      clickhouse:
+      wh-clickhouse:
         condition: service_healthy
-      mssql:
+      wh-mssql:
         condition: service_healthy
-      zookeeper:
+      wh-zookeeper:
         condition: service_healthy
-      clickhouse01:
+      wh-clickhouse01:
         condition: service_healthy
-      clickhouse02:
+      wh-clickhouse02:
         condition: service_healthy
-      clickhouse03:
+      wh-clickhouse03:
         condition: service_healthy
-      clickhouse04:
+      wh-clickhouse04:
         condition: service_healthy
     links:
-      - clickhouse01
-      - clickhouse02
-      - clickhouse03
-      - clickhouse04
+      - wh-clickhouse01
+      - wh-clickhouse02
+      - wh-clickhouse03
+      - wh-clickhouse04
     build:
       context: ../
       dockerfile: build/Dockerfile-warehouse-integration
@@ -198,8 +199,8 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
       interval: 5s
       retries: 50
-  start_integration:
+  start_warehouse_integration:
     image: alpine:latest
     depends_on:
-      backend:
+      wh-backend:
         condition: service_healthy

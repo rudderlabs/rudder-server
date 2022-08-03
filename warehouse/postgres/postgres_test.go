@@ -30,7 +30,7 @@ func (*TestHandle) TestConnection() error {
 			DBName:   "rudderdb",
 			Password: "rudder-password",
 			User:     "rudder",
-			Host:     "postgres",
+			Host:     "wh-postgres",
 			SSLMode:  "disable",
 			Port:     "5432",
 		}

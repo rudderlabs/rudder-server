@@ -30,7 +30,7 @@ func (*TestHandle) TestConnection() error {
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
 			User:     "SA",
-			Host:     "mssql",
+			Host:     "wh-mssql",
 			SSLMode:  "disable",
 			Port:     "1433",
 		}

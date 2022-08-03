@@ -45,21 +45,21 @@ func populateTemplateConfigurations() map[string]string {
 		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
 		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		"postgresHost":     "postgres",
+		"postgresHost":     "wh-postgres",
 		"postgresDatabase": "rudderdb",
 		"postgresUser":     "rudder",
 		"postgresPassword": "rudder-password",
 		"postgresPort":     "5432",
 
 		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
-		"clickHouseHost":     "clickhouse",
+		"clickHouseHost":     "wh-clickhouse",
 		"clickHouseDatabase": "rudderdb",
 		"clickHouseUser":     "rudder",
 		"clickHousePassword": "rudder-password",
 		"clickHousePort":     "9000",
 
 		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-		"clickhouseClusterHost":     "clickhouse01",
+		"clickhouseClusterHost":     "wh-clickhouse01",
 		"clickhouseClusterDatabase": "rudderdb",
 		"clickhouseClusterCluster":  "rudder_cluster",
 		"clickhouseClusterUser":     "rudder",
@@ -67,7 +67,7 @@ func populateTemplateConfigurations() map[string]string {
 		"clickhouseClusterPort":     "9000",
 
 		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		"mssqlHost":     "mssql",
+		"mssqlHost":     "wh-mssql",
 		"mssqlDatabase": "master",
 		"mssqlUser":     "SA",
 		"mssqlPassword": "reallyStrongPwd123",
@@ -81,7 +81,7 @@ func populateTemplateConfigurations() map[string]string {
 		"minioBucketName":      "devintegrationtest",
 		"minioAccesskeyID":     "MYACCESSKEY",
 		"minioSecretAccessKey": "MYSECRETKEY",
-		"minioEndpoint":        "minio:9000",
+		"minioEndpoint":        "wh-minio:9000",
 	}
 
 	for k, v := range credentialsFromKey(testhelper.SnowflakeIntegrationTestCredentials) {

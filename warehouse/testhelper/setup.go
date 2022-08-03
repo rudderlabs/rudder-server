@@ -148,7 +148,7 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 		DBName:   "jobsdb",
 		Password: "password",
 		User:     "rudder",
-		Host:     "jobsDb",
+		Host:     "wh-jobsDb",
 		SSLMode:  "disable",
 		Port:     "5432",
 	}

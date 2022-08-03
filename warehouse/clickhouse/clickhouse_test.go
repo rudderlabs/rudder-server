@@ -31,7 +31,7 @@ var handle *TestHandle
 func (*TestHandle) TestConnection() error {
 	err := testhelper.ConnectWithBackoff(func() (err error) {
 		credentials := clickhouse.CredentialsT{
-			Host:          "clickhouse",
+			Host:          "wh-clickhouse",
 			User:          "rudder",
 			Password:      "rudder-password",
 			DBName:        "rudderdb",
@@ -59,7 +59,7 @@ func (*TestHandle) TestConnection() error {
 	}{
 		{
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "clickhouse01",
+				Host:          "wh-clickhouse01",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -71,7 +71,7 @@ func (*TestHandle) TestConnection() error {
 		},
 		{
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "clickhouse02",
+				Host:          "wh-clickhouse02",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -83,7 +83,7 @@ func (*TestHandle) TestConnection() error {
 		},
 		{
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "clickhouse03",
+				Host:          "wh-clickhouse03",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
@@ -95,7 +95,7 @@ func (*TestHandle) TestConnection() error {
 		},
 		{
 			Credentials: &clickhouse.CredentialsT{
-				Host:          "clickhouse04",
+				Host:          "wh-clickhouse04",
 				User:          "rudder",
 				Password:      "rudder-password",
 				DBName:        "rudderdb",
