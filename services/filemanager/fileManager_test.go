@@ -436,8 +436,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	manager := &filemanager.GCSManager{
-		Config:  filemanager.GetGCSConfig(config),
-		Timeout: nil,
+		Config: filemanager.GetGCSConfig(config),
 	}
 	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
 	assert.NotNil(t, err)
