@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,7 +73,10 @@ const (
 	ConnectBackoffRetryMax = 5
 )
 
-var jobsDB *JobsDBResource
+var (
+	jobsDB     *JobsDBResource
+	jobsDBLock sync.RWMutex
+)
 
 const (
 	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
@@ -95,8 +99,7 @@ func (w *WareHouseTest) SetUserId(destType string) {
 
 func Run(m *testing.M, setup WarehouseTestSetup) int {
 	initialize()
-	jobsDB = setUpJobsDB()
-	enhanceJobsDBWithSQLFunctions()
+	initJobsDB()
 	if err := setup.TestConnection(); err != nil {
 		log.Fatalf("Could not complete test connection with err: %s", err.Error())
 	}
@@ -127,6 +130,17 @@ func initialize() {
 	postgres.Init()
 	redshift.Init()
 	snowflake.Init()
+}
+
+func initJobsDB() {
+	jobsDBLock.Lock()
+	defer jobsDBLock.Unlock()
+
+	if jobsDB != nil {
+		return
+	}
+	jobsDB = setUpJobsDB()
+	enhanceJobsDBWithSQLFunctions()
 }
 
 func setUpJobsDB() (jobsDB *JobsDBResource) {
