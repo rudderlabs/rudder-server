@@ -88,7 +88,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ 
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		pkgLogger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
@@ -135,7 +135,7 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, http.StatusBadRequest, err
 	}
 
 	req.SetBasicAuth(workspaceConfig.Token, "")
@@ -144,14 +144,14 @@ func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Contex
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, http.StatusBadRequest, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := IoUtil.ReadAll(resp.Body)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, http.StatusBadRequest, err
 	}
 
 	return respBody, resp.StatusCode, nil
