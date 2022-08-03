@@ -114,7 +114,7 @@ Router:
   retryTimeWindow: 180m
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
-  transformerProxy: true
+  transformerProxy: false
   transformerProxyRetryCount: 15
   GOOGLESHEETS:
     noOfWorkers: 1
