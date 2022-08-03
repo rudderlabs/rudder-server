@@ -234,7 +234,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 		_, err := clusterDB.Exec(sqlStatement)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 	}
 
 	// Create distribution views for tables
@@ -243,7 +243,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 		_, err := clusterDB.Exec(sqlStatement)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 	}
 
 	// Alter columns to all the cluster tables
@@ -254,7 +254,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 				log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 				_, err := clusterDB.Exec(sqlStatement)
-				require.Equal(t, err, nil)
+				require.NoError(t, err)
 			}
 		}
 	}

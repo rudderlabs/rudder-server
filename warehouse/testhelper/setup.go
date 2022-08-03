@@ -200,7 +200,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Checking for the gateway jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 		return count == int64(gwEvents)
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs count is %d", gwEvents, count))
@@ -211,13 +211,13 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		jobIds = make([]string, 0)
 
 		rows, err = jobsDB.DB.Query(sqlStatement)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			err = rows.Scan(&jobId)
-			require.Equal(t, err, nil)
+			require.NoError(t, err)
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
 		return gwEvents == len(jobIds)
@@ -228,7 +228,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Checking for gateway jobs state for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.Equal(t, nil, err)
+		require.NoError(t, err)
 		return count == int64(gwEvents)
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs succeeded count is %d", gwEvents, count))
@@ -257,7 +257,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Checking for batch router jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 		return count == int64(brtEvents)
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs count is %d", brtEvents, count))
@@ -268,13 +268,13 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		jobIds = make([]string, 0)
 
 		rows, err = jobsDB.DB.Query(sqlStatement)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			err = rows.Scan(&jobId)
-			require.Equal(t, err, nil)
+			require.NoError(t, err)
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
 		return brtEvents == len(jobIds)
@@ -286,7 +286,7 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Checking for batch router jobs state for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.Equal(t, err, nil)
+		require.NoError(t, err)
 		return count == int64(brtEvents)
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs succeeded count is %d", brtEvents, count))
