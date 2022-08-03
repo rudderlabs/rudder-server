@@ -568,13 +568,11 @@ func getUploadStartAfterTime() time.Time {
 }
 
 func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (int64, string, int) {
-
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
 		context.TODO(),
 		warehouse.Type,
 		warehouse.Source.ID,
 		warehouse.Destination.ID)
-
 	if err != nil {
 		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 	}
