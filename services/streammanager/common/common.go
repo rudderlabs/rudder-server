@@ -26,7 +26,7 @@ func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int
 		// for throttling requests server will retry
 		return 429
 	}
-	if strings.Contains(errorMessage, " RequestExpired") {
+	if strings.Contains(errorMessage, "RequestExpired") {
 		// Retryable
 		return 500
 	}

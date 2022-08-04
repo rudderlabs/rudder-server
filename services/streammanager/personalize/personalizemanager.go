@@ -95,7 +95,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[Personalize] error  :: %s : %s", respStatus, responseMessage)
+		pkgLogger.Errorf("[Personalize] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 

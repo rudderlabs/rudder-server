@@ -62,7 +62,7 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 	putEventsOutput, err := client.PutEvents(&requestInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[EventBridge] error  :: %s : %s", respStatus, responseMessage)
+		pkgLogger.Errorf("[EventBridge] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 

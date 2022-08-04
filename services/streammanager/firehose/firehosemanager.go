@@ -78,7 +78,7 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 
 	if errorRec != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(errorRec)
-		pkgLogger.Errorf("[FireHose] error  :: %s : %s", respStatus, responseMessage)
+		pkgLogger.Errorf("[FireHose] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 

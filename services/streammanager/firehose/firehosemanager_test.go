@@ -128,7 +128,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		EXPECT().
 		PutRecord(&sampleRecord).
 		Return(nil, errors.New(errorCode))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 500, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
@@ -141,7 +141,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		Return(nil, awserr.NewRequestFailure(
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)

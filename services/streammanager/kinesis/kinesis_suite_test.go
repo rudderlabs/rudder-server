@@ -128,7 +128,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockClient.EXPECT().PutRecord(&putRecordInput).Return(nil, awserr.NewRequestFailure(
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigNotUseMessageID)
 	assert.Equal(t, 400, statusCode)

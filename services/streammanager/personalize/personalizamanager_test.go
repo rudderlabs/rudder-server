@@ -131,7 +131,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	mockClient.EXPECT().PutEvents(&putEventsInput).Return(nil, awserr.NewRequestFailure(
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
@@ -169,7 +169,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	mockClient.EXPECT().PutUsers(&putUsersInput).Return(nil, awserr.NewRequestFailure(
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
@@ -207,7 +207,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	mockClient.EXPECT().PutItems(&putItemsInput).Return(nil, awserr.NewRequestFailure(
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
