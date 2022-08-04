@@ -89,8 +89,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -116,8 +116,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 	// Sending the second set of events.
 	// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
 	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 
