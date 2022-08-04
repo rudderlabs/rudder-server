@@ -42,7 +42,8 @@ func TestMultiTenant(t *testing.T) {
 }
 
 func testMultiTenantByAppType(t *testing.T, appType string) {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
 	pool, err := dockertest.NewPool("")
@@ -149,6 +150,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer cancel()
 		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
 		cmd.Env = os.Environ()
 
@@ -167,8 +169,13 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
 		}
 
-		err = cmd.Wait()
-		t.Logf("Error running main.go: %v", err)
+		if err = cmd.Wait(); err != nil {
+			if err.Error() != "signal: killed" {
+				t.Logf("Error running main.go: %v", err)
+				return
+			}
+		}
+		t.Log("main.go exited")
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
@@ -369,6 +376,7 @@ type workspaceAckValue struct {
 
 func unmarshalWorkspaceAckValue(t *testing.T, res *clientv3.WatchResponse) (workspaceAckValue, error) {
 	t.Helper()
+	require.NoError(t, res.Err())
 	var v workspaceAckValue
 	if len(res.Events) == 0 {
 		return v, fmt.Errorf("no events in the response")

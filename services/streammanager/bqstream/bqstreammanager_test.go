@@ -130,7 +130,7 @@ func TestInvalidCredentials(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
-	_, err = NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	_, err = NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "bigquery: constructing client: missing 'type' field in credentials")
