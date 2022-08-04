@@ -506,7 +506,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 													SELECT "ID", %[6]s FROM %[1]s."%[4]s" WHERE "ID" in (SELECT "USER_ID" FROM %[1]s."%[5]s" WHERE "USER_ID" IS NOT NULL)
 												) UNION
 												(
-													SELECT "USER_ID", %[7]s FROM %[1]s."%[5]s"" WHERE "USER_ID" IS NOT NULL
+													SELECT "USER_ID", %[7]s FROM %[1]s."%[5]s" WHERE "USER_ID" IS NOT NULL
 												)
 											)
 										)
