@@ -771,7 +771,7 @@ tablePrefix must be unique and is used to separate
 multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
-	ownerType OwnerType, clearAll bool, tablePrefix string, migrationMode string,
+	ownerType OwnerType, clearAll bool, tablePrefix, migrationMode string,
 	registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler,
 ) error {
 	jd.ownerType = ownerType
