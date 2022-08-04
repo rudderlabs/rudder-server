@@ -444,7 +444,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 	}
 	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
 
 func blockOnHold() {

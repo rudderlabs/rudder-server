@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"cloud.google.com/go/bigquery"
+
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -31,10 +32,7 @@ type Credentials struct {
 
 type Client struct {
 	bqClient *bigquery.Client
-	opts     Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts     common.Opts
 }
 
 // https://stackoverflow.com/questions/55951812/insert-into-bigquery-without-a-well-defined-struct
@@ -55,7 +53,11 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("bqstream")
 }
 
-func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
+type BQStreamProducer struct {
+	client *Client
+}
+
+func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
 	var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -88,11 +90,11 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{bqClient: bqClient, opts: o}, nil
+	return &BQStreamProducer{client: &Client{bqClient: bqClient, opts: o}}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
-	client := producer.(*Client)
+func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	client := producer.client
 	bqClient := client.bqClient
 	o := client.opts
 	parsedJSON := gjson.ParseBytes(jsonData)
@@ -120,9 +122,9 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 	return http.StatusOK, "Success", `[BQStream] Successful insertion of data`
 }
 
-func CloseProducer(producer interface{}) error {
-	client, ok := producer.(*Client)
-	if !ok {
+func (producer *BQStreamProducer) Close() error {
+	client := producer.client
+	if client == nil {
 		return createErr(nil, "error while trying to close the client")
 	}
 	bqClient := client.bqClient
