@@ -593,7 +593,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			return
 		}
 	}
-
+	// set isDedupEnabled to true to enable dedup for all tables
+	// set isUsersTableDedupEnabled to true to enable dedup for only users table
 	if !isDedupEnabled && !isUsersTableDedupEnabled {
 		loadUserTableByAppend()
 		return
