@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,13 +31,9 @@ const (
 	TAG_WORKERID                            = "workerId"
 )
 
-const (
-	WorkerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
-)
-
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
-	job                  PayloadT
+	job                  warehouseutils.PayloadT
 	stagingFilePath      string
 	uuidTS               time.Time
 	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
@@ -88,35 +83,6 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	return filePath
 }
 
-func (job *PayloadT) sendDownloadStagingFileFailedStat() {
-	tags := []warehouseutils.Tag{
-		{
-			Name:  "destID",
-			Value: job.DestinationID,
-		},
-		{
-			Name:  "destType",
-			Value: job.DestinationType,
-		},
-	}
-	warehouseutils.NewCounterStat(WorkerProcessingDownloadStagingFileFailed, tags...).Increment()
-}
-
-// Get fileManager
-func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
-	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:                    storageProvider,
-			Config:                      config,
-			UseRudderStorage:            useRudderStorage,
-			RudderStoragePrefixOverride: job.RudderStoragePrefix,
-		}),
-	})
-	return fileManager, err
-}
-
 /*
  * Download Staging file for the job
  * If error occurs with the current config and current revision is different from staging revision
@@ -131,7 +97,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			panic(err)
 		}
 
-		downloader, err := job.getFileManager(config, useRudderStorage)
+		downloader, err := job.GetFileManager(config, useRudderStorage)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to initialize downloader")
 			return err
@@ -164,7 +130,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
 			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
-				job.sendDownloadStagingFileFailedStat()
+				job.SendDownloadStagingFileFailedStat()
 				return err
 			}
 		} else {
@@ -174,12 +140,8 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	return nil
 }
 
-func PickupStagingConfiguration(job *PayloadT) bool {
+func PickupStagingConfiguration(job *warehouseutils.PayloadT) bool {
 	return job.StagingDestinationRevisionID != job.DestinationRevisionID && job.StagingDestinationConfig != nil
-}
-
-func (job *PayloadT) getDiscardsTable() string {
-	return warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 }
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
@@ -188,39 +150,25 @@ func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
-func (job *PayloadT) getColumnName(columnName string) string {
-	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
-}
-
 type loadFileUploadJob struct {
 	tableName  string
 	outputFile warehouseutils.LoadFileWriterI
 }
 
-type loadFileUploadOutputT struct {
-	TableName             string
-	Location              string
-	TotalRows             int
-	ContentLength         int64
-	StagingFileID         int64
-	DestinationRevisionID string
-	UseRudderStorage      bool
-}
-
-func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
+func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]warehouseutils.LoadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
+	uploader, err := job.GetFileManager(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
-		return []loadFileUploadOutputT{}, err
+		return []warehouseutils.LoadFileUploadOutputT{}, err
 	}
 	// var loadFileIDs []int64
-	var loadFileUploadOutputs []loadFileUploadOutputT
+	var loadFileUploadOutputs []warehouseutils.LoadFileUploadOutputT
 
 	// take the first staging file id in upload
 	// TODO: support multiple staging files in one upload
 	stagingFileId := jobRun.job.StagingFileID
 
-	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
+	loadFileOutputChan := make(chan warehouseutils.LoadFileUploadOutputT, len(jobRun.outputFileWritersMap))
 	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
@@ -249,7 +197,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
-					loadFileOutputChan <- loadFileUploadOutputT{
+					loadFileOutputChan <- warehouseutils.LoadFileUploadOutputT{
 						TableName:             tableName,
 						Location:              uploadOutput.Location,
 						ContentLength:         loadFileStats.Size(),
@@ -279,9 +227,9 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			}
 		case err := <-uploadErrorChan:
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
-			return []loadFileUploadOutputT{}, err
+			return []warehouseutils.LoadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []warehouseutils.LoadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
@@ -302,20 +250,6 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
-}
-
-// Sort columns per table to maintain same order in load file (needed in case of csv load file)
-func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
-	sortedTableColumnMap := make(map[string][]string)
-
-	for tableName, columnMap := range job.UploadSchema {
-		sortedTableColumnMap[tableName] = []string{}
-		for k := range columnMap {
-			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
-		}
-		sort.Strings(sortedTableColumnMap[tableName])
-	}
-	return sortedTableColumnMap
 }
 
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
@@ -378,7 +312,7 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job warehouseutils.PayloadT, workerIndex int) (loadFileUploadOutputs []warehouseutils.LoadFileUploadOutputT, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
@@ -401,7 +335,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		return loadFileUploadOutputs, err
 	}
 
-	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
+	sortedTableColumnMap := job.GetSortedColumnMapForAllTables()
 
 	reader, endOfFile := jobRun.setStagingFileReader()
 	if endOfFile {
@@ -421,7 +355,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.uuidTS = timeutil.Now()
 
 	// Initilize Discards Table
-	discardsTable := job.getDiscardsTable()
+	discardsTable := job.GetDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
 	timer := jobRun.timerStat("process_staging_file_time")
@@ -461,7 +395,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
-				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
+				eventLoader.AddColumn(job.GetColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
 			columnInfo, ok := batchRouterEvent.GetColumnInfo(columnName)
@@ -565,7 +499,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
-	var job PayloadT
+	var job warehouseutils.PayloadT
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)
@@ -623,8 +557,8 @@ func setupSlave(ctx context.Context) error {
 
 func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
-	rowID, hasID := columnData[job.getColumnName("id")]
-	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
+	rowID, hasID := columnData[job.GetColumnName("id")]
+	receivedAt, hasReceivedAt := columnData[job.GetColumnName("received_at")]
 	if violatedConstraints.isViolated {
 		if !hasID {
 			rowID = violatedConstraints.violatedIdentifier

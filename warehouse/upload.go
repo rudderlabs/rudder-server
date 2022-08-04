@@ -1754,9 +1754,9 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.JobPayload
+		var messages []warehouseutils.PayloadT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := PayloadT{
+			payload := warehouseutils.PayloadT{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
@@ -1789,12 +1789,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 				payload.UploadSchema = job.upload.MergedSchema
 			}
-
-			payloadJSON, err := json.Marshal(payload)
-			if err != nil {
-				panic(err)
-			}
-			messages = append(messages, payloadJSON)
+			messages = append(messages, payload)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
@@ -1810,7 +1805,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		rruntime.GoForWarehouse(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
-			var loadFiles []loadFileUploadOutputT
+			var loadFiles []warehouseutils.LoadFileUploadOutputT
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
@@ -1823,7 +1818,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
 				}
-				var output []loadFileUploadOutputT
+				var output []warehouseutils.LoadFileUploadOutputT
 				err = json.Unmarshal(resp.Output, &output)
 				if err != nil {
 					panic(err)
@@ -1897,7 +1892,7 @@ func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 	}
 }
 
-func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
+func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []warehouseutils.LoadFileUploadOutputT) (err error) {
 	// Using transactions for bulk copying
 	txn, err := dbHandle.Begin()
 	if err != nil {

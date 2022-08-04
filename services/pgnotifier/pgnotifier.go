@@ -60,8 +60,6 @@ type PgNotifierT struct {
 	workspaceIdentifier string
 }
 
-type JobPayload json.RawMessage
-
 type ResponseT struct {
 	JobID  int64
 	Status string
@@ -319,7 +317,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -335,36 +333,61 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 	if err != nil {
 		return
 	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txn.Rollback(); rollbackErr != nil {
+				pkgLogger.Error(err.Error())
+				pkgLogger.Error(rollbackErr.Error())
+			}
+		}
+	}()
 
 	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
 		return
 	}
-	defer func() { _ = stmt.Close() }()
+	defer func() {
+		_ = stmt.Close()
+	}()
 
-	batchID := uuid.Must(uuid.NewV4()).String()
+	var (
+		batchID     = uuid.Must(uuid.NewV4()).String()
+		payloadJSON []byte
+	)
+
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
-		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
+		payloadJSON, err = json.Marshal(job)
 		if err != nil {
 			return
 		}
+
+		_, err = stmt.Exec(batchID, WaitingState, string(payloadJSON), notifier.workspaceIdentifier, priority)
+		if err != nil {
+			return
+		}
+
+		// setting payloadJSON to nil to release mem allocated
+		payloadJSON = nil
 	}
 	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
 		return
 	}
+
 	err = txn.Commit()
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
+
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
+
 	notifier.trackBatch(batchID, &ch)
 	return
 }

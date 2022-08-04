@@ -92,6 +92,10 @@ const (
 	CTStagingTablePrefix = "setup_test_staging"
 )
 
+const (
+	WorkerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
+)
+
 var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
@@ -933,4 +937,90 @@ func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, tim
 	}
 
 	return respBody, nil
+}
+
+type PayloadT struct {
+	BatchID                      string
+	UploadID                     int64
+	StagingFileID                int64
+	StagingFileLocation          string
+	UploadSchema                 map[string]map[string]string
+	SourceID                     string
+	SourceName                   string
+	DestinationID                string
+	DestinationName              string
+	DestinationType              string
+	DestinationNamespace         string
+	DestinationRevisionID        string
+	StagingDestinationRevisionID string
+	DestinationConfig            interface{}
+	StagingDestinationConfig     interface{}
+	UseRudderStorage             bool
+	StagingUseRudderStorage      bool
+	UniqueLoadGenID              string
+	RudderStoragePrefix          string
+	Output                       []LoadFileUploadOutputT
+	LoadFilePrefix               string // prefix for the load file name
+	LoadFileType                 string
+}
+
+type LoadFileUploadOutputT struct {
+	TableName             string
+	Location              string
+	TotalRows             int
+	ContentLength         int64
+	StagingFileID         int64
+	DestinationRevisionID string
+	UseRudderStorage      bool
+}
+
+func (job *PayloadT) SendDownloadStagingFileFailedStat() {
+	tags := []Tag{
+		{
+			Name:  "destID",
+			Value: job.DestinationID,
+		},
+		{
+			Name:  "destType",
+			Value: job.DestinationType,
+		},
+	}
+	NewCounterStat(WorkerProcessingDownloadStagingFileFailed, tags...).Increment()
+}
+
+// Get fileManager
+func (job *PayloadT) GetFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+	storageProvider := ObjectStorageType(job.DestinationType, config, useRudderStorage)
+	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:                    storageProvider,
+			Config:                      config,
+			UseRudderStorage:            useRudderStorage,
+			RudderStoragePrefixOverride: job.RudderStoragePrefix,
+		}),
+	})
+	return fileManager, err
+}
+
+func (job *PayloadT) GetDiscardsTable() string {
+	return ToProviderCase(job.DestinationType, DiscardsTable)
+}
+
+func (job *PayloadT) GetColumnName(columnName string) string {
+	return ToProviderCase(job.DestinationType, columnName)
+}
+
+// Sort columns per table to maintain same order in load file (needed in case of csv load file)
+func (job *PayloadT) GetSortedColumnMapForAllTables() map[string][]string {
+	sortedTableColumnMap := make(map[string][]string)
+
+	for tableName, columnMap := range job.UploadSchema {
+		sortedTableColumnMap[tableName] = []string{}
+		for k := range columnMap {
+			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
+		}
+		sort.Strings(sortedTableColumnMap[tableName])
+	}
+	return sortedTableColumnMap
 }
