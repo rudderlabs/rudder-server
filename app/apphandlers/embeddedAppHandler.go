@@ -268,7 +268,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if enableReplay {
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
-			jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention,
+			jobsdb.ReadWrite, options.ClearDB, "replay",
 			migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers,
 		)
 		if err != nil {

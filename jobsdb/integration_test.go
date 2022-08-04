@@ -561,7 +561,7 @@ func TestJobsDB(t *testing.T) {
 
 		jobs := []*jobsdb.JobT{}
 		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 1)...)
-		require.NoError(t, jobDB.Store(jobs))
+		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
 		require.Equal(t, int64(1), jobDB.GetMaxDSIndex())
 		time.Sleep(time.Second * 2)   // wait for some time to pass
@@ -592,7 +592,7 @@ func TestJobsDB(t *testing.T) {
 
 		jobs := []*jobsdb.JobT{}
 		jobs = append(jobs, genJobs(defaultWorkspaceID, customVal, 1, 1)...)
-		require.NoError(t, jobDB.Store(jobs))
+		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
 		require.Equal(t, int64(1), jobDB.GetMaxDSIndex())
 		time.Sleep(time.Second * 2)   // wait for some time to pass
