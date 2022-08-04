@@ -43,7 +43,7 @@ func TestMultiTenant(t *testing.T) {
 
 func testMultiTenantByAppType(t *testing.T, appType string) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
 	pool, err := dockertest.NewPool("")
@@ -171,10 +171,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		if err = cmd.Wait(); err != nil {
 			if err.Error() != "signal: killed" {
 				t.Logf("Error running main.go: %v", err)
+				return
 			}
-			return
 		}
-		t.Log("main.go exited successfully")
+		t.Log("main.go exited")
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
