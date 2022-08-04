@@ -1,78 +1,49 @@
+//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbride.go -package mock_eventbride github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
+
 package eventbridge
 
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
+	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
-
-// Config is the config that is required to send data to EventBridge
-type Config struct {
-	Region      string
-	AccessKeyID string
-	AccessKey   string
-}
-
-type Opts struct {
-	Timeout time.Duration
-}
 
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child("eventbridge")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child(strings.ToLower(eventbridge.ServiceName))
+}
+
+type EventBridgeProducer struct {
+	client EventBridgeClient
+}
+
+type EventBridgeClient interface {
+	PutEvents(input *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (eventbridge.EventBridge, error) {
-	config := Config{}
-
-	jsonConfig, err := json.Marshal(destinationConfig)
+func NewProducer(destinationConfig interface{}, o common.Opts) (*EventBridgeProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, eventbridge.ServiceName)
 	if err != nil {
-		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while marshalling destination config :: %w", err)
+		return nil, err
 	}
-	err = json.Unmarshal(jsonConfig, &config)
-	if err != nil {
-		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
-	}
-	httpClient := &http.Client{
-		Timeout: o.Timeout,
-	}
-
-	var s *session.Session
-	if config.AccessKeyID == "" || config.AccessKey == "" {
-		s = session.Must(session.NewSession(&aws.Config{
-			Region:     aws.String(config.Region),
-			HTTPClient: httpClient,
-		}))
-	} else {
-		s = session.Must(session.NewSession(&aws.Config{
-			HTTPClient:  httpClient,
-			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
-		}))
-	}
-	var ebc *eventbridge.EventBridge = eventbridge.New(s)
-	return *ebc, nil
+	return &EventBridgeProducer{client: eventbridge.New(awsutils.CreateSession(sessionConfig))}, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
+func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	// get producer
-	ebc, ok := producer.(eventbridge.EventBridge)
-	if (!ok || ebc == eventbridge.EventBridge{}) {
+	client := producer.client
+	if client == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer for EventBridge", "Could not create producer for EventBridge"
 	}
-
 	// create eventbridge event
 	putRequestEntry := eventbridge.PutEventsRequestEntry{}
 	err := json.Unmarshal(jsonData, &putRequestEntry)
@@ -84,21 +55,15 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 	putRequestEntryList := []*eventbridge.PutEventsRequestEntry{&putRequestEntry}
 	requestInput := eventbridge.PutEventsInput{}
 	requestInput.SetEntries(putRequestEntryList)
-
+	if err = requestInput.Validate(); err != nil {
+		return 400, "InvalidInput", err.Error()
+	}
 	// send request to event bridge
-	putEventsOutput, err := ebc.PutEvents(&requestInput)
+	putEventsOutput, err := client.PutEvents(&requestInput)
 	if err != nil {
-		pkgLogger.Errorf("[EventBridge] Error while sending event :: %v", err)
-
-		// set default status code as 500
-		statusCode := 500
-
-		// fetching status code from response
-		if reqErr, ok := err.(awserr.RequestFailure); ok {
-			statusCode = reqErr.StatusCode()
-		}
-
-		return statusCode, err.Error(), err.Error()
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		pkgLogger.Errorf("[EventBridge] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		return statusCode, respStatus, responseMessage
 	}
 
 	// Since we are sending only one event, Entries should have only one entry

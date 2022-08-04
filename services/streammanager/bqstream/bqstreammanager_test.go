@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,7 +38,7 @@ func TestTimeout(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
-	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
@@ -51,7 +52,7 @@ func TestTimeout(t *testing.T) {
 			"value": "value"
 		}
 	}`
-	statusCode, respStatus, responseMessage := Produce([]byte(payload), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(payload), nil)
 
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {
@@ -101,8 +102,36 @@ func TestUnsupportedCredentials(t *testing.T) {
 		Credentials: string(credentials),
 		ProjectId:   bqCredentials.ProjectID,
 	}
+	_, err = NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
+
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "incompatible credentials")
+}
+
+func TestInvalidCredentials(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
+	pkgLogger = mockLogger
+
+	var bqCredentials BigQueryCredentials
+	var err error
+	err = json.Unmarshal(
+		[]byte(`{
+			"projectID": "my-project",
+			"credentials": {
+				"somekey": {
+				}
+			}
+		}`), &bqCredentials)
+	assert.NoError(t, err)
+	credentials, _ := json.Marshal(bqCredentials.Credentials)
+	config := Config{
+		Credentials: string(credentials),
+		ProjectId:   bqCredentials.ProjectID,
+	}
 	_, err = NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "[BQStream] error :: incompatible credentials:: Google Developers Console client_credentials.json file is not supported")
+	assert.EqualError(t, err, "bigquery: constructing client: missing 'type' field in credentials")
 }
