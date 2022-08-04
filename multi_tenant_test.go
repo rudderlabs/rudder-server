@@ -176,7 +176,13 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		}
 		t.Log("main.go exited")
 	}()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() {
+		t.Log("Running cleanup")
+		cancel()
+		t.Log("Context canceled")
+		<-done
+		t.Log("Cleanup done")
+	})
 
 	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
 	healthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
