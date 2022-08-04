@@ -20,7 +20,7 @@ func CompatibleGoogleCredentialsJSON(jsonKey []byte) error {
 }
 
 func ShouldSkipCredentialsInit(credentials string) bool {
-	return IsGKEEnabledWorkload() && IsCredentialsStringEmpty(credentials)
+	return isGKEEnabledWorkload() && isCredentialsStringEmpty(credentials)
 }
 
 /*
@@ -30,14 +30,14 @@ sent as empty string or when the field is set with "{}"
 
 Note: This is true only for workload identity enabled rudderstack data-plane deployments
 */
-func IsCredentialsStringEmpty(credentials string) bool {
+func isCredentialsStringEmpty(credentials string) bool {
 	return (credentials == "" || credentials == EMPTY_CREDS)
 }
 
 /*
 	IsGKEEnabledWorkload  checks against rudder-server configuration to find if workload identity for google destinations is enabled
 */
-func IsGKEEnabledWorkload() bool {
+func isGKEEnabledWorkload() bool {
 	workloadType := config.GetString(fmt.Sprintf("%s.type", WI_CONFIG_KEY), "")
 	return workloadType == "GKE"
 }
