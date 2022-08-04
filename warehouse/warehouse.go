@@ -567,7 +567,7 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (int64, string, int) {
+func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.WarehouseT) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
 		context.TODO(),
 		warehouse.Type,
@@ -612,7 +612,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
+	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
