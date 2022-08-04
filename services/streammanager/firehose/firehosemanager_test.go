@@ -18,8 +18,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var sampleDeliveryStreamName = "sampleDeliveryStream"
-var sampleMessage = "sample respMsg"
+var (
+	sampleDeliveryStreamName = "sampleDeliveryStream"
+	sampleMessage            = "sample respMsg"
+)
 
 func TestNewProducer(t *testing.T) {
 	destinationConfig := map[string]string{
@@ -106,9 +108,9 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	sampleMessageJson, _ := json.Marshal(sampleMessage)
 
-	var sampleRecord = firehose.PutRecordInput{
+	sampleRecord := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(sampleDeliveryStreamName),
-		Record:             &firehose.Record{Data: []byte(sampleMessageJson)},
+		Record:             &firehose.Record{Data: sampleMessageJson},
 	}
 
 	mockClient.

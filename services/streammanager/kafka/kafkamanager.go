@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -182,11 +182,11 @@ func Init() {
 	clientKeyFile := config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 	if clientCertFile != "" && clientKeyFile != "" {
 		var err error
-		clientCert, err = ioutil.ReadFile(clientCertFile)
+		clientCert, err = os.ReadFile(clientCertFile)
 		if err != nil {
 			panic(fmt.Errorf("could not read certificate file: %w", err))
 		}
-		clientKey, err = ioutil.ReadFile(clientKeyFile)
+		clientKey, err = os.ReadFile(clientKeyFile)
 		if err != nil {
 			panic(fmt.Errorf("could not read key file: %w", err))
 		}
@@ -506,8 +506,8 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 	return messages, nil
 }
 
-// CloseProducer closes a given producer
-func (producer *KafkaProducer) CloseProducer() error {
+// Close closes a given producer
+func (producer *KafkaProducer) Close() error {
 	start := now()
 	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
 

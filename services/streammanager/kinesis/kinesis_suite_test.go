@@ -61,7 +61,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
 	producer := &KinesisProducer{client: mockClient}
 
-	//Invalid destination config
+	// Invalid destination config
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, "invalid json")
 	assert.Equal(t, 400, statusCode)
@@ -130,7 +130,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
+	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigNotUseMessageID)
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.Contains(t, respMsg, errorCode)

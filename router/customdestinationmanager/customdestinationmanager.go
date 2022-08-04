@@ -191,7 +191,7 @@ func (customManager *CustomManagerT) close(destID string) {
 	customDestination := customManager.client[destID]
 	switch customManager.managerType {
 	case STREAM:
-		_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
+		_ = streammanager.Close(customDestination.client, customManager.destType)
 	case KV:
 		kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 		_ = kvManager.Close()
@@ -206,7 +206,7 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
 		switch customManager.managerType {
 		case STREAM:
-			_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
+			_ = streammanager.Close(customDestination.client, customManager.destType)
 		case KV:
 			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 			_ = kvManager.Close()

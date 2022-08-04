@@ -179,8 +179,8 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	return 200, respStatus, responseMessage
 }
 
-// CloseProducer closes a given producer
-func (producer *GooglePubSubProducer) CloseProducer() error {
+// Close closes a given producer
+func (producer *GooglePubSubProducer) Close() error {
 	var err error
 	client := producer.client
 	if client != nil {

@@ -30,7 +30,8 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer.client)
 }
 
-var sampleEvent = eventbridge.PutEventsRequestEntry{Detail: aws.String("detail"),
+var sampleEvent = eventbridge.PutEventsRequestEntry{
+	Detail:       aws.String("detail"),
 	DetailType:   aws.String("detailType"),
 	EventBusName: aws.String("eventBus"),
 	Source:       aws.String("source"),

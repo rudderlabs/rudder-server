@@ -37,7 +37,7 @@ func NewProducer(destinationConfig interface{}, o common.Opts) (*EventBridgeProd
 }
 
 // Produce creates a producer and send data to EventBridge.
-func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	// get producer
 	client := producer.client
 	if client == nil {
@@ -60,7 +60,6 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, destConfi
 	}
 	// send request to event bridge
 	putEventsOutput, err := client.PutEvents(&requestInput)
-
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[EventBridge] error  :: %s : %s", respStatus, responseMessage)

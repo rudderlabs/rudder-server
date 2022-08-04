@@ -93,13 +93,12 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
 		"choice": "PutEvents",
 		"payload": personalizeevents.PutEventsInput{
-			EventList: []*personalizeevents.Event{
-				{EventId: aws.String("eventId"),
-					EventType: aws.String("eventType"),
-					ItemId:    aws.String("itemId"),
-					SentAt:    aws.Time(time.Now()),
-				},
-			},
+			EventList: []*personalizeevents.Event{{
+				EventId:   aws.String("eventId"),
+				EventType: aws.String("eventType"),
+				ItemId:    aws.String("itemId"),
+				SentAt:    aws.Time(time.Now()),
+			}},
 			SessionId:  aws.String("sessionId"),
 			TrackingId: aws.String("trackingId"),
 			UserId:     aws.String("userId"),
@@ -109,7 +108,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	var putEventsInput personalizeevents.PutEventsInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	json.Unmarshal(eventPayload, &putEventsInput)
+	_ = json.Unmarshal(eventPayload, &putEventsInput)
 
 	// PutEvents with event choice
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
@@ -149,14 +148,14 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 		"choice": "PutUsers",
 		"payload": personalizeevents.PutUsersInput{
 			DatasetArn: aws.String("datasetArn"),
-			Users: []*personalizeevents.User{{UserId: aws.String("userId")}},
+			Users:      []*personalizeevents.User{{UserId: aws.String("userId")}},
 		},
 	})
 
 	var putUsersInput personalizeevents.PutUsersInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	json.Unmarshal(eventPayload, &putUsersInput)
+	_ = json.Unmarshal(eventPayload, &putUsersInput)
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutUsersInput variable and use in expect
@@ -194,7 +193,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	var putItemsInput personalizeevents.PutItemsInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	json.Unmarshal(eventPayload, &putItemsInput)
+	_ = json.Unmarshal(eventPayload, &putItemsInput)
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutItemsInput variable and use in expect

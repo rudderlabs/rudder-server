@@ -44,8 +44,9 @@ func NewProducer(destinationConfig interface{}, destType string, opts common.Opt
 	}
 }
 
-// CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
-func CloseProducer(producer interface{}, destType string) error { // TODO check if it's possible to pass a context
+// Close delegates the call to the appropriate manager based on parameter destination to close a given producer
+// TODO check if it's possible to pass a context
+func Close(producer interface{}, destType string) error {
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
@@ -54,14 +55,14 @@ func CloseProducer(producer interface{}, destType string) error { // TODO check 
 		if !ok {
 			return errors.New("producer is not closable")
 		}
-		return streamProducer.CloseProducer()
+		return streamProducer.Close()
 	default:
 		return fmt.Errorf("no provider configured for StreamManager") // 404, "no provider configured for StreamManager", ""
 	}
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer, config interface{}) (int, string, string) {
 	switch destType {
 	case "KINESIS", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "PERSONALIZE",
 		"FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "GOOGLESHEETS", "BQSTREAM":

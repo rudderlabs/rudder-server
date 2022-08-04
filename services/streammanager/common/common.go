@@ -13,7 +13,7 @@ type StreamProducer interface {
 }
 
 type ClosableStreamProducer interface {
-	CloseProducer() error
+	Close() error
 }
 
 type Opts struct {
@@ -21,7 +21,6 @@ type Opts struct {
 }
 
 func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int {
-
 	if strings.Contains(errorMessage, "Throttling") {
 		// aws returns  "ThrottlingException"
 		// for throttling requests server will retry
@@ -34,7 +33,7 @@ func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int
 	return defaultStatusCode
 }
 
-func ParseAWSError(err error) (statusCode int, respStatus string, responseMessage string) {
+func ParseAWSError(err error) (statusCode int, respStatus, responseMessage string) {
 	statusCode = 500
 	respStatus = "Failure"
 	responseMessage = err.Error()

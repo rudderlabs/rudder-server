@@ -193,32 +193,35 @@ func insertRowDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, 
 // and we are storing the data into designated position in array based on transformer
 // mappings.
 // Example payload we have from transformer without batching:
-// {
-//		message:{
-//			1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//			2: { attributeKey: "Product Value, attributeValue: "5900"}
-//			..
-// 		}
-// }
-// Example Payload we have from transformer with batching:
-// {
-// 		batch:[
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
-//			},
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
+//
+//	{
+//			message:{
+//				1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//				2: { attributeKey: "Product Value, attributeValue: "5900"}
+//				..
 //			}
-// 		]
-// }
+//	}
+//
+// Example Payload we have from transformer with batching:
+//
+//	{
+//			batch:[
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				},
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				}
+//			]
+//	}
 func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 	batch := source.Get("batch")
 	messages := batch.Array()

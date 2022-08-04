@@ -7,13 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewSessionConfigWithAccessKey(t *testing.T) {
-	destinationConfig := map[string]string{
+var (
+	destinationConfig map[string]string = map[string]string{
 		"Region":      "us-east-1",
 		"AccessKeyID": "sampleAccessId",
 		"AccessKey":   "sampleAccess",
 	}
-	timeOut := 10 * time.Second
+	timeOut time.Duration = 10 * time.Second
+)
+
+func TestNewSessionConfigWithAccessKey(t *testing.T) {
 	serviceName := "kinesis"
 	sessionConfig, err := NewSessionConfig(destinationConfig, timeOut, serviceName)
 	assert.Nil(t, err)
@@ -28,12 +31,6 @@ func TestNewSessionConfigWithAccessKey(t *testing.T) {
 }
 
 func TestNewSessionConfigWithRole(t *testing.T) {
-	destinationConfig := map[string]string{
-		"Region":     "us-east-1",
-		"IAMRoleARN": "sampleRoleArn",
-		"ExternalID": "sampleExternalID",
-	}
-	timeOut := 10 * time.Second
 	serviceName := "s3"
 	sessionConfig, err := NewSessionConfig(destinationConfig, timeOut, serviceName)
 	assert.Nil(t, err)
@@ -48,17 +45,19 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 }
 
 func TestNewSessionConfigBadConfig(t *testing.T) {
-	destinationConfig := "Bad config"
-	timeOut := 10 * time.Second
 	serviceName := "s3"
-	sessionConfig, err := NewSessionConfig(destinationConfig, timeOut, serviceName)
-	assert.NotNil(t, err)
+	sessionConfig, err := NewSessionConfig("Bad config", timeOut, serviceName)
+	assert.Contains(t, err.Error(), "marshalling")
 	assert.Nil(t, sessionConfig)
 }
 
 func TestCreateSession(t *testing.T) {
-	sessionConfig := SessionConfig{Region: "us-east-1", IAMRoleARN: "sampleRoleArn",
-		ExternalID: "sampleExternalID", Timeout: 10 * time.Second}
+	sessionConfig := SessionConfig{
+		Region:     destinationConfig["Region"],
+		IAMRoleARN: destinationConfig["IAMRoleARN"],
+		ExternalID: destinationConfig["ExternalID"],
+		Timeout:    10 * time.Second,
+	}
 	awsSession := CreateSession(&sessionConfig)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)

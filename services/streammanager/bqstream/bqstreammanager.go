@@ -93,7 +93,7 @@ func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProduce
 	return &BQStreamProducer{client: &Client{bqClient: bqClient, opts: o}}, nil
 }
 
-func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.client
 	bqClient := client.bqClient
 	o := client.opts
@@ -122,7 +122,7 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, destConfig i
 	return http.StatusOK, "Success", `[BQStream] Successful insertion of data`
 }
 
-func (producer *BQStreamProducer) CloseProducer() error {
+func (producer *BQStreamProducer) Close() error {
 	client := producer.client
 	if client == nil {
 		return createErr(nil, "error while trying to close the client")

@@ -397,11 +397,11 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 	})
 }
 
-func TestCloseProducer(t *testing.T) {
+func TestClose(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), 1)
 		kp := &KafkaProducer{}
-		err := kp.CloseProducer()
+		err := kp.Close()
 		require.EqualError(t, err, "error while closing producer")
 	})
 	t.Run("not initialized", func(t *testing.T) {
@@ -409,7 +409,7 @@ func TestCloseProducer(t *testing.T) {
 
 		client := &producerImpl{p: &client.Producer{}}
 		kp := &KafkaProducer{client}
-		err := kp.CloseProducer()
+		err := kp.Close()
 		require.NoError(t, err)
 	})
 	t.Run("correct", func(t *testing.T) {
@@ -420,7 +420,7 @@ func TestCloseProducer(t *testing.T) {
 		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
 		require.NoError(t, err)
 		kp := &KafkaProducer{&producerImpl{p: p}}
-		err = kp.CloseProducer()
+		err = kp.Close()
 		require.NoError(t, err)
 	})
 	t.Run("error", func(t *testing.T) {
@@ -428,7 +428,7 @@ func TestCloseProducer(t *testing.T) {
 
 		var p producer = &pMockErr{error: fmt.Errorf("a bad error")}
 		kp := &KafkaProducer{p}
-		err := kp.CloseProducer()
+		err := kp.Close()
 		require.EqualError(t, err, "a bad error")
 	})
 }

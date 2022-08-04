@@ -93,7 +93,6 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 		return 400, "InvalidInput", err.Error()
 	}
 	putOutput, err := client.PutRecord(&putInput)
-
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Kinesis] error  :: %s : %s", respStatus, responseMessage)
