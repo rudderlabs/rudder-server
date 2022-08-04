@@ -601,8 +601,8 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
-		dsList := jobDB.GetDSList()
-		require.Equal(t, int(2), len(dsList))
+		jobDBInspector := jobsdb.HandleInspector{&jobDB}
+		require.Equal(t, int(2), jobDBInspector.DSListSize())
 		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 
 		jobsResult := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -630,8 +630,7 @@ func TestJobsDB(t *testing.T) {
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		dsList = jobDB.GetDSList()
-		require.Equal(t, int(1), len(dsList))
+		require.Equal(t, int(1), jobDBInspector.DSListSize())
 		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 	})
 }

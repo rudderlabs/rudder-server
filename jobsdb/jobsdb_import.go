@@ -155,7 +155,7 @@ func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
 
 // UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
 func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.DSListLockToken, seqNoForNewDS int64) {
-	dsList := jd.GetDSList()
+	dsList := jd.getDSList()
 	dsListLen := len(dsList)
 	var ds dataSetT
 	if jd.isEmpty(dsList[dsListLen-1]) {
