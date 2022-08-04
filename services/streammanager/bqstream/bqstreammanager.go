@@ -23,12 +23,6 @@ type Config struct {
 	TableId     string `json:"tableId"`
 }
 
-type Credentials struct {
-	Email      string `json:"client_email"`
-	PrivateKey string `json:"private_key"`
-	TokenUrl   string `json:"token_uri"`
-}
-
 type Client struct {
 	bqClient *bigquery.Client
 	opts     Opts
