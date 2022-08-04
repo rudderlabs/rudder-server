@@ -554,7 +554,8 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		require.NoError(t, err)
 		defer jobDB.TearDown()
 
 		jobDB.MaxDSRetentionPeriod = time.Second
@@ -585,7 +586,8 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		require.NoError(t, err)
 		defer jobDB.TearDown()
 
 		jobDB.MaxDSRetentionPeriod = time.Second
@@ -599,11 +601,20 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
+		dsList := jobDB.GetDSList()
+		require.Equal(t, int(2), len(dsList))
 		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 
-		//TODO complete this
-		/*status := jobsdb.JobStatusT{
-			JobID:         unprocessedList[0].JobID,
+		jobsResult := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+		fetchedJobs := jobsResult.Jobs
+		require.Equal(t, 1, len(fetchedJobs))
+
+		status := jobsdb.JobStatusT{
+			JobID:         fetchedJobs[0].JobID,
 			JobState:      "succeeded",
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -614,7 +625,14 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		err = jobDB.UpdateJobStatus(context.Background(), []*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
-		require.NoError(t, err)*/
+		require.NoError(t, err)
+
+		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
+		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
+
+		dsList = jobDB.GetDSList()
+		require.Equal(t, int(1), len(dsList))
+		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 	})
 }
 

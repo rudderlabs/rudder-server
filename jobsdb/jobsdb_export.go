@@ -46,7 +46,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	defer jd.dsListLock.RUnlock()
 	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated and got locks", jd.GetTablePrefix())
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 	pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - dsList: %+v", jd.tablePrefix, dsList)
 	outJobs := make([]*JobT, 0)
 	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
@@ -258,7 +258,7 @@ func (jd *HandleT) IsMigrating() bool {
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 
 	if jd.migrationState.lastDsForExport.Index == "" {
 		return false
@@ -317,7 +317,7 @@ func (jd *HandleT) PreExportCleanup() {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 
 	for _, ds := range dsList {
 		jd.deleteMigratingJobStatusDS(ds)
@@ -332,7 +332,7 @@ func (jd *HandleT) PostExportCleanup() {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 
 	for _, ds := range dsList {
 		jd.deleteWontMigrateJobStatusDS(ds)
