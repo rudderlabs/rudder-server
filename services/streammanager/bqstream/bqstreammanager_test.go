@@ -107,7 +107,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 	assert.EqualError(t, err, "[BQStream] error :: incompatible credentials:: Google Developers Console client_credentials.json file is not supported")
 }
 
-func TestOtherRandomCredentials(t *testing.T) {
+func TestInvalidCredentials(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
