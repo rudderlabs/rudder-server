@@ -1,8 +1,9 @@
 package warehouse
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/require"
 )
