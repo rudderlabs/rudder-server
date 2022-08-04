@@ -48,21 +48,6 @@ func Test_GetFromEnv(t *testing.T) {
 			expectedType: deployment.DedicatedType,
 		},
 
-		// HostedType:
-		{
-			name: "legacy HOSTED_SERVICE is set",
-			envs: map[string]string{
-				"HOSTED_SERVICE": "true",
-			},
-			expectedType: deployment.HostedType,
-		},
-		{
-			envs: map[string]string{
-				"DEPLOYMENT_TYPE": "HOSTED",
-			},
-			expectedType: deployment.HostedType,
-		},
-
 		// MultiTenantType:
 		{
 			envs: map[string]string{

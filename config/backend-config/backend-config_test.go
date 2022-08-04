@@ -107,15 +107,6 @@ var _ = Describe("newForDeployment", func() {
 	})
 
 	It("supports hosted workspace config", func() {
-		GinkgoT().Setenv("HOSTED_SERVICE_SECRET", "password")
-		config, err := newForDeployment(deployment.HostedType, nil)
-
-		Expect(err).To(BeNil())
-		_, ok := config.(*HostedWorkspacesConfig)
-		Expect(ok).To(BeTrue())
-	})
-
-	It("supports hosted workspace config", func() {
 		GinkgoT().Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 		config, err := newForDeployment(deployment.MultiTenantType, nil)
 

@@ -58,7 +58,7 @@ var (
 				testRequest, err := http.NewRequest("GET", server.URL, http.NoBody)
 				Expect(err).To(BeNil())
 				mockHttp.EXPECT().NewRequestWithContext(
-					ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil,
+					ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody,
 				).Return(testRequest, nil).Times(1)
 
 				config, err := backendConfig.Get(ctx, "")
@@ -68,7 +68,7 @@ var (
 			It("Expect to make the correct actions if fail to create the request", func() {
 				configFromFile = false
 				configBackendURL = "http://rudderstack.com"
-				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
+				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody).Return(nil, errors.New("TestError")).AnyTimes()
 				mockLogger.EXPECT().Warnf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 				config, err := backendConfig.Get(ctx, "")
@@ -81,7 +81,7 @@ var (
 				configBackendURL = ""
 				Http = mockHttp
 				testRequest, _ := http.NewRequest("GET", "", http.NoBody)
-				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
+				mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody).Return(testRequest, nil).AnyTimes()
 				mockLogger.EXPECT().Warnf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 				config, err := backendConfig.Get(ctx, "")

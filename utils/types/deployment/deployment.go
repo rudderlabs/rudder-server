@@ -9,9 +9,7 @@ import (
 type Type string // skipcq: RVV-B0009
 
 const (
-	DedicatedType Type = "DEDICATED"
-	// HostedType is DEPRECATED: Use MultiTenantType instead
-	HostedType      Type = "HOSTED"
+	DedicatedType   Type = "DEDICATED"
 	MultiTenantType Type = "MULTITENANT"
 )
 
@@ -20,11 +18,7 @@ const defaultClusterType = DedicatedType
 func GetFromEnv() (Type, error) {
 	t := Type(config.GetEnv("DEPLOYMENT_TYPE", ""))
 	if t == "" {
-		if config.GetEnvAsBool("HOSTED_SERVICE", false) {
-			t = HostedType
-		} else {
-			t = defaultClusterType
-		}
+		t = defaultClusterType
 	}
 	if !t.Valid() {
 		return "", fmt.Errorf("Invalid deployment type: %q", t)
@@ -34,7 +28,7 @@ func GetFromEnv() (Type, error) {
 }
 
 func (t Type) Valid() bool {
-	if t == DedicatedType || t == HostedType || t == MultiTenantType {
+	if t == DedicatedType || t == MultiTenantType {
 		return true
 	}
 	return false

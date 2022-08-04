@@ -81,7 +81,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
+	case deployment.DedicatedType:
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
 			modeProvider = state.NewStaticProvider(servermode.NormalMode)
