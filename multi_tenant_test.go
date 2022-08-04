@@ -150,6 +150,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer cancel()
 		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
 		cmd.Env = os.Environ()
 
@@ -176,13 +177,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		}
 		t.Log("main.go exited")
 	}()
-	t.Cleanup(func() {
-		t.Log("Running cleanup")
-		cancel()
-		t.Log("Context canceled")
-		<-done
-		t.Log("Cleanup done")
-	})
+	t.Cleanup(func() { cancel(); <-done })
 
 	// The Gateway will not become healthy until we trigger a valid configuration via ETCD
 	healthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
