@@ -8,7 +8,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -74,8 +73,7 @@ const (
 )
 
 var (
-	jobsDB     *JobsDBResource
-	jobsDBLock sync.RWMutex
+	jobsDB *JobsDBResource
 )
 
 const (
@@ -133,12 +131,6 @@ func initialize() {
 }
 
 func initJobsDB() {
-	jobsDBLock.Lock()
-	defer jobsDBLock.Unlock()
-
-	if jobsDB != nil {
-		return
-	}
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 }
@@ -168,14 +160,24 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 func enhanceJobsDBWithSQLFunctions() {
 	var err error
 
-	_, err = jobsDB.DB.Exec(GWJobsForUserIdWriteKey())
+	txn, err := jobsDB.DB.Begin()
 	if err != nil {
-		log.Panicf("error occurred with executing gw jobs function for events count with err %v", err.Error())
+		log.Panicf("error occurred with creating transactions for jobs function with err %v", err.Error())
 	}
 
-	_, err = jobsDB.DB.Exec(BRTJobsForUserId())
+	_, err = txn.Exec(GWJobsForUserIdWriteKey())
 	if err != nil {
-		log.Panicf("error occurred with executing brt jobs function for events count with err %s", err.Error())
+		log.Panicf("error occurred with executing gw jobs function with err %v", err.Error())
+	}
+
+	_, err = txn.Exec(BRTJobsForUserId())
+	if err != nil {
+		log.Panicf("error occurred with executing brt jobs function with err %s", err.Error())
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		log.Panicf("error occurred with commiting txn with err %s", err.Error())
 	}
 }
 
