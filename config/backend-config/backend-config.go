@@ -208,20 +208,24 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 				eb:               pubsub.New(),
 			},
 		}
-	case deployment.HostedType:
-		backendConfig = &HostedWorkspacesConfig{
-			CommonBackendConfig: CommonBackendConfig{
-				eb: pubsub.New(),
-			},
-		}
 	case deployment.MultiTenantType:
-		backendConfig = &MultiTenantWorkspacesConfig{
-			CommonBackendConfig: CommonBackendConfig{
-				configEnvHandler: configEnvHandler,
-				eb:               pubsub.New(),
-			},
+		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
+		if isNamespaced {
+			backendConfig = &NamespaceConfig{
+				CommonBackendConfig: CommonBackendConfig{
+					configEnvHandler: configEnvHandler,
+					eb:               pubsub.New(),
+				},
+			}
+		} else {
+			// DEPRECATED: This is the old way of configuring multi-tenant.
+			backendConfig = &MultiTenantWorkspacesConfig{
+				CommonBackendConfig: CommonBackendConfig{
+					configEnvHandler: configEnvHandler,
+					eb:               pubsub.New(),
+				},
+			}
 		}
-	// Fallback to dedicated
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
 	}

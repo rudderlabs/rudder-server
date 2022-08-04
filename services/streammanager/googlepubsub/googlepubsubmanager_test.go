@@ -13,6 +13,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
@@ -39,12 +40,12 @@ func Test_Timeout(t *testing.T) {
 		TestConfig: testConfig,
 	}
 
-	client, err := NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %s.", err)
 	}
 	json := `{"topicId": "my-topic", "message": "{}"}`
-	statusCode, respStatus, responseMessage := Produce([]byte(json), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(json), nil)
 
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {
@@ -71,10 +72,10 @@ func TestUnsupportedCredentials(t *testing.T) {
 		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}
 
-	_, err := NewProducer(config, Opts{})
+	_, err := NewProducer(config, common.Opts{})
 
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
 
 func TestMain(m *testing.M) {
