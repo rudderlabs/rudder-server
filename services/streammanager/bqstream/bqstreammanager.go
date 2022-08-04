@@ -24,12 +24,6 @@ type Config struct {
 	TableId     string `json:"tableId"`
 }
 
-type Credentials struct {
-	Email      string `json:"client_email"`
-	PrivateKey string `json:"private_key"`
-	TokenUrl   string `json:"token_uri"`
-}
-
 type Client struct {
 	bqClient *bigquery.Client
 	opts     common.Opts
@@ -59,7 +53,6 @@ type BQStreamProducer struct {
 
 func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
-	var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
@@ -68,23 +61,17 @@ func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProduce
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
-	var confCreds []byte
-	if config.Credentials == "" {
-		return nil, createErr(err, "credentials not being sent")
-	}
-	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
-		return nil, createErr(err, "incompatible credentials")
-	}
-	confCreds = []byte(config.Credentials)
-	err = json.Unmarshal(confCreds, &credentialsFile)
-	if err != nil {
-		return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-	}
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON([]byte(config.Credentials)),
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
+	}
+	if !googleutils.ShouldSkipCredentialsInit(config.Credentials) {
+		confCreds := []byte(config.Credentials)
+		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
+			return nil, createErr(err, "incompatible credentials")
+		}
+		opts = append(opts, option.WithCredentialsJSON(confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 	if err != nil {

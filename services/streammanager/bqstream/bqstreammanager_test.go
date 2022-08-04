@@ -107,3 +107,31 @@ func TestUnsupportedCredentials(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "incompatible credentials")
 }
+
+func TestInvalidCredentials(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
+	pkgLogger = mockLogger
+
+	var bqCredentials BigQueryCredentials
+	var err error
+	err = json.Unmarshal(
+		[]byte(`{
+			"projectID": "my-project",
+			"credentials": {
+				"somekey": {
+				}
+			}
+		}`), &bqCredentials)
+	assert.NoError(t, err)
+	credentials, _ := json.Marshal(bqCredentials.Credentials)
+	config := Config{
+		Credentials: string(credentials),
+		ProjectId:   bqCredentials.ProjectID,
+	}
+	_, err = NewProducer(config, Opts{Timeout: 1 * time.Microsecond})
+
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "bigquery: constructing client: missing 'type' field in credentials")
+}
