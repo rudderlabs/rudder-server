@@ -208,13 +208,6 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 				eb:               pubsub.New(),
 			},
 		}
-	// DEPRECATED: MultiTenantType should be used instead
-	case deployment.HostedType:
-		backendConfig = &HostedWorkspacesConfig{
-			CommonBackendConfig: CommonBackendConfig{
-				eb: pubsub.New(),
-			},
-		}
 	case deployment.MultiTenantType:
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
@@ -233,7 +226,6 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 				},
 			}
 		}
-	// Fallback to dedicated
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
 	}

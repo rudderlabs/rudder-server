@@ -1368,6 +1368,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
 	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+	srvMux.HandleFunc("/", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")

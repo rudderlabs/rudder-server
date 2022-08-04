@@ -236,9 +236,8 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
 
-	switch deploymentType {
-	case deployment.HostedType, deployment.MultiTenantType:
-		// For specific deployment types we shall require the existence of a SHARED_DB
+	if deploymentType == deployment.MultiTenantType {
+		// For multitenant deployment type we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
 		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
 			return nil, fmt.Errorf("deployment type %s requires SHARED_DB_DSN to be provided", deploymentType)

@@ -19,7 +19,7 @@ func TestRetryWith(t *testing.T) {
 
 	t.Run("error returned after maximum retry i.e. 3", func(t *testing.T) {
 		op := operation{
-			timeout: 2 * time.Millisecond,
+			timeout: time.Second,
 		}
 		err := misc.RetryWith(context.Background(), time.Millisecond, 3, op.do)
 		require.Error(t, err)
@@ -29,7 +29,7 @@ func TestRetryWith(t *testing.T) {
 
 	t.Run("parent context canceled", func(t *testing.T) {
 		op := operation{
-			timeout: 2 * time.Millisecond,
+			timeout: time.Second,
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -42,7 +42,7 @@ func TestRetryWith(t *testing.T) {
 
 	t.Run("1st attempt failed & 2nd attempt succeeded", func(t *testing.T) {
 		op := operation{
-			timeout:             2 * time.Millisecond,
+			timeout:             time.Second,
 			timeoutAfterAttempt: 1,
 		}
 		err := misc.RetryWith(context.Background(), time.Millisecond, 3, op.do)

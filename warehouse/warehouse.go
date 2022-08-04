@@ -118,6 +118,7 @@ type HandleT struct {
 	destType                          string
 	warehouses                        []warehouseutils.WarehouseT
 	dbHandle                          *sql.DB
+	warehouseDBHandle                 *DB
 	notifier                          pgnotifier.PgNotifierT
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -574,13 +575,17 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (uploadID int64, status string, priority int) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, COALESCE(metadata->>'priority', '100')::int FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploadID, &status, &priority)
-	if err != nil && err != sql.ErrNoRows {
+func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.WarehouseT) (int64, string, int) {
+	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
+		context.TODO(),
+		warehouse.Type,
+		warehouse.Source.ID,
+		warehouse.Destination.ID)
+	if err != nil {
 		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 	}
-	return
+
+	return uploadID, status, priority
 }
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
@@ -615,7 +620,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
+	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
@@ -1069,6 +1074,9 @@ func (wh *HandleT) setInterruptedDestinations() {
 func (wh *HandleT) Setup(whType string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
+	// We now have access to the warehouseDBHandle through
+	// which we will be running the db calls.
+	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
