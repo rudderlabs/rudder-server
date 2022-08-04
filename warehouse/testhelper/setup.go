@@ -72,9 +72,7 @@ const (
 	ConnectBackoffRetryMax = 5
 )
 
-var (
-	jobsDB *JobsDBResource
-)
+var jobsDB *JobsDBResource
 
 const (
 	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
