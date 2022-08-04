@@ -2148,7 +2148,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 			  s.job_state as jobState,
 			  j.workspace_id as workspace
 			from
-			  "%[1]s" j
+			  %[1]q j
 			  left join (
 				select * from (select
 					  *,
@@ -2158,7 +2158,7 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 						  rs.id DESC
 					  ) AS row_no
 					FROM
-					  "%[2]s" as rs) nq1
+					  %[2]q as rs) nq1
 				  where
 				  nq1.row_no = 1
 
@@ -2546,10 +2546,10 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
                                 	job_latest_state.exec_time, job_latest_state.retry_time,
                                 	job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                  FROM
-                                	"%[1]s" AS jobs,
+                                	%[1]q AS jobs,
                                 	(SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                		error_code, error_response,parameters FROM "%[2]s" WHERE id IN
-                                		(SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
+                                		error_code, error_response,parameters FROM %[2]q WHERE id IN
+                                		(SELECT MAX(id) from %[2]q GROUP BY job_id) %[3]s)
                                 	AS job_latest_state
                                 WHERE jobs.job_id=job_latest_state.job_id`,
 			ds.JobTable, ds.JobStatusTable, stateQuery)
@@ -2568,10 +2568,10 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 									job_latest_state.exec_time, job_latest_state.retry_time,
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
 								FROM
-									"%[1]s" AS jobs,
+									%[1]q AS jobs,
 									(SELECT job_id, job_state, attempt, exec_time, retry_time,
-										error_code, error_response, parameters FROM "%[2]s" WHERE id IN
-										(SELECT MAX(id) from "%[2]s" GROUP BY job_id) %[3]s)
+										error_code, error_response, parameters FROM %[2]q WHERE id IN
+										(SELECT MAX(id) from %[2]q GROUP BY job_id) %[3]s)
 									AS job_latest_state
 								WHERE jobs.job_id=job_latest_state.job_id
 									%[4]s %[5]s
@@ -2703,8 +2703,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 				`	pg_column_size(jobs.event_payload) as payload_size, `+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				`FROM "%[1]s" AS jobs `+
-				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
+				`FROM %[1]q AS jobs `+
+				`LEFT JOIN %[2]q AS job_status ON jobs.job_id=job_status.job_id `+
 				`WHERE job_status.job_id is NULL `,
 			ds.JobTable, ds.JobStatusTable)
 	} else {
@@ -2713,8 +2713,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 				`	pg_column_size(jobs.event_payload) as payload_size, `+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				` FROM "%[1]s" AS jobs `+
-				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM "%[2]s" AS job_status)`,
+				` FROM %[1]q AS jobs `+
+				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM %[2]q AS job_status)`,
 			ds.JobTable, ds.JobStatusTable)
 	}
 
@@ -3286,8 +3286,8 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							job_status.error_response,
 							job_status.parameters AS status_parameters
 						FROM
-							"%[1]s" "job_status"
-							INNER JOIN "%[2]s" "job" ON job_status.job_id = job.job_id
+							%[1]q "job_status"
+							INNER JOIN %[2]q "job" ON job_status.job_id = job.job_id
 						WHERE
 							job_status.job_state IN ('%[3]s', '%[4]s')
 						ORDER BY
@@ -3324,7 +3324,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 				SELECT
 					*
 				FROM
-					"%[1]s"
+					%[1]q
 				ORDER BY
 					job_id ASC
 				LIMIT
@@ -3373,7 +3373,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 							SELECT
 								*
 							FROM
-								"%[1]s" job
+								%[1]q job
 							ORDER BY
 								job_id ASC
 							LIMIT
@@ -4248,13 +4248,13 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 
 	var sqlStatement string
 	if customValQuery == "" && sourceQuery == "" {
-		sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s" WHERE id IN
-                                                   (SELECT MAX(id) from "%[1]s" GROUP BY job_id) %[2]s
+		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
+                                                   (SELECT MAX(id) from %[1]q GROUP BY job_id) %[2]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, stateQuery)
 	} else {
-		sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s" WHERE id IN
-                                                   (SELECT MAX(id) from "%[1]s" where job_id IN (SELECT job_id from "%[2]s" %[4]s %[5]s) GROUP BY job_id) %[3]s
+		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
+                                                   (SELECT MAX(id) from %[1]q where job_id IN (SELECT job_id from %[2]q %[4]s %[5]s) GROUP BY job_id) %[3]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, ds.JobTable, stateQuery, customValQuery, sourceQuery)
 	}
