@@ -328,16 +328,16 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 	ch = make(chan []ResponseT)
 
 	// Using transactions for bulk copying
-	txn, err := notifier.dbHandle.Begin()
-	if err != nil {
-		return
-	}
+	//txn, err := notifier.dbHandle.Begin()
+	//if err != nil {
+	//	return
+	//}
 	defer func() {
 		if err != nil {
-			if rollbackErr := txn.Rollback(); rollbackErr != nil {
-				pkgLogger.Error(err.Error())
-				pkgLogger.Error(rollbackErr.Error())
-			}
+			//if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			//	pkgLogger.Error(err.Error())
+			//	pkgLogger.Error(rollbackErr.Error())
+			//}
 		}
 	}()
 
@@ -362,7 +362,7 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 			return
 		}
 
-		_, err = txn.Exec(sqlStatement, []interface{}{
+		_, err = notifier.dbHandle.Exec(sqlStatement, []interface{}{
 			batchID,
 			WaitingState,
 			string(payloadJSON),
@@ -382,11 +382,11 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 	//	return
 	//}
 
-	err = txn.Commit()
-	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
-		return
-	}
+	//err = txn.Commit()
+	//if err != nil {
+	//	pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+	//	return
+	//}
 
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
