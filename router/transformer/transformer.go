@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	netUrl "net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -34,6 +34,7 @@ const (
 type HandleT struct {
 	tr                                 *http.Transport
 	client                             *http.Client
+	tfProxyClient                      *http.Client
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
 	transformerProxyRequestTime        stats.RudderStats
@@ -42,7 +43,7 @@ type HandleT struct {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Setup()
+	Setup(timeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string)
 }
@@ -186,40 +187,19 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (int, string) {
 	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, destName, jobId)
-	rawJSON, err := jsonfast.Marshal(responseData)
+	payload, err := jsonfast.Marshal(responseData)
 	if err != nil {
 		panic(err)
 	}
 
-	var respData []byte
-	var respCode int
+	rdl_time := time.Now()
+	respData, respCode, requestError := trans.makeHTTPRequest(ctx, payload, destName, jobId)
+	reqSuccessStr := strconv.FormatBool(requestError == nil)
+	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
+	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
 
-	url := getProxyURL(destName)
-	payload := rawJSON
-
-	operation := func() error {
-		var requestError error
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request operation method - %[1]v`, destName, jobId)
-		// start
-		rdl_time := time.Now()
-		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName, jobId)
-		reqSuccessStr := strconv.FormatBool(requestError == nil)
-		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
-		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} RespData - %[3]v, RespCode - %[4]v `, destName, jobId, string(respData), respCode)
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request operation ended - %[1]v`, destName, jobId)
-		// end
-		return requestError
-	}
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
-	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request for proxy to URL:: %[3]v, Error:: %+[4]v retrying after:: %[5]v,", destName, jobId, url, err, t)
-		stats.NewTaggedStat("transformer_proxy.retries", stats.CountType, stats.Tags{"destination": destName}).Increment()
-	})
-
-	if err != nil {
-		return http.StatusGatewayTimeout, fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, responseData.RequestMethod, responseData.URL)
+	if requestError != nil {
+		return respCode, requestError.Error()
 	}
 
 	// Detecting content type of the respBody
@@ -266,27 +246,34 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 }
 
 // is it ok to use same client for network and transformer calls? need to understand timeout setup in router
-func (trans *HandleT) Setup() {
+func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
+	// This client is to be used for proxy request
+	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: 2 * netClientTimeout}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, destName string, jobId int64) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, payload []byte, destName string, jobId int64) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	proxyUrl := getProxyURL(destName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
 		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Make use of this header to set timeout in the transfomer's http client
+	// The header name may be worked out ?
+	trans.logger.Infof("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt(trans.tfProxyClient.Timeout.Milliseconds()/2, 10))
+	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyClient.Timeout.Milliseconds()/2, 10))
 
 	httpReqStTime := time.Now()
-	resp, err := trans.client.Do(req)
+	resp, err := trans.tfProxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
@@ -294,10 +281,20 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 		"destination": destName,
 	}).SendTiming(reqRoundTripTime)
 
-	if err != nil {
+	if err, ok := err.(*netUrl.Error); ok && err.Timeout() {
+		// A timeout error occurred
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusBadRequest, err
+		return []byte{}, http.StatusGatewayTimeout, err
+	} else if err != nil {
+		// This was an error, but not a timeout
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
+		return []byte{}, http.StatusInternalServerError, err
 	}
+
+	// if err != nil {
+	// 	trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
+	// 	return []byte{}, http.StatusBadRequest, err
+	// }
 
 	// error handling if body is missing
 	if resp.Body == nil {
