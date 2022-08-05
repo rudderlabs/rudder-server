@@ -16,14 +16,15 @@ import (
 	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
 
-var (
-	workspaceId            = "testWordSpaceId"
-	SampleWorkspaceSources = map[string]ConfigT{
-		workspaceId: sampleBackendConfig,
-	}
-)
-
 var _ = Describe("workspace-config", func() {
+	var (
+		backendConfig          *commonBackendConfig
+		workspaceId            = "testWordSpaceId"
+		SampleWorkspaceSources = map[string]ConfigT{
+			workspaceId: sampleBackendConfig,
+		}
+	)
+
 	BeforeEach(func() {
 		backendConfig = &commonBackendConfig{
 			workspaceConfig: &MultiTenantWorkspacesConfig{
@@ -36,7 +37,6 @@ var _ = Describe("workspace-config", func() {
 	})
 	AfterEach(func() {
 		ctrl.Finish()
-		backendConfig = originalBackendConfig
 		Http = originalHttp
 		pkgLogger = originalLogger
 	})
@@ -60,7 +60,7 @@ var _ = Describe("workspace-config", func() {
 			Http = mockHttp
 		})
 		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 1", func() {
-			backendConfig.(*commonBackendConfig).workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
+			backendConfig.workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("multitenantWorkspaceSecret"))
@@ -89,7 +89,7 @@ var _ = Describe("workspace-config", func() {
 		})
 
 		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 2", func() {
-			backendConfig.(*commonBackendConfig).workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
+			backendConfig.workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")
