@@ -64,7 +64,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
-	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
+	config.RegisterInt64ConfigVariable(3, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
 }
 
 func Init() {
@@ -219,7 +219,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	})
 
 	if err != nil {
-		panic(fmt.Errorf("[TransformerProxy] Proxy request failed after max retries Error:: %+v", err))
+		return http.StatusGatewayTimeout, fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, responseData.RequestMethod, url)
 	}
 
 	// Detecting content type of the respBody
