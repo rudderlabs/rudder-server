@@ -5,6 +5,7 @@
 package mocks_jobsdb
 
 import (
+	context "context"
 	sql "database/sql"
 	json "encoding/json"
 	reflect "reflect"
@@ -228,87 +229,87 @@ func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
 }
 
 // Store mocks base method.
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
+func (m *MockJobsDB) Store(arg0 context.Context, arg1 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Store", arg0)
+	ret := m.ctrl.Call(m, "Store", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Store indicates an expected call of Store.
-func (mr *MockJobsDBMockRecorder) Store(arg0 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) Store(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0, arg1)
 }
 
 // StoreInTx mocks base method.
-func (m *MockJobsDB) StoreInTx(arg0 jobsdb.StoreSafeTx, arg1 []*jobsdb.JobT) error {
+func (m *MockJobsDB) StoreInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreInTx", arg0, arg1)
+	ret := m.ctrl.Call(m, "StoreInTx", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // StoreInTx indicates an expected call of StoreInTx.
-func (mr *MockJobsDBMockRecorder) StoreInTx(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) StoreInTx(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreInTx", reflect.TypeOf((*MockJobsDB)(nil).StoreInTx), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreInTx", reflect.TypeOf((*MockJobsDB)(nil).StoreInTx), arg0, arg1, arg2)
 }
 
 // StoreWithRetryEach mocks base method.
-func (m *MockJobsDB) StoreWithRetryEach(arg0 []*jobsdb.JobT) map[uuid.UUID]string {
+func (m *MockJobsDB) StoreWithRetryEach(arg0 context.Context, arg1 []*jobsdb.JobT) map[uuid.UUID]string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreWithRetryEach", arg0)
+	ret := m.ctrl.Call(m, "StoreWithRetryEach", arg0, arg1)
 	ret0, _ := ret[0].(map[uuid.UUID]string)
 	return ret0
 }
 
 // StoreWithRetryEach indicates an expected call of StoreWithRetryEach.
-func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEach", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEach), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEach", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEach), arg0, arg1)
 }
 
 // StoreWithRetryEachInTx mocks base method.
-func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 jobsdb.StoreSafeTx, arg1 []*jobsdb.JobT) map[uuid.UUID]string {
+func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) map[uuid.UUID]string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreWithRetryEachInTx", arg0, arg1)
+	ret := m.ctrl.Call(m, "StoreWithRetryEachInTx", arg0, arg1, arg2)
 	ret0, _ := ret[0].(map[uuid.UUID]string)
 	return ret0
 }
 
 // StoreWithRetryEachInTx indicates an expected call of StoreWithRetryEachInTx.
-func (mr *MockJobsDBMockRecorder) StoreWithRetryEachInTx(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) StoreWithRetryEachInTx(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEachInTx", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEachInTx), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEachInTx", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEachInTx), arg0, arg1, arg2)
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockJobsDB) UpdateJobStatus(arg0 []*jobsdb.JobStatusT, arg1 []string, arg2 []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatus(arg0 context.Context, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatus), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatus), arg0, arg1, arg2, arg3)
 }
 
 // UpdateJobStatusInTx mocks base method.
-func (m *MockJobsDB) UpdateJobStatusInTx(arg0 jobsdb.UpdateSafeTx, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatusInTx(arg0 context.Context, arg1 jobsdb.UpdateSafeTx, arg2 []*jobsdb.JobStatusT, arg3 []string, arg4 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatusInTx indicates an expected call of UpdateJobStatusInTx.
-func (mr *MockJobsDBMockRecorder) UpdateJobStatusInTx(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) UpdateJobStatusInTx(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatusInTx), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatusInTx), arg0, arg1, arg2, arg3, arg4)
 }
 
 // WithStoreSafeTx mocks base method.

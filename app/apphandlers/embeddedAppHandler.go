@@ -183,7 +183,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
+	case deployment.DedicatedType:
 		// FIXME: hacky way to determine server mode
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {

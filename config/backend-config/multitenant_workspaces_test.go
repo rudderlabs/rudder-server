@@ -16,6 +16,13 @@ import (
 	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
 
+var (
+	workspaceId            = "testWordSpaceId"
+	SampleWorkspaceSources = map[string]ConfigT{
+		workspaceId: SampleBackendConfig,
+	}
+)
+
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
 		backendConfig = &MultiTenantWorkspacesConfig{
@@ -65,11 +72,11 @@ var _ = Describe("workspace-config", func() {
 			}))
 			defer server.Close()
 
-			testRequest, _ := http.NewRequest("GET", server.URL, nil)
+			testRequest, _ := http.NewRequest("GET", server.URL, http.NoBody)
 			mockLogger.EXPECT().Debugf("Fetching config from %s", gomock.Any())
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).Times(1)
+					configBackendURL), http.NoBody).Return(testRequest, nil).Times(1)
 
 			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
@@ -88,10 +95,10 @@ var _ = Describe("workspace-config", func() {
 			}))
 			defer server.Close()
 
-			testRequest, _ := http.NewRequest("GET", server.URL, nil)
+			testRequest, _ := http.NewRequest("GET", server.URL, http.NoBody)
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).Times(1)
+					configBackendURL), http.NoBody).Return(testRequest, nil).Times(1)
 
 			mockLogger.EXPECT().Debugf(
 				"Fetching config from %s",
@@ -105,7 +112,7 @@ var _ = Describe("workspace-config", func() {
 		It("Expect to make the correct actions if fail to create the request: Multitenant", func() {
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true",
-					configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
+					configBackendURL), http.NoBody).Return(nil, errors.New("TestError")).AnyTimes()
 			mockLogger.EXPECT().Debugf("Fetching config from %s", gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Errorf("Error sending request to the server: %v", gomock.Eq(errors.New("TestError"))).Times(1)
@@ -114,10 +121,10 @@ var _ = Describe("workspace-config", func() {
 			Expect(err).NotTo(BeNil())
 		})
 		It("Expect to make the correct actions if fail to send the request: Multitenant", func() {
-			testRequest, _ := http.NewRequest("GET", "", nil)
+			testRequest, _ := http.NewRequest("GET", "", http.NoBody)
 			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).AnyTimes()
+					configBackendURL), http.NoBody).Return(testRequest, nil).AnyTimes()
 			mockLogger.EXPECT().Debugf("Fetching config from %s", gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Errorf("Error sending request to the server: %v", gomock.Any()).Times(1)

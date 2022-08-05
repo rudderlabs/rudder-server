@@ -1,30 +1,17 @@
+//go:generate mockgen -destination=../../../mocks/services/streammanager/personalize/mock_personalize.go -package mock_personalize github.com/rudderlabs/rudder-server/services/streammanager/personalize PersonalizeClient
+
 package personalize
 
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 )
-
-type Config struct {
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-}
-
-type Opts struct {
-	Timeout time.Duration
-}
 
 var pkgLogger logger.LoggerI
 
@@ -32,118 +19,85 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
 
-func NewProducer(destinationConfig interface{}, o Opts) (personalizeevents.PersonalizeEvents, error) {
-	var config Config
-	jsonConfig, err := json.Marshal(destinationConfig) // produces json
-	if err != nil {
-		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while marshalling destination config :: %w", err)
-	}
-	err = json.Unmarshal(jsonConfig, &config)
-	if err != nil {
-		return personalizeevents.PersonalizeEvents{}, fmt.Errorf("[Personalize] Error while unmarshalling destination config :: %w", err)
-	}
-	httpClient := &http.Client{
-		Timeout: o.Timeout,
-	}
-	var s *session.Session
-	if config.AccessKeyID == "" || config.SecretAccessKey == "" {
-		s = session.Must(session.NewSession(&aws.Config{
-			Region:     aws.String(config.Region),
-			HTTPClient: httpClient,
-		}))
-	} else {
-		s = session.Must(session.NewSession(&aws.Config{
-			HTTPClient:  httpClient,
-			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, ""),
-		}))
-	}
-	var client *personalizeevents.PersonalizeEvents = personalizeevents.New(s)
-	return *client, nil
+type PersonalizeProducer struct {
+	client PersonalizeClient
 }
 
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessag string) {
-	var resEvent *personalizeevents.PutEventsOutput
-	var resUser *personalizeevents.PutUsersOutput
-	var resItem *personalizeevents.PutItemsOutput
+type PersonalizeClient interface {
+	PutEvents(input *personalizeevents.PutEventsInput) (*personalizeevents.PutEventsOutput, error)
+	PutUsers(input *personalizeevents.PutUsersInput) (*personalizeevents.PutUsersOutput, error)
+	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
+}
+
+func NewProducer(destinationConfig interface{}, o common.Opts) (*PersonalizeProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, personalizeevents.ServiceName)
+	if err != nil {
+		return nil, err
+	}
+	return &PersonalizeProducer{client: personalizeevents.New(awsutils.CreateSession(sessionConfig))}, nil
+}
+
+func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessag string) {
+	client := producer.client
+	if client == nil {
+		return 400, "Could not create producer for Personalize", "Could not create producer for Personalize"
+	}
+	var response interface{}
 	var err error
-	var responseMessage string
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	eventChoice := parsedJSON.Get("choice").String()
-	eventPayload := parsedJSON.Get("payload").String()
+	eventPayload := []byte(parsedJSON.Get("payload").String())
 
-	client, ok := producer.(personalizeevents.PersonalizeEvents)
-	if (!ok || client == personalizeevents.PersonalizeEvents{}) {
-		// return 400 if producer is invalid
-		return 400, "Could not create producer for Personalize", "Could not create producer for Personalize"
-	}
-
-	if len(eventChoice) > 0 {
-		if eventChoice == "PutEvents" {
-			input := personalizeevents.PutEventsInput{}
-			bytes := []byte(eventPayload)
-			err = json.Unmarshal(bytes, &input)
-			if err != nil {
-				return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
-			}
-			resEvent, err = client.PutEvents(&input)
-
-		} else if eventChoice == "PutUsers" {
-			input := personalizeevents.PutUsersInput{}
-			bytes := []byte(eventPayload)
-			err = json.Unmarshal(bytes, &input)
-			if err != nil {
-				return 400, err.Error(), "Could not unmarshal jsonData according to putUsers input structure"
-			}
-			resUser, err = client.PutUsers(&input)
-
-		} else {
-			input := personalizeevents.PutItemsInput{}
-			bytes := []byte(eventPayload)
-			err = json.Unmarshal(bytes, &input)
-			if err != nil {
-				return 400, err.Error(), "Could not unmarshal jsonData according to putItems input structure"
-			}
-			resItem, err = client.PutItems(&input)
-		}
-	} else {
+	switch eventChoice {
+	case "PutEvents":
 		input := personalizeevents.PutEventsInput{}
-		bytes := []byte(jsonData)
-		err = json.Unmarshal(bytes, &input)
+		err = json.Unmarshal(eventPayload, &input)
 		if err != nil {
-			return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
+			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
-		resEvent, err = client.PutEvents(&input)
 
+		if err = input.Validate(); err != nil {
+			return 400, err.Error(), "input does not have required fields"
+		}
+		response, err = client.PutEvents(&input)
+	case "PutUsers":
+		input := personalizeevents.PutUsersInput{}
+		err = json.Unmarshal(eventPayload, &input)
+		if err != nil {
+			return 400, err.Error(), "Could not unmarshal jsonData according to PutUsers input structure"
+		}
+		if err = input.Validate(); err != nil {
+			return 400, err.Error(), "input does not have required fields"
+		}
+		response, err = client.PutUsers(&input)
+	case "PutItems":
+		input := personalizeevents.PutItemsInput{}
+		err = json.Unmarshal(eventPayload, &input)
+		if err != nil {
+			return 400, err.Error(), "Could not unmarshal jsonData according to PutItems input structure"
+		}
+		if err = input.Validate(); err != nil {
+			return 400, err.Error(), "input does not have required fields"
+		}
+		response, err = client.PutItems(&input)
+	default:
+		input := personalizeevents.PutEventsInput{}
+		err = json.Unmarshal(jsonData, &input)
+		if err != nil {
+			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
+		}
+		if err = input.Validate(); err != nil {
+			return 400, err.Error(), "input does not have required fields"
+		}
+		response, err = client.PutEvents(&input)
 	}
+
 	if err != nil {
-		pkgLogger.Errorf("Personalize Error while sending event :: %w", err)
-		// set default status code as 500
-		statusCode := 500
-		// fetching status code from response
-		if reqErr, ok := err.(awserr.RequestFailure); ok {
-			errorMessage := reqErr.Error()
-			if strings.Contains(errorMessage, "Throttling") {
-				// aws returns  "ThrottlingException"
-				// for throttling requests server will retry
-				statusCode = 429
-			} else {
-				// otherwise the original status code is returned
-				statusCode = reqErr.StatusCode()
-			}
-		}
-
-		return statusCode, err.Error(), err.Error()
-	} else {
-		if resEvent != nil {
-			responseMessage = fmt.Sprintf("Message delivered with Record information %v", resEvent)
-		} else if resUser != nil {
-			responseMessage = fmt.Sprintf("Message delivered with Record information %v", resUser)
-		} else {
-			responseMessage = fmt.Sprintf("Message delivered with Record information %v", resItem)
-		}
-		respStatus = "Success"
-		return 200, respStatus, responseMessage
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		pkgLogger.Errorf("[Personalize] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		return statusCode, respStatus, responseMessage
 	}
+
+	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", response)
 }
