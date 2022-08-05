@@ -117,16 +117,19 @@ func StartProcessor(
 	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
 	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service, rsourcesService rsources.JobService,
-) {
+) error {
 	if !processorLoaded.First() {
-		pkgLogger.Debug("processor started by an other go routine")
-		return
+		pkgLogger.Debug("processor started by another go routine")
+		return nil
 	}
 
 	processorInstance := processor.NewProcessor()
-	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting, multitenantStat, transientSources, rsourcesService)
+	processorInstance.Setup(
+		backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB,
+		clearDB, reporting, multitenantStat, transientSources, rsourcesService,
+	)
 	defer processorInstance.Shutdown()
-	processorInstance.Start(ctx)
+	return processorInstance.Start(ctx)
 }
 
 // StartRouter atomically starts router process if not already started
@@ -233,9 +236,8 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
 
-	switch deploymentType {
-	case deployment.HostedType, deployment.MultiTenantType:
-		// For specific deployment types we shall require the existence of a SHARED_DB
+	if deploymentType == deployment.MultiTenantType {
+		// For multitenant deployment type we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
 		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
 			return nil, fmt.Errorf("deployment type %s requires SHARED_DB_DSN to be provided", deploymentType)

@@ -21,7 +21,7 @@ type MigratorFeatureSetup func(Interface) MigratorFeature
 
 // SuppressUserFeature handles webhook event requests
 type SuppressUserFeature interface {
-	Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI
+	Setup(backendConfig backendconfig.BackendConfig) (types.SuppressUserI, error)
 }
 
 /*********************************

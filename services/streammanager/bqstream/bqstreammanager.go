@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"cloud.google.com/go/bigquery"
+
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -23,18 +24,9 @@ type Config struct {
 	TableId     string `json:"tableId"`
 }
 
-type Credentials struct {
-	Email      string `json:"client_email"`
-	PrivateKey string `json:"private_key"`
-	TokenUrl   string `json:"token_uri"`
-}
-
 type Client struct {
 	bqClient *bigquery.Client
-	opts     Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts     common.Opts
 }
 
 // https://stackoverflow.com/questions/55951812/insert-into-bigquery-without-a-well-defined-struct
@@ -55,9 +47,12 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("bqstream")
 }
 
-func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
+type BQStreamProducer struct {
+	client *Client
+}
+
+func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
-	var credentialsFile Credentials
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
@@ -66,33 +61,27 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
-	var confCreds []byte
-	if config.Credentials == "" {
-		return nil, createErr(err, "credentials not being sent")
-	}
-	if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(config.Credentials)); err != nil {
-		return nil, createErr(err, "incompatible credentials")
-	}
-	confCreds = []byte(config.Credentials)
-	err = json.Unmarshal(confCreds, &credentialsFile)
-	if err != nil {
-		return nil, createErr(err, "error in BQStream while unmarshalling credentials json")
-	}
 	opts := []option.ClientOption{
-		option.WithCredentialsJSON([]byte(config.Credentials)),
 		option.WithScopes([]string{
 			gbq.BigqueryInsertdataScope,
 		}...),
+	}
+	if !googleutils.ShouldSkipCredentialsInit(config.Credentials) {
+		confCreds := []byte(config.Credentials)
+		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
+			return nil, createErr(err, "incompatible credentials")
+		}
+		opts = append(opts, option.WithCredentialsJSON(confCreds))
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{bqClient: bqClient, opts: o}, nil
+	return &BQStreamProducer{client: &Client{bqClient: bqClient, opts: o}}, nil
 }
 
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
-	client := producer.(*Client)
+func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	client := producer.client
 	bqClient := client.bqClient
 	o := client.opts
 	parsedJSON := gjson.ParseBytes(jsonData)
@@ -120,9 +109,9 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (status
 	return http.StatusOK, "Success", `[BQStream] Successful insertion of data`
 }
 
-func CloseProducer(producer interface{}) error {
-	client, ok := producer.(*Client)
-	if !ok {
+func (producer *BQStreamProducer) Close() error {
+	client := producer.client
+	if client == nil {
 		return createErr(nil, "error while trying to close the client")
 	}
 	bqClient := client.bqClient

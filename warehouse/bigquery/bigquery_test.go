@@ -17,5 +17,5 @@ func TestUnsupportedCredentials(t *testing.T) {
 	_, err := bigquery.Connect(context.Background(), &credentials)
 
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }

@@ -11,23 +11,19 @@ var _ backendconfig.BackendConfig = &NOOPConfig{}
 
 type NOOPConfig struct{}
 
-func (noop *NOOPConfig) IsConfigured() bool {
-	return true
-}
-
-func (noop *NOOPConfig) AccessToken() string {
+func (*NOOPConfig) AccessToken() string {
 	return ""
 }
 
-func (noop *NOOPConfig) SetUp() {
-	return
+func (*NOOPConfig) SetUp() error {
+	return nil
 }
 
-func (noop *NOOPConfig) Get(_ context.Context, _ string) (backendconfig.ConfigT, error) {
+func (*NOOPConfig) Get(_ context.Context, _ string) (backendconfig.ConfigT, error) {
 	return backendconfig.ConfigT{}, nil
 }
 
-func (noop *NOOPConfig) GetWorkspaceIDForWriteKey(string) string {
+func (*NOOPConfig) GetWorkspaceIDForWriteKey(string) string {
 	return ""
 }
 
@@ -35,15 +31,13 @@ func (noop *NOOPConfig) GetWorkspaceIDForSourceID(_ string) string {
 	return ""
 }
 
-func (noop *NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfig.LibrariesT {
+func (*NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfig.LibrariesT {
 	return backendconfig.LibrariesT{}
 }
 
-func (noop *NOOPConfig) WaitForConfig(_ context.Context) error {
-	return nil
-}
+func (*NOOPConfig) WaitForConfig(_ context.Context) {}
 
-func (noop *NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {
+func (*NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {
 	ch := make(chan pubsub.DataEvent)
 
 	go func() {
@@ -53,10 +47,8 @@ func (noop *NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pu
 	return ch
 }
 
-func (noop *NOOPConfig) StartWithIDs(_ context.Context, _ string) {
-	return
-}
+func (*NOOPConfig) StartWithIDs(_ context.Context, _ string) {}
 
-func (noop *NOOPConfig) Stop() {
+func (*NOOPConfig) Stop() {
 	return
 }
