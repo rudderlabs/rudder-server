@@ -42,7 +42,7 @@ type MultiTenantI interface {
 }
 
 type lifecycle interface {
-	Start()
+	Start() error
 	Stop()
 }
 
@@ -51,7 +51,7 @@ func (*Stats) Stop() {
 	metric.GetManager().Reset()
 }
 
-func (t *Stats) Start() {
+func (t *Stats) Start() error {
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
@@ -68,6 +68,7 @@ func (t *Stats) Start() {
 
 	t.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
 	t.processorStageTime = time.Now()
+	return nil
 }
 
 type workspaceScore struct {

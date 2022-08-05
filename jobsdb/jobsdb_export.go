@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -84,7 +85,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		}
 
 		var updatedStates map[string][]string
-		updatedStates, txErr = jd.updateJobStatusDSInTx(txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
+		updatedStates, txErr = jd.updateJobStatusDSInTx(context.TODO(), txn, ds, statusList, statTags{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
 		}
@@ -223,7 +224,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 
 	var updatedStatesMap map[dataSetT]map[string][]string
-	updatedStatesMap, err = jd.doUpdateJobStatusInTx(txn, statusList, statTags{})
+	updatedStatesMap, err = jd.doUpdateJobStatusInTx(context.TODO(), txn, statusList, statTags{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)

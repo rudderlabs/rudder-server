@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -89,7 +90,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		switch customManager.managerType {
 		case STREAM:
 			var producer interface{}
-			producer, err = streammanager.NewProducer(destConfig, customManager.destType, streammanager.Opts{
+			producer, err = streammanager.NewProducer(destConfig, customManager.destType, common.Opts{
 				Timeout: customManager.timeout,
 			})
 			if err == nil {
@@ -190,7 +191,7 @@ func (customManager *CustomManagerT) close(destID string) {
 	customDestination := customManager.client[destID]
 	switch customManager.managerType {
 	case STREAM:
-		_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
+		_ = streammanager.Close(customDestination.client, customManager.destType)
 	case KV:
 		kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 		_ = kvManager.Close()
@@ -205,7 +206,7 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
 		switch customManager.managerType {
 		case STREAM:
-			_ = streammanager.CloseProducer(customDestination.client, customManager.destType)
+			_ = streammanager.Close(customDestination.client, customManager.destType)
 		case KV:
 			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 			_ = kvManager.Close()

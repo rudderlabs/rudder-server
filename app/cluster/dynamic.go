@@ -26,7 +26,7 @@ type ChangeEventProvider interface {
 }
 
 type lifecycle interface {
-	Start()
+	Start() error
 	Stop()
 }
 
@@ -34,7 +34,7 @@ type lifecycle interface {
 type configLifecycle interface {
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-	WaitForConfig(ctx context.Context) error
+	WaitForConfig(ctx context.Context)
 }
 
 type Dynamic struct {
@@ -126,39 +126,49 @@ func (d *Dynamic) Run(ctx context.Context) error {
 
 			d.logger.Infof("Got trigger to change workspaceIDs: %q", ids)
 			err := d.handleWorkspaceChange(ctx, ids)
+			if ackErr := req.Ack(ctx, err); ackErr != nil {
+				return fmt.Errorf("ack workspaceIDs change with error: %v: %w", err, ackErr)
+			}
 			if err != nil {
 				d.logger.Debugf("Could not handle workspaceIDs change: %v", err)
-				if ackErr := req.Ack(ctx, err); ackErr != nil {
-					return fmt.Errorf("ack workspaceIDs change with error: %v: %w", err, ackErr)
-				}
 				return err
 			}
 
-			d.logger.Debugf("Acknowledging the workspaceIDs change")
-			if err := req.Ack(ctx, nil); err != nil {
-				return fmt.Errorf("ack workspaceIDs change: %w", err)
-			}
+			d.logger.Debug("WorkspaceIDs changed")
 		}
 	}
 }
 
-func (d *Dynamic) start() {
+func (d *Dynamic) start() error {
 	if d.GatewayComponent {
-		return
+		return nil
 	}
 	d.logger.Info("Starting the server")
 	start := time.Now()
-	d.ErrorDB.Start()
-	d.GatewayDB.Start()
-	d.RouterDB.Start()
-	d.BatchRouterDB.Start()
-
-	d.MultiTenantStat.Start()
-
-	d.Processor.Start()
-	d.Router.Start()
+	if err := d.ErrorDB.Start(); err != nil {
+		return fmt.Errorf("error db start: %w", err)
+	}
+	if err := d.GatewayDB.Start(); err != nil {
+		return fmt.Errorf("gateway db start: %w", err)
+	}
+	if err := d.RouterDB.Start(); err != nil {
+		return fmt.Errorf("router db start: %w", err)
+	}
+	if err := d.BatchRouterDB.Start(); err != nil {
+		return fmt.Errorf("batch router db start: %w", err)
+	}
+	if err := d.MultiTenantStat.Start(); err != nil {
+		return fmt.Errorf("multi tenant stat start: %w", err)
+	}
+	if err := d.Processor.Start(); err != nil {
+		return fmt.Errorf("processor start: %w", err)
+	}
+	if err := d.Router.Start(); err != nil {
+		return fmt.Errorf("router start: %w", err)
+	}
 	d.serverStartTimeStat.SendTiming(time.Since(start))
 	d.serverStartCountStat.Increment()
+	return nil
 }
 
 func (d *Dynamic) stop() {
@@ -181,13 +191,11 @@ func (d *Dynamic) stop() {
 }
 
 func (d *Dynamic) handleWorkspaceChange(ctx context.Context, workspaces string) error {
-	if d.currentWorkspaceIDs == workspaces {
-		return nil
-	}
 	d.BackendConfig.Stop()
 	d.BackendConfig.StartWithIDs(ctx, workspaces)
 	d.currentWorkspaceIDs = workspaces
-	return d.BackendConfig.WaitForConfig(ctx)
+	d.BackendConfig.WaitForConfig(ctx)
+	return nil
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
@@ -210,16 +218,19 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 			d.logger.Info("Transiting the server from NormalMode to DegradedMode")
 			d.stop()
 		default:
-			d.logger.Errorf("Unsupported transition from NormalMode to %s \n", newMode)
+			d.logger.Errorf("Unsupported transition from NormalMode to %s", newMode)
 			return fmt.Errorf("unsupported transition from NormalMode to %s", newMode)
 		}
 	case servermode.DegradedMode:
 		switch newMode {
 		case servermode.NormalMode:
 			d.logger.Info("Transiting the server from DegradedMode to NormalMode")
-			d.start()
+			if err := d.start(); err != nil {
+				d.logger.Errorf("Failed to start the server: %v", err)
+				return fmt.Errorf("failed to start the server: %w", err)
+			}
 		default:
-			d.logger.Errorf("Unsupported transition from DegradedMode to %s \n", newMode)
+			d.logger.Errorf("Unsupported transition from DegradedMode to %s", newMode)
 			return fmt.Errorf("unsupported transition from DegradedMode to %s", newMode)
 		}
 	}

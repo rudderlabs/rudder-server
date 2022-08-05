@@ -23,6 +23,10 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/lib/pq"
+	"github.com/thoas/go-funk"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -41,9 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/thoas/go-funk"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -117,6 +118,7 @@ type HandleT struct {
 	destType                          string
 	warehouses                        []warehouseutils.WarehouseT
 	dbHandle                          *sql.DB
+	warehouseDBHandle                 *DB
 	notifier                          pgnotifier.PgNotifierT
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -573,13 +575,17 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (uploadID int64, status string, priority int) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, COALESCE(metadata->>'priority', '100')::int FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploadID, &status, &priority)
-	if err != nil && err != sql.ErrNoRows {
+func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.WarehouseT) (int64, string, int) {
+	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
+		context.TODO(),
+		warehouse.Type,
+		warehouse.Source.ID,
+		warehouse.Destination.ID)
+	if err != nil {
 		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 	}
-	return
+
+	return uploadID, status, priority
 }
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
@@ -614,7 +620,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
+	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
@@ -1068,6 +1074,9 @@ func (wh *HandleT) setInterruptedDestinations() {
 func (wh *HandleT) Setup(whType string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
+	// We now have access to the warehouseDBHandle through
+	// which we will be running the db calls.
+	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
@@ -1601,7 +1610,10 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		dbService = "UP"
 	}
 
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","pgNotifier":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
+	healthVal := fmt.Sprintf(
+		`{"server":"UP","db":%q,"pgNotifier":%q,"acceptingEvents":"TRUE","warehouseMode":%q,"goroutines":"%d"}`,
+		dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine(),
+	)
 	w.Write([]byte(healthVal))
 }
 
@@ -1623,9 +1635,8 @@ func startWebHandler(ctx context.Context) error {
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
-			if err := backendconfig.DefaultBackendConfig.WaitForConfig(ctx); err != nil {
-				return err
-			}
+			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			mux.HandleFunc("/v1/process", processHandler)
 			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
 			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
