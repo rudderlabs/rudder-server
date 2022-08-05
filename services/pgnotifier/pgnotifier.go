@@ -11,7 +11,6 @@ import (
 
 	"github.com/allisson/go-pglock/v2"
 	"github.com/gofrs/uuid"
-	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -342,19 +341,20 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 		}
 	}()
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
-	if err != nil {
-		return
-	}
-	defer func() {
-		_ = stmt.Close()
-	}()
+	//stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
+	//if err != nil {
+	//	return
+	//}
+	//defer func() {
+	//	_ = stmt.Close()
+	//}()
 
 	var (
 		batchID     = uuid.Must(uuid.NewV4()).String()
 		payloadJSON []byte
 	)
 
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (batch_id, status, payload, workspace, priority) VALUES ($1, $2, $3, $4, $5) `, queueName)
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
 		payloadJSON, err = json.Marshal(job)
@@ -362,7 +362,13 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 			return
 		}
 
-		_, err = stmt.Exec(batchID, WaitingState, string(payloadJSON), notifier.workspaceIdentifier, priority)
+		_, err = txn.Exec(sqlStatement, []interface{}{
+			batchID,
+			WaitingState,
+			string(payloadJSON),
+			notifier.workspaceIdentifier,
+			priority,
+		}...)
 		if err != nil {
 			return
 		}
@@ -370,11 +376,11 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 		// setting payloadJSON to nil to release mem allocated
 		payloadJSON = nil
 	}
-	_, err = stmt.Exec()
-	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
-		return
-	}
+	//_, err = stmt.Exec()
+	//if err != nil {
+	//	pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+	//	return
+	//}
 
 	err = txn.Commit()
 	if err != nil {
