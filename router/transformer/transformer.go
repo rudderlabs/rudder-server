@@ -219,7 +219,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	})
 
 	if err != nil {
-		return http.StatusGatewayTimeout, fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, responseData.RequestMethod, url)
+		return http.StatusGatewayTimeout, fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, responseData.RequestMethod, responseData.URL)
 	}
 
 	// Detecting content type of the respBody
