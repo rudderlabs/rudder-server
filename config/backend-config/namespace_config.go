@@ -169,9 +169,7 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	return sourcesJSON, nil
 }
 
-func (nc *NamespaceConfig) makeHTTPRequest(
-	ctx context.Context, url string,
-) ([]byte, int, error) {
+func (nc *NamespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err

@@ -1,4 +1,4 @@
-package backendconfig_test
+package backendconfig
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &backendconfig.NamespaceConfig{}
+		client           = &NamespaceConfig{}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -37,6 +37,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 func Test_Namespace_Get(t *testing.T) {
 	config.Load()
 	logger.Init()
+	Http = sysUtils.NewHttp()
 
 	var (
 		namespace    = "free-us-1"
@@ -54,7 +55,7 @@ func Test_Namespace_Get(t *testing.T) {
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
 
-	client := &backendconfig.NamespaceConfig{
+	client := &NamespaceConfig{
 		Logger: logger.NewLogger(),
 
 		Client:           ts.Client(),
@@ -83,7 +84,7 @@ func Test_Namespace_Get(t *testing.T) {
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,
-			backendconfig.LibrariesT{
+			LibrariesT{
 				{VersionID: "20MirO0IhCtS39Qjva2PSAbA9KM"},
 				{VersionID: "ghi"},
 				{VersionID: "2AWJpFCIGcpZhOrsIp7Kasw72vb"},
@@ -94,7 +95,7 @@ func Test_Namespace_Get(t *testing.T) {
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {
-		client := &backendconfig.NamespaceConfig{
+		client := &NamespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
@@ -110,7 +111,7 @@ func Test_Namespace_Get(t *testing.T) {
 	})
 
 	t.Run("empty namespace", func(t *testing.T) {
-		client := &backendconfig.NamespaceConfig{
+		client := &NamespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
