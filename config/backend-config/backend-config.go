@@ -301,3 +301,11 @@ func (bc *commonBackendConfig) GetWorkspaceLibrariesForWorkspaceID(s string) Lib
 func GetConfigBackendURL() string {
 	return configBackendURL
 }
+
+func getNotOKError(respBody []byte, statusCode int) error {
+	errMsg := ""
+	if len(respBody) > 0 {
+		errMsg = fmt.Sprintf(": %s", respBody)
+	}
+	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
+}

@@ -105,7 +105,7 @@ func Test_Namespace_Get(t *testing.T) {
 		require.NoError(t, client.SetUp())
 
 		c, err := client.Get(context.Background(), "")
-		require.EqualError(t, err, "unexpected status code: 401") // Unauthorized
+		require.EqualError(t, err, `backend config request failed with 401: {"message":"Unauthorized"}`) // Unauthorized
 		require.Empty(t, c)
 	})
 
@@ -121,7 +121,7 @@ func Test_Namespace_Get(t *testing.T) {
 		require.NoError(t, client.SetUp())
 
 		c, err := client.Get(context.Background(), workspaceID1)
-		require.EqualError(t, err, "unexpected status code: 404")
+		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})
 }

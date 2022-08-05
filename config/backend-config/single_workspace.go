@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -148,11 +149,15 @@ func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Contex
 		return nil, http.StatusBadRequest, err
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := IoUtil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		return nil, resp.StatusCode, getNotOKError(respBody, resp.StatusCode)
 	}
 
 	return respBody, resp.StatusCode, nil

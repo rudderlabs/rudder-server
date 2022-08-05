@@ -137,9 +137,6 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
-	if statusCode != http.StatusOK {
-		return ConfigT{}, fmt.Errorf("unexpected status code: %d", statusCode)
-	}
 
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
@@ -175,7 +172,7 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 func (nc *NamespaceConfig) makeHTTPRequest(
 	ctx context.Context, url string,
 ) ([]byte, int, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
@@ -192,6 +189,10 @@ func (nc *NamespaceConfig) makeHTTPRequest(
 	}
 
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		return nil, resp.StatusCode, getNotOKError(respBody, resp.StatusCode)
+	}
 
 	return respBody, resp.StatusCode, nil
 }
