@@ -790,6 +790,7 @@ func (worker *workerT) processDestinationJobs() {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
+			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
 			_destinationJobMetadata := destinationJobMetadata
 
 			routerJobResponses = append(routerJobResponses, &JobResponse{
