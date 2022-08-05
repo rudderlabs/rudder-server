@@ -63,7 +63,6 @@ type BackendConfig interface {
 type commonBackendConfig struct {
 	workspaceConfig   workspaceConfig
 	eb                *pubsub.PublishSubscriber
-	configEnvHandler  types.ConfigEnvI
 	ctx               context.Context
 	cancel            context.CancelFunc
 	blockChan         chan struct{}
