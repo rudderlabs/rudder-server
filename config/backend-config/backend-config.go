@@ -23,7 +23,6 @@ import (
 )
 
 var (
-	backendConfig                         BackendConfig
 	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
@@ -177,18 +176,6 @@ func GetConfig() ConfigT {
 	return curSourceJSON
 }
 
-func GetWorkspaceIDForWriteKey(writeKey string) string {
-	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-}
-
-func GetWorkspaceIDForSourceID(sourceID string) string {
-	return backendConfig.GetWorkspaceIDForSourceID(sourceID)
-}
-
-func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
-	return backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceId)
-}
-
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
@@ -238,7 +225,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err = newForDeployment(deploymentType, configEnvHandler)
+	backendConfig, err := newForDeployment(deploymentType, configEnvHandler)
 	if err != nil {
 		return err
 	}

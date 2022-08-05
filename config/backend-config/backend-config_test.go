@@ -87,6 +87,7 @@ var (
 	mockLogger         *mocklogger.MockLoggerI
 	originalMockPubSub = pubsub.PublishSubscriber{}
 	ctrl               *gomock.Controller
+	backendConfig      BackendConfig
 )
 
 func initBackendConfig() {
