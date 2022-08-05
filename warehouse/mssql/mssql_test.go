@@ -58,12 +58,12 @@ func TestMSSQLIntegration(t *testing.T) {
 			Type: client.SQLClient,
 		},
 
-		WriteKey:                 handle.WriteKey,
-		Schema:                   handle.Schema,
-		Tables:                   handle.Tables,
-		EventsCountMap:           testhelper.DefaultEventMap(),
-		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-		UserId:                   testhelper.GetUserId(warehouseutils.MSSQL),
+		WriteKey:             handle.WriteKey,
+		Schema:               handle.Schema,
+		Tables:               handle.Tables,
+		EventsCountMap:       testhelper.DefaultEventMap(),
+		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+		UserId:               testhelper.GetUserId(warehouseutils.MSSQL),
 	}
 
 	// Scenario 1

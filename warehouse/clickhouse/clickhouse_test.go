@@ -239,7 +239,22 @@ func initializeClickhouseClusterMode(t *testing.T) {
 
 	// Create distribution views for tables
 	for _, table := range handle.Tables {
-		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(toDate(received_at)), id)));", table)
+		sqlStatement := fmt.Sprintf(`
+			CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed(
+			  'rudder_cluster',
+			  rudderdb,
+			  %[1]s_shard,
+			  cityHash64(
+				concat(
+				  toString(
+					toDate(received_at)
+				  ),
+				  id
+				)
+			  )
+			);`,
+			table,
+		)
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 		_, err := clusterDB.Exec(sqlStatement)
@@ -250,7 +265,16 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	for _, clusterDB := range handle.ClusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			for _, columnInfo := range columnInfos {
-				sqlStatement := fmt.Sprintf("ALTER TABLE rudderdb.%[1]s_shard ADD COLUMN IF NOT EXISTS %[2]s %[3]s;", tableName, columnInfo.ColumnName, columnInfo.ColumnType)
+				sqlStatement := fmt.Sprintf(`
+					ALTER TABLE
+					  rudderdb.% [1]s_shard
+					ADD
+					  COLUMN IF NOT EXISTS % [2]s % [3]s;
+				`,
+					tableName,
+					columnInfo.ColumnName,
+					columnInfo.ColumnType,
+				)
 				log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 				_, err := clusterDB.Exec(sqlStatement)
@@ -260,22 +284,22 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	}
 }
 
-func TestClickHouseClusterIntegration(t *testing.T) {
-	t.Parallel()
-
+func TestClickHouseIntegration(t *testing.T) {
 	t.Run("Single Setup", func(t *testing.T) {
+		t.Parallel()
+
 		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
 				SQL:  handle.DB,
 				Type: client.SQLClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-			UserId:                   testhelper.GetUserId(warehouseutils.CLICKHOUSE),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+			UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
 		}
 
 		// Scenario 1
@@ -338,6 +362,8 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 	})
 
 	t.Run("Cluster Mode Setup", func(t *testing.T) {
+		t.Parallel()
+
 		require.NotNil(t, handle.ClusterDBs)
 		require.NotNil(t, handle.ClusterDBs[0])
 
@@ -347,12 +373,12 @@ func TestClickHouseClusterIntegration(t *testing.T) {
 				SQL:  handle.ClusterDBs[0],
 				Type: client.SQLClient,
 			},
-			WriteKey:                 handle.ClusterWriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-			UserId:                   testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
+			WriteKey:             handle.ClusterWriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+			UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
 		}
 
 		// Scenario 1

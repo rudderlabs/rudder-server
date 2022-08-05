@@ -183,8 +183,7 @@ type HandleT struct {
 	httpWebServer                                              *http.Server
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
-
-	rsourcesService rsources.JobService
+	rsourcesService                                            rsources.JobService
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -307,11 +306,13 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
 		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(tx, jobList)
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)
 			} else {
-				err := gateway.jobsDB.StoreInTx(tx, jobList)
+				err := gateway.jobsDB.StoreInTx(ctx, tx, jobList)
 				if err != nil {
 					gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 					gateway.logger.Errorf("JobList: %+v", jobList)
@@ -322,8 +323,9 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
 			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
-			return rsourcesStats.Publish(context.TODO(), tx.Tx())
+			return rsourcesStats.Publish(ctx, tx.Tx())
 		})
+		cancel()
 		if err != nil {
 			panic(err)
 		}
@@ -1366,6 +1368,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
 	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+	srvMux.HandleFunc("/", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
@@ -1579,7 +1582,6 @@ func (gateway *HandleT) Setup(
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
-
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)

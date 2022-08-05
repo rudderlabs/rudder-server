@@ -57,12 +57,12 @@ func TestPostgresIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 handle.WriteKey,
-		Schema:                   handle.Schema,
-		Tables:                   handle.Tables,
-		EventsCountMap:           testhelper.DefaultEventMap(),
-		VerifyingTablesFrequency: testhelper.DefaultQueryFrequency,
-		UserId:                   testhelper.GetUserId(warehouseutils.POSTGRES),
+		WriteKey:             handle.WriteKey,
+		Schema:               handle.Schema,
+		Tables:               handle.Tables,
+		EventsCountMap:       testhelper.DefaultEventMap(),
+		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
 	}
 
 	// Scenario 1

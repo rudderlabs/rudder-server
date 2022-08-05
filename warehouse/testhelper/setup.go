@@ -8,7 +8,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -47,14 +46,14 @@ type JobsDBResource struct {
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {
-	Client                   *client.Client
-	WriteKey                 string
-	Schema                   string
-	VerifyingTablesFrequency time.Duration
-	EventsCountMap           EventsCountMap
-	UserId                   string
-	MessageId                string
-	Tables                   []string
+	Client               *client.Client
+	WriteKey             string
+	Schema               string
+	TablesQueryFrequency time.Duration
+	EventsCountMap       EventsCountMap
+	UserId               string
+	MessageId            string
+	Tables               []string
 }
 
 type WarehouseTestSetup interface {
@@ -73,10 +72,7 @@ const (
 	ConnectBackoffRetryMax = 5
 )
 
-var (
-	jobsDB     *JobsDBResource
-	jobsDBLock sync.RWMutex
-)
+var jobsDB *JobsDBResource
 
 const (
 	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
@@ -133,12 +129,6 @@ func initialize() {
 }
 
 func initJobsDB() {
-	jobsDBLock.Lock()
-	defer jobsDBLock.Unlock()
-
-	if jobsDB != nil {
-		return
-	}
 	jobsDB = setUpJobsDB()
 	enhanceJobsDBWithSQLFunctions()
 }
@@ -168,14 +158,24 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 func enhanceJobsDBWithSQLFunctions() {
 	var err error
 
-	_, err = jobsDB.DB.Exec(GWJobsForUserIdWriteKey())
+	txn, err := jobsDB.DB.Begin()
 	if err != nil {
-		log.Panicf("error occurred with executing gw jobs function for events count with err %v", err.Error())
+		log.Panicf("error occurred with creating transactions for jobs function with err %v", err.Error())
 	}
 
-	_, err = jobsDB.DB.Exec(BRTJobsForUserId())
+	_, err = txn.Exec(GWJobsForUserIdWriteKey())
 	if err != nil {
-		log.Panicf("error occurred with executing brt jobs function for events count with err %s", err.Error())
+		log.Panicf("error occurred with executing gw jobs function with err %v", err.Error())
+	}
+
+	_, err = txn.Exec(BRTJobsForUserId())
+	if err != nil {
+		log.Panicf("error occurred with executing brt jobs function with err %s", err.Error())
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		log.Panicf("error occurred with commiting txn with err %s", err.Error())
 	}
 }
 
@@ -196,7 +196,14 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		rows         *sql.Rows
 	)
 
-	sqlStatement = fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wareHouseTest.UserId, wareHouseTest.WriteKey)
+	sqlStatement = fmt.Sprintf(`
+		select
+		  count(*)
+		from
+		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
+		wareHouseTest.UserId,
+		wareHouseTest.WriteKey,
+	)
 	t.Logf("Checking for the gateway jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -205,7 +212,14 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs count is %d", gwEvents, count))
 
-	sqlStatement = fmt.Sprintf(`select * from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wareHouseTest.UserId, wareHouseTest.WriteKey)
+	sqlStatement = fmt.Sprintf(`
+		select
+		  *
+		from
+		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
+		wareHouseTest.UserId,
+		wareHouseTest.WriteKey,
+	)
 	t.Logf("Checking for gateway job ids for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		jobIds = make([]string, 0)
@@ -224,7 +238,16 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs status count is %d", gwEvents, count))
 
-	sqlStatement = fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
+	sqlStatement = fmt.Sprintf(`
+		select
+		  count(*)
+		from
+		  gw_job_status_1
+		where
+		  job_id in (%s)
+		  and job_state = 'succeeded';`,
+		strings.Join(jobIds, ","),
+	)
 	t.Logf("Checking for gateway jobs state for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -253,7 +276,13 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		rows         *sql.Rows
 	)
 
-	sqlStatement = fmt.Sprintf(`select count(*) from brt_jobs_for_user_id('%s') as job_ids`, wareHouseTest.UserId)
+	sqlStatement = fmt.Sprintf(`
+		select
+		  count(*)
+		from
+		  brt_jobs_for_user_id('%s') as job_ids;`,
+		wareHouseTest.UserId,
+	)
 	t.Logf("Checking for batch router jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -262,7 +291,13 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs count is %d", brtEvents, count))
 
-	sqlStatement = fmt.Sprintf(`select * from brt_jobs_for_user_id('%s') as job_ids`, wareHouseTest.UserId)
+	sqlStatement = fmt.Sprintf(`
+		select
+		  *
+		from
+		  brt_jobs_for_user_id('%s') as job_ids;`,
+		wareHouseTest.UserId,
+	)
 	t.Logf("Checking for batch router job ids for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		jobIds = make([]string, 0)
@@ -282,7 +317,16 @@ func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs status count is %d", brtEvents, count))
 
 	// Checking for the batch router jobs state
-	sqlStatement = fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
+	sqlStatement = fmt.Sprintf(`
+		select
+		  count(*)
+		from
+		  batch_rt_job_status_1
+		where
+		  job_id in (%s)
+		  and job_state = 'succeeded';`,
+		strings.Join(jobIds, ","),
+	)
 	t.Logf("Checking for batch router jobs state for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
@@ -312,7 +356,18 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 	)
 
 	for _, table := range wareHouseTest.Tables {
-		sqlStatement = fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", wareHouseTest.Schema, table, primaryKey(table), wareHouseTest.UserId)
+		sqlStatement = fmt.Sprintf(`
+			select
+			  count(*)
+			from
+			  %s.%s
+			where
+			  %s = '%s';`,
+			wareHouseTest.Schema,
+			table,
+			primaryKey(table),
+			wareHouseTest.UserId,
+		)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
 		require.Contains(t, wareHouseTest.EventsCountMap, table)
@@ -322,7 +377,7 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
-		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.VerifyingTablesFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
+		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.TablesQueryFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
 	}
 
 	t.Logf("Completed verifying tables events")
@@ -342,55 +397,60 @@ func ConnectWithBackoff(operation func() error) error {
 }
 
 func GWJobsForUserIdWriteKey() string {
-	return `CREATE OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(user_id varchar, write_key varchar)
-								RETURNS TABLE
-										(
-											job_id varchar
-										)
-							AS
-							$$
-							DECLARE
-								table_record RECORD;
-								batch_record jsonb;
-							BEGIN
-								FOR table_record IN SELECT * FROM gw_jobs_1 where (event_payload ->> 'writeKey') = write_key
-									LOOP
-										FOR batch_record IN SELECT * FROM jsonb_array_elements((table_record.event_payload ->> 'batch')::jsonb)
-											LOOP
-												if batch_record ->> 'userId' != user_id THEN
-													CONTINUE;
-												END IF;
-												job_id := table_record.job_id;
-												RETURN NEXT;
-												EXIT;
-											END LOOP;
-									END LOOP;
-							END;
-							$$ LANGUAGE plpgsql`
+	return `
+		CREATE
+		OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(
+		  user_id varchar, write_key varchar
+		) RETURNS TABLE (job_id varchar) AS $$ DECLARE table_record RECORD;
+		batch_record jsonb;
+		BEGIN FOR table_record IN
+		SELECT
+		  *
+		FROM
+		  gw_jobs_1
+		where
+		  (event_payload ->> 'writeKey') = write_key LOOP FOR batch_record IN
+		SELECT
+		  *
+		FROM
+		  jsonb_array_elements(
+			(
+			  table_record.event_payload ->> 'batch'
+			):: jsonb
+		  ) LOOP if batch_record ->> 'userId' != user_id THEN CONTINUE;
+		END IF;
+		job_id := table_record.job_id;
+		RETURN NEXT;
+		EXIT;
+		END LOOP;
+		END LOOP;
+		END;
+		$$ LANGUAGE plpgsql;
+`
 }
 
 func BRTJobsForUserId() string {
-	return `CREATE OR REPLACE FUNCTION brt_jobs_for_user_id(user_id varchar)
-									RETURNS TABLE
-											(
-												job_id varchar
-											)
-								AS
-								$$
-								DECLARE
-									table_record  RECORD;
-									event_payload jsonb;
-								BEGIN
-									FOR table_record IN SELECT * FROM batch_rt_jobs_1
-										LOOP
-											event_payload = (table_record.event_payload ->> 'data')::jsonb;
-											if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id Or event_payload ->> 'USER_ID' = user_id Or event_payload ->> 'ID' = user_id THEN
-												job_id := table_record.job_id;
-												RETURN NEXT;
-											END IF;
-										END LOOP;
-								END ;
-								$$ LANGUAGE plpgsql`
+	return `
+		CREATE
+		OR REPLACE FUNCTION brt_jobs_for_user_id(user_id varchar) RETURNS TABLE (job_id varchar) AS $$ DECLARE table_record RECORD;
+		event_payload jsonb;
+		BEGIN FOR table_record IN
+		SELECT
+		  *
+		FROM
+		  batch_rt_jobs_1 LOOP event_payload = (
+			table_record.event_payload ->> 'data'
+		  ):: jsonb;
+		if event_payload ->> 'user_id' = user_id
+		Or event_payload ->> 'id' = user_id
+		Or event_payload ->> 'USER_ID' = user_id
+		Or event_payload ->> 'ID' = user_id THEN job_id := table_record.job_id;
+		RETURN NEXT;
+		END IF;
+		END LOOP;
+		END;
+		$$ LANGUAGE plpgsql;
+`
 }
 
 func DefaultEventMap() EventsCountMap {

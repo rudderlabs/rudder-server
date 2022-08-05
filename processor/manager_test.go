@@ -197,7 +197,7 @@ func TestProcessorManager(t *testing.T) {
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
-	err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+	err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
@@ -264,7 +264,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 
 		require.NoError(t, processor.Start())
-		err = tempDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob))
+		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
 		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},

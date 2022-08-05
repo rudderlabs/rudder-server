@@ -238,8 +238,8 @@ var _ = Describe("BatchRouter", func() {
 			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1).After(callRetry)
 
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 1)
 				}).Return(nil)
@@ -249,8 +249,8 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)

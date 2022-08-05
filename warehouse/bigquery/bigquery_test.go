@@ -88,13 +88,13 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
@@ -102,8 +102,8 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -130,8 +130,8 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
@@ -172,13 +172,13 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
@@ -221,7 +221,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	_, err := bigquery2.Connect(context.Background(), &credentials)
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
 
 func TestMain(m *testing.M) {

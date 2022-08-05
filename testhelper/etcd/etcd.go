@@ -21,7 +21,7 @@ type Resource struct {
 }
 
 func Setup(pool *dockertest.Pool, cln cleaner) (*Resource, error) {
-	container, err := pool.Run("bitnami/etcd", "3.4", []string{
+	container, err := pool.Run("bitnami/etcd", "3", []string{
 		"ALLOW_NONE_AUTHENTICATION=yes",
 	})
 	if err != nil {

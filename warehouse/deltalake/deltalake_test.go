@@ -86,13 +86,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 				DBHandleT: handle.DB,
 				Type:      client.DBClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
@@ -100,8 +100,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -128,8 +128,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
@@ -169,13 +169,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 				DBHandleT: handle.DB,
 				Type:      client.DBClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
@@ -183,8 +183,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -210,8 +210,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
 		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
