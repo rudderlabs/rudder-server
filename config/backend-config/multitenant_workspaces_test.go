@@ -19,7 +19,7 @@ import (
 var (
 	workspaceId            = "testWordSpaceId"
 	SampleWorkspaceSources = map[string]ConfigT{
-		workspaceId: SampleBackendConfig,
+		workspaceId: sampleBackendConfig,
 	}
 )
 
@@ -84,7 +84,7 @@ var _ = Describe("workspace-config", func() {
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
 			Expect(err).To(BeNil())
-			multiConfig := SampleBackendConfig
+			multiConfig := sampleBackendConfig
 			Expect(config).To(Equal(multiConfig))
 		})
 

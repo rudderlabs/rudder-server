@@ -49,6 +49,10 @@ func (*NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.
 
 func (*NOOPConfig) StartWithIDs(_ context.Context, _ string) {}
 
+func (*NOOPConfig) GetConfig() backendconfig.ConfigT {
+	return backendconfig.ConfigT{}
+}
+
 func (*NOOPConfig) Stop() {
 	return
 }

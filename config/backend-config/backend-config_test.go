@@ -20,7 +20,7 @@ import (
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
-var SampleBackendConfig = ConfigT{
+var sampleBackendConfig = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:       "1",
@@ -45,7 +45,7 @@ var SampleBackendConfig = ConfigT{
 	},
 }
 
-var SampleFilteredSources = ConfigT{
+var sampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:           "1",
@@ -67,7 +67,7 @@ var SampleFilteredSources = ConfigT{
 	},
 }
 
-var SampleBackendConfig2 = ConfigT{
+var sampleBackendConfig2 = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:       "3",
@@ -186,14 +186,14 @@ var _ = Describe("BackendConfig", func() {
 			Expect(bc.initialized).To(BeFalse())
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
-			config, _ := json.Marshal(SampleBackendConfig)
+			config, _ := json.Marshal(sampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
-			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
+			bc.curSourceJSON = sampleBackendConfig
 			bc.configUpdate(ctx, statConfigBackendError, "")
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
-			config, _ := json.Marshal(SampleBackendConfig)
+			config, _ := json.Marshal(sampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			pubSub := pubsub.PublishSubscriber{}
 			bc := &commonBackendConfig{
@@ -202,7 +202,7 @@ var _ = Describe("BackendConfig", func() {
 					Token: "test_token",
 				},
 			}
-			curSourceJSON = SampleBackendConfig2
+			bc.curSourceJSON = sampleBackendConfig2
 			mockLogger.EXPECT().Infof("Workspace Config changed: %s", "").Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
@@ -216,8 +216,8 @@ var _ = Describe("BackendConfig", func() {
 			bc.configUpdate(ctx, statConfigBackendError, "")
 			Expect(bc.initialized).To(BeTrue())
 
-			Expect((<-chProcess).Data).To(Equal(SampleFilteredSources))
-			Expect((<-chBackend).Data).To(Equal(SampleBackendConfig))
+			Expect((<-chProcess).Data).To(Equal(sampleFilteredSources))
+			Expect((<-chBackend).Data).To(Equal(sampleBackendConfig))
 		})
 	})
 
@@ -225,8 +225,8 @@ var _ = Describe("BackendConfig", func() {
 		It("Expect to return the correct value", func() {
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			result := filterProcessorEnabledDestinations(SampleBackendConfig)
-			Expect(result).To(Equal(SampleFilteredSources))
+			result := filterProcessorEnabledDestinations(sampleBackendConfig)
+			Expect(result).To(Equal(sampleFilteredSources))
 		})
 	})
 
@@ -235,10 +235,10 @@ var _ = Describe("BackendConfig", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			curSourceJSON = SampleBackendConfig
+			backendConfig.(*commonBackendConfig).curSourceJSON = sampleBackendConfig
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+			filteredSourcesJSON := filterProcessorEnabledDestinations(backendConfig.(*commonBackendConfig).curSourceJSON)
 			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 
 			ch := backendConfig.Subscribe(ctx, TopicProcessConfig)
@@ -249,11 +249,11 @@ var _ = Describe("BackendConfig", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			curSourceJSON = SampleBackendConfig
+			backendConfig.(*commonBackendConfig).curSourceJSON = sampleBackendConfig
 
 			ch := backendConfig.Subscribe(ctx, TopicBackendConfig)
-			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicBackendConfig), curSourceJSON)
-			Expect((<-ch).Data).To(Equal(curSourceJSON))
+			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicBackendConfig), backendConfig.(*commonBackendConfig).curSourceJSON)
+			Expect((<-ch).Data).To(Equal(backendConfig.(*commonBackendConfig).curSourceJSON))
 		})
 	})
 

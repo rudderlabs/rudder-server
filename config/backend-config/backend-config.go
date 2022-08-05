@@ -23,16 +23,16 @@ import (
 )
 
 var (
+	// environment variables
 	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
-	configFromFile                        bool
 	configJSONPath                        string
-	curSourceJSON                         ConfigT
-	curSourceJSONLock                     sync.RWMutex
-	LastSync                              string
-	LastRegulationSync                    string
+	configFromFile                        bool
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
+
+	LastSync           string
+	LastRegulationSync string
 
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -57,22 +57,24 @@ type BackendConfig interface {
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
+	GetConfig() ConfigT
 }
 
 type commonBackendConfig struct {
-	workspaceConfig  workspaceConfig
-	eb               *pubsub.PublishSubscriber
-	configEnvHandler types.ConfigEnvI
-	ctx              context.Context
-	cancel           context.CancelFunc
-	blockChan        chan struct{}
-	initializedLock  sync.RWMutex
-	initialized      bool
+	workspaceConfig   workspaceConfig
+	eb                *pubsub.PublishSubscriber
+	configEnvHandler  types.ConfigEnvI
+	ctx               context.Context
+	cancel            context.CancelFunc
+	blockChan         chan struct{}
+	initializedLock   sync.RWMutex
+	initialized       bool
+	curSourceJSON     ConfigT
+	curSourceJSONLock sync.RWMutex
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
@@ -140,16 +142,18 @@ func (bc *commonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
-	if !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+	bc.curSourceJSONLock.Lock()
+	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
 		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
-		curSourceJSONLock.Lock()
-		trackConfig(curSourceJSON, sourceJSON)
+		trackConfig(bc.curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
-		curSourceJSON = sourceJSON
-		curSourceJSONLock.Unlock()
+		bc.curSourceJSON = sourceJSON
+		bc.curSourceJSONLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+	} else {
+		bc.curSourceJSONLock.Unlock()
 	}
 
 	bc.initializedLock.Lock()
@@ -170,10 +174,10 @@ func (bc *commonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces 
 	}
 }
 
-func GetConfig() ConfigT {
-	curSourceJSONLock.RLock()
-	defer curSourceJSONLock.RUnlock()
-	return curSourceJSON
+func (bc *commonBackendConfig) GetConfig() ConfigT {
+	bc.curSourceJSONLock.RLock()
+	defer bc.curSourceJSONLock.RUnlock()
+	return bc.curSourceJSON
 }
 
 /*

@@ -51,7 +51,7 @@ var (
 					Expect(ok).To(BeTrue())
 					Expect(req.Header.Get("Content-Type")).To(Equal("application/json"))
 					rw.WriteHeader(http.StatusAccepted)
-					js, _ := json.Marshal(SampleBackendConfig)
+					js, _ := json.Marshal(sampleBackendConfig)
 					rw.Header().Set("Content-Type", "application/json")
 					_, _ = rw.Write(js)
 				}))
@@ -65,7 +65,7 @@ var (
 
 				config, err := backendConfig.Get(ctx, "")
 				Expect(err).To(BeNil())
-				Expect(config).To(Equal(SampleBackendConfig))
+				Expect(config).To(Equal(sampleBackendConfig))
 			})
 			It("Expect to make the correct actions if fail to create the request", func() {
 				configFromFile = false
@@ -155,7 +155,7 @@ var (
 				mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
 				mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 				config, err := backendConfig.Get(ctx, "")
-				Expect(config).To(Equal(SampleBackendConfig))
+				Expect(config).To(Equal(sampleBackendConfig))
 				Expect(err).To(BeNil())
 			})
 		})

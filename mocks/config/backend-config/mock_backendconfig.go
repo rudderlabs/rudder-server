@@ -65,6 +65,20 @@ func (mr *MockBackendConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0, arg1)
 }
 
+// GetConfig mocks base method.
+func (m *MockBackendConfig) GetConfig() backendconfig.ConfigT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetConfig")
+	ret0, _ := ret[0].(backendconfig.ConfigT)
+	return ret0
+}
+
+// GetConfig indicates an expected call of GetConfig.
+func (mr *MockBackendConfigMockRecorder) GetConfig() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfig", reflect.TypeOf((*MockBackendConfig)(nil).GetConfig))
+}
+
 // GetWorkspaceIDForSourceID mocks base method.
 func (m *MockBackendConfig) GetWorkspaceIDForSourceID(arg0 string) string {
 	m.ctrl.T.Helper()
