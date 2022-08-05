@@ -115,7 +115,7 @@ func (a *App) Stop() {
 	if a.options.Cpuprofile != "" {
 		pkgLogger.Info("Stopping CPU profile")
 		pprof.StopCPUProfile()
-		a.cpuprofileOutput.Close()
+		_ = a.cpuprofileOutput.Close()
 	}
 
 	if a.options.Memprofile != "" {
@@ -123,7 +123,7 @@ func (a *App) Stop() {
 		if err != nil {
 			panic(err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		runtime.GC() // get up-to-date statistics
 		err = pprof.WriteHeapProfile(f)
 		if err != nil {
@@ -139,22 +139,32 @@ func New(options *Options) Interface {
 	}
 }
 
-// HealthHandler is the http handler for health endpoint
-func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
-	var dbService string = "UP"
-	var enabledRouter string = "TRUE"
-	var backendConfigMode string = "API"
+// LivenessHandler is the http handler for the Kubernetes liveness probe
+func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(getHealthVal(jobsDB)))
+	}
+}
+
+func getHealthVal(jobsDB jobsdb.JobsDB) string {
+	dbService := "UP"
 	if jobsDB.Ping() != nil {
 		dbService = "DOWN"
 	}
+	enabledRouter := "TRUE"
 	if !config.GetBool("enableRouter", true) {
 		enabledRouter = "FALSE"
 	}
+	backendConfigMode := "API"
 	if config.GetBool("BackendConfig.configFromFile", false) {
 		backendConfigMode = "JSON"
 	}
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
-	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
-	_, _ = w.Write([]byte(healthVal))
+	return fmt.Sprintf(
+		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
+			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
+		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
+		backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync,
+	)
 }

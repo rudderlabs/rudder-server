@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -18,20 +19,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (manager *DOSpacesManager) getSession() *session.Session {
+func (manager *DOSpacesManager) getSession() (*session.Session, error) {
 	var region string
 	if manager.Config.Region != nil {
 		region = *manager.Config.Region
 	} else {
 		region = misc.GetSpacesLocation(manager.Config.EndPoint)
 	}
-	return session.Must(session.NewSession(&aws.Config{
+	return session.NewSession(&aws.Config{
 		Region:           aws.String(region),
 		Credentials:      credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		Endpoint:         aws.String(manager.Config.EndPoint),
 		DisableSSL:       manager.Config.DisableSSL,
 		S3ForcePathStyle: manager.Config.ForcePathStyle,
-	}))
+	})
 }
 
 // Upload passed in file to spaces
@@ -40,19 +41,7 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
 
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	uploadInput := &SpacesManager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
@@ -60,7 +49,10 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 		Key:    aws.String(fileName),
 		Body:   file,
 	}
-	uploadSession := manager.getSession()
+	uploadSession, err := manager.getSession()
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("error starting Digital Ocean Spaces session: %w", err)
+	}
 	DOmanager := SpacesManager.NewUploader(uploadSession)
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
@@ -78,13 +70,16 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 }
 
 func (manager *DOSpacesManager) Download(ctx context.Context, output *os.File, key string) error {
-	downloadSession := manager.getSession()
+	downloadSession, err := manager.getSession()
+	if err != nil {
+		return fmt.Errorf("error starting Digital Ocean Spaces session: %w", err)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
-	_, err := downloader.DownloadWithContext(ctx, output,
+	_, err = downloader.DownloadWithContext(ctx, output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -124,7 +119,10 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
-	sess := manager.getSession()
+	sess, err := manager.getSession()
+	if err != nil {
+		return []*FileObject{}, fmt.Errorf("error starting Digital Ocean Spaces session: %w", err)
+	}
 
 	// Create S3 service client
 	svc := s3.New(sess)
@@ -149,10 +147,10 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix 
 	return
 }
 
-func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
-	sess := manager.getSession()
+func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string) error {
+	sess, err := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`get session: %v`, err)
+		return fmt.Errorf("error starting Digital Ocean Spaces session: %w", err)
 	}
 
 	objects := make([]*s3.ObjectIdentifier, len(keys))
@@ -179,10 +177,7 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
-				default:
-					pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
-				}
+				pkgLogger.Errorf(`Error while deleting digital ocean spaces objects: %v, error code: %v`, aerr.Error(), aerr.Code())
 			} else {
 				// Print the error, cast err to awserr.Error to get the Code and
 				// Message from an error.

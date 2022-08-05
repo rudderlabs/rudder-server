@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -23,19 +24,7 @@ func (manager *GCSManager) objectURL(objAttrs *storage.ObjectAttrs) string {
 }
 
 func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	client, err := manager.getClient(ctx)
 	if err != nil {
@@ -112,7 +101,7 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
 	}
-	if manager.Config.Credentials != "" {
+	if !googleutils.ShouldSkipCredentialsInit(manager.Config.Credentials) {
 		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
 			return manager.client, err
 		}

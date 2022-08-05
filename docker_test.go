@@ -718,7 +718,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	svcDone := make(chan struct{})
 	go func() {
-		main.Run(svcCtx)
+		_ = main.Run(svcCtx)
 		close(svcDone)
 	}()
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -54,13 +54,13 @@ func TestDelete(t *testing.T) {
 			service.EXPECT().Delete(gomock.Any(), tt.jobRunId).Return(tt.serviceReturnError).Times(1)
 
 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
-			req, err := http.NewRequest(tt.method, url, nil)
+			req, err := http.NewRequest(tt.method, url, http.NoBody)
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			_, err = ioutil.ReadAll(resp.Body)
+			_, err = io.ReadAll(resp.Body)
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedResponseCode, resp.Code, "required error different than expected")
@@ -191,13 +191,13 @@ func TestGetStatus(t *testing.T) {
 
 			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			url := withFilter(basicUrl, tt.filter)
-			req, err := http.NewRequest(tt.method, url, nil)
+			req, err := http.NewRequest(tt.method, url, http.NoBody)
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
@@ -283,19 +283,41 @@ func TestGetFailedRecords(t *testing.T) {
 
 			basicUrl := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			url := withFilter(basicUrl, tt.filter)
-			req, err := http.NewRequest(tt.method, url, nil)
+			req, err := http.NewRequest(tt.method, url, http.NoBody)
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
 			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
 		})
 	}
+}
+
+func TestFailedRecordsDisabled(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	service := rsources.NewMockJobService(mockCtrl)
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+
+	service.EXPECT().GetFailedRecords(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, rsources.ErrOperationNotSupported).Times(1)
+
+	url := fmt.Sprintf("http://localhost:8080%s", prepURL("/v1/job-status/{job_run_id}/failed-records", "123"))
+	req, err := http.NewRequest("GET", url, http.NoBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, 400, resp.Code, "actual response code different than expected")
+	require.Equal(t, "rsources: operation not supported\n", string(body), "actual response body different than expected")
 }
 
 var failedRecordsRespBody string = `failed to get failed records

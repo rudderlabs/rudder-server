@@ -5,6 +5,7 @@
 package mocks_jobsdb
 
 import (
+	context "context"
 	json "encoding/json"
 	reflect "reflect"
 
@@ -114,31 +115,31 @@ func (mr *MockMultiTenantJobsDBMockRecorder) JournalMarkStart(arg0, arg1 interfa
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockMultiTenantJobsDB) UpdateJobStatus(arg0 []*jobsdb.JobStatusT, arg1 []string, arg2 []jobsdb.ParameterFilterT) error {
+func (m *MockMultiTenantJobsDB) UpdateJobStatus(arg0 context.Context, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockMultiTenantJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockMultiTenantJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).UpdateJobStatus), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).UpdateJobStatus), arg0, arg1, arg2, arg3)
 }
 
 // UpdateJobStatusInTx mocks base method.
-func (m *MockMultiTenantJobsDB) UpdateJobStatusInTx(arg0 jobsdb.UpdateSafeTx, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
+func (m *MockMultiTenantJobsDB) UpdateJobStatusInTx(arg0 context.Context, arg1 jobsdb.UpdateSafeTx, arg2 []*jobsdb.JobStatusT, arg3 []string, arg4 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatusInTx indicates an expected call of UpdateJobStatusInTx.
-func (mr *MockMultiTenantJobsDBMockRecorder) UpdateJobStatusInTx(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockMultiTenantJobsDBMockRecorder) UpdateJobStatusInTx(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).UpdateJobStatusInTx), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).UpdateJobStatusInTx), arg0, arg1, arg2, arg3, arg4)
 }
 
 // WithUpdateSafeTx mocks base method.

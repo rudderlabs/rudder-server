@@ -3,6 +3,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -19,8 +20,8 @@ type MultiTenantJobsDB interface {
 	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
 
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
-	UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	DeleteExecuting()
 
