@@ -102,6 +102,7 @@ const (
 	INVALID_REFRESH_TOKEN_GRANT = "refresh_token_invalid_grant"
 )
 
+// This struct only exists for marshalling and sending payload to control-plane
 type RefreshTokenBodyParams struct {
 	HasExpired    bool            `json:"hasExpired"`
 	ExpiredSecret json.RawMessage `json:"expiredSecret"`
