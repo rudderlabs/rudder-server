@@ -285,7 +285,6 @@ func initializeClickhouseClusterMode(t *testing.T) {
 }
 
 func TestClickHouseIntegration(t *testing.T) {
-
 	t.Run("Single Setup", func(t *testing.T) {
 		t.Parallel()
 
