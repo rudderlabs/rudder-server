@@ -18,73 +18,74 @@ import (
 type SingleWorkspaceConfig struct {
 	Token            string
 	workspaceID      string
+	configBackendURL string
 	configEnvHandler types.ConfigEnvI
 
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceIDLock           sync.RWMutex
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) SetUp() error {
+func (wc *SingleWorkspaceConfig) SetUp() error {
 	if configFromFile {
 		return nil
 	}
-	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetWorkspaceToken()
+	if wc.Token == "" {
+		wc.Token = config.GetWorkspaceToken()
 	}
-	if workspaceConfig.Token == "" {
+	if wc.Token == "" {
 		return fmt.Errorf("single workspace: empty workspace config token")
 	}
 	return nil
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) AccessToken() string {
-	return workspaceConfig.Token
+func (wc *SingleWorkspaceConfig) AccessToken() string {
+	return wc.Token
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
-	workspaceConfig.workspaceIDLock.RLock()
-	defer workspaceConfig.workspaceIDLock.RUnlock()
+func (wc *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
+	wc.workspaceIDLock.RLock()
+	defer wc.workspaceIDLock.RUnlock()
 
-	return workspaceConfig.workspaceID
+	return wc.workspaceID
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
-	workspaceConfig.workspaceIDLock.RLock()
-	defer workspaceConfig.workspaceIDLock.RUnlock()
+func (wc *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
+	wc.workspaceIDLock.RLock()
+	defer wc.workspaceIDLock.RUnlock()
 
-	return workspaceConfig.workspaceID
+	return wc.workspaceID
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	workspaceConfig.workspaceIDLock.RLock()
-	defer workspaceConfig.workspaceIDLock.RUnlock()
-	if workspaceConfig.workspaceIDToLibrariesMap[workspaceID] == nil {
+func (wc *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	wc.workspaceIDLock.RLock()
+	defer wc.workspaceIDLock.RUnlock()
+	if wc.workspaceIDToLibrariesMap[workspaceID] == nil {
 		return LibrariesT{}
 	}
-	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
+	return wc.workspaceIDToLibrariesMap[workspaceID]
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
+func (wc *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
 	if configFromFile {
-		return workspaceConfig.getFromFile()
+		return wc.getFromFile()
 	} else {
-		return workspaceConfig.getFromAPI(ctx, workspace)
+		return wc.getFromAPI(ctx, workspace)
 	}
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (wc *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	var (
 		respBody   []byte
 		statusCode int
-		url        = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
+		url        = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", wc.configBackendURL)
 	)
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
+		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -93,11 +94,11 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ 
 		pkgLogger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Error("Error sending request to the server", err)
+		pkgLogger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
 
-	configEnvHandler := workspaceConfig.configEnvHandler
+	configEnvHandler := wc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
@@ -109,11 +110,11 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ 
 		return ConfigT{}, err
 	}
 
-	workspaceConfig.workspaceIDLock.Lock()
-	workspaceConfig.workspaceID = sourcesJSON.WorkspaceID
-	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
-	workspaceConfig.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
-	workspaceConfig.workspaceIDLock.Unlock()
+	wc.workspaceIDLock.Lock()
+	wc.workspaceID = sourcesJSON.WorkspaceID
+	wc.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
+	wc.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
+	wc.workspaceIDLock.Unlock()
 
 	return sourcesJSON, nil
 }
@@ -134,13 +135,13 @@ func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	return configJSON, nil
 }
 
-func (workspaceConfig *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+func (wc *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
-	req.SetBasicAuth(workspaceConfig.Token, "")
+	req.SetBasicAuth(wc.Token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}

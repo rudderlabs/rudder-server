@@ -5,6 +5,7 @@ package backendconfig
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"sync"
@@ -36,7 +37,6 @@ var (
 
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
 	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
 	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
@@ -196,21 +196,28 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 	backendConfig := &commonBackendConfig{
 		eb: pubsub.New(),
 	}
+	parsedConfigBackendURL, err := url.Parse(configBackendURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config backend URL: %v", err)
+	}
 
 	switch deploymentType {
 	case deployment.DedicatedType:
 		backendConfig.workspaceConfig = &SingleWorkspaceConfig{
+			configBackendURL: parsedConfigBackendURL.String(),
 			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
 			backendConfig.workspaceConfig = &NamespaceConfig{
+				ConfigBackendURL: parsedConfigBackendURL,
 				configEnvHandler: configEnvHandler,
 			}
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
 			backendConfig.workspaceConfig = &MultiTenantWorkspacesConfig{
+				configBackendURL: parsedConfigBackendURL.String(),
 				configEnvHandler: configEnvHandler,
 			}
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 
@@ -31,17 +30,11 @@ var _ = Describe("workspace-config", func() {
 	})
 	AfterEach(func() {
 		ctrl.Finish()
-		Http = originalHttp
 		pkgLogger = originalLogger
 	})
 
 	Context("getFromAPI method", func() {
 		ctx := context.Background()
-		var mockHttp *mocksysutils.MockHttpI
-		BeforeEach(func() {
-			mockHttp = mocksysutils.NewMockHttpI(ctrl)
-			Http = mockHttp
-		})
 		It("Expect to execute request with the correct body and headers and return successful response", func() {
 			configFromFile = false
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -57,36 +50,19 @@ var _ = Describe("workspace-config", func() {
 			}))
 			defer server.Close()
 
-			testRequest, err := http.NewRequest("GET", server.URL, http.NoBody)
-			Expect(err).To(BeNil())
-			mockHttp.EXPECT().NewRequestWithContext(
-				ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody,
-			).Return(testRequest, nil).Times(1)
-
+			backendConfig.workspaceConfig.(*SingleWorkspaceConfig).configBackendURL = server.URL
 			config, err := backendConfig.Get(ctx, "")
 			Expect(err).To(BeNil())
 			Expect(config).To(Equal(sampleBackendConfig))
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
-			configFromFile = false
-			configBackendURL = "http://rudderstack.com"
-			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody).Return(nil, errors.New("TestError")).AnyTimes()
-			mockLogger.EXPECT().Warnf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-			config, err := backendConfig.Get(ctx, "")
-			Expect(config).To(Equal(ConfigT{}))
-			Expect(err).NotTo(BeNil())
-		})
-
-		It("Expect to make the correct actions if fail to send the request", func() {
-			configFromFile = false
-			configBackendURL = ""
-			Http = mockHttp
-			testRequest, _ := http.NewRequest("GET", "", http.NoBody)
-			mockHttp.EXPECT().NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), http.NoBody).Return(testRequest, nil).AnyTimes()
+			backendConfig.workspaceConfig.(*SingleWorkspaceConfig).configBackendURL = "://example.com"
+			mockLogger.EXPECT().Info(gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Debugf("Fetching config from %s", gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Warnf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-			config, err := backendConfig.Get(ctx, "")
+			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf("Error sending request to the server: %v", gomock.Any()).Times(1)
+			config, err := backendConfig.Get(ctx, "testToken")
 			Expect(config).To(Equal(ConfigT{}))
 			Expect(err).NotTo(BeNil())
 		})

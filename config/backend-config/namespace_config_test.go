@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {
@@ -37,7 +36,6 @@ func Test_Namespace_SetUp(t *testing.T) {
 func Test_Namespace_Get(t *testing.T) {
 	config.Load()
 	logger.Init()
-	Http = sysUtils.NewHttp()
 
 	var (
 		namespace    = "free-us-1"

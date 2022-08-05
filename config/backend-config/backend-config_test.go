@@ -82,7 +82,6 @@ var sampleBackendConfig2 = ConfigT{
 }
 
 var (
-	originalHttp       = Http
 	originalLogger     = pkgLogger
 	mockLogger         *mocklogger.MockLoggerI
 	originalMockPubSub = pubsub.PublishSubscriber{}
@@ -144,7 +143,6 @@ var _ = Describe("BackendConfig", func() {
 	})
 	AfterEach(func() {
 		ctrl.Finish()
-		Http = originalHttp
 		pkgLogger = originalLogger
 	})
 

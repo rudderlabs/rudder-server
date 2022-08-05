@@ -25,6 +25,7 @@ type WorkspacesT struct {
 
 type MultiTenantWorkspacesConfig struct {
 	Token                     string
+	configBackendURL          string
 	configEnvHandler          types.ConfigEnvI
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
@@ -32,38 +33,38 @@ type MultiTenantWorkspacesConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
-	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
+func (wc *MultiTenantWorkspacesConfig) SetUp() error {
+	wc.writeKeyToWorkspaceIDMap = make(map[string]string)
+	if wc.Token == "" {
+		wc.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
-	if workspaceConfig.Token == "" {
+	if wc.Token == "" {
 		return fmt.Errorf("multi tenant workspace: empty workspace config token")
 	}
 	return nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
-	return workspaceConfig.Token
+func (wc *MultiTenantWorkspacesConfig) AccessToken() string {
+	return wc.Token
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (wc *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+	if workspaceID, ok := wc.writeKeyToWorkspaceIDMap[writeKey]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
+func (wc *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
 	// TODO use another map later
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.sourceToWorkspaceIDMap[source]; ok {
+	if workspaceID, ok := wc.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 
@@ -71,37 +72,37 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(so
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (wc *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceLibraries, ok := workspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
+	if workspaceLibraries, ok := wc.workspaceIDToLibrariesMap[workspaceID]; ok {
 		return workspaceLibraries
 	}
 	return LibrariesT{}
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
-	return workspaceConfig.getFromAPI(ctx, workspaces)
+func (wc *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+	return wc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (wc *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	var (
 		url        string
 		respBody   []byte
 		statusCode int
 	)
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
+		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", wc.configBackendURL)
 	} else {
-		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", wc.configBackendURL)
 	}
 	operation := func() error {
 		var fetchError error
 		pkgLogger.Debugf("Fetching config from %s", url)
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
+		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, url)
 		return fetchError
 	}
 
@@ -113,7 +114,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 		pkgLogger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
-	configEnvHandler := workspaceConfig.configEnvHandler
+	configEnvHandler := wc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
@@ -138,19 +139,19 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
-	workspaceConfig.workspaceWriteKeysMapLock.Lock()
-	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
+	wc.workspaceWriteKeysMapLock.Lock()
+	wc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	wc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
+	wc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	wc.workspaceWriteKeysMapLock.Unlock()
 
 	return sourcesJSON, nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
+func (wc *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	ctx context.Context, url string,
 ) ([]byte, int, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return []byte{}, 400, err
 	}
@@ -158,7 +159,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
 	} else {
-		req.SetBasicAuth(workspaceConfig.Token, "")
+		req.SetBasicAuth(wc.Token, "")
 	}
 
 	req.Header.Set("Content-Type", "application/json")

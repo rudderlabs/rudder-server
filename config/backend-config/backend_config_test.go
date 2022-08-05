@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,36 +18,41 @@ import (
 func TestBadResponse(t *testing.T) {
 	stats.Setup()
 	initBackendConfig()
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		defer atomic.AddInt32(&calls, 1)
+		t.Log("Server got called")
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
 	configs := map[string]workspaceConfig{
 		"namespace": &NamespaceConfig{
-			ConfigBackendURL: &url.URL{},
+			ConfigBackendURL: parsedURL,
 			Namespace:        "some-namespace",
 			Client:           http.DefaultClient,
 			Logger:           &logger.NOP{},
 		},
-		"multi-tenant":     &MultiTenantWorkspacesConfig{},
-		"single-workspace": &SingleWorkspaceConfig{},
+		"multi-tenant": &MultiTenantWorkspacesConfig{
+			configBackendURL: server.URL,
+		},
+		"single-workspace": &SingleWorkspaceConfig{
+			configBackendURL: server.URL,
+		},
 	}
 
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
-			var (
-				calls int32
-				ctx   = context.Background()
-			)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				defer atomic.AddInt32(&calls, 1)
-				t.Log("Server got called")
-				w.WriteHeader(http.StatusBadRequest)
-			}))
-			defer server.Close()
-
-			testRequest, err := http.NewRequest("GET", server.URL, http.NoBody)
-			require.NoError(t, err)
-			Http = &fakeHttp{req: testRequest}
-
+			ctx := context.Background()
 			pkgLogger = &logger.NOP{}
-			bc := &commonBackendConfig{workspaceConfig: conf}
+			atomic.StoreInt32(&calls, 0)
+
+			bc := &commonBackendConfig{
+				workspaceConfig: conf,
+			}
 			bc.StartWithIDs(ctx, "")
 			go bc.WaitForConfig(ctx)
 
@@ -65,14 +69,4 @@ func TestBadResponse(t *testing.T) {
 			}
 		})
 	}
-}
-
-type fakeHttp struct {
-	req *http.Request
-	err error
-}
-
-func (h *fakeHttp) NewRequest(_, _ string, _ io.Reader) (*http.Request, error) { return h.req, h.err }
-func (h *fakeHttp) NewRequestWithContext(_ context.Context, _, _ string, _ io.Reader) (*http.Request, error) {
-	return h.req, h.err
 }
