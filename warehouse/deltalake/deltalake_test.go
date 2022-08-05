@@ -86,13 +86,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 				DBHandleT: handle.DB,
 				Type:      client.DBClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
@@ -169,13 +169,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 				DBHandleT: handle.DB,
 				Type:      client.DBClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.DELTALAKE),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1

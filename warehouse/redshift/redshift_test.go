@@ -74,13 +74,13 @@ func TestRedshiftIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:                 handle.WriteKey,
-		Schema:                   handle.Schema,
-		Tables:                   handle.Tables,
-		VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-		EventsCountMap:           testhelper.DefaultEventMap(),
-		MessageId:                uuid.Must(uuid.NewV4()).String(),
-		UserId:                   testhelper.GetUserId(warehouseutils.RS),
+		WriteKey:             handle.WriteKey,
+		Schema:               handle.Schema,
+		Tables:               handle.Tables,
+		TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+		EventsCountMap:       testhelper.DefaultEventMap(),
+		MessageId:            uuid.Must(uuid.NewV4()).String(),
+		UserId:               testhelper.GetUserId(warehouseutils.RS),
 	}
 
 	// Scenario 1

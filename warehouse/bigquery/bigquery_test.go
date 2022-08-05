@@ -88,13 +88,13 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
@@ -172,13 +172,13 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:                 handle.WriteKey,
-			Schema:                   handle.Schema,
-			Tables:                   handle.Tables,
-			VerifyingTablesFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:           testhelper.DefaultEventMap(),
-			MessageId:                uuid.Must(uuid.NewV4()).String(),
-			UserId:                   testhelper.GetUserId(warehouseutils.BQ),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
 		}
 
 		// Scenario 1
