@@ -100,18 +100,22 @@ var _ = Describe("newForDeployment", func() {
 	It("supports single workspace config", func() {
 		GinkgoT().Setenv("WORKSPACE_TOKEN", "password")
 		config, err := newForDeployment(deployment.DedicatedType, nil)
-
 		Expect(err).To(BeNil())
-		_, ok := config.(*SingleWorkspaceConfig)
+
+		cb, ok := config.(*commonBackendConfig)
+		Expect(ok).To(BeTrue())
+		_, ok = cb.workspaceConfig.(*SingleWorkspaceConfig)
 		Expect(ok).To(BeTrue())
 	})
 
 	It("supports hosted workspace config", func() {
 		GinkgoT().Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 		config, err := newForDeployment(deployment.MultiTenantType, nil)
-
 		Expect(err).To(BeNil())
-		_, ok := config.(*MultiTenantWorkspacesConfig)
+
+		cb, ok := config.(*commonBackendConfig)
+		Expect(ok).To(BeTrue())
+		_, ok = cb.workspaceConfig.(*MultiTenantWorkspacesConfig)
 		Expect(ok).To(BeTrue())
 	})
 
@@ -127,9 +131,11 @@ var _ = Describe("BackendConfig", func() {
 	initBackendConfig()
 
 	BeforeEach(func() {
-		backendConfig = &SingleWorkspaceConfig{
-			CommonBackendConfig: CommonBackendConfig{eb: &originalMockPubSub},
-			Token:               "test_token",
+		backendConfig = &commonBackendConfig{
+			eb: &originalMockPubSub,
+			workspaceConfig: &SingleWorkspaceConfig{
+				Token: "test_token",
+			},
 		}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mocklogger.NewMockLoggerI(ctrl)
@@ -148,8 +154,11 @@ var _ = Describe("BackendConfig", func() {
 			mockIoUtil             *mocksysutils.MockIoUtilI
 			originalIoUtil         = IoUtil
 			originalConfigFromFile = configFromFile
-			bc                     = &CommonBackendConfig{
+			bc                     = &commonBackendConfig{
 				eb: &originalMockPubSub,
+				workspaceConfig: &SingleWorkspaceConfig{
+					Token: "test_token",
+				},
 			}
 		)
 		BeforeEach(func() {
@@ -186,7 +195,12 @@ var _ = Describe("BackendConfig", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			pubSub := pubsub.PublishSubscriber{}
-			bc := &CommonBackendConfig{eb: &pubSub}
+			bc := &commonBackendConfig{
+				eb: &pubSub,
+				workspaceConfig: &SingleWorkspaceConfig{
+					Token: "test_token",
+				},
+			}
 			curSourceJSON = SampleBackendConfig2
 			mockLogger.EXPECT().Infof("Workspace Config changed: %s", "").Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
@@ -224,10 +238,10 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 			filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-			backendConfig.(*SingleWorkspaceConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 
 			ch := backendConfig.Subscribe(ctx, TopicProcessConfig)
-			backendConfig.(*SingleWorkspaceConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 			Expect((<-ch).Data).To(Equal(filteredSourcesJSON))
 		})
 		It("Expect make the correct actions for backendConfig topic", func() {
@@ -237,13 +251,13 @@ var _ = Describe("BackendConfig", func() {
 			curSourceJSON = SampleBackendConfig
 
 			ch := backendConfig.Subscribe(ctx, TopicBackendConfig)
-			backendConfig.(*SingleWorkspaceConfig).eb.Publish(string(TopicBackendConfig), curSourceJSON)
+			backendConfig.(*commonBackendConfig).eb.Publish(string(TopicBackendConfig), curSourceJSON)
 			Expect((<-ch).Data).To(Equal(curSourceJSON))
 		})
 	})
 
 	Context("WaitForConfig method", func() {
-		bc := &CommonBackendConfig{}
+		bc := &commonBackendConfig{}
 
 		It("Should not wait if initialized is true", func() {
 			bc.initialized = true

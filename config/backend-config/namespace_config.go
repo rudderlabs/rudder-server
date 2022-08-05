@@ -13,12 +13,12 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // NamespaceConfig TODO check what attributes can be unexported
 type NamespaceConfig struct {
-	CommonBackendConfig
-
+	configEnvHandler          types.ConfigEnvI
 	mapsMutex                 sync.RWMutex
 	writeKeyToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -133,7 +133,7 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		nc.Logger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
-	configEnvHandler := nc.CommonBackendConfig.configEnvHandler
+	configEnvHandler := nc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}

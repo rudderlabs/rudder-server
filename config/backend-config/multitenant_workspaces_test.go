@@ -25,8 +25,10 @@ var (
 
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {
-		backendConfig = &MultiTenantWorkspacesConfig{
-			writeKeyToWorkspaceIDMap: map[string]string{"testKey": "testWorkSpaceId"},
+		backendConfig = &commonBackendConfig{
+			workspaceConfig: &MultiTenantWorkspacesConfig{
+				writeKeyToWorkspaceIDMap: map[string]string{"testKey": "testWorkSpaceId"},
+			},
 		}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mocklogger.NewMockLoggerI(ctrl)
@@ -58,7 +60,7 @@ var _ = Describe("workspace-config", func() {
 			Http = mockHttp
 		})
 		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 1", func() {
-			backendConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
+			backendConfig.(*commonBackendConfig).workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("multitenantWorkspaceSecret"))
@@ -87,7 +89,7 @@ var _ = Describe("workspace-config", func() {
 		})
 
 		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 2", func() {
-			backendConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
+			backendConfig.(*commonBackendConfig).workspaceConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 				rw.Header().Set("Content-Type", "application/json")

@@ -11,12 +11,13 @@ import (
 	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type SingleWorkspaceConfig struct {
-	CommonBackendConfig
-	workspaceID string
-	Token       string
+	Token            string
+	workspaceID      string
+	configEnvHandler types.ConfigEnvI
 
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceIDLock           sync.RWMutex
@@ -95,7 +96,7 @@ func (workspaceConfig *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ 
 		return ConfigT{}, err
 	}
 
-	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	configEnvHandler := workspaceConfig.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}

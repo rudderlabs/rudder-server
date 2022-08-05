@@ -12,6 +12,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -22,8 +23,8 @@ type WorkspacesT struct {
 }
 
 type MultiTenantWorkspacesConfig struct {
-	CommonBackendConfig
 	Token                     string
+	configEnvHandler          types.ConfigEnvI
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -111,7 +112,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 		pkgLogger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
-	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	configEnvHandler := workspaceConfig.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}

@@ -43,20 +43,25 @@ var (
 	Diagnostics          diagnostics.DiagnosticsI
 )
 
-type BackendConfig interface {
+type workspaceConfig interface {
 	SetUp() error
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
+}
+
+type BackendConfig interface {
+	workspaceConfig
 	WaitForConfig(ctx context.Context)
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
 }
 
-type CommonBackendConfig struct {
+type commonBackendConfig struct {
+	workspaceConfig  workspaceConfig
 	eb               *pubsub.PublishSubscriber
 	configEnvHandler types.ConfigEnvI
 	ctx              context.Context
@@ -122,8 +127,8 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
-	sourceJSON, err := backendConfig.Get(ctx, workspaces)
+func (bc *commonBackendConfig) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
+	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
@@ -153,7 +158,7 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	bc.initializedLock.Unlock()
 }
 
-func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
+func (bc *commonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
 	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
@@ -193,37 +198,30 @@ Available topics are:
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receive all regulations
 */
-func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
+func (bc *commonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
-	var backendConfig BackendConfig
+	backendConfig := &commonBackendConfig{
+		eb: pubsub.New(),
+	}
 
 	switch deploymentType {
 	case deployment.DedicatedType:
-		backendConfig = &SingleWorkspaceConfig{
-			CommonBackendConfig: CommonBackendConfig{
-				configEnvHandler: configEnvHandler,
-				eb:               pubsub.New(),
-			},
+		backendConfig.workspaceConfig = &SingleWorkspaceConfig{
+			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			backendConfig = &NamespaceConfig{
-				CommonBackendConfig: CommonBackendConfig{
-					configEnvHandler: configEnvHandler,
-					eb:               pubsub.New(),
-				},
+			backendConfig.workspaceConfig = &NamespaceConfig{
+				configEnvHandler: configEnvHandler,
 			}
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
-			backendConfig = &MultiTenantWorkspacesConfig{
-				CommonBackendConfig: CommonBackendConfig{
-					configEnvHandler: configEnvHandler,
-					eb:               pubsub.New(),
-				},
+			backendConfig.workspaceConfig = &MultiTenantWorkspacesConfig{
+				configEnvHandler: configEnvHandler,
 			}
 		}
 	default:
@@ -251,7 +249,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *commonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -262,7 +260,7 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	})
 }
 
-func (bc *CommonBackendConfig) Stop() {
+func (bc *commonBackendConfig) Stop() {
 	if bc.cancel != nil {
 		bc.cancel()
 		<-bc.blockChan
@@ -273,7 +271,7 @@ func (bc *CommonBackendConfig) Stop() {
 }
 
 // WaitForConfig waits until backend config has been initialized
-func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
+func (bc *commonBackendConfig) WaitForConfig(ctx context.Context) {
 	for {
 		bc.initializedLock.RLock()
 		if bc.initialized {
@@ -289,6 +287,25 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func (bc *commonBackendConfig) SetUp() error        { return bc.workspaceConfig.SetUp() }
+func (bc *commonBackendConfig) AccessToken() string { return bc.workspaceConfig.AccessToken() }
+
+func (bc *commonBackendConfig) Get(ctx context.Context, s string) (ConfigT, error) {
+	return bc.workspaceConfig.Get(ctx, s)
+}
+
+func (bc *commonBackendConfig) GetWorkspaceIDForWriteKey(s string) string {
+	return bc.workspaceConfig.GetWorkspaceIDForWriteKey(s)
+}
+
+func (bc *commonBackendConfig) GetWorkspaceIDForSourceID(s string) string {
+	return bc.workspaceConfig.GetWorkspaceIDForSourceID(s)
+}
+
+func (bc *commonBackendConfig) GetWorkspaceLibrariesForWorkspaceID(s string) LibrariesT {
+	return bc.workspaceConfig.GetWorkspaceLibrariesForWorkspaceID(s)
 }
 
 func GetConfigBackendURL() string {

@@ -20,8 +20,10 @@ var (
 	originalBackendConfig = backendConfig
 	_                     = Describe("workspace-config", func() {
 		BeforeEach(func() {
-			backendConfig = &SingleWorkspaceConfig{
-				Token: "testToken",
+			backendConfig = &commonBackendConfig{
+				workspaceConfig: &SingleWorkspaceConfig{
+					Token: "testToken",
+				},
 			}
 			ctrl = gomock.NewController(GinkgoT())
 			mockLogger = mocklogger.NewMockLoggerI(ctrl)
