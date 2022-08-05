@@ -1765,7 +1765,18 @@ func (proc *HandleT) transformSrcDest(
 				inCountMap[key] = 0
 			}
 			if _, ok := inCountMetadataMap[key]; !ok {
-				inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				inCountMetadataMap[key] = MetricMetadata{
+					sourceID:                event.Metadata.SourceID,
+					destinationID:           event.Metadata.DestinationID,
+					sourceBatchID:           event.Metadata.SourceBatchID,
+					sourceTaskID:            event.Metadata.SourceTaskID,
+					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
+					sourceJobID:             event.Metadata.SourceJobID,
+					sourceJobRunID:          event.Metadata.SourceJobRunID,
+					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
+					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
+					sourceCategory:          event.Metadata.SourceCategory,
+				}
 			}
 			inCountMap[key] = inCountMap[key] + 1
 		}
@@ -1880,7 +1891,14 @@ func (proc *HandleT) transformSrcDest(
 			}
 		}
 
-		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+		diffMetrics := getDiffMetrics(
+			inPU,
+			types.EVENT_FILTER,
+			inCountMetadataMap,
+			inCountMap,
+			successCountMap,
+			failedCountMap,
+		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, failedMetrics...)
 		reportMetrics = append(reportMetrics, diffMetrics...)
@@ -1972,7 +1990,14 @@ func (proc *HandleT) transformSrcDest(
 					successMetrics = append(successMetrics, m)
 				}
 
-				diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+				diffMetrics := getDiffMetrics(
+					types.EVENT_FILTER,
+					types.DEST_TRANSFORMER,
+					inCountMetadataMap,
+					inCountMap,
+					successCountMap,
+					failedCountMap,
+				)
 
 				reportMetrics = append(reportMetrics, failedMetrics...)
 				reportMetrics = append(reportMetrics, successMetrics...)

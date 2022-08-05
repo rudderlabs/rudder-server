@@ -900,7 +900,9 @@ func (worker *workerT) processDestinationJobs() {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
 			}
-			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
+			if routerJobResponse.status.ErrorCode != strconv.Itoa(transformer.DROP_STATUS_CODE) {
+				worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
+			}
 			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
@@ -1122,7 +1124,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		if respStatusCode >= 500 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
-			if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
+			if respStatusCode != types.RouterTimedOutStatusCode &&
+				respStatusCode != types.RouterUnMarshalErrorCode &&
+				respStatusCode != transformer.DROP_STATUS_CODE {
 				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
 					worker.retryForJobMapMutex.Lock()
@@ -1133,6 +1137,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 					worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 					worker.retryForJobMapMutex.Unlock()
 				}
+			} else if respStatusCode == transformer.DROP_STATUS_CODE {
+				status.JobState = jobsdb.Aborted.State
 			} else {
 				addToFailedMap = false
 				addToAbortMap = false
@@ -1484,15 +1490,23 @@ func (rt *HandleT) ResetSleep() {
 }
 
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
-	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
-	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
-	transformedAtMap := make(map[string]string)
-	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerWorkspaceJobStatusCount := make(map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
-	var completedJobsList []*jobsdb.JobT
-	var statusList []*jobsdb.JobStatusT
-	var routerAbortedJobs []*jobsdb.JobT
+	var (
+		// reporting
+		transformedAtMap     = make(map[string]string)
+		connectionDetailsMap = make(map[string]*utilTypes.ConnectionDetails)
+		statusDetailsMap     = make(map[string]*utilTypes.StatusDetail)
+		reportMetrics        = make([]*utilTypes.PUReportedMetric, 0, len(*responseList))
+		// pending-event count
+		routerWorkspaceJobStatusCount = make(map[string]int)
+		// failed keys
+		jobRunIDAbortedEventsMap = make(map[string][]*FailedEventRowT)
+		// rudder-sources
+		completedJobsList []*jobsdb.JobT
+		// statuses
+		statusList []*jobsdb.JobStatusT
+		// jobs stored to proc_error
+		routerAbortedJobs []*jobsdb.JobT
+	)
 	for _, resp := range *responseList {
 
 		var parameters JobParametersT
@@ -1505,10 +1519,30 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		workspaceID := resp.status.WorkspaceId
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
+		key := fmt.Sprintf(
+			"%s:%s:%s:%s:%s:%s:%s",
+			parameters.SourceID,
+			parameters.DestinationID,
+			parameters.SourceBatchID,
+			resp.status.JobState,
+			resp.status.ErrorCode,
+			eventName,
+			eventType,
+		)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+			cd := utilTypes.CreateConnectionDetail(
+				parameters.SourceID,
+				parameters.DestinationID,
+				parameters.SourceBatchID,
+				parameters.SourceTaskID,
+				parameters.SourceTaskRunID,
+				parameters.SourceJobID,
+				parameters.SourceJobRunID,
+				parameters.SourceDefinitionID,
+				parameters.DestinationDefinitionID,
+				parameters.SourceCategory,
+			)
 			connectionDetailsMap[key] = cd
 			transformedAtMap[key] = parameters.TransformAt
 		}
@@ -1522,7 +1556,19 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if rt.transientSources.Apply(parameters.SourceID) {
 				sampleEvent = routerutils.EmptyPayload
 			}
-			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType)
+			reportState := resp.status.JobState
+			if resp.status.ErrorCode == strconv.Itoa(transformer.DROP_STATUS_CODE) {
+				reportState = utilTypes.DiffStatus
+			}
+			sd = utilTypes.CreateStatusDetail(
+				reportState,
+				0,
+				errorCode,
+				string(resp.status.ErrorResponse),
+				sampleEvent,
+				eventName,
+				eventType,
+			)
 			statusDetailsMap[key] = sd
 		}
 
@@ -1540,12 +1586,17 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		case jobsdb.Aborted.State:
+			if resp.status.ErrorCode != strconv.Itoa(transformer.DROP_STATUS_CODE) {
+				sd.Count++
+				routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+				PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+				completedJobsList = append(completedJobsList, resp.JobT)
+			} else {
+				sd.Count--
+			}
 			routerWorkspaceJobStatusCount[workspaceID] += 1
-			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
-			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
-			completedJobsList = append(completedJobsList, resp.JobT)
+
 		}
 
 		// REPORTING - ROUTER - END

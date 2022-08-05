@@ -30,6 +30,8 @@ const (
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
 )
 
+const DROP_STATUS_CODE = 722
+
 // HandleT is the handle for this class
 type HandleT struct {
 	tr                                 *http.Transport
