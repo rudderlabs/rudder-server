@@ -377,6 +377,12 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.Sch
 		return
 	}
 
+	err = txn.Commit()
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+		return
+	}
+
 	uploadSchema := struct {
 		UploadSchema map[string]map[string]string
 	}{
@@ -387,15 +393,17 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.Sch
 		return
 	}
 
+	txn, err = notifier.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+
 	sqlStatement := fmt.Sprintf(`UPDATE pg_notifier_queue SET status = $1, payload = payload || $2 where batch_id = $3;`)
 	_, err = txn.Exec(sqlStatement, []interface{}{
 		WaitingState,
 		uploadSchemaJSON,
 		batchID,
 	}...)
-	if err != nil {
-		return
-	}
 
 	err = txn.Commit()
 	if err != nil {
