@@ -41,6 +41,7 @@ var (
 )
 
 const (
+	NotReadyState  = "not_ready"
 	WaitingState   = "waiting"
 	ExecutingState = "executing"
 	SucceededState = "succeeded"
@@ -317,7 +318,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -362,7 +363,7 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 			return
 		}
 
-		_, err = stmt.Exec(batchID, WaitingState, string(payloadJSON), notifier.workspaceIdentifier, priority)
+		_, err = stmt.Exec(batchID, NotReadyState, string(payloadJSON), notifier.workspaceIdentifier, priority)
 		if err != nil {
 			return
 		}
@@ -373,6 +374,26 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, priority int) (ch 
 	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		return
+	}
+
+	uploadSchema := struct {
+		UploadSchema map[string]map[string]string
+	}{
+		UploadSchema: schema,
+	}
+	uploadSchemaJSON, err := json.Marshal(uploadSchema)
+	if err != nil {
+		return
+	}
+
+	sqlStatement := fmt.Sprintf(`UPDATE pg_notifier_queue SET status = $1, payload = payload || $2 where batch_id = $3;`)
+	_, err = txn.Exec(sqlStatement, []interface{}{
+		WaitingState,
+		uploadSchemaJSON,
+		batchID,
+	}...)
+	if err != nil {
 		return
 	}
 
