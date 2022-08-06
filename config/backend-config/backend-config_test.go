@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
@@ -94,37 +93,6 @@ func initBackendConfig() {
 	diagnostics.Init()
 	Init()
 }
-
-var _ = Describe("newForDeployment", func() {
-	It("supports single workspace config", func() {
-		GinkgoT().Setenv("WORKSPACE_TOKEN", "password")
-		config, err := newForDeployment(deployment.DedicatedType, nil)
-		Expect(err).To(BeNil())
-
-		cb, ok := config.(*commonBackendConfig)
-		Expect(ok).To(BeTrue())
-		_, ok = cb.workspaceConfig.(*SingleWorkspaceConfig)
-		Expect(ok).To(BeTrue())
-	})
-
-	It("supports hosted workspace config", func() {
-		GinkgoT().Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
-		config, err := newForDeployment(deployment.MultiTenantType, nil)
-		Expect(err).To(BeNil())
-
-		cb, ok := config.(*commonBackendConfig)
-		Expect(ok).To(BeTrue())
-		_, ok = cb.workspaceConfig.(*MultiTenantWorkspacesConfig)
-		Expect(ok).To(BeTrue())
-	})
-
-	It("return err for unsupported type", func() {
-		config, err := newForDeployment("UNSUPPORTED_TYPE", nil)
-
-		Expect(err).To(MatchError(`deployment type "UNSUPPORTED_TYPE" not supported`))
-		Expect(config).To(BeNil())
-	})
-})
 
 var _ = Describe("BackendConfig", func() {
 	initBackendConfig()

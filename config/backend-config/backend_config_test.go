@@ -13,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func TestBadResponse(t *testing.T) {
@@ -69,4 +70,46 @@ func TestBadResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewForDeployment(t *testing.T) {
+	t.Run("dedicated", func(t *testing.T) {
+		t.Setenv("WORKSPACE_TOKEN", "foobar")
+		config, err := newForDeployment(deployment.DedicatedType, nil)
+		require.NoError(t, err)
+		cb, ok := config.(*commonBackendConfig)
+		require.True(t, ok)
+		_, ok = cb.workspaceConfig.(*SingleWorkspaceConfig)
+		require.True(t, ok)
+	})
+
+	t.Run("multi-tenant", func(t *testing.T) {
+		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
+		config, err := newForDeployment(deployment.MultiTenantType, nil)
+		require.NoError(t, err)
+
+		cb, ok := config.(*commonBackendConfig)
+		require.True(t, ok)
+		_, ok = cb.workspaceConfig.(*MultiTenantWorkspacesConfig)
+		require.True(t, ok)
+	})
+
+	t.Run("multi-tenant-with-namespace", func(t *testing.T) {
+		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
+		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
+		t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "Clark")
+		t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "Kent")
+		config, err := newForDeployment(deployment.MultiTenantType, nil)
+		require.NoError(t, err)
+
+		cb, ok := config.(*commonBackendConfig)
+		require.True(t, ok)
+		_, ok = cb.workspaceConfig.(*NamespaceConfig)
+		require.True(t, ok)
+	})
+
+	t.Run("unsupported", func(t *testing.T) {
+		_, err := newForDeployment("UNSUPPORTED_TYPE", nil)
+		require.ErrorContains(t, err, `deployment type "UNSUPPORTED_TYPE" not supported`)
+	})
 }
