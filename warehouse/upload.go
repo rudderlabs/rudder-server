@@ -1754,9 +1754,9 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		// td : add prefix to payload for s3 dest
-		var messages []*warehouseutils.PayloadT
+		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := warehouseutils.PayloadT{
+			payload := PayloadT{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
@@ -1775,26 +1775,29 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				DestinationRevisionID:        job.warehouse.Destination.RevisionID,
 				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 			}
-
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
-
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
 			}
-			messages = append(messages, &payload)
+
+			payloadJSON, err := json.Marshal(payload)
+			if err != nil {
+				panic(err)
+			}
+			messages = append(messages, payloadJSON)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		//var schema *warehouseutils.SchemaT
-		//if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		//	schema = &job.upload.MergedSchema
-		//} else {
-		//	schema = &job.upload.UploadSchema
-		//}
+		var schema *warehouseutils.SchemaT
+		if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			schema = &job.upload.MergedSchema
+		} else {
+			schema = &job.upload.UploadSchema
+		}
 
-		ch, err := job.pgNotifier.Publish(messages, nil, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
@@ -1806,7 +1809,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		rruntime.GoForWarehouse(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
-			var loadFiles []warehouseutils.LoadFileUploadOutputT
+			var loadFiles []loadFileUploadOutputT
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
@@ -1819,7 +1822,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
 				}
-				var output []warehouseutils.LoadFileUploadOutputT
+				var output []loadFileUploadOutputT
 				err = json.Unmarshal(resp.Output, &output)
 				if err != nil {
 					panic(err)
@@ -1893,7 +1896,7 @@ func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 	}
 }
 
-func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []warehouseutils.LoadFileUploadOutputT) (err error) {
+func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
 	// Using transactions for bulk copying
 	txn, err := dbHandle.Begin()
 	if err != nil {

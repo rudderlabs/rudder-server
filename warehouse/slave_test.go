@@ -3,36 +3,34 @@ package warehouse
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/stretchr/testify/require"
 )
 
 func TestPickupStagingFileBucket(t *testing.T) {
 	inputs := []struct {
-		job      *warehouseutils.PayloadT
+		job      *PayloadT
 		expected bool
 	}{
 		{
-			job:      &warehouseutils.PayloadT{},
+			job:      &PayloadT{},
 			expected: false,
 		},
 		{
-			job: &warehouseutils.PayloadT{
+			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
-			job: &warehouseutils.PayloadT{
+			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
-			job: &warehouseutils.PayloadT{
+			job: &PayloadT{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 				StagingDestinationConfig:     map[string]string{},
