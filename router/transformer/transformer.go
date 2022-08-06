@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
@@ -32,9 +33,11 @@ const (
 
 // HandleT is the handle for this class
 type HandleT struct {
-	tr                                 *http.Transport
-	client                             *http.Client
-	tfProxyClient                      *http.Client
+	tr     *http.Transport
+	client *http.Client
+	// Mockable http.client
+	tfProxyClient                      sysUtils.HTTPClientI
+	tfProxyTimeout                     time.Duration
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
 	transformerProxyRequestTime        stats.RudderStats
@@ -45,7 +48,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup(timeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64, varargs ...interface{}) (statusCode int, respBody string)
 }
 
 // NewTransformer creates a new transformer
@@ -184,7 +187,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (int, string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64, varargs ...interface{}) (int, string) {
 	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, destName, jobId)
 	payload, err := jsonfast.Marshal(responseData)
@@ -193,7 +196,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	}
 
 	rdl_time := time.Now()
-	respData, respCode, requestError := trans.makeHTTPRequest(ctx, payload, destName, jobId)
+	respData, respCode, requestError := trans.makeHTTPRequest(ctx, payload, destName, jobId, varargs...)
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
 	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
 	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
@@ -250,27 +253,28 @@ func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
+	trans.tfProxyTimeout = 2 * netClientTimeout
 	// This client is to be used for proxy request
-	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: 2 * netClientTimeout}
+	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, payload []byte, destName string, jobId int64) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, payload []byte, destName string, jobId int64, varargs ...interface{}) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
-	proxyUrl := getProxyURL(destName)
+	proxyUrl := getProxyURL(destName, varargs...)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
 		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt(trans.tfProxyTimeout.Milliseconds()/2, 10))
 	// Make use of this header to set timeout in the transfomer's http client
 	// The header name may be worked out ?
-	trans.logger.Infof("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt(trans.tfProxyClient.Timeout.Milliseconds()/2, 10))
-	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyClient.Timeout.Milliseconds()/2, 10))
+	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyTimeout.Milliseconds()/2, 10))
 
 	httpReqStTime := time.Now()
 	resp, err := trans.tfProxyClient.Do(req)
@@ -325,6 +329,10 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getProxyURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+func getProxyURL(destName string, varargs ...interface{}) string {
+	baseUrl := strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
+	if len(varargs) > 0 {
+		baseUrl = fmt.Sprintf("%v", varargs[0])
+	}
+	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }
