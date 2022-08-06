@@ -1754,7 +1754,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		// td : add prefix to payload for s3 dest
-		var messages []warehouseutils.PayloadT
+		var messages []*warehouseutils.PayloadT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := warehouseutils.PayloadT{
 				UploadID:                     job.upload.ID,
@@ -1783,18 +1783,18 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
 			}
-			messages = append(messages, payload)
+			messages = append(messages, &payload)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		var schema warehouseutils.SchemaT
-		if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			schema = job.upload.MergedSchema
-		} else {
-			schema = job.upload.UploadSchema
-		}
+		//var schema *warehouseutils.SchemaT
+		//if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		//	schema = &job.upload.MergedSchema
+		//} else {
+		//	schema = &job.upload.UploadSchema
+		//}
 
-		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, nil, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

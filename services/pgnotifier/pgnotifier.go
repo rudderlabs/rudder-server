@@ -318,7 +318,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []*whUtils.PayloadT, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -367,9 +367,6 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.Sch
 		if err != nil {
 			return
 		}
-
-		// setting payloadJSON to nil to release mem allocated
-		payloadJSON = nil
 	}
 	_, err = stmt.Exec()
 	if err != nil {
@@ -383,33 +380,33 @@ func (notifier *PgNotifierT) Publish(jobs []whUtils.PayloadT, schema whUtils.Sch
 		return
 	}
 
-	uploadSchema := struct {
-		UploadSchema map[string]map[string]string
-	}{
-		UploadSchema: schema,
-	}
-	uploadSchemaJSON, err := json.Marshal(uploadSchema)
-	if err != nil {
-		return
-	}
+	//uploadSchema := struct {
+	//	UploadSchema map[string]map[string]string
+	//}{
+	//	UploadSchema: *schema,
+	//}
+	//uploadSchemaJSON, err := json.Marshal(uploadSchema)
+	//if err != nil {
+	//	return
+	//}
 
-	txn, err = notifier.dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
-	sqlStatement := fmt.Sprintf(`UPDATE pg_notifier_queue SET status = $1, payload = payload || $2 where batch_id = $3;`)
-	_, err = txn.Exec(sqlStatement, []interface{}{
-		WaitingState,
-		uploadSchemaJSON,
-		batchID,
-	}...)
-
-	err = txn.Commit()
-	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
-		return
-	}
+	//txn, err = notifier.dbHandle.Begin()
+	//if err != nil {
+	//	return
+	//}
+	//
+	//sqlStatement := fmt.Sprintf(`UPDATE pg_notifier_queue SET status = $1, payload = payload || $2 where batch_id = $3;`)
+	//_, err = txn.Exec(sqlStatement, []interface{}{
+	//	WaitingState,
+	//	uploadSchemaJSON,
+	//	batchID,
+	//}...)
+	//
+	//err = txn.Commit()
+	//if err != nil {
+	//	pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+	//	return
+	//}
 
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
