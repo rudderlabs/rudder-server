@@ -333,36 +333,36 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	// Using transactions for bulk copying
 	txn, err := notifier.dbHandle.Begin()
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating transaction for publishing with error: %w", err)
 		return
 	}
 	defer func() {
 		if err != nil {
 			if rollbackErr := txn.Rollback(); rollbackErr != nil {
-				pkgLogger.Error(err.Error())
-				pkgLogger.Error(rollbackErr.Error())
+				pkgLogger.Errorf("PgNotifier: Failed rollback transaction for publishing with error: %s", rollbackErr.Error())
 			}
 		}
 	}()
 
 	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
 	}
-	defer func() {
-		_ = stmt.Close()
-	}()
+	defer stmt.Close()
 
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
 		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
 		if err != nil {
+			err = fmt.Errorf("PgNotifier: Failed executing prepared statement for publishing with error: %w", err)
 			return
 		}
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed publishing prepared statement for publishing with error: %w", err)
 		return
 	}
 
@@ -372,6 +372,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		UploadSchema: *schema,
 	})
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed unmarshalling uploadschema for publishing with error: %w", err)
 		return
 	}
 
@@ -387,14 +388,16 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		batchID,
 	}...)
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed updating uploadschema for publishing with error: %w", err)
 		return
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed commiting transaction for publishing with error: %w", err)
 		return
 	}
+
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,

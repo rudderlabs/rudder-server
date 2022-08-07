@@ -1788,11 +1788,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			}
 			messages = append(messages, payloadJSON)
 		}
-		var schema *warehouseutils.SchemaT
+
+		schema := &job.upload.UploadSchema
 		if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 			schema = &job.upload.MergedSchema
-		} else {
-			schema = &job.upload.UploadSchema
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
