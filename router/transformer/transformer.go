@@ -33,10 +33,12 @@ const (
 
 // HandleT is the handle for this class
 type HandleT struct {
-	tr     *http.Transport
+	tr *http.Transport
+	// http client for router transformation request
 	client *http.Client
-	// Mockable http.client
-	tfProxyClient                      sysUtils.HTTPClientI
+	// Mockable http.client for transformer proxy request
+	tfProxyClient sysUtils.HTTPClientI
+	// http client timeout for transformer proxy request
 	tfProxyTimeout                     time.Duration
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
@@ -254,7 +256,6 @@ func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.tfProxyTimeout = 2 * netClientTimeout
-	// This client is to be used for proxy request
 	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)

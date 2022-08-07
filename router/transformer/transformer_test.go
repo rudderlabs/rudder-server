@@ -19,15 +19,30 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type ProxyContextTc struct {
+	Timeout time.Duration
+	Cancel  bool
+}
 type ProxyResponseTc struct {
-	name              string
-	ExpectedBody      string
-	proxyResponse     string
-	ExpectedStCode    int
-	proxyStatusCode   int
+	// The test-case name for better understanding of what we're trying to do!
+	name string
+	// The response body expected from transformer.ProxyRequest
+	ExpectedBody string
+	// The expected response body from proxy endpoint in transformer
+	proxyResponse string
+	// The expected status code from transformer.ProxyRequest
+	ExpectedStCode int
+	// The response status code from proxy endpoint in transformer
+	proxyStatusCode int
+	// The delay in response from proxy endpoint in transformer
 	proxyTimeoutValue time.Duration
-	rtTimeout         time.Duration
-	postParametersT   integrations.PostParametersT
+	// The timeout we have set from router
+	// Router will have the timeout of 2 * rtTimeout
+	// For http client timeout scenarios, we need to have a proxyTimeout which is > 2 * rtTimeout
+	rtTimeout time.Duration
+	// Transformed response that needs to be sent to destination
+	postParametersT integrations.PostParametersT
+	context         ProxyContextTc
 }
 
 // error response from destination in transformer proxy
@@ -64,10 +79,63 @@ var proxyResponseTcs = map[string]ProxyResponseTc{
 		proxyStatusCode:   http.StatusOK,
 		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
 		proxyTimeoutValue: 40 * time.Millisecond,
-		rtTimeout:         20 * time.Millisecond,
+		rtTimeout:         18 * time.Millisecond,
 		postParametersT: integrations.PostParametersT{
 			Type:          "REST",
 			URL:           "http://www.good_dest_1.domain.com",
+			RequestMethod: http.MethodPost,
+			QueryParams:   map[string]interface{}{},
+			Body: map[string]interface{}{
+				"JSON": map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
+				"FORM":       map[string]interface{}{},
+				"JSON_ARRAY": map[string]interface{}{},
+				"XML":        map[string]interface{}{},
+			},
+			Files: map[string]interface{}{},
+		},
+	},
+	"ctx_timeout_dest": {
+		name:              "should throw timeout exception due to context getting timedout",
+		ExpectedStCode:    http.StatusGatewayTimeout,
+		ExpectedBody:      `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
+		proxyStatusCode:   http.StatusOK,
+		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
+		proxyTimeoutValue: 4 * time.Millisecond,
+		context: ProxyContextTc{
+			Timeout: 2 * time.Millisecond,
+		},
+		postParametersT: integrations.PostParametersT{
+			Type:          "REST",
+			URL:           "http://www.ctx_timeout_dest.domain.com",
+			RequestMethod: http.MethodPost,
+			QueryParams:   map[string]interface{}{},
+			Body: map[string]interface{}{
+				"JSON": map[string]interface{}{
+					"key_1": "val_1",
+					"key_2": "val_2",
+				},
+				"FORM":       map[string]interface{}{},
+				"JSON_ARRAY": map[string]interface{}{},
+				"XML":        map[string]interface{}{},
+			},
+			Files: map[string]interface{}{},
+		},
+	},
+	"ctx_cancel_dest": {
+		name:            "should throw timeout exception due to context getting cancelled immediately",
+		ExpectedStCode:  http.StatusInternalServerError,
+		ExpectedBody:    `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
+		proxyStatusCode: http.StatusOK,
+		proxyResponse:   `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_cancel_dest"}}`,
+		context: ProxyContextTc{
+			Cancel: true,
+		},
+		postParametersT: integrations.PostParametersT{
+			Type:          "REST",
+			URL:           "http://www.ctx_timeout_dest.domain.com",
 			RequestMethod: http.MethodPost,
 			QueryParams:   map[string]interface{}{},
 			Body: map[string]interface{}{
@@ -110,10 +178,19 @@ func TestProxyRequest(t *testing.T) {
 				// Just a default value
 				tr.Setup(2 * time.Millisecond)
 			}
+			// Logic to include context timing out
+			ctx := context.TODO()
+			var cancelFunc context.CancelFunc
+			if tc.context.Timeout.Milliseconds() > 0 {
+				ctx, cancelFunc = context.WithTimeout(context.TODO(), tc.context.Timeout)
+				defer cancelFunc()
+			} else if tc.context.Cancel {
+				ctx, cancelFunc = context.WithCancel(context.TODO())
+				cancelFunc()
+			}
 
-			stCd, resp := tr.ProxyRequest(context.Background(), tc.postParametersT, destName, int64(0), srv.URL)
-			// if tc.rtTimeout
-			// transformer.Setup(tc.rtTimeout)
+			stCd, resp := tr.ProxyRequest(ctx, tc.postParametersT, destName, int64(0), srv.URL)
+
 			assert.Equal(t, tc.ExpectedStCode, stCd)
 			if gjson.GetBytes([]byte(resp), "message").Raw != "" {
 				require.JSONEq(t, tc.ExpectedBody, resp)
@@ -125,11 +202,12 @@ func TestProxyRequest(t *testing.T) {
 	}
 }
 
+// A kind of mock for transformer proxy endpoint in transformer
 func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	destName, ok := vars["destName"]
 	if !ok {
-		// TODO: Modify this case
+		// Modify this case ?
 		panic(fmt.Errorf("Wrong url being sent"))
 	}
 	tc := proxyResponseTcs[destName]
@@ -139,5 +217,10 @@ func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(tc.proxyStatusCode)
-	w.Write([]byte(tc.proxyResponse))
+	// Lint error fix
+	_, err := w.Write([]byte(tc.proxyResponse))
+	if err != nil {
+		// Is there a better way to handle this ?
+		panic(fmt.Errorf("Provided response is faulty, please check it. Err: %v", err))
+	}
 }
