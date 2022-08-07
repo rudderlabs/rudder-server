@@ -349,7 +349,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
@@ -394,7 +394,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 
 	err = txn.Commit()
 	if err != nil {
-		err = fmt.Errorf("PgNotifier: Failed commiting transaction for publishing with error: %w", err)
+		err = fmt.Errorf("PgNotifier: Failed committing transaction for publishing with error: %w", err)
 		return
 	}
 
@@ -454,12 +454,6 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 func GetCurrentSQLTimestamp() string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return time.Now().Format(SQLTimeFormat)
-}
-
-// GetSQLTimestamp to get sql complaint current datetime string from the given duration
-func GetSQLTimestamp(t time.Time) string {
-	const SQLTimeFormat = "2006-01-02 15:04:05"
-	return t.Format(SQLTimeFormat)
 }
 
 // RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
