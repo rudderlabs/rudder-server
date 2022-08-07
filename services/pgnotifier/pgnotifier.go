@@ -331,21 +331,21 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 
 	ch = make(chan []ResponseT)
 
-	// Using transactions for bulk copying
-	txn, err := notifier.dbHandle.Begin()
+	// Using jobsTxn transactions for bulk copying
+	jobsTxn, err := notifier.dbHandle.Begin()
 	if err != nil {
 		return
 	}
 	defer func() {
 		if err != nil {
-			if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			if rollbackErr := jobsTxn.Rollback(); rollbackErr != nil {
 				pkgLogger.Error(err.Error())
 				pkgLogger.Error(rollbackErr.Error())
 			}
 		}
 	}()
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
+	stmt, err := jobsTxn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
 		return
 	}
@@ -363,43 +363,48 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		pkgLogger.Errorf("PgNotifier: Error publishing messages while executing stmt with err: %v", err)
 		return
 	}
 
-	err = txn.Commit()
-	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
-		return
-	}
-
-	uploadSchema := struct {
-		UploadSchema map[string]map[string]string
+	uploadSchemaJSON, err := json.Marshal(struct {
+		UploadSchema whUtils.SchemaT
 	}{
 		UploadSchema: *schema,
-	}
-	uploadSchemaJSON, err := json.Marshal(uploadSchema)
+	})
 	if err != nil {
 		return
 	}
 
-	txn, err = notifier.dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
-	sqlStatement := fmt.Sprintf(`UPDATE pg_notifier_queue SET status = $1, payload = payload || $2 where batch_id = $3;`)
-	_, err = txn.Exec(sqlStatement, []interface{}{
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  pg_notifier_queue
+		SET
+		  status = $1,
+		  payload = payload || $2
+		where
+		  batch_id = $3;`,
+	)
+	_, err = jobsTxn.Exec(sqlStatement, []interface{}{
 		WaitingState,
 		uploadSchemaJSON,
 		batchID,
 	}...)
-
-	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
+
+	err = jobsTxn.Commit()
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error in publishing messages while commiting jobsTxn with err: %v", err)
+		return
+	}
+
+	//// Updating schema for the payload
+	//err = notifier.updateSchema(schema, batchID)
+	//if err != nil {
+	//	return
+	//}
 
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
@@ -408,6 +413,52 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	}).Count(len(jobs))
 
 	notifier.trackBatch(batchID, &ch)
+	return
+}
+
+func (notifier *PgNotifierT) updateSchema(schema *whUtils.SchemaT, batchID string) (err error) {
+	uploadSchemaJSON, err := json.Marshal(struct {
+		UploadSchema whUtils.SchemaT
+	}{
+		UploadSchema: *schema,
+	})
+	if err != nil {
+		return
+	}
+
+	txn, err := notifier.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txn.Rollback(); rollbackErr != nil {
+				pkgLogger.Error(err.Error())
+				pkgLogger.Error(rollbackErr.Error())
+			}
+		}
+	}()
+
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  pg_notifier_queue
+		SET
+		  status = $1,
+		  payload = payload || $2
+		where
+		  batch_id = $3;`,
+	)
+	_, err = txn.Exec(sqlStatement, []interface{}{
+		WaitingState,
+		uploadSchemaJSON,
+		batchID,
+	}...)
+
+	err = txn.Commit()
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error in updating schema with err: %s", err.Error())
+		return
+	}
 	return
 }
 

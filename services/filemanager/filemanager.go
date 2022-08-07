@@ -58,30 +58,35 @@ func init() {
 
 // New returns FileManager backed by configured provider
 func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
-	var timeout time.Duration = time.Minute
+	var timeout time.Duration
 
 	switch settings.Provider {
 	case "S3":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.S3.timeout", "BatchRouter.timeout"}...)
 		return &S3Manager{
 			Config:  GetS3Config(settings.Config),
 			Timeout: &timeout,
 		}, nil
 	case "GCS":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.GCS.timeout", "BatchRouter.timeout"}...)
 		return &GCSManager{
 			Config:  GetGCSConfig(settings.Config),
 			Timeout: &timeout,
 		}, nil
 	case "AZURE_BLOB":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.AZURE_BLOB.timeout", "BatchRouter.timeout"}...)
 		return &AzureBlobStorageManager{
 			Config:  GetAzureBlogStorageConfig(settings.Config),
 			Timeout: &timeout,
 		}, nil
 	case "MINIO":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.MINIO.timeout", "BatchRouter.timeout"}...)
 		return &MinioManager{
 			Config:  GetMinioConfig(settings.Config),
 			Timeout: &timeout,
 		}, nil
 	case "DIGITAL_OCEAN_SPACES":
+		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.DIGITAL_OCEAN_SPACES.timeout", "BatchRouter.timeout"}...)
 		return &DOSpacesManager{
 			Config:  GetDOSpacesConfig(settings.Config),
 			Timeout: &timeout,
