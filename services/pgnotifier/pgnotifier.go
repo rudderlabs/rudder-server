@@ -375,14 +375,13 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		return
 	}
 
-	sqlStatement := fmt.Sprint(`
+	sqlStatement := `
 		UPDATE
 		  pg_notifier_queue
 		SET
-		  payload = payload || $2
+		  payload = payload || $1
 		where
-		  batch_id = $3;`,
-	)
+		  batch_id = $2;`
 	_, err = txn.Exec(sqlStatement, []interface{}{
 		uploadSchemaJSON,
 		batchID,
