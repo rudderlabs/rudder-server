@@ -375,7 +375,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		return
 	}
 
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprint(`
 		UPDATE
 		  pg_notifier_queue
 		SET
