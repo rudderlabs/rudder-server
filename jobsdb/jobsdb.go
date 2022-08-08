@@ -3394,13 +3394,14 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 
 // getFileUploader get a file uploader
 func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
-	if jd.jobsFileUploader != nil {
-		return jd.jobsFileUploader, nil
+	var err error
+	if jd.jobsFileUploader == nil {
+		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
+		})
 	}
-	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv(),
-	})
+	return jd.jobsFileUploader, err
 }
 
 func isBackupConfigured() bool {

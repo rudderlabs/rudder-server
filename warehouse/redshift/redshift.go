@@ -239,7 +239,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-	uploader, _ := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         "S3",
@@ -247,6 +247,9 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
 		}),
 	})
+	if err != nil {
+		return "", err
+	}
 
 	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
 	if err != nil {
