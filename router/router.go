@@ -676,9 +676,14 @@ func (worker *workerT) processDestinationJobs() {
 								if worker.rt.transformerProxy {
 									jobId := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
+									proxyReqparams := &transformer.ProxyRequestParams{
+										DestName:     worker.rt.destName,
+										JobId:        jobId,
+										ResponseData: val,
+									}
 									rtlTime := time.Now()
 									// Should we change this context to sendCtx and probably adjust the timeout for the context ?
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobId)
+									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)

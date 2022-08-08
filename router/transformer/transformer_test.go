@@ -189,7 +189,12 @@ func TestProxyRequest(t *testing.T) {
 				cancelFunc()
 			}
 
-			stCd, resp := tr.ProxyRequest(ctx, tc.postParametersT, destName, int64(0), srv.URL)
+			reqParams := &rtTf.ProxyRequestParams{
+				ResponseData: tc.postParametersT,
+				DestName:     destName,
+				BaseUrl:      srv.URL,
+			}
+			stCd, resp := tr.ProxyRequest(ctx, reqParams)
 
 			assert.Equal(t, tc.ExpectedStCode, stCd)
 			if gjson.GetBytes([]byte(resp), "message").Raw != "" {

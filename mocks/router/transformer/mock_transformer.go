@@ -10,7 +10,7 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
+	transformer "github.com/rudderlabs/rudder-server/router/transformer"
 	types "github.com/rudderlabs/rudder-server/router/types"
 )
 
@@ -38,23 +38,18 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // ProxyRequest mocks base method.
-func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 integrations.PostParametersT, arg2 string, arg3 int64, arg4 ...interface{}) (int, string) {
+func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) (int, string) {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1, arg2, arg3}
-	for _, a := range arg4 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "ProxyRequest", varargs...)
+	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
 // ProxyRequest indicates an expected call of ProxyRequest.
-func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1, arg2, arg3 interface{}, arg4 ...interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1, arg2, arg3}, arg4...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1)
 }
 
 // Setup mocks base method.

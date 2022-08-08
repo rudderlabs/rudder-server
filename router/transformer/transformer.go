@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
@@ -46,11 +47,18 @@ type HandleT struct {
 	logger                             logger.LoggerI
 }
 
+type ProxyRequestParams struct {
+	ResponseData integrations.PostParametersT
+	DestName     string
+	JobId        int64
+	BaseUrl      string
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
 	Setup(timeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64, varargs ...interface{}) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody string)
 }
 
 // NewTransformer creates a new transformer
@@ -189,19 +197,15 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64, varargs ...interface{}) (int, string) {
-	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, destName, jobId)
-	payload, err := jsonfast.Marshal(responseData)
-	if err != nil {
-		panic(err)
-	}
+func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string) {
+	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": proxyReqParams.DestName}).Increment()
+	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobId)
 
 	rdl_time := time.Now()
-	respData, respCode, requestError := trans.makeHTTPRequest(ctx, payload, destName, jobId, varargs...)
+	respData, respCode, requestError := trans.makeTfProxyRequest(ctx, proxyReqParams)
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
-	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
-	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
+	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdl_time))
+	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {
 		return respCode, requestError.Error()
@@ -232,7 +236,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
-	err = jsonfast.Unmarshal(respData, &transformerResponse)
+	err := jsonfast.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
@@ -262,10 +266,19 @@ func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, payload []byte, destName string, jobId int64, varargs ...interface{}) ([]byte, int, error) {
+func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
-	proxyUrl := getProxyURL(destName, varargs...)
+
+	baseUrl := proxyReqParams.BaseUrl
+	destName := proxyReqParams.DestName
+	jobId := proxyReqParams.JobId
+
+	payload, err := jsonfast.Marshal(proxyReqParams.ResponseData)
+	if err != nil {
+		panic(err)
+	}
+	proxyUrl := getProxyURL(destName, baseUrl)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
@@ -330,10 +343,9 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getProxyURL(destName string, varargs ...interface{}) string {
-	baseUrl := strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
-	if len(varargs) > 0 {
-		baseUrl = fmt.Sprintf("%v", varargs[0])
+func getProxyURL(destName string, baseUrl string) string {
+	if !router_utils.IsNotEmptyString(baseUrl) { // empty string check
+		baseUrl = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
 	}
 	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }
