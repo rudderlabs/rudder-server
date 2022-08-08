@@ -13,7 +13,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
-	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -118,17 +117,23 @@ func TestNewForDeployment(t *testing.T) {
 }
 
 func TestConfigUpdate(t *testing.T) {
+	initBackendConfig()
+	logger.Init()
+	stats.Setup()
+
 	t.Run("on failure", func(t *testing.T) {
 		var (
+			ctrl       = gomock.NewController(t)
 			ctx        = context.Background()
 			fakeError  = errors.New("fake error")
 			workspaces = "foo"
 		)
+		defer ctrl.Finish()
 
-		wc := mock_backendconfig.MockworkspaceConfig{}
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(nil, fakeError).Times(1)
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
 		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
-		bc := &commonBackendConfig{workspaceConfig: &wc}
+		bc := &commonBackendConfig{workspaceConfig: wc}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 		require.False(t, bc.initialized)
 	})
