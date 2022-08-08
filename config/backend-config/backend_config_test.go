@@ -237,3 +237,11 @@ func TestConfigUpdate(t *testing.T) {
 		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
 	})
 }
+
+func TestFilterProcessorEnabledDestinations(t *testing.T) {
+	initBackendConfig()
+	logger.Init()
+
+	result := filterProcessorEnabledDestinations(sampleBackendConfig)
+	require.Equal(t, result, sampleFilteredSources)
+}

@@ -62,15 +62,6 @@ var _ = Describe("BackendConfig", func() {
 		pkgLogger = originalLogger
 	})
 
-	Context("filterProcessorEnabledDestinations method", func() {
-		It("Expect to return the correct value", func() {
-			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
-			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			result := filterProcessorEnabledDestinations(sampleBackendConfig)
-			Expect(result).To(Equal(sampleFilteredSources))
-		})
-	})
-
 	Context("Subscribe method", func() {
 		It("Expect make the correct actions for processConfig topic", func() {
 			ctx, cancel := context.WithCancel(context.Background())
