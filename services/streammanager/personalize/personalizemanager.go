@@ -29,7 +29,7 @@ type PersonalizeClient interface {
 	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
 }
 
-func NewProducer(destinationConfig interface{}, o common.Opts) (*PersonalizeProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*PersonalizeProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, personalizeevents.ServiceName)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[Personalize] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorf("[Personalize] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 
