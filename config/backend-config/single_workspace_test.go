@@ -13,10 +13,15 @@ import (
 
 	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var _ = Describe("workspace-config", func() {
-	var backendConfig *commonBackendConfig
+	var (
+		ctrl          *gomock.Controller
+		mockLogger    *mocklogger.MockLoggerI
+		backendConfig *commonBackendConfig
+	)
 
 	BeforeEach(func() {
 		backendConfig = &commonBackendConfig{
@@ -30,7 +35,7 @@ var _ = Describe("workspace-config", func() {
 	})
 	AfterEach(func() {
 		ctrl.Finish()
-		pkgLogger = originalLogger
+		pkgLogger = logger.NewLogger().Child("backend-config")
 	})
 
 	Context("getFromAPI method", func() {

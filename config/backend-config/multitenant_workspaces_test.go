@@ -11,10 +11,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var _ = Describe("workspace-config", func() {
 	var (
+		ctrl                   *gomock.Controller
+		mockLogger             *mocklogger.MockLoggerI
 		backendConfig          *commonBackendConfig
 		workspaceId            = "testWordSpaceId"
 		SampleWorkspaceSources = map[string]ConfigT{
@@ -34,7 +37,7 @@ var _ = Describe("workspace-config", func() {
 	})
 	AfterEach(func() {
 		ctrl.Finish()
-		pkgLogger = originalLogger
+		pkgLogger = logger.NewLogger().Child("backend-config")
 	})
 
 	Context("GetWorkspaceIDForWriteKey method: Multitenant", func() {
