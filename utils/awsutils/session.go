@@ -11,14 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/mitchellh/mapstructure"
 )
 
 type SessionConfig struct {
-	Region      string
-	AccessKeyID string
-	AccessKey   string
-	IAMRoleARN  string
-	ExternalID  string
+	Region      string `mapstructure:"region"`
+	AccessKeyID string `mapstructure:"accessKeyID"`
+	AccessKey   string `mapstructure:"accessKey"`
+	IAMRoleARN  string `mapstructure:"iamRoleARN"`
+	ExternalID  string `mapstructure:"externalID"`
 	Service     string
 	Timeout     time.Duration
 }
@@ -69,32 +70,8 @@ func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Dur
 		return nil, errors.New("destinationConfig should not be nil")
 	}
 	sessionConfig := SessionConfig{}
+	mapstructure.Decode(destinationConfig, &sessionConfig)
 
-	if region, ok := destinationConfig["Region"].(string); ok {
-		sessionConfig.Region = region
-	} else if region, ok := destinationConfig["region"].(string); ok {
-		sessionConfig.Region = region
-	}
-	if roleArn, ok := destinationConfig["IAMRoleARN"].(string); ok {
-		sessionConfig.IAMRoleARN = roleArn
-	} else if roleArn, ok := destinationConfig["iamRoleARN"].(string); ok {
-		sessionConfig.IAMRoleARN = roleArn
-	}
-	if externalID, ok := destinationConfig["ExternalID"].(string); ok {
-		sessionConfig.ExternalID = externalID
-	} else if externalID, ok := destinationConfig["externalID"].(string); ok {
-		sessionConfig.ExternalID = externalID
-	}
-	if accessKeyID, ok := destinationConfig["AccessKeyID"].(string); ok {
-		sessionConfig.AccessKeyID = accessKeyID
-	} else if accessKeyID, ok := destinationConfig["accessKeyID"].(string); ok {
-		sessionConfig.AccessKeyID = accessKeyID
-	}
-	if accessKey, ok := destinationConfig["AccessKey"].(string); ok {
-		sessionConfig.AccessKey = accessKey
-	} else if accessKey, ok := destinationConfig["accessKey"].(string); ok {
-		sessionConfig.AccessKey = accessKey
-	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
 	return &sessionConfig, nil

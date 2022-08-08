@@ -9,14 +9,14 @@ import (
 
 var (
 	destinationConfigWithRole map[string]interface{} = map[string]interface{}{
-		"Region":     "us-east-1",
-		"IAMRoleARN": "role-arn",
-		"ExternalID": "ExternalID",
+		"region":     "us-east-1",
+		"iamRoleARN": "role-arn",
+		"externalID": "ExternalID",
 	}
 	destinationConfigWithAccessKey map[string]interface{} = map[string]interface{}{
-		"Region":      "us-east-1",
-		"AccessKeyID": "AccessKeyID",
-		"AccessKey":   "AccessKey",
+		"region":      "us-east-1",
+		"accessKeyID": "AccessKeyID",
+		"accessKey":   "AccessKey",
 	}
 	timeOut time.Duration = 10 * time.Second
 )
@@ -27,9 +27,9 @@ func TestNewSessionConfigWithAccessKey(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, sessionConfig)
 	assert.Equal(t, *sessionConfig, SessionConfig{
-		Region:      destinationConfigWithAccessKey["Region"].(string),
-		AccessKeyID: destinationConfigWithAccessKey["AccessKeyID"].(string),
-		AccessKey:   destinationConfigWithAccessKey["AccessKey"].(string),
+		Region:      destinationConfigWithAccessKey["region"].(string),
+		AccessKeyID: destinationConfigWithAccessKey["accessKeyID"].(string),
+		AccessKey:   destinationConfigWithAccessKey["accessKey"].(string),
 		Timeout:     timeOut,
 		Service:     serviceName,
 	})
@@ -41,9 +41,9 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, sessionConfig)
 	assert.Equal(t, *sessionConfig, SessionConfig{
-		Region:     destinationConfigWithRole["Region"].(string),
-		IAMRoleARN: destinationConfigWithRole["IAMRoleARN"].(string),
-		ExternalID: destinationConfigWithRole["ExternalID"].(string),
+		Region:     destinationConfigWithRole["region"].(string),
+		IAMRoleARN: destinationConfigWithRole["iamRoleARN"].(string),
+		ExternalID: destinationConfigWithRole["externalID"].(string),
 		Timeout:    timeOut,
 		Service:    serviceName,
 	})
@@ -58,9 +58,9 @@ func TestNewSessionConfigBadConfig(t *testing.T) {
 
 func TestCreateSessionWithRole(t *testing.T) {
 	sessionConfig := SessionConfig{
-		Region:     destinationConfigWithRole["Region"].(string),
-		IAMRoleARN: destinationConfigWithRole["IAMRoleARN"].(string),
-		ExternalID: destinationConfigWithRole["ExternalID"].(string),
+		Region:     destinationConfigWithRole["region"].(string),
+		IAMRoleARN: destinationConfigWithRole["iamRoleARN"].(string),
+		ExternalID: destinationConfigWithRole["externalID"].(string),
 		Timeout:    10 * time.Second,
 	}
 	awsSession := CreateSession(&sessionConfig)
@@ -72,9 +72,9 @@ func TestCreateSessionWithRole(t *testing.T) {
 
 func TestCreateSessionWithAccessKeys(t *testing.T) {
 	sessionConfig := SessionConfig{
-		Region:      destinationConfigWithAccessKey["Region"].(string),
-		AccessKeyID: destinationConfigWithAccessKey["AccessKeyID"].(string),
-		AccessKey:   destinationConfigWithAccessKey["AccessKey"].(string),
+		Region:      destinationConfigWithAccessKey["region"].(string),
+		AccessKeyID: destinationConfigWithAccessKey["accessKeyID"].(string),
+		AccessKey:   destinationConfigWithAccessKey["accessKey"].(string),
 		Timeout:     10 * time.Second,
 	}
 	awsSession := CreateSession(&sessionConfig)
@@ -86,7 +86,7 @@ func TestCreateSessionWithAccessKeys(t *testing.T) {
 
 func TestCreateSessionWithoutAccessKeysOrRole(t *testing.T) {
 	sessionConfig := SessionConfig{
-		Region:  destinationConfigWithAccessKey["Region"].(string),
+		Region:  destinationConfigWithAccessKey["region"].(string),
 		Timeout: 10 * time.Second,
 	}
 	awsSession := CreateSession(&sessionConfig)
