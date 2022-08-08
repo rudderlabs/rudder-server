@@ -9,9 +9,17 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// WorkspacesT holds sources of workspaces
+type WorkspacesT struct {
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
+}
 
 type MultiTenantWorkspacesConfig struct {
 	CommonBackendConfig
@@ -140,7 +148,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	ctx context.Context, url string,
 ) ([]byte, int, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return []byte{}, 400, err
 	}

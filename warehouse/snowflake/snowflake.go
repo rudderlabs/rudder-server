@@ -159,8 +159,9 @@ func (sf *HandleT) columnExists(columnName, tableName string) (exists bool, err 
 }
 
 func (sf *HandleT) schemaExists() (exists bool, err error) {
-	sqlStatement := "SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = $1 )"
-	err = sf.Db.QueryRow(sqlStatement, sf.Namespace).Scan(&exists)
+	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s' )", sf.Namespace)
+	r := sf.Db.QueryRow(sqlStatement)
+	err = r.Scan(&exists)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
