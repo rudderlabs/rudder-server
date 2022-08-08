@@ -19,6 +19,7 @@ type SingleWorkspaceConfig struct {
 	Token            string
 	workspaceID      string
 	configBackendURL string
+	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
 
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -27,6 +28,9 @@ type SingleWorkspaceConfig struct {
 
 func (wc *SingleWorkspaceConfig) SetUp() error {
 	if configFromFile {
+		if wc.configJSONPath == "" {
+			return fmt.Errorf("valid configJSONPath is required when configFromFile is set to true")
+		}
 		return nil
 	}
 	if wc.Token == "" {
@@ -120,16 +124,16 @@ func (wc *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 }
 
 // getFromFile reads the workspace config from JSON file
-func (*SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
+func (wc *SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	pkgLogger.Info("Reading workspace config from JSON file")
-	data, err := IoUtil.ReadFile(configJSONPath)
+	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
-		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, err.Error())
+		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", wc.configJSONPath, err.Error())
 		return ConfigT{}, err
 	}
 	var configJSON ConfigT
 	if err = json.Unmarshal(data, &configJSON); err != nil {
-		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
+		pkgLogger.Errorf("Unable to parse backend config from file: %s", wc.configJSONPath)
 		return ConfigT{}, err
 	}
 	return configJSON, nil
