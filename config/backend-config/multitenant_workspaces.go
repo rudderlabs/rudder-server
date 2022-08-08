@@ -23,7 +23,7 @@ type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
 
-type MultiTenantWorkspacesConfig struct {
+type MultiTenantWorkspacesConfig struct { // TODO unexport all these
 	Token                     string
 	configBackendURL          string
 	configEnvHandler          types.ConfigEnvI
@@ -123,7 +123,7 @@ func (wc *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string)
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, err
+		return ConfigT{}, fmt.Errorf("invalid response from backend config: %v", err)
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
