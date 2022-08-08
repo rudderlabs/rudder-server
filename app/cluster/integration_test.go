@@ -285,10 +285,16 @@ func TestDynamicClusterManager(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.NormalMode
 	}, time.Second, time.Millisecond)
+
+	// Letting the router start function to return
+	// else stop would be waiting forever on the wait-group
+	time.Sleep(10 * time.Second)
+
 	provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
 	}))
+
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.DegradedMode
 	}, time.Second, time.Millisecond)
