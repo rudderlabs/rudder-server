@@ -143,7 +143,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 
 		pkgLogger.Info("Total gw_dumps count from S3 : ", len(objects))
-		err = gwHandle.handle.dbHandle.Store(jobs)
+		err = gwHandle.handle.dbHandle.Store(ctx, jobs)
 		if err != nil {
 			panic(fmt.Errorf("failed to write gw_dumps locations to DB with error: %w", err))
 		}
@@ -207,7 +207,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 
 		pkgLogger.Info("Total proc_error_dumps count from S3 : ", len(objects))
 		if len(jobs) > 0 {
-			err = procHandle.handle.dbHandle.Store(jobs)
+			err = procHandle.handle.dbHandle.Store(ctx, jobs)
 			if err != nil {
 				panic(fmt.Errorf("failed to write proc_error_dumps locations to DB with error: %w", err))
 			}

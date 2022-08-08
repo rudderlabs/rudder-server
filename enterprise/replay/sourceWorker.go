@@ -185,7 +185,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	}
 	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
 
-	err = worker.replayHandler.toDB.Store(jobs)
+	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
 		panic(err)
 	}

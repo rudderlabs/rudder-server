@@ -95,7 +95,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		}
 
 		// Mark the jobs as executing
-		err := handle.db.UpdateJobStatus(statusList, []string{"replay"}, nil)
+		err := handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
 		if err != nil {
 			panic(err)
 		}

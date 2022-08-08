@@ -34,7 +34,7 @@ func (*LifecycleManager) Run(ctx context.Context) error {
 // Start starts a Router, this is not a blocking call.
 // If the router is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
-func (r *LifecycleManager) Start() {
+func (r *LifecycleManager) Start() error {
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
 	g, _ := errgroup.WithContext(context.Background())
@@ -43,6 +43,7 @@ func (r *LifecycleManager) Start() {
 		r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
 		return nil
 	})
+	return nil
 }
 
 // Stop stops the Router, this is a blocking call.
@@ -62,7 +63,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	}
 }
 
-// Gets the config from config backend and extracts enabled writekeys
+// Gets the config from config backend and extracts enabled write-keys
 func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
 	batchrouterFactory batchrouter.Factory,
 ) {
@@ -83,7 +84,7 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
+			for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				// For batch router destinations
 				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||

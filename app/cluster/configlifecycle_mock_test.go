@@ -88,9 +88,11 @@ func (m *Mocklifecycle) EXPECT() *MocklifecycleMockRecorder {
 }
 
 // Start mocks base method.
-func (m *Mocklifecycle) Start() {
+func (m *Mocklifecycle) Start() error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Start")
+	ret := m.ctrl.Call(m, "Start")
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Start indicates an expected call of Start.
@@ -159,11 +161,9 @@ func (mr *MockconfigLifecycleMockRecorder) Stop() *gomock.Call {
 }
 
 // WaitForConfig mocks base method.
-func (m *MockconfigLifecycle) WaitForConfig(ctx context.Context) error {
+func (m *MockconfigLifecycle) WaitForConfig(ctx context.Context) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForConfig", ctx)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "WaitForConfig", ctx)
 }
 
 // WaitForConfig indicates an expected call of WaitForConfig.

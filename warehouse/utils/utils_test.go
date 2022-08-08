@@ -2,10 +2,12 @@ package warehouseutils_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +19,20 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestDestinationConfigKeys(t *testing.T) {
+	for _, whType := range WarehouseDestinations {
+		t.Run(whType, func(t *testing.T) {
+			require.Contains(t, WHDestNameMap, whType)
+
+			whName := WHDestNameMap[whType]
+			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
+			got := config.TransformKey(configKey)
+			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
+			require.Equal(t, got, expected)
+		})
+	}
+}
 
 func TestGetS3Location(t *testing.T) {
 	inputs := []struct {
@@ -210,6 +226,7 @@ func TestGetGCSLocation(t *testing.T) {
 	inputs := []struct {
 		location    string
 		gcsLocation string
+		format      string
 	}{
 		{
 			location:    "https://storage.googleapis.com/test-bucket/test-object.csv",
@@ -219,9 +236,21 @@ func TestGetGCSLocation(t *testing.T) {
 			location:    "https://storage.googleapis.com/my.test-bucket/test-object.csv",
 			gcsLocation: "gs://my.test-bucket/test-object.csv",
 		},
+		{
+			location:    "https://storage.googleapis.com/test-bucket/test-object.csv",
+			gcsLocation: "gcs://test-bucket/test-object.csv",
+			format:      "gcs",
+		},
+		{
+			location:    "https://storage.googleapis.com/my.test-bucket/test-object.csv",
+			gcsLocation: "gcs://my.test-bucket/test-object.csv",
+			format:      "gcs",
+		},
 	}
 	for _, input := range inputs {
-		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{})
+		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{
+			TLDFormat: input.format,
+		})
 		require.Equal(t, gcsLocation, input.gcsLocation)
 	}
 }
@@ -298,6 +327,7 @@ func TestGetAzureBlobLocationFolder(t *testing.T) {
 
 func TestToSafeNamespace(t *testing.T) {
 	inputs := []struct {
+		provider      string
 		namespace     string
 		safeNamespace string
 	}{
@@ -341,9 +371,18 @@ func TestToSafeNamespace(t *testing.T) {
 			namespace:     "Rudderstack",
 			safeNamespace: "rudderstack",
 		},
+		{
+			namespace:     "___",
+			safeNamespace: "stringempty",
+		},
+		{
+			provider:      "RS",
+			namespace:     "group",
+			safeNamespace: "_group",
+		},
 	}
 	for _, input := range inputs {
-		safeNamespace := ToSafeNamespace("", input.namespace)
+		safeNamespace := ToSafeNamespace(input.provider, input.namespace)
 		require.Equal(t, safeNamespace, input.safeNamespace)
 	}
 }
@@ -944,6 +983,12 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	}{
 		{
 			warehouse: WarehouseT{
+				Destination: backendconfig.DestinationT{},
+			},
+			expected: false,
+		},
+		{
+			warehouse: WarehouseT{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -987,6 +1032,174 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		if got != want {
 			t.Errorf("got %t expected %t input %d", got, want, idx)
 		}
+	}
+}
+
+func TestGetLoadFileFormat(t *testing.T) {
+	inputs := []struct {
+		whType   string
+		expected string
+	}{
+		{
+			whType:   BQ,
+			expected: "json.gz",
+		},
+		{
+			whType:   RS,
+			expected: "csv.gz",
+		},
+		{
+			whType:   SNOWFLAKE,
+			expected: "csv.gz",
+		},
+		{
+			whType:   POSTGRES,
+			expected: "csv.gz",
+		},
+		{
+			whType:   CLICKHOUSE,
+			expected: "csv.gz",
+		},
+		{
+			whType:   MSSQL,
+			expected: "csv.gz",
+		},
+		{
+			whType:   AZURE_SYNAPSE,
+			expected: "csv.gz",
+		},
+		{
+			whType:   DELTALAKE,
+			expected: "csv.gz",
+		},
+		{
+			whType:   S3_DATALAKE,
+			expected: "parquet",
+		},
+		{
+			whType:   GCS_DATALAKE,
+			expected: "parquet",
+		},
+		{
+			whType:   AZURE_DATALAKE,
+			expected: "parquet",
+		},
+	}
+	for _, input := range inputs {
+		got := GetLoadFileFormat(input.whType)
+		require.Equal(t, got, input.expected)
+	}
+}
+
+func TestGetLoadFileType(t *testing.T) {
+	inputs := []struct {
+		whType   string
+		expected string
+	}{
+		{
+			whType:   BQ,
+			expected: "json",
+		},
+		{
+			whType:   RS,
+			expected: "csv",
+		},
+		{
+			whType:   SNOWFLAKE,
+			expected: "csv",
+		},
+		{
+			whType:   POSTGRES,
+			expected: "csv",
+		},
+		{
+			whType:   CLICKHOUSE,
+			expected: "csv",
+		},
+		{
+			whType:   MSSQL,
+			expected: "csv",
+		},
+		{
+			whType:   AZURE_SYNAPSE,
+			expected: "csv",
+		},
+		{
+			whType:   DELTALAKE,
+			expected: "csv",
+		},
+		{
+			whType:   S3_DATALAKE,
+			expected: "parquet",
+		},
+		{
+			whType:   GCS_DATALAKE,
+			expected: "parquet",
+		},
+		{
+			whType:   AZURE_DATALAKE,
+			expected: "parquet",
+		},
+	}
+	for _, input := range inputs {
+		got := GetLoadFileType(input.whType)
+		require.Equal(t, got, input.expected)
+	}
+}
+
+func TestGetTimeWindow(t *testing.T) {
+	inputs := []struct {
+		ts       time.Time
+		expected time.Time
+	}{
+		{
+			ts:       time.Date(2020, 4, 27, 20, 23, 54, 3424534, time.UTC),
+			expected: time.Date(2020, 4, 27, 20, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, input := range inputs {
+		got := GetTimeWindow(input.ts)
+		require.Equal(t, got, input.expected)
+	}
+}
+
+func TestGetWarehouseIdentifier(t *testing.T) {
+	inputs := []struct {
+		destType      string
+		sourceID      string
+		destinationID string
+		expected      string
+	}{
+		{
+			destType:      "RS",
+			sourceID:      "sourceID",
+			destinationID: "destinationID",
+			expected:      "RS:sourceID:destinationID",
+		},
+	}
+	for _, input := range inputs {
+		got := GetWarehouseIdentifier(input.destType, input.sourceID, input.destinationID)
+		require.Equal(t, got, input.expected)
+	}
+}
+
+func TestJSONSchemaToMap(t *testing.T) {
+	inputs := []struct {
+		rawMsg   json.RawMessage
+		expected map[string]map[string]string
+	}{
+		{
+			rawMsg: json.RawMessage(`{"k1": { "k2": "v2" }}`),
+			expected: map[string]map[string]string{
+				"k1": {
+					"k2": "v2",
+				},
+			},
+		},
+	}
+	for _, input := range inputs {
+		got := JSONSchemaToMap(input.rawMsg)
+		require.Equal(t, got, input.expected)
 	}
 }
 
