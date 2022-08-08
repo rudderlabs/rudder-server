@@ -24,18 +24,14 @@ func Test_Namespace_SetUp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Setenv("WORKSPACE_NAMESPACE", "a-testing-namespace")
-	t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "username")
-	t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "password")
 	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "service-secret")
 	t.Setenv("CONFIG_BACKEND_URL", parsedConfigBackendURL.String())
 
 	require.NoError(t, client.SetUp())
-	require.Equal(t, "username", client.BasicAuthUsername)
-	require.Equal(t, "password", client.BasicAuthPassword)
 	require.Equal(t, parsedConfigBackendURL, client.ConfigBackendURL)
 	require.Equal(t, "a-testing-namespace", client.Namespace)
 	require.Equal(t, "service-secret", client.AccessToken())
-	require.Equal(t, "service-secret", client.ServiceSecret)
+	require.Equal(t, "service-secret", client.HostedServiceSecret)
 }
 
 func Test_Namespace_Get(t *testing.T) {
@@ -49,8 +45,7 @@ func Test_Namespace_Get(t *testing.T) {
 	)
 
 	be := &backendConfigServer{
-		authUser: "cp-user",
-		authPass: "cp-password",
+		bearerAuth: "service-secret",
 	}
 	be.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
 
@@ -65,11 +60,9 @@ func Test_Namespace_Get(t *testing.T) {
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,
 
-		Namespace:         namespace,
-		BasicAuthUsername: "cp-user",
-		BasicAuthPassword: "cp-password",
+		Namespace: namespace,
 
-		ServiceSecret: "service-secret",
+		HostedServiceSecret: "service-secret",
 	}
 	require.NoError(t, client.SetUp())
 
@@ -105,10 +98,8 @@ func Test_Namespace_Get(t *testing.T) {
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
-			Namespace:         namespace,
-			BasicAuthUsername: "cp-user",
-			BasicAuthPassword: "cp-wrong-password",
-			ServiceSecret:     "service-secret",
+			Namespace:           namespace,
+			HostedServiceSecret: "invalid-service-secret",
 		}
 
 		require.NoError(t, client.SetUp())
@@ -123,10 +114,8 @@ func Test_Namespace_Get(t *testing.T) {
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
-			Namespace:         "namespace-does-not-exist",
-			BasicAuthUsername: "cp-user",
-			BasicAuthPassword: "cp-password",
-			ServiceSecret:     "service-secret",
+			Namespace:           "namespace-does-not-exist",
+			HostedServiceSecret: "service-secret",
 		}
 
 		require.NoError(t, client.SetUp())
@@ -140,13 +129,12 @@ func Test_Namespace_Get(t *testing.T) {
 type backendConfigServer struct {
 	responses map[string]string
 
-	authUser string
-	authPass string
+	bearerAuth string
 }
 
 func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	u, p, ok := req.BasicAuth()
-	if !ok || u != server.authUser || p != server.authPass {
+	auth := req.Header.Get("Authorization")
+	if auth != "Bearer "+server.bearerAuth {
 		resp.WriteHeader(http.StatusUnauthorized)
 		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
 		return
@@ -172,5 +160,5 @@ func (server *backendConfigServer) AddNamespace(t *testing.T, namespace, path st
 	payload, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	server.responses["/dataPlane/v1/namespace/"+namespace+"/config"] = string(payload)
+	server.responses["/data-plane/v1/namespace/"+namespace+"/config"] = string(payload)
 }
