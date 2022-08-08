@@ -70,8 +70,10 @@ func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Dur
 		return nil, errors.New("destinationConfig should not be nil")
 	}
 	sessionConfig := SessionConfig{}
-	mapstructure.Decode(destinationConfig, &sessionConfig)
-
+	err := mapstructure.Decode(destinationConfig, &sessionConfig)
+	if err != nil {
+		return nil, errors.New("unable to populate session config using destinationConfig")
+	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
 	return &sessionConfig, nil
