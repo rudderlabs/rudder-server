@@ -3,7 +3,6 @@ package backendconfig
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -112,7 +111,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
 		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
 
-		err = ioutil.WriteFile(tmpFile.Name(), data, 0o644)
+		err = os.WriteFile(tmpFile.Name(), data, 0o644)
 		require.NoError(t, err)
 
 		wc := &SingleWorkspaceConfig{
