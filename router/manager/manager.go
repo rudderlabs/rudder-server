@@ -84,9 +84,11 @@ loop:
 	for {
 		select {
 		case <-ctx.Done():
+			pkgLogger.Infof("Router monitor stopped Context Cancelled")
 			break loop
 		case config, open := <-ch:
 			if !open {
+				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
 			sources := config.Data.(backendconfig.ConfigT)

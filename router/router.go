@@ -126,10 +126,11 @@ type HandleT struct {
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
 
-	backgroundGroup  *errgroup.Group
-	backgroundCtx    context.Context
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
+	backgroundGroup      *errgroup.Group
+	backgroundCtx        context.Context
+	backgroundCancel     context.CancelFunc
+	backgroundWait       func() error
+	generatorLoopStarted chan struct{}
 
 	resultSetMeta    map[int64]*resultSetT
 	resultSetLock    sync.RWMutex
@@ -2254,6 +2255,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.backgroundGroup = g
 	rt.backgroundCancel = cancel
 	rt.backgroundWait = g.Wait
+	rt.generatorLoopStarted = make(chan struct{})
 	rt.initWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
@@ -2295,6 +2297,7 @@ func (rt *HandleT) Start() {
 			}
 		}
 		rt.generatorLoop(ctx)
+		close(rt.generatorLoopStarted)
 		return nil
 	})
 }
@@ -2302,7 +2305,7 @@ func (rt *HandleT) Start() {
 func (rt *HandleT) Shutdown() {
 	rt.logger.Infof("Shutting down router : %s", rt.destName)
 	rt.backgroundCancel()
-
+	<-rt.generatorLoopStarted
 	_ = rt.backgroundWait()
 }
 
