@@ -625,6 +625,9 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
 			wh.deleteWaitingUploadJob(uploadID)
+		} else {
+			// reset priority if the upload is already in progress
+			priority = 0
 		}
 	}
 	wh.areBeingEnqueuedLock.Unlock()
