@@ -95,7 +95,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	putOutput, err := client.PutRecord(&putInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[Kinesis] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorf("[Kinesis] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)

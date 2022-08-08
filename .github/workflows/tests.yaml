@@ -64,4 +64,5 @@ jobs:
     - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
     - run: ginkgo version
     - run: make test
+    - uses: codecov/codecov-action@v2
 
