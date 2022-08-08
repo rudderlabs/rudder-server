@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type SingleWorkspaceConfig struct {
+type singleWorkspaceConfig struct {
 	Token            string
 	workspaceID      string
 	configBackendURL string
@@ -26,7 +26,7 @@ type SingleWorkspaceConfig struct {
 	workspaceIDLock           sync.RWMutex
 }
 
-func (wc *SingleWorkspaceConfig) SetUp() error {
+func (wc *singleWorkspaceConfig) SetUp() error {
 	if configFromFile {
 		if wc.configJSONPath == "" {
 			return fmt.Errorf("valid configJSONPath is required when configFromFile is set to true")
@@ -42,18 +42,18 @@ func (wc *SingleWorkspaceConfig) SetUp() error {
 	return nil
 }
 
-func (wc *SingleWorkspaceConfig) AccessToken() string {
+func (wc *singleWorkspaceConfig) AccessToken() string {
 	return wc.Token
 }
 
-func (wc *SingleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
+func (wc *singleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
 	wc.workspaceIDLock.RLock()
 	defer wc.workspaceIDLock.RUnlock()
 
 	return wc.workspaceID
 }
 
-func (wc *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
+func (wc *singleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
 	wc.workspaceIDLock.RLock()
 	defer wc.workspaceIDLock.RUnlock()
 
@@ -61,7 +61,7 @@ func (wc *SingleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (wc *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+func (wc *singleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	wc.workspaceIDLock.RLock()
 	defer wc.workspaceIDLock.RUnlock()
 	if wc.workspaceIDToLibrariesMap[workspaceID] == nil {
@@ -71,7 +71,7 @@ func (wc *SingleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID
 }
 
 // Get returns sources from the workspace
-func (wc *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
+func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
 	if configFromFile {
 		return wc.getFromFile()
 	} else {
@@ -80,7 +80,7 @@ func (wc *SingleWorkspaceConfig) Get(ctx context.Context, workspace string) (Con
 }
 
 // getFromApi gets the workspace config from api
-func (wc *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	var (
 		respBody   []byte
 		statusCode int
@@ -124,7 +124,7 @@ func (wc *SingleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 }
 
 // getFromFile reads the workspace config from JSON file
-func (wc *SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
+func (wc *singleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
@@ -139,7 +139,7 @@ func (wc *SingleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	return configJSON, nil
 }
 
-func (wc *SingleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
+func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err

@@ -99,16 +99,16 @@ func TestBadResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	configs := map[string]workspaceConfig{
-		"namespace": &NamespaceConfig{
+		"namespace": &namespaceConfig{
 			ConfigBackendURL: parsedURL,
 			Namespace:        "some-namespace",
 			Client:           http.DefaultClient,
 			Logger:           &logger.NOP{},
 		},
-		"multi-tenant": &MultiTenantWorkspacesConfig{
+		"multi-tenant": &multiTenantWorkspacesConfig{
 			configBackendURL: server.URL,
 		},
-		"single-workspace": &SingleWorkspaceConfig{
+		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: server.URL,
 		},
 	}
@@ -147,7 +147,7 @@ func TestNewForDeployment(t *testing.T) {
 		require.NoError(t, err)
 		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
-		_, ok = cb.workspaceConfig.(*SingleWorkspaceConfig)
+		_, ok = cb.workspaceConfig.(*singleWorkspaceConfig)
 		require.True(t, ok)
 	})
 
@@ -158,7 +158,7 @@ func TestNewForDeployment(t *testing.T) {
 
 		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
-		_, ok = cb.workspaceConfig.(*MultiTenantWorkspacesConfig)
+		_, ok = cb.workspaceConfig.(*multiTenantWorkspacesConfig)
 		require.True(t, ok)
 	})
 
@@ -172,7 +172,7 @@ func TestNewForDeployment(t *testing.T) {
 
 		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
-		_, ok = cb.workspaceConfig.(*NamespaceConfig)
+		_, ok = cb.workspaceConfig.(*namespaceConfig)
 		require.True(t, ok)
 	})
 

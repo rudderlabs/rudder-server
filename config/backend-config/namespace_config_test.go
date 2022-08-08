@@ -16,7 +16,7 @@ import (
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &NamespaceConfig{}
+		client           = &namespaceConfig{}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -53,7 +53,7 @@ func Test_Namespace_Get(t *testing.T) {
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
 
-	client := &NamespaceConfig{
+	client := &namespaceConfig{
 		Logger: logger.NewLogger(),
 
 		Client:           ts.Client(),
@@ -93,7 +93,7 @@ func Test_Namespace_Get(t *testing.T) {
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {
-		client := &NamespaceConfig{
+		client := &namespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
@@ -109,7 +109,7 @@ func Test_Namespace_Get(t *testing.T) {
 	})
 
 	t.Run("empty namespace", func(t *testing.T) {
-		client := &NamespaceConfig{
+		client := &namespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 

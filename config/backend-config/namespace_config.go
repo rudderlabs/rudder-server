@@ -16,8 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// NamespaceConfig TODO check what attributes can be unexported
-type NamespaceConfig struct {
+type namespaceConfig struct {
 	configEnvHandler          types.ConfigEnvI
 	mapsMutex                 sync.RWMutex
 	writeKeyToWorkspaceIDMap  map[string]string
@@ -33,7 +32,7 @@ type NamespaceConfig struct {
 	ConfigBackendURL *url.URL
 }
 
-func (nc *NamespaceConfig) SetUp() (err error) {
+func (nc *namespaceConfig) SetUp() (err error) {
 	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if nc.Namespace == "" {
@@ -68,7 +67,7 @@ func (nc *NamespaceConfig) SetUp() (err error) {
 	return nil
 }
 
-func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (nc *namespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -79,7 +78,7 @@ func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-func (nc *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
+func (nc *namespaceConfig) GetWorkspaceIDForSourceID(source string) string {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -91,7 +90,7 @@ func (nc *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (nc *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -102,12 +101,12 @@ func (nc *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID strin
 }
 
 // Get returns sources from the workspace
-func (nc *NamespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
 	return nc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	if nc.Namespace == "" {
 		return ConfigT{}, fmt.Errorf("namespace is not configured")
 	}
@@ -169,7 +168,7 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	return sourcesJSON, nil
 }
 
-func (nc *NamespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
+func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
@@ -195,6 +194,6 @@ func (nc *NamespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 	return respBody, resp.StatusCode, nil
 }
 
-func (nc *NamespaceConfig) AccessToken() string {
+func (nc *namespaceConfig) AccessToken() string {
 	return nc.HostedServiceSecret
 }

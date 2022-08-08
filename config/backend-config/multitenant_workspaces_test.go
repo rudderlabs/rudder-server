@@ -14,7 +14,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForWriteKey(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		writeKey := "some-write-key"
 		workspaceID := "some-workspace-id"
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			writeKeyToWorkspaceIDMap: map[string]string{
 				writeKey: workspaceID,
 			},
@@ -25,7 +25,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForWriteKey(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		writeKey := "some-write-key"
 		workspaceID := "some-workspace-id"
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			writeKeyToWorkspaceIDMap: map[string]string{
 				writeKey: workspaceID,
 			},
@@ -38,7 +38,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForSourceID(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		source := "some-source"
 		workspaceID := "some-workspace-id"
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			sourceToWorkspaceIDMap: map[string]string{
 				source: workspaceID,
 			},
@@ -49,7 +49,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForSourceID(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		source := "some-source"
 		workspaceID := "some-workspace-id"
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			sourceToWorkspaceIDMap: map[string]string{
 				source: workspaceID,
 			},
@@ -66,7 +66,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceLibrariesForWorkspaceID(t *test
 		}, {
 			VersionID: "456",
 		}}
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			workspaceIDToLibrariesMap: map[string]LibrariesT{
 				workspaceID: libraries,
 			},
@@ -81,7 +81,7 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceLibrariesForWorkspaceID(t *test
 		}, {
 			VersionID: "456",
 		}}
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			workspaceIDToLibrariesMap: map[string]LibrariesT{
 				workspaceID: libraries,
 			},
@@ -116,7 +116,7 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			Token:            secretToken,
 			configBackendURL: srv.URL,
 		}
@@ -141,7 +141,7 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			Token:            secretToken,
 			configBackendURL: srv.URL,
 		}
@@ -151,7 +151,7 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 	})
 
 	t.Run("invalid request", func(t *testing.T) {
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			Token:            "some-token",
 			configBackendURL: "://example.com",
 		}
@@ -161,7 +161,7 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 	})
 
 	t.Run("invalid URL", func(t *testing.T) {
-		wc := &MultiTenantWorkspacesConfig{
+		wc := &multiTenantWorkspacesConfig{
 			Token:            "some-token",
 			configBackendURL: "invalid",
 		}

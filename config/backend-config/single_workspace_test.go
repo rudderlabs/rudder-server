@@ -31,7 +31,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
-		wc := &SingleWorkspaceConfig{
+		wc := &singleWorkspaceConfig{
 			Token:            token,
 			configBackendURL: srv.URL,
 		}
@@ -41,7 +41,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		wc := &SingleWorkspaceConfig{
+		wc := &singleWorkspaceConfig{
 			Token:            "testToken",
 			configBackendURL: "://example.com",
 		}
@@ -55,7 +55,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 	initBackendConfig()
 
 	t.Run("invalid file", func(t *testing.T) {
-		wc := &SingleWorkspaceConfig{
+		wc := &singleWorkspaceConfig{
 			Token:          "testToken",
 			configJSONPath: "invalid-path",
 		}
@@ -70,7 +70,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
 		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
 
-		wc := &SingleWorkspaceConfig{
+		wc := &singleWorkspaceConfig{
 			Token:          "testToken",
 			configJSONPath: tmpFile.Name(),
 		}
@@ -114,7 +114,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		err = os.WriteFile(tmpFile.Name(), data, 0o644)
 		require.NoError(t, err)
 
-		wc := &SingleWorkspaceConfig{
+		wc := &singleWorkspaceConfig{
 			Token:          "testToken",
 			configJSONPath: tmpFile.Name(),
 		}

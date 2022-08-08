@@ -204,7 +204,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 
 	switch deploymentType {
 	case deployment.DedicatedType:
-		backendConfig.workspaceConfig = &SingleWorkspaceConfig{
+		backendConfig.workspaceConfig = &singleWorkspaceConfig{
 			configJSONPath:   configJSONPath,
 			configBackendURL: parsedConfigBackendURL.String(),
 			configEnvHandler: configEnvHandler,
@@ -212,13 +212,13 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 	case deployment.MultiTenantType:
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			backendConfig.workspaceConfig = &NamespaceConfig{
+			backendConfig.workspaceConfig = &namespaceConfig{
 				ConfigBackendURL: parsedConfigBackendURL,
 				configEnvHandler: configEnvHandler,
 			}
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
-			backendConfig.workspaceConfig = &MultiTenantWorkspacesConfig{
+			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
 				configBackendURL: parsedConfigBackendURL.String(),
 				configEnvHandler: configEnvHandler,
 			}
