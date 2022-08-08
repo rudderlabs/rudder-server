@@ -3,7 +3,6 @@ package backendconfig
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -19,31 +18,6 @@ import (
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
-var sampleBackendConfig = ConfigT{
-	Sources: []SourceT{
-		{
-			ID:       "1",
-			WriteKey: "d",
-			Enabled:  false,
-		}, {
-			ID:       "2",
-			WriteKey: "d2",
-			Enabled:  false,
-			Destinations: []DestinationT{
-				{
-					ID:                 "d1",
-					Name:               "processor Disabled",
-					IsProcessorEnabled: false,
-				}, {
-					ID:                 "d2",
-					Name:               "processor Enabled",
-					IsProcessorEnabled: true,
-				},
-			},
-		},
-	},
-}
-
 var sampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
@@ -116,7 +90,6 @@ var _ = Describe("BackendConfig", func() {
 
 	Context("configUpdate method", func() {
 		var (
-			ctx                    = context.Background()
 			statConfigBackendError stats.RudderStats
 			mockIoUtil             *mocksysutils.MockIoUtilI
 			originalIoUtil         = IoUtil
@@ -134,23 +107,6 @@ var _ = Describe("BackendConfig", func() {
 		AfterEach(func() {
 			configFromFile = originalConfigFromFile
 			IoUtil = originalIoUtil
-		})
-		It("Expect to make the correct actions if Get method fails", func() {
-			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
-			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
-			mockLogger.EXPECT().Warnf("Error fetching config from backend: %v", gomock.Any()).Times(1)
-			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-
-			backendConfig.initialized = false
-			backendConfig.configUpdate(ctx, statConfigBackendError, "")
-			Expect(backendConfig.initialized).To(BeFalse())
-		})
-		It("Expect to make the correct actions if Get method ok but not new config", func() {
-			config, _ := json.Marshal(sampleBackendConfig)
-			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
-			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
-			backendConfig.curSourceJSON = sampleBackendConfig
-			backendConfig.configUpdate(ctx, statConfigBackendError, "")
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
 			config, _ := json.Marshal(sampleBackendConfig)

@@ -18,6 +18,31 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
+var sampleBackendConfig = ConfigT{
+	Sources: []SourceT{
+		{
+			ID:       "1",
+			WriteKey: "d",
+			Enabled:  false,
+		}, {
+			ID:       "2",
+			WriteKey: "d2",
+			Enabled:  false,
+			Destinations: []DestinationT{
+				{
+					ID:                 "d1",
+					Name:               "processor Disabled",
+					IsProcessorEnabled: false,
+				}, {
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+			},
+		},
+	},
+}
+
 func TestBadResponse(t *testing.T) {
 	stats.Setup()
 	initBackendConfig()
@@ -121,7 +146,7 @@ func TestConfigUpdate(t *testing.T) {
 	logger.Init()
 	stats.Setup()
 
-	t.Run("on failure", func(t *testing.T) {
+	t.Run("on get failure", func(t *testing.T) {
 		var (
 			ctrl       = gomock.NewController(t)
 			ctx        = context.Background()
@@ -133,8 +158,29 @@ func TestConfigUpdate(t *testing.T) {
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
 		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+
 		bc := &commonBackendConfig{workspaceConfig: wc}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 		require.False(t, bc.initialized)
+	})
+
+	t.Run("no new config", func(t *testing.T) {
+		var (
+			ctrl       = gomock.NewController(t)
+			ctx        = context.Background()
+			workspaces = "foo"
+		)
+		defer ctrl.Finish()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
+		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+
+		bc := &commonBackendConfig{
+			workspaceConfig: wc,
+			curSourceJSON:   sampleBackendConfig, // same as the one returned by the workspace config
+		}
+		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		require.True(t, bc.initialized)
 	})
 }
