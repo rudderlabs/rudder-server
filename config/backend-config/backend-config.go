@@ -1,6 +1,7 @@
 package backendconfig
 
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+//go:generate mockgen -destination=../../mocks/config/backend-config/mock_workspaceconfig.go -source=./backend-config.go workspaceConfig
 
 import (
 	"context"

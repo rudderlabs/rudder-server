@@ -2,6 +2,7 @@ package backendconfig
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -111,5 +114,22 @@ func TestNewForDeployment(t *testing.T) {
 	t.Run("unsupported", func(t *testing.T) {
 		_, err := newForDeployment("UNSUPPORTED_TYPE", nil)
 		require.ErrorContains(t, err, `deployment type "UNSUPPORTED_TYPE" not supported`)
+	})
+}
+
+func TestConfigUpdate(t *testing.T) {
+	t.Run("on failure", func(t *testing.T) {
+		var (
+			ctx        = context.Background()
+			fakeError  = errors.New("fake error")
+			workspaces = "foo"
+		)
+
+		wc := mock_backendconfig.MockworkspaceConfig{}
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(nil, fakeError).Times(1)
+		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		bc := &commonBackendConfig{workspaceConfig: &wc}
+		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		require.False(t, bc.initialized)
 	})
 }
