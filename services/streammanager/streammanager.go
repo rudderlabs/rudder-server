@@ -17,7 +17,7 @@ import (
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig interface{}, destType string, opts common.Opts) (common.StreamProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, destType string, opts common.Opts) (common.StreamProducer, error) {
 	switch destType {
 	case "AZURE_EVENT_HUB":
 		return kafka.NewProducerForAzureEventHubs(destinationConfig, opts)

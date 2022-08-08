@@ -29,7 +29,7 @@ type PersonalizeClient interface {
 	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
 }
 
-func NewProducer(destinationConfig interface{}, o common.Opts) (*PersonalizeProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*PersonalizeProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, personalizeevents.ServiceName)
 	if err != nil {
 		return nil, err

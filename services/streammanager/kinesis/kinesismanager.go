@@ -36,7 +36,7 @@ type KinesisClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*KinesisProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*KinesisProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, kinesis.ServiceName)
 	if err != nil {
 		return nil, err

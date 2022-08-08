@@ -1,7 +1,7 @@
 package awsutils
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -64,16 +64,36 @@ func CreateSession(config *SessionConfig) *session.Session {
 	}))
 }
 
-func NewSessionConfig(destinationConfig interface{}, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+	if destinationConfig == nil {
+		return nil, errors.New("destinationConfig should not be nil")
+	}
 	sessionConfig := SessionConfig{}
 
-	jsonConfig, err := json.Marshal(destinationConfig)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] Error while marshalling destination config :: %w", serviceName, err)
+	if region, ok := destinationConfig["Region"].(string); ok {
+		sessionConfig.Region = region
+	} else if region, ok := destinationConfig["region"].(string); ok {
+		sessionConfig.Region = region
 	}
-	err = json.Unmarshal(jsonConfig, &sessionConfig)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] Error while unmarshalling destination config :: %w", serviceName, err)
+	if roleArn, ok := destinationConfig["IAMRoleARN"].(string); ok {
+		sessionConfig.IAMRoleARN = roleArn
+	} else if roleArn, ok := destinationConfig["iamRoleARN"].(string); ok {
+		sessionConfig.IAMRoleARN = roleArn
+	}
+	if externalID, ok := destinationConfig["ExternalID"].(string); ok {
+		sessionConfig.ExternalID = externalID
+	} else if externalID, ok := destinationConfig["externalID"].(string); ok {
+		sessionConfig.ExternalID = externalID
+	}
+	if accessKeyID, ok := destinationConfig["AccessKeyID"].(string); ok {
+		sessionConfig.AccessKeyID = accessKeyID
+	} else if accessKeyID, ok := destinationConfig["accessKeyID"].(string); ok {
+		sessionConfig.AccessKeyID = accessKeyID
+	}
+	if accessKey, ok := destinationConfig["AccessKey"].(string); ok {
+		sessionConfig.AccessKey = accessKey
+	} else if accessKey, ok := destinationConfig["accessKey"].(string); ok {
+		sessionConfig.AccessKey = accessKey
 	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
