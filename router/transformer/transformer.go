@@ -259,8 +259,8 @@ func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
-	trans.tfProxyTimeout = 2 * netClientTimeout
-	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout}
+	trans.tfProxyTimeout = netClientTimeout
+	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout + timeoutDuration}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
@@ -285,10 +285,10 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt(trans.tfProxyTimeout.Milliseconds()/2, 10))
+	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt(int64((trans.tfProxyTimeout+timeoutDuration).Milliseconds()), 10))
 	// Make use of this header to set timeout in the transfomer's http client
 	// The header name may be worked out ?
-	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyTimeout.Milliseconds()/2, 10))
+	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyTimeout.Milliseconds(), 10))
 
 	httpReqStTime := time.Now()
 	resp, err := trans.tfProxyClient.Do(req)
