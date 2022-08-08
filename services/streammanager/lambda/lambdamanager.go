@@ -2,84 +2,51 @@ package lambda
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	jsoniter "github.com/json-iterator/go"
-	"github.com/tidwall/gjson"
-	"net/http"
-	"time"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lambda"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // Config is the config that is required to send data to Lambda
 type Config struct {
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-	InvocationType  string
-	ClientContext   string
-	Lambda          string
+	InvocationType string
+	ClientContext  string
+	Lambda         string
 }
 
-type Opts struct {
-	Timeout time.Duration
+type LambdaProducer struct {
+	client LambdaClient
+}
+
+type LambdaClient interface {
+	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child("lambda")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*lambda.Lambda, error) {
-	var config Config
-	jsonConfig, err := jsonfast.Marshal(destinationConfig)
+func NewProducer(destinationConfig interface{}, o common.Opts) (*LambdaProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, lambda.ServiceName)
 	if err != nil {
-		return nil, fmt.Errorf("[Lambda] error :: error while marshalling destination config :: %w", err)
+		return nil, err
 	}
-	err = jsonfast.Unmarshal(jsonConfig, &config)
-	if err != nil {
-		return nil, fmt.Errorf("[Lambda] error :: error while unmarshelling destination config :: %w", err)
-	}
-	if config.Region == "" {
-		return nil, fmt.Errorf("[Lambda] error :: Region is a required property")
-	}
-
-	var s *session.Session
-	httpClient := &http.Client{
-		Timeout: o.Timeout,
-	}
-	if config.AccessKeyID == "" || config.SecretAccessKey == "" {
-		s, err = session.NewSession(&aws.Config{
-			Region:     aws.String(config.Region),
-			HTTPClient: httpClient,
-		})
-	} else {
-		s, err = session.NewSession(&aws.Config{
-			HTTPClient:  httpClient,
-			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, ""),
-		})
-	}
-	if err != nil {
-		return nil, fmt.Errorf("[Lambda] error :: error while creating session :: %w", err)
-	}
-
-	return lambda.New(s), nil
+	return &LambdaProducer{client: lambda.New(awsutils.CreateSession(sessionConfig))}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
-func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
-	client, ok := producer.(*lambda.Lambda)
-	if !ok {
+func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+	client := producer.client
+	if client == nil {
 		return simpleErrorResponse("Could not create client")
 	}
 	data := gjson.GetBytes(jsonData, "payload").String()
@@ -96,28 +63,25 @@ func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, s
 	if err != nil {
 		return simpleErrorResponse("error while unmarshalling destination config :: " + err.Error())
 	}
-	if config.Lambda == "" {
-		return simpleErrorResponse("Lambda function name is a required property")
-	}
-	if config.InvocationType == "" {
-		return simpleErrorResponse("InvocationType is a required property")
-	}
 
-	var input lambda.InvokeInput
-	input.FunctionName = aws.String(config.Lambda)
-	input.Payload = []byte(data)
-	input.InvocationType = aws.String(config.InvocationType)
+	var invokeInput lambda.InvokeInput
+	invokeInput.SetFunctionName(config.Lambda)
+	invokeInput.SetPayload([]byte(data))
+	invokeInput.SetInvocationType(config.InvocationType)
 	if config.ClientContext != "" {
-		input.ClientContext = aws.String(config.ClientContext)
+		invokeInput.SetClientContext(config.ClientContext)
 	}
 
-	_, err = client.Invoke(&input)
+	if err = invokeInput.Validate(); err != nil {
+		return simpleErrorResponse("Invalid invokeInput :: " + err.Error())
+	}
+
+	_, err = client.Invoke(&invokeInput)
 	if err != nil {
 		return invokeErrorResponse(err)
 	}
 
-	responseMessage := fmt.Sprintf("Event delivered to Lambda : %s", config.Lambda)
-	return 200, "Success", responseMessage
+	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
 }
 
 func simpleErrorResponse(message string) (int, string, string) {

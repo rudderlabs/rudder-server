@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
+	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
@@ -40,7 +41,7 @@ func NewProducer(destinationConfig interface{}, destType string, opts common.Opt
 	case "BQSTREAM":
 		return bqstream.NewProducer(destinationConfig, opts)
 	case "LAMBDA":
-		return bqstream.NewProducer(destinationConfig, opts)
+		return lambda.NewProducer(destinationConfig, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
