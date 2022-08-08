@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -11,34 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	mocksysutils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
-
-// This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
-var sampleFilteredSources = ConfigT{
-	Sources: []SourceT{
-		{
-			ID:           "1",
-			WriteKey:     "d",
-			Enabled:      false,
-			Destinations: []DestinationT{},
-		}, {
-			ID:       "2",
-			WriteKey: "d2",
-			Enabled:  false,
-			Destinations: []DestinationT{
-				{
-					ID:                 "d2",
-					Name:               "processor Enabled",
-					IsProcessorEnabled: true,
-				},
-			},
-		},
-	},
-}
 
 var sampleBackendConfig2 = ConfigT{
 	Sources: []SourceT{
@@ -86,55 +60,6 @@ var _ = Describe("BackendConfig", func() {
 	AfterEach(func() {
 		ctrl.Finish()
 		pkgLogger = originalLogger
-	})
-
-	Context("configUpdate method", func() {
-		var (
-			statConfigBackendError stats.RudderStats
-			mockIoUtil             *mocksysutils.MockIoUtilI
-			originalIoUtil         = IoUtil
-			originalConfigFromFile = configFromFile
-		)
-		BeforeEach(func() {
-			pollInterval = 500
-			stats.Setup()
-			statConfigBackendError = stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
-			mockIoUtil = mocksysutils.NewMockIoUtilI(ctrl)
-			IoUtil = mockIoUtil
-			configFromFile = true
-			mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
-		})
-		AfterEach(func() {
-			configFromFile = originalConfigFromFile
-			IoUtil = originalIoUtil
-		})
-		It("Expect to make the correct actions if Get method ok and new config", func() {
-			config, _ := json.Marshal(sampleBackendConfig)
-			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
-			pubSub := pubsub.PublishSubscriber{}
-			bc := &commonBackendConfig{
-				eb: &pubSub,
-				workspaceConfig: &SingleWorkspaceConfig{
-					Token: "test_token",
-				},
-			}
-			bc.curSourceJSON = sampleBackendConfig2
-			mockLogger.EXPECT().Infof("Workspace Config changed: %s", "").Times(1)
-			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
-			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
-			chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
-
-			bc.configUpdate(ctx, statConfigBackendError, "")
-			Expect(bc.initialized).To(BeTrue())
-
-			Expect((<-chProcess).Data).To(Equal(sampleFilteredSources))
-			Expect((<-chBackend).Data).To(Equal(sampleBackendConfig))
-		})
 	})
 
 	Context("filterProcessorEnabledDestinations method", func() {

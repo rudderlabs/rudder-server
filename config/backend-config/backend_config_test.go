@@ -15,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -34,6 +35,29 @@ var sampleBackendConfig = ConfigT{
 					Name:               "processor Disabled",
 					IsProcessorEnabled: false,
 				}, {
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+			},
+		},
+	},
+}
+
+// This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
+var sampleFilteredSources = ConfigT{
+	Sources: []SourceT{
+		{
+			ID:           "1",
+			WriteKey:     "d",
+			Enabled:      false,
+			Destinations: []DestinationT{},
+		}, {
+			ID:       "2",
+			WriteKey: "d2",
+			Enabled:  false,
+			Destinations: []DestinationT{
+				{
 					ID:                 "d2",
 					Name:               "processor Enabled",
 					IsProcessorEnabled: true,
@@ -182,5 +206,34 @@ func TestConfigUpdate(t *testing.T) {
 		}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 		require.True(t, bc.initialized)
+	})
+
+	t.Run("new config", func(t *testing.T) {
+		var (
+			ctrl        = gomock.NewController(t)
+			ctx, cancel = context.WithCancel(context.Background())
+			workspaces  = "foo"
+		)
+		defer ctrl.Finish()
+		defer cancel()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
+		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+
+		pubSub := pubsub.PublishSubscriber{}
+		bc := &commonBackendConfig{
+			eb:              &pubSub,
+			workspaceConfig: wc,
+		}
+		bc.curSourceJSON = sampleBackendConfig2
+
+		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
+		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
+
+		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		require.True(t, bc.initialized)
+		require.Equal(t, (<-chProcess).Data, sampleFilteredSources)
+		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
 	})
 }
