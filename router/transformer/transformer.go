@@ -343,7 +343,7 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getProxyURL(destName string, baseUrl string) string {
+func getProxyURL(destName, baseUrl string) string {
 	if !router_utils.IsNotEmptyString(baseUrl) { // empty string check
 		baseUrl = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
 	}
