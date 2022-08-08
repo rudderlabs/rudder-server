@@ -72,9 +72,9 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.errorDB = errorDB
 	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
-	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
+	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	st.crashRecover()
 }
 
@@ -257,24 +257,27 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			getQueryCtx, cancelCtx := context.WithTimeout(ctx, st.jobdDBQueryRequestTimeout)
-			toRetry, err := st.errorDB.GetToRetry(getQueryCtx, queryParams)
+			toRetry, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				return st.errorDB.GetToRetry(ctx, queryParams)
+			})
 			if err != nil {
+				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 				panic(err)
 			}
-			cancelCtx()
+
 			combinedList := toRetry.Jobs
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				getUnprocessedQueryCtx, cancelCtx := context.WithTimeout(ctx, st.jobdDBQueryRequestTimeout)
-				unprocessed, err := st.errorDB.GetUnprocessed(getUnprocessedQueryCtx, queryParams)
+				unprocessed, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+					return st.errorDB.GetUnprocessed(ctx, queryParams)
+				})
 				if err != nil {
+					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 					panic(err)
 				}
-				cancelCtx()
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 

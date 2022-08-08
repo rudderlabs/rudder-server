@@ -24,7 +24,8 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		CustomVal: true,
 	}
 
-	jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err, "expected no error while jobsDB setup")
 	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"

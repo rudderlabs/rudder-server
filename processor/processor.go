@@ -316,9 +316,9 @@ func (proc *HandleT) Setup(
 	rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
-	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
+	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Processor." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &proc.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	proc.logger = pkgLogger
@@ -401,7 +401,6 @@ func (proc *HandleT) Setup(
 	proc.stats.processJobThroughput = proc.statsFactory.NewStat("processor.processJob_thoughput", stats.CountType)
 	proc.stats.transformationsThroughput = proc.statsFactory.NewStat("processor.transformations_throughput", stats.CountType)
 	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
-
 	admin.RegisterStatusHandler("processor", proc)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -2195,19 +2194,19 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	if !enableEventCount {
 		eventCount = 0
 	}
-
-	unprocessedCtx, cancelCtx := context.WithTimeout(context.Background(), proc.jobdDBQueryRequestTimeout)
-	unprocessedList, err := proc.gatewayDB.GetUnprocessed(unprocessedCtx, jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{GWCustomVal},
-		JobsLimit:        maxEventsToProcess,
-		EventsLimit:      eventCount,
-		PayloadSizeLimit: proc.payloadLimit,
+	unprocessedList, err := jobsdb.QueryJobsResultWithRetries(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{GWCustomVal},
+			JobsLimit:        maxEventsToProcess,
+			EventsLimit:      eventCount,
+			PayloadSizeLimit: proc.payloadLimit,
+		})
 	})
 	if err != nil {
-		proc.logger.Errorf("Failed to get unprocessed jobs: %v", err)
+		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
 		panic(err)
 	}
-	cancelCtx()
+
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList.Jobs {
 		totalPayloadBytes += len(job.EventPayload)

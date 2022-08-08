@@ -298,22 +298,21 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 						}
 						parameterFilters = append(parameterFilters, parameterFilter)
 					}
-					importQueryCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBQueryRequestTimeout)
-					job, err := brt.jobsDB.GetImporting(
-						importQueryCtx,
-						jobsdb.GetQueryParamsT{
-							CustomValFilters: []string{brt.destType},
-							JobsLimit:        1,
-							ParameterFilters: parameterFilters,
-							PayloadSizeLimit: brt.payloadLimit,
-						},
-					)
+					job, err := jobsdb.QueryJobsResultWithRetries(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+						return brt.jobsDB.GetImporting(
+							ctx,
+							jobsdb.GetQueryParamsT{
+								CustomValFilters: []string{brt.destType},
+								JobsLimit:        1,
+								ParameterFilters: parameterFilters,
+								PayloadSizeLimit: brt.payloadLimit,
+							},
+						)
+					})
 					if err != nil {
-						pkgLogger.Errorf("Error getting job for dest type: %s, err: %v", brt.destType, err)
+						pkgLogger.Errorf("Error while getting job for dest type: %s, err: %v", brt.destType, err)
 						panic(err)
 					}
-					cancelCtx()
-
 					importingJob := job.Jobs
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
@@ -353,21 +352,21 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							abortedJobs := make([]*jobsdb.JobT, 0)
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
-								importQueryCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBQueryRequestTimeout)
-								list, err := brt.jobsDB.GetImporting(
-									importQueryCtx,
-									jobsdb.GetQueryParamsT{
-										CustomValFilters: []string{brt.destType},
-										JobsLimit:        brt.maxEventsInABatch,
-										ParameterFilters: parameterFilters,
-										PayloadSizeLimit: brt.payloadLimit,
-									},
-								)
+								list, err := jobsdb.QueryJobsResultWithRetries(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+									return brt.jobsDB.GetImporting(
+										ctx,
+										jobsdb.GetQueryParamsT{
+											CustomValFilters: []string{brt.destType},
+											JobsLimit:        brt.maxEventsInABatch,
+											ParameterFilters: parameterFilters,
+											PayloadSizeLimit: brt.payloadLimit,
+										},
+									)
+								})
 								if err != nil {
-									fmt.Errorf("Error getting job for dest type: %s, err: %v", brt.destType, err)
 									panic(err)
 								}
-								cancelCtx()
+
 								importingList := list.Jobs
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
@@ -505,20 +504,21 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								brt.updateProcessedEventsMetrics(statusList)
 							} else if statusCode != 0 {
 								var statusList []*jobsdb.JobStatusT
-								importQueryCtx, cancelCtx := context.WithTimeout(ctx, brt.jobdDBQueryRequestTimeout)
-								list, err := brt.jobsDB.GetImporting(
-									importQueryCtx,
-									jobsdb.GetQueryParamsT{
-										CustomValFilters: []string{brt.destType},
-										JobsLimit:        brt.maxEventsInABatch,
-										ParameterFilters: parameterFilters,
-										PayloadSizeLimit: brt.payloadLimit,
-									},
-								)
+								list, err := jobsdb.QueryJobsResultWithRetries(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+									return brt.jobsDB.GetImporting(
+										ctx,
+										jobsdb.GetQueryParamsT{
+											CustomValFilters: []string{brt.destType},
+											JobsLimit:        brt.maxEventsInABatch,
+											ParameterFilters: parameterFilters,
+											PayloadSizeLimit: brt.payloadLimit,
+										},
+									)
+								})
 								if err != nil {
-									panic(fmt.Errorf("getting %s jobs: %w", brt.destType, err))
+									panic(err)
 								}
-								cancelCtx()
+
 								importingList := list.Jobs
 								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
@@ -1615,28 +1615,32 @@ func (worker *workerT) workerProcess() {
 					IgnoreCustomValFiltersInQuery: true,
 					PayloadSizeLimit:              brt.payloadLimit,
 				}
-				getQueryCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBQueryRequestTimeout)
-				toRetry, err := brt.jobsDB.GetToRetry(getQueryCtx, queryParams)
+
+				toRetry, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+					return brt.jobsDB.GetToRetry(ctx, queryParams)
+				})
 				if err != nil {
 					brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
 					panic(err)
 				}
-				cancelCtx()
 				combinedList = toRetry.Jobs
 				if !toRetry.LimitsReached {
 					queryParams.JobsLimit -= len(toRetry.Jobs)
 					if queryParams.PayloadSizeLimit > 0 {
 						queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 					}
-					getUnprocessedCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBQueryRequestTimeout)
-					unprocessed, err := brt.jobsDB.GetUnprocessed(getUnprocessedCtx, queryParams)
+					unprocessed, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+						return brt.jobsDB.GetUnprocessed(ctx, queryParams)
+					})
 					if err != nil {
 						brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
 						panic(err)
 					}
-					cancelCtx()
 					combinedList = append(combinedList, unprocessed.Jobs...)
 				}
+				brtQueryStat.End()
+				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
+
 				brtQueryStat.End()
 				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 			}
@@ -1975,13 +1979,14 @@ func (brt *HandleT) readAndProcess() {
 				JobsLimit:        brt.jobQueryBatchSize,
 				PayloadSizeLimit: brt.payloadLimit,
 			}
-			getQueryCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBQueryRequestTimeout)
-			toRetry, err := brt.jobsDB.GetToRetry(getQueryCtx, queryParams)
+			toRetry, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				return brt.jobsDB.GetToRetry(ctx, queryParams)
+			})
 			if err != nil {
-				brt.logger.Errorf("BRT: %s: Error getting to retry jobs: %s", brt.destType, err.Error())
+				brt.logger.Errorf("BRT: %s: Error getting jobs to retry: %s", brt.destType, err)
 				panic(err)
 			}
-			cancelCtx()
+
 			jobs = toRetry.Jobs
 
 			if !toRetry.LimitsReached {
@@ -1989,13 +1994,14 @@ func (brt *HandleT) readAndProcess() {
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				getUnprocessedQueryCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBQueryRequestTimeout)
-				unprocessed, err := brt.jobsDB.GetUnprocessed(getUnprocessedQueryCtx, queryParams)
+				unprocessed, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+					return brt.jobsDB.GetUnprocessed(ctx, queryParams)
+				})
 				if err != nil {
-					brt.logger.Errorf("BRT: %s: Error getting unprocessed jobs: %s", brt.destType, err.Error())
+					brt.logger.Errorf("BRT: %s: Error getting jobs to retry: %s", brt.destType, err)
 					panic(err)
 				}
-				cancelCtx()
+
 				jobs = append(jobs, unprocessed.Jobs...)
 			}
 
@@ -2121,23 +2127,24 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 }
 
 func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
-	var importingList jobsdb.JobsResult
-	var err error
+	// var importingList jobsdb.JobsResult
+	// var err error
 	if IsAsyncDestination(brt.destType) {
-		importQueryCtx, cancelCtx := context.WithTimeout(context.Background(), brt.jobdDBQueryRequestTimeout)
-		importingList, err = brt.jobsDB.GetImporting(
-			importQueryCtx,
-			jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{brt.destType},
-				JobsLimit:        1,
-				ParameterFilters: parameterFilters,
-				PayloadSizeLimit: brt.payloadLimit,
-			},
-		)
+		importingList, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return brt.jobsDB.GetImporting(
+				ctx,
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: []string{brt.destType},
+					JobsLimit:        1,
+					ParameterFilters: parameterFilters,
+					PayloadSizeLimit: brt.payloadLimit,
+				},
+			)
+		})
 		if err != nil {
+			brt.logger.Errorf("BRT: Failed to get importing jobs for %s with error: %v", brt.destType, err)
 			panic(err)
 		}
-		cancelCtx()
 		return len(importingList.Jobs) != 0
 	}
 	return false
@@ -2307,9 +2314,9 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterInt64ConfigVariable(1*bytesize.GB, &brt.payloadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "PayloadLimit", "BatchRouter.PayloadLimit"}...)
-	config.RegisterDurationConfigVariable(90, &brt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &brt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "BatchRouter." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
+	config.RegisterDurationConfigVariable(90, &brt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	brt.uploadIntervalMap = map[string]time.Duration{}
 
 	tr := &http.Transport{}

@@ -96,6 +96,8 @@ type HandleT struct {
 	netClientTimeout                       time.Duration
 	backendProxyTimeout                    time.Duration
 	jobdDBQueryRequestTimeout              time.Duration
+	jobsDBCommandTimeout                   time.Duration
+	jobdDBMaxRetries                       int
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
@@ -117,8 +119,6 @@ type HandleT struct {
 	noOfJobsToBatchInAWorker               int
 	retryTimeWindow                        time.Duration
 	routerTimeout                          time.Duration
-	jobsDBCommandTimeout                   time.Duration
-	jobdDBMaxRetries                       int
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	Reporting                              reporter
@@ -1826,22 +1826,22 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
-	ctx, cancelCtx := context.WithTimeout(context.Background(), rt.jobdDBQueryRequestTimeout)
-	combinedList, err := rt.jobsDB.GetAllJobs(
-		ctx,
-		pickupMap,
-		jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{rt.destName},
-			PayloadSizeLimit: rt.payloadLimit,
-			JobsLimit:        totalPickupCount,
-		},
-		rt.maxDSQuerySize,
-	)
+	combinedList, err := jobsdb.QueryJobsWithRetries(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
+		return rt.jobsDB.GetAllJobs(
+			ctx,
+			pickupMap,
+			jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{rt.destName},
+				PayloadSizeLimit: rt.payloadLimit,
+				JobsLimit:        totalPickupCount,
+			},
+			rt.maxDSQuerySize,
+		)
+	})
 	if err != nil {
 		rt.logger.Errorf("[%v Router] :: Error getting jobs from DB: %v", rt.destName, err)
 		panic(err)
 	}
-	cancelCtx()
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -2108,6 +2108,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
 	config.RegisterDurationConfigVariable(60, &rt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Router." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
+	config.RegisterDurationConfigVariable(90, &rt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
@@ -2156,8 +2158,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
-	config.RegisterDurationConfigVariable(90, &rt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB.Router.MaxRetries", "JobsDB.MaxRetries"}...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
