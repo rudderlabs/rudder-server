@@ -62,33 +62,6 @@ var _ = Describe("BackendConfig", func() {
 		pkgLogger = originalLogger
 	})
 
-	Context("Subscribe method", func() {
-		It("Expect make the correct actions for processConfig topic", func() {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			backendConfig.curSourceJSON = sampleBackendConfig
-			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
-			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			filteredSourcesJSON := filterProcessorEnabledDestinations(backendConfig.curSourceJSON)
-			backendConfig.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
-
-			ch := backendConfig.Subscribe(ctx, TopicProcessConfig)
-			backendConfig.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
-			Expect((<-ch).Data).To(Equal(filteredSourcesJSON))
-		})
-		It("Expect make the correct actions for backendConfig topic", func() {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			backendConfig.curSourceJSON = sampleBackendConfig
-
-			ch := backendConfig.Subscribe(ctx, TopicBackendConfig)
-			backendConfig.eb.Publish(string(TopicBackendConfig), backendConfig.curSourceJSON)
-			Expect((<-ch).Data).To(Equal(backendConfig.curSourceJSON))
-		})
-	})
-
 	Context("WaitForConfig method", func() {
 		It("Should not wait if initialized is true", func() {
 			backendConfig.initialized = true

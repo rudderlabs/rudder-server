@@ -245,3 +245,40 @@ func TestFilterProcessorEnabledDestinations(t *testing.T) {
 	result := filterProcessorEnabledDestinations(sampleBackendConfig)
 	require.Equal(t, result, sampleFilteredSources)
 }
+
+func TestSubscribe(t *testing.T) {
+	initBackendConfig()
+	logger.Init()
+	stats.Setup()
+
+	t.Run("processConfig topic", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		bc := &commonBackendConfig{
+			eb:            &pubsub.PublishSubscriber{},
+			curSourceJSON: sampleBackendConfig,
+		}
+
+		filteredSourcesJSON := filterProcessorEnabledDestinations(bc.curSourceJSON)
+		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+
+		ch := bc.Subscribe(ctx, TopicProcessConfig)
+		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+		require.Equal(t, (<-ch).Data, filteredSourcesJSON)
+	})
+
+	t.Run("backendConfig topic", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		bc := &commonBackendConfig{
+			eb:            &pubsub.PublishSubscriber{},
+			curSourceJSON: sampleBackendConfig,
+		}
+
+		ch := bc.Subscribe(ctx, TopicBackendConfig)
+		bc.eb.Publish(string(TopicBackendConfig), bc.curSourceJSON)
+		require.Equal(t, (<-ch).Data, bc.curSourceJSON)
+	})
+}
