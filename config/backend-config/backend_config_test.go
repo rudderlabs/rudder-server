@@ -13,6 +13,9 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -67,9 +70,23 @@ var sampleFilteredSources = ConfigT{
 	},
 }
 
+var sampleBackendConfig2 = ConfigT{
+	Sources: []SourceT{
+		{
+			ID:       "3",
+			WriteKey: "d3",
+			Enabled:  false,
+		}, {
+			ID:       "4",
+			WriteKey: "d4",
+			Enabled:  false,
+		},
+	},
+}
+
 func TestBadResponse(t *testing.T) {
-	stats.Setup()
 	initBackendConfig()
+
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		defer atomic.AddInt32(&calls, 1)
@@ -126,9 +143,9 @@ func TestBadResponse(t *testing.T) {
 func TestNewForDeployment(t *testing.T) {
 	t.Run("dedicated", func(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
-		config, err := newForDeployment(deployment.DedicatedType, nil)
+		conf, err := newForDeployment(deployment.DedicatedType, nil)
 		require.NoError(t, err)
-		cb, ok := config.(*commonBackendConfig)
+		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*SingleWorkspaceConfig)
 		require.True(t, ok)
@@ -136,10 +153,10 @@ func TestNewForDeployment(t *testing.T) {
 
 	t.Run("multi-tenant", func(t *testing.T) {
 		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
-		config, err := newForDeployment(deployment.MultiTenantType, nil)
+		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
-		cb, ok := config.(*commonBackendConfig)
+		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*MultiTenantWorkspacesConfig)
 		require.True(t, ok)
@@ -150,10 +167,10 @@ func TestNewForDeployment(t *testing.T) {
 		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
 		t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "Clark")
 		t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "Kent")
-		config, err := newForDeployment(deployment.MultiTenantType, nil)
+		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
-		cb, ok := config.(*commonBackendConfig)
+		cb, ok := conf.(*commonBackendConfig)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*NamespaceConfig)
 		require.True(t, ok)
@@ -167,8 +184,6 @@ func TestNewForDeployment(t *testing.T) {
 
 func TestConfigUpdate(t *testing.T) {
 	initBackendConfig()
-	logger.Init()
-	stats.Setup()
 
 	t.Run("on get failure", func(t *testing.T) {
 		var (
@@ -240,7 +255,6 @@ func TestConfigUpdate(t *testing.T) {
 
 func TestFilterProcessorEnabledDestinations(t *testing.T) {
 	initBackendConfig()
-	logger.Init()
 
 	result := filterProcessorEnabledDestinations(sampleBackendConfig)
 	require.Equal(t, result, sampleFilteredSources)
@@ -248,8 +262,6 @@ func TestFilterProcessorEnabledDestinations(t *testing.T) {
 
 func TestSubscribe(t *testing.T) {
 	initBackendConfig()
-	logger.Init()
-	stats.Setup()
 
 	t.Run("processConfig topic", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -281,4 +293,60 @@ func TestSubscribe(t *testing.T) {
 		bc.eb.Publish(string(TopicBackendConfig), bc.curSourceJSON)
 		require.Equal(t, (<-ch).Data, bc.curSourceJSON)
 	})
+}
+
+func TestWaitForConfig(t *testing.T) {
+	initBackendConfig()
+
+	t.Run("no wait if initialized already", func(t *testing.T) {
+		var (
+			ctrl = gomock.NewController(t)
+			ctx  = context.Background()
+		)
+		defer ctrl.Finish()
+
+		bc := &commonBackendConfig{initialized: true}
+		bc.WaitForConfig(ctx)
+	})
+
+	t.Run("it should wait until initialized", func(t *testing.T) {
+		var (
+			ctrl = gomock.NewController(t)
+			ctx  = context.Background()
+		)
+		defer ctrl.Finish()
+
+		pkgLogger = &logger.NOP{}
+		pollInterval = time.Millisecond
+		bc := &commonBackendConfig{initialized: false}
+
+		var done int32
+		go func() {
+			defer atomic.StoreInt32(&done, 1)
+			bc.WaitForConfig(ctx)
+		}()
+
+		require.False(t, bc.initialized)
+		for i := 0; i < 10; i++ {
+			require.EqualValues(t, atomic.LoadInt32(&done), 0)
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		bc.initializedLock.Lock()
+		bc.initialized = true
+		bc.initializedLock.Unlock()
+
+		require.Eventually(t, func() bool {
+			return atomic.LoadInt32(&done) == 1
+		}, 100*time.Millisecond, time.Millisecond)
+	})
+}
+
+func initBackendConfig() {
+	config.Load()
+	admin.Init()
+	diagnostics.Init()
+	logger.Init()
+	stats.Setup()
+	Init()
 }
