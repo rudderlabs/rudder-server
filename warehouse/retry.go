@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,7 +28,13 @@ type RetryResponse struct {
 	StatusCode int32
 }
 
-func (retryReq *RetryRequest) RetryWHUploads() (response RetryResponse, err error) {
+type CountRetryResponse struct {
+	Count      int64
+	Message    string
+	StatusCode int32
+}
+
+func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response RetryResponse, err error) {
 	// Request validation
 	err = retryReq.validateReq()
 	defer func() {
@@ -64,13 +71,62 @@ func (retryReq *RetryRequest) RetryWHUploads() (response RetryResponse, err erro
 	// Retry request should trigger on these cases.
 	// 1. Either provide the retry interval.
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
-	uploadsRetried, err := retryReq.retryUploads(sourceIDs)
+	uploadsRetried, err := retryReq.retryUploads(ctx, sourceIDs)
 	if err != nil {
 		return
 	}
 
 	response = RetryResponse{
 		Message:    successMessage(uploadsRetried),
+		StatusCode: 200,
+	}
+	return
+}
+
+func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response CountRetryResponse, err error) {
+	// Request validation
+	err = retryReq.validateReq()
+	defer func() {
+		if err != nil {
+			retryReq.API.log.Errorf(`WH: Error occurred while fetching upload jobs to retry for workspaceId: %s, sourceId: %s, destinationId: %s with error: %s`,
+				retryReq.WorkspaceID,
+				retryReq.SourceID,
+				retryReq.DestinationID,
+				err.Error(),
+			)
+			response = CountRetryResponse{
+				Message:    err.Error(),
+				StatusCode: 400,
+			}
+		}
+	}()
+	if err != nil {
+		return
+	}
+
+	// Getting the corresponding sourceIDs from workspaceID (sourceIDsByWorkspace)
+	// Also, validating if the sourceIDs list is empty or provided sourceId is present in the
+	// sources list ot not.
+	sourceIDs := retryReq.getSourceIDs()
+	if len(sourceIDs) == 0 {
+		err = fmt.Errorf("unauthorized request")
+		return
+	}
+	if retryReq.SourceID != "" && !misc.ContainsString(sourceIDs, retryReq.SourceID) {
+		err = fmt.Errorf("no such sourceID exists")
+		return
+	}
+
+	// Retry request should trigger on these cases.
+	// 1. Either provide the retry interval.
+	// 2. Or provide the List of Upload id's that needs to be re-triggered.
+	count, err := retryReq.uploadsToRetry(ctx, sourceIDs)
+	if err != nil {
+		return
+	}
+
+	response = CountRetryResponse{
+		Count:      count,
 		StatusCode: 200,
 	}
 	return
@@ -86,7 +142,7 @@ func (retryReq *RetryRequest) getSourceIDs() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (retryReq *RetryRequest) retryUploads(sourceIDs []string) (rowsAffected int64, err error) {
+func (retryReq *RetryRequest) retryUploads(ctx context.Context, sourceIDs []string) (rowsAffected int64, err error) {
 	var clausesQuery string
 	var clauses []string
 	var clausesArgs []interface{}
@@ -112,13 +168,42 @@ func (retryReq *RetryRequest) retryUploads(sourceIDs []string) (rowsAffected int
 	)
 
 	// Executing the statement
-	result, err := retryReq.API.dbHandle.Exec(preparedStatement, clausesArgs...)
+	result, err := retryReq.API.dbHandle.ExecContext(ctx, preparedStatement, clausesArgs...)
 	if err != nil {
 		return
 	}
 
 	// Getting rows affected
 	rowsAffected, err = result.RowsAffected()
+	return
+}
+
+func (retryReq *RetryRequest) uploadsToRetry(ctx context.Context, sourceIDs []string) (count int64, err error) {
+	var clausesQuery string
+	var clauses []string
+	var clausesArgs []interface{}
+
+	// Preparing clauses query
+	clauses, clausesArgs = retryReq.whereClauses(sourceIDs)
+	for i, clause := range clauses {
+		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
+		if i != len(clauses)-1 {
+			clausesQuery += " AND "
+		}
+	}
+
+	// Preparing the prepared statement
+	preparedStatement := fmt.Sprintf(`
+		SELECT
+		  count(*)
+		FROM
+		  wh_uploads
+		WHERE %[1]s`,
+		clausesQuery,
+	)
+
+	// Executing the statement
+	err = retryReq.API.dbHandle.QueryRowContext(ctx, preparedStatement, clausesArgs...).Scan(&count)
 	return
 }
 
