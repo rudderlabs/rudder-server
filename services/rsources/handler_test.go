@@ -545,13 +545,16 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get stats from JobServiceA")
+				if err != nil {
+					return false
+				}
 				totalStatsB, err := serviceB.GetStatus(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get stats from JobServiceB")
-
+				if err != nil {
+					return false
+				}
 				expected := JobStatus{
 					ID: jobRunId,
 					TasksStatus: []TaskStatus{
@@ -629,12 +632,16 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceA")
+				if err != nil {
+					return false
+				}
 				failedKeysB, err := serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceB")
+				if err != nil {
+					return false
+				}
 				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
 			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
 		})
@@ -798,12 +805,16 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceA")
+				if err != nil {
+					return false
+				}
 				failedKeysB, err := serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
-				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed keys from JobServiceB")
+				if err != nil {
+					return false
+				}
 				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
 			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
 		})
