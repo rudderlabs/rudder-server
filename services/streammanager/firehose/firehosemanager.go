@@ -34,7 +34,11 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Fire
 	if err != nil {
 		return nil, err
 	}
-	return &FireHoseProducer{client: firehose.New(awsutils.CreateSession(sessionConfig))}, nil
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &FireHoseProducer{client: firehose.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to Firehose.
