@@ -109,7 +109,7 @@ func TestBadResponse(t *testing.T) {
 			configBackendURL: parsedURL,
 		},
 		"single-workspace": &singleWorkspaceConfig{
-			configBackendURL: server.URL,
+			configBackendURL: parsedURL,
 		},
 	}
 

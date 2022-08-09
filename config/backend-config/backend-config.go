@@ -206,7 +206,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 	case deployment.DedicatedType:
 		backendConfig.workspaceConfig = &singleWorkspaceConfig{
 			configJSONPath:   configJSONPath,
-			configBackendURL: parsedConfigBackendURL.String(),
+			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:

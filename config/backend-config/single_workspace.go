@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 type singleWorkspaceConfig struct {
 	Token            string
 	workspaceID      string
-	configBackendURL string
+	configBackendURL *url.URL
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
 
@@ -81,15 +82,19 @@ func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (Con
 
 // getFromApi gets the workspace config from api
 func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+	if wc.configBackendURL == nil {
+		return ConfigT{}, fmt.Errorf("single workspace: config backend url is nil")
+	}
+
 	var (
 		respBody   []byte
 		statusCode int
-		url        = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", wc.configBackendURL)
+		u          = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", wc.configBackendURL)
 	)
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, url)
+		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, u)
 		return fetchError
 	}
 

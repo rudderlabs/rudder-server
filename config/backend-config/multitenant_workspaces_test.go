@@ -158,12 +158,12 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 	})
 
 	t.Run("invalid url", func(t *testing.T) {
-		parsedSrvURL, err := url.Parse("")
+		configBackendURL, err := url.Parse("")
 		require.NoError(t, err)
 
 		wc := &multiTenantWorkspacesConfig{
 			Token:            "some-token",
-			configBackendURL: parsedSrvURL,
+			configBackendURL: configBackendURL,
 		}
 		conf, err := wc.Get(context.Background(), "")
 		require.ErrorContains(t, err, "unsupported protocol scheme")

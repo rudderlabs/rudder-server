@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 
@@ -31,22 +32,38 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
+		parsedSrvURL, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
 		wc := &singleWorkspaceConfig{
 			Token:            token,
-			configBackendURL: srv.URL,
+			configBackendURL: parsedSrvURL,
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.NoError(t, err)
 		require.Equal(t, sampleBackendConfig, conf)
 	})
 
-	t.Run("invalid", func(t *testing.T) {
+	t.Run("invalid url", func(t *testing.T) {
+		configBackendURL, err := url.Parse("")
+		require.NoError(t, err)
+
 		wc := &singleWorkspaceConfig{
 			Token:            "testToken",
-			configBackendURL: "://example.com",
+			configBackendURL: configBackendURL,
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
-		require.Error(t, err)
+		require.ErrorContains(t, err, "unsupported protocol scheme")
+		require.Equal(t, ConfigT{}, conf)
+	})
+
+	t.Run("nil url", func(t *testing.T) {
+		wc := &singleWorkspaceConfig{
+			Token:            "testToken",
+			configBackendURL: nil,
+		}
+		conf, err := wc.getFromAPI(context.Background(), "")
+		require.ErrorContains(t, err, "config backend url is nil")
 		require.Equal(t, ConfigT{}, conf)
 	})
 }
