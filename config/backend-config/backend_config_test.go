@@ -13,7 +13,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/admin"
+	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -344,7 +344,7 @@ func TestWaitForConfig(t *testing.T) {
 
 func initBackendConfig() {
 	config.Load()
-	admin.Init()
+	adminpkg.Init()
 	diagnostics.Init()
 	logger.Init()
 	stats.Setup()

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
+	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -58,7 +58,8 @@ type BackendConfig interface {
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-	GetConfig() ConfigT
+
+	getConfig() ConfigT
 }
 
 type backendConfigImpl struct {
@@ -174,7 +175,7 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces st
 	}
 }
 
-func (bc *backendConfigImpl) GetConfig() ConfigT {
+func (bc *backendConfigImpl) getConfig() ConfigT {
 	bc.curSourceJSONLock.RLock()
 	defer bc.curSourceJSONLock.RUnlock()
 	return bc.curSourceJSON
@@ -244,7 +245,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 
 	DefaultBackendConfig = backendConfig
 
-	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+	adminpkg.RegisterAdminHandler("BackendConfig", &admin{})
 	return nil
 }
 
