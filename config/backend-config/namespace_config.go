@@ -27,11 +27,7 @@ type NamespaceConfig struct {
 	Logger logger.LoggerI
 	Client *http.Client
 
-	BasicAuthUsername string
-	BasicAuthPassword string
-
-	// ServiceSecret is used for legacy endpoints, expected to be removed
-	ServiceSecret string
+	HostedServiceSecret string
 
 	Namespace        string
 	ConfigBackendURL *url.URL
@@ -46,20 +42,8 @@ func (nc *NamespaceConfig) SetUp() (err error) {
 			return err
 		}
 	}
-	if nc.BasicAuthUsername == "" {
-		nc.BasicAuthUsername, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_USERNAME")
-		if err != nil {
-			return err
-		}
-	}
-	if nc.BasicAuthPassword == "" {
-		nc.BasicAuthPassword, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_PASSWORD")
-		if err != nil {
-			return err
-		}
-	}
-	if nc.ServiceSecret == "" {
-		nc.ServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
+	if nc.HostedServiceSecret == "" {
+		nc.HostedServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
 		if err != nil {
 			return err
 		}
@@ -134,7 +118,7 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	)
 
 	u := *nc.ConfigBackendURL
-	u.Path = fmt.Sprintf("/dataPlane/v1/namespace/%s/config", nc.Namespace)
+	u.Path = fmt.Sprintf("/data-plane/v1/namespace/%s/config", nc.Namespace)
 	operation := func() (fetchError error) {
 		nc.Logger.Debugf("Fetching config from %s", u.String())
 		respBody, statusCode, fetchError = nc.makeHTTPRequest(ctx, u.String())
@@ -196,7 +180,7 @@ func (nc *NamespaceConfig) makeHTTPRequest(
 		return nil, http.StatusBadRequest, err
 	}
 
-	req.SetBasicAuth(nc.BasicAuthUsername, nc.BasicAuthPassword)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", nc.HostedServiceSecret))
 	resp, err := nc.Client.Do(req)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
@@ -213,5 +197,5 @@ func (nc *NamespaceConfig) makeHTTPRequest(
 }
 
 func (nc *NamespaceConfig) AccessToken() string {
-	return nc.ServiceSecret
+	return nc.HostedServiceSecret
 }
