@@ -48,15 +48,14 @@ const (
 // optional is a custom tag introduced by us and is handled by GetMandatoryJSONFieldNames. Its intentionally added
 // after two commas because the tag that comes after the first comma should be known by json parser
 type PostParametersT struct {
-	Type          string `json:"type"`
-	URL           string `json:"endpoint"`
-	RequestMethod string `json:"method"`
-	// Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID      string                 `json:"userId,,optional"` //nolint:staticcheck
-	Headers     map[string]interface{} `json:"headers"`
-	QueryParams map[string]interface{} `json:"params"`
-	Body        map[string]interface{} `json:"body"`
-	Files       map[string]interface{} `json:"files"`
+	Body          map[string]interface{} `json:"body"`
+	Files         map[string]interface{} `json:"files"`
+	Headers       map[string]interface{} `json:"headers"`
+	QueryParams   map[string]interface{} `json:"params"`
+	RequestMethod string                 `json:"method"`
+	UserID        string                 `json:"userId,,optional"`
+	Type          string                 `json:"type"`
+	URL           string                 `json:"endpoint"`
 }
 
 type TransStatsT struct {

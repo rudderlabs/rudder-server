@@ -34,36 +34,35 @@ const (
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type MetadataT struct {
-	SourceID            string                            `json:"sourceId"`
-	WorkspaceID         string                            `json:"workspaceId"`
-	Namespace           string                            `json:"namespace"`
-	InstanceID          string                            `json:"instanceId"`
-	SourceType          string                            `json:"sourceType"`
-	SourceCategory      string                            `json:"sourceCategory"`
-	TrackingPlanId      string                            `json:"trackingPlanId"`
-	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
-	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
-	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
-	DestinationID       string                            `json:"destinationId"`
-	JobRunID            string                            `json:"jobRunId"`
-	JobID               int64                             `json:"jobId"`
-	SourceBatchID       string                            `json:"sourceBatchId"`
-	SourceJobID         string                            `json:"sourceJobId"`
-	SourceJobRunID      string                            `json:"sourceJobRunId"`
-	SourceTaskID        string                            `json:"sourceTaskId"`
-	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
-	RecordID            interface{}                       `json:"recordId"`
-	DestinationType     string                            `json:"destinationType"`
-	MessageID           string                            `json:"messageId"`
-	OAuthAccessToken    string                            `json:"oauthAccessToken"`
-	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs              []string `json:"messageIds"`
-	RudderID                string   `json:"rudderId"`
-	ReceivedAt              string   `json:"receivedAt"`
-	EventName               string   `json:"eventName"`
-	EventType               string   `json:"eventType"`
-	SourceDefinitionID      string   `json:"sourceDefinitionId"`
-	DestinationDefinitionID string   `json:"destinationDefinitionId"`
+	RecordID                interface{}                       `json:"recordId"`
+	SourceTpConfig          map[string]map[string]interface{} `json:"sourceTpConfig"`
+	MergedTpConfig          map[string]interface{}            `json:"mergedTpConfig"`
+	SourceID                string                            `json:"sourceId"`
+	SourceType              string                            `json:"sourceType"`
+	SourceCategory          string                            `json:"sourceCategory"`
+	TrackingPlanId          string                            `json:"trackingPlanId"`
+	SourceDefinitionID      string                            `json:"sourceDefinitionId"`
+	InstanceID              string                            `json:"instanceId"`
+	Namespace               string                            `json:"namespace"`
+	DestinationID           string                            `json:"destinationId"`
+	JobRunID                string                            `json:"jobRunId"`
+	EventType               string                            `json:"eventType"`
+	SourceBatchID           string                            `json:"sourceBatchId"`
+	SourceJobID             string                            `json:"sourceJobId"`
+	SourceJobRunID          string                            `json:"sourceJobRunId"`
+	SourceTaskID            string                            `json:"sourceTaskId"`
+	SourceTaskRunID         string                            `json:"sourceTaskRunId"`
+	WorkspaceID             string                            `json:"workspaceId"`
+	DestinationType         string                            `json:"destinationType"`
+	MessageID               string                            `json:"messageId"`
+	OAuthAccessToken        string                            `json:"oauthAccessToken"`
+	EventName               string                            `json:"eventName"`
+	RudderID                string                            `json:"rudderId"`
+	ReceivedAt              string                            `json:"receivedAt"`
+	DestinationDefinitionID string                            `json:"destinationDefinitionId"`
+	MessageIDs              []string                          `json:"messageIds"`
+	JobID                   int64                             `json:"jobId"`
+	TrackingPlanVersion     int                               `json:"trackingPlanVersion"`
 }
 
 type TransformerEventT struct {
@@ -121,18 +120,17 @@ func loadConfig() {
 }
 
 type TransformerResponseT struct {
-	// Not marking this Singular Event, since this not a RudderEvent
 	Output           map[string]interface{} `json:"output"`
 	Metadata         MetadataT              `json:"metadata"`
-	StatusCode       int                    `json:"statusCode"`
 	Error            string                 `json:"error"`
 	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
+	StatusCode       int                    `json:"statusCode"`
 }
 
 type ValidationErrorT struct {
+	Meta    map[string]string `json:"meta"`
 	Type    string            `json:"type"`
 	Message string            `json:"message"`
-	Meta    map[string]string `json:"meta"`
 }
 
 // Setup initializes this class

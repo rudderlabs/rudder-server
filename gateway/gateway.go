@@ -66,9 +66,9 @@ import (
 type webRequestT struct {
 	done           chan<- string
 	reqType        string
-	requestPayload []byte
 	writeKey       string
 	ipAddr         string
+	requestPayload []byte
 }
 
 type batchWebRequestT struct {
@@ -120,8 +120,8 @@ func Init() {
 }
 
 type userWorkerBatchRequestT struct {
-	jobList     []*jobsdb.JobT
 	respChannel chan map[uuid.UUID]string
+	jobList     []*jobsdb.JobT
 }
 
 type batchUserWorkerBatchRequestT struct {
@@ -134,56 +134,57 @@ type batchUserWorkerBatchRequestT struct {
 //
 //One to receive new webRequests, one to send batches of said webRequests and the third to receive errors if any in response to sending the said batches to dbWriterWorker.
 type userWebRequestWorkerT struct {
-	webRequestQ                 chan *webRequestT
-	batchRequestQ               chan *batchWebRequestT
-	reponseQ                    chan map[uuid.UUID]string
-	workerID                    int
-	batchTimeStat               stats.RudderStats
-	bufferFullStat, timeOutStat stats.RudderStats
+	timeOutStat    stats.RudderStats
+	batchTimeStat  stats.RudderStats
+	bufferFullStat stats.RudderStats
+	batchRequestQ  chan *batchWebRequestT
+	reponseQ       chan map[uuid.UUID]string
+	webRequestQ    chan *webRequestT
+	workerID       int
 }
 
 // HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                  app.Interface
-	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
+	readonlyBatchRouterDB        jobsdb.ReadonlyJobsDB
+	readonlyRouterDB             jobsdb.ReadonlyJobsDB
 	jobsDB                       jobsdb.JobsDB
-	ackCount                     uint64
-	recvCount                    uint64
+	readonlyGatewayDB            jobsdb.ReadonlyJobsDB
+	logger                       logger.LoggerI
 	backendConfig                backendconfig.BackendConfig
 	rateLimiter                  ratelimiter.RateLimiter
-
-	stats                                         stats.Stats
-	batchSizeStat                                 stats.RudderStats
-	requestSizeStat                               stats.RudderStats
-	dbWritesStat                                  stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
-	bodyReadTimeStat                              stats.RudderStats
-	addToWebRequestQWaitTime                      stats.RudderStats
-	ProcessRequestTime                            stats.RudderStats
-	addToBatchRequestQWaitTime                    stats.RudderStats
-
-	diagnosisTicker   *time.Ticker
-	requestMetricLock sync.Mutex
-	trackSuccessCount int
-	trackFailureCount int
-
-	webRequestBatchCount                                       uint64
-	userWebRequestWorkers                                      []*userWebRequestWorkerT
-	webhookHandler                                             *webhook.HandleT
-	suppressUserHandler                                        types.SuppressUserI
-	eventSchemaHandler                                         types.EventSchemasI
-	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
-	logger                                                     logger.LoggerI
-	rrh                                                        *RegularRequestHandler
-	irh                                                        *ImportRequestHandler
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
-	netHandle                                                  *http.Client
-	httpTimeout                                                time.Duration
-	httpWebServer                                              *http.Server
-	backgroundCancel                                           context.CancelFunc
-	backgroundWait                                             func() error
-	rsourcesService                                            rsources.JobService
+	stats                        stats.Stats
+	batchSizeStat                stats.RudderStats
+	requestSizeStat              stats.RudderStats
+	dbWritesStat                 stats.RudderStats
+	dbWorkersBufferFullStat      stats.RudderStats
+	dbWorkersTimeOutStat         stats.RudderStats
+	bodyReadTimeStat             stats.RudderStats
+	addToWebRequestQWaitTime     stats.RudderStats
+	ProcessRequestTime           stats.RudderStats
+	addToBatchRequestQWaitTime   stats.RudderStats
+	eventSchemaHandler           types.EventSchemasI
+	suppressUserHandler          types.SuppressUserI
+	rsourcesService              rsources.JobService
+	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
+	backgroundCancel             context.CancelFunc
+	rrh                          *RegularRequestHandler
+	webhookHandler               *webhook.HandleT
+	backgroundWait               func() error
+	diagnosisTicker              *time.Ticker
+	versionHandler               func(w http.ResponseWriter, r *http.Request)
+	httpWebServer                *http.Server
+	irh                          *ImportRequestHandler
+	netHandle                    *http.Client
+	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
+	userWebRequestWorkers        []*userWebRequestWorkerT
+	trackFailureCount            int
+	ackCount                     uint64
+	httpTimeout                  time.Duration
+	recvCount                    uint64
+	webRequestBatchCount         uint64
+	trackSuccessCount            int
+	requestMetricLock            sync.Mutex
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {

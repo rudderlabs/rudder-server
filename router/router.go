@@ -59,94 +59,91 @@ type tenantStats interface {
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
 	destinationJob types.DestinationJobT
-	workerId       int
-	trRespStCd     int
 	trRespBody     string
 	secret         json.RawMessage
+	workerId       int
+	trRespStCd     int
 }
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	responseQ                              chan jobResponseT
-	jobsDB                                 jobsdb.MultiTenantJobsDB
+	lastQueryRunTime                       time.Time
+	backendConfig                          backendconfig.BackendConfig
 	errorDB                                jobsdb.JobsDB
 	netHandle                              NetHandleI
 	MultitenantI                           tenantStats
-	destName                               string
-	workers                                []*workerT
-	perfStats                              *misc.PerfStats
-	successCount                           uint64
-	failCount                              uint64
-	failedEventsListMutex                  sync.RWMutex
-	failedEventsList                       *list.List
-	failedEventsChan                       chan jobsdb.JobStatusT
-	toClearFailJobIDMutex                  sync.Mutex
-	toClearFailJobIDMap                    map[int][]string
-	requestsMetricLock                     sync.RWMutex
-	failureMetricLock                      sync.RWMutex
-	diagnosisTicker                        *time.Ticker
-	requestsMetric                         []requestMetric
-	failuresMetric                         map[string]map[string]int
+	oauth                                  oauth.Authorizer
+	batchInputOutputDiffCountStat          stats.RudderStats
+	routerTransformOutputCountStat         stats.RudderStats
+	routerTransformInputCountStat          stats.RudderStats
+	batchOutputCountStat                   stats.RudderStats
+	transientSources                       transientsource.Service
+	batchInputCountStat                    stats.RudderStats
+	Reporting                              reporter
+	backgroundCtx                          context.Context
+	logger                                 logger.LoggerI
+	destinationResponseHandler             ResponseHandlerI
+	jobsDB                                 jobsdb.MultiTenantJobsDB
+	routerResponseTransformStat            stats.RudderStats
+	rsourcesService                        rsources.JobService
+	transformer                            transformer.Transformer
 	customDestinationManager               customDestinationManager.DestinationManager
 	throttler                              throttler.Throttler
-	guaranteeUserEventOrder                bool
-	netClientTimeout                       time.Duration
-	backendProxyTimeout                    time.Duration
-	enableBatching                         bool
-	transformer                            transformer.Transformer
-	configSubscriberLock                   sync.RWMutex
-	destinationsMap                        map[string]*router_utils.BatchDestinationT // destinationID -> destination
-	logger                                 logger.LoggerI
-	batchInputCountStat                    stats.RudderStats
-	batchOutputCountStat                   stats.RudderStats
-	routerTransformInputCountStat          stats.RudderStats
-	routerTransformOutputCountStat         stats.RudderStats
-	batchInputOutputDiffCountStat          stats.RudderStats
-	routerResponseTransformStat            stats.RudderStats
-	noOfWorkers                            int
-	allowAbortedUserJobsCountForProcessing int
-	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
-	isBackendConfigInitialized             bool
-	backendConfig                          backendconfig.BackendConfig
+	backgroundCancel                       context.CancelFunc
 	backendConfigInitialized               chan bool
+	lastResultSet                          *resultSetT
+	resultSetMeta                          map[int64]*resultSetT
+	failuresMetric                         map[string]map[string]int
+	diagnosisTicker                        *time.Ticker
+	destinationsMap                        map[string]*router_utils.BatchDestinationT
+	toClearFailJobIDMap                    map[int][]string
+	failedEventsList                       *list.List
+	backgroundGroup                        *errgroup.Group
+	responseQ                              chan jobResponseT
+	perfStats                              *misc.PerfStats
+	workspaceSet                           map[string]struct{}
+	backgroundWait                         func() error
+	throttledUserMap                       map[string]struct{}
+	failedEventsChan                       chan jobsdb.JobStatusT
+	sourceIDWorkspaceMap                   map[string]string
+	destName                               string
+	requestsMetric                         []requestMetric
+	workers                                []*workerT
+	jobsDBCommandTimeout                   time.Duration
 	maxFailedCountForJob                   int
-	noOfJobsToBatchInAWorker               int
 	retryTimeWindow                        time.Duration
 	routerTimeout                          time.Duration
-	jobsDBCommandTimeout                   time.Duration
+	netClientTimeout                       time.Duration
 	jobdDBMaxRetries                       int
-	destinationResponseHandler             ResponseHandlerI
-	saveDestinationResponse                bool
-	Reporting                              reporter
-	savePayloadOnError                     bool
-	oauth                                  oauth.Authorizer
-	transformerProxy                       bool
-	saveDestinationResponseOverride        bool
-	workspaceSet                           map[string]struct{}
-	sourceIDWorkspaceMap                   map[string]string
+	timeGained                             float64
+	payloadLimit                           int64
+	backendProxyTimeout                    time.Duration
+	failCount                              uint64
+	noOfWorkers                            int
 	maxDSQuerySize                         int
-
-	backgroundGroup  *errgroup.Group
-	backgroundCtx    context.Context
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
-
-	resultSetMeta    map[int64]*resultSetT
-	resultSetLock    sync.RWMutex
-	lastResultSet    *resultSetT
-	lastQueryRunTime time.Time
-	timeGained       float64
-
-	payloadLimit     int64
-	transientSources transientsource.Service
-	rsourcesService  rsources.JobService
+	allowAbortedUserJobsCountForProcessing int
+	noOfJobsToBatchInAWorker               int
+	successCount                           uint64
+	resultSetLock                          sync.RWMutex
+	failedEventsListMutex                  sync.RWMutex
+	configSubscriberLock                   sync.RWMutex
+	requestsMetricLock                     sync.RWMutex
+	failureMetricLock                      sync.RWMutex
+	toClearFailJobIDMutex                  sync.Mutex
+	transformerProxy                       bool
+	guaranteeUserEventOrder                bool
+	enableBatching                         bool
+	isBackendConfigInitialized             bool
+	saveDestinationResponse                bool
+	savePayloadOnError                     bool
+	saveDestinationResponseOverride        bool
 }
 
 type jobResponseT struct {
 	status *jobsdb.JobStatusT
 	worker *workerT
-	userID string
 	JobT   *jobsdb.JobT
+	userID string
 }
 
 // JobParametersT struct holds source id and destination id of a job
@@ -178,33 +175,32 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel                    chan workerMessageT     // the worker job channel
-	workerID                   int                     // identifies the worker
-	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime                  time.Duration           // the sleep duration for every job of the worker
-	failedJobIDMap             map[string]int64        // user to failed jobId
-	failedJobIDMutex           sync.RWMutex            // lock to protect structure above
-	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
-	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
-	rt                         *HandleT                // handle to router
-	deliveryTimeStat           stats.RudderStats
-	routerDeliveryLatencyStat  stats.RudderStats
-	routerProxyStat            stats.RudderStats
-	batchTimeStat              stats.RudderStats
-	abortedUserIDMap           map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex           sync.RWMutex
-	jobCountsByDestAndUser     map[string]*destJobCountsT
 	throttledAtTime            time.Time
+	routerDeliveryLatencyStat  stats.RudderStats
+	deliveryTimeStat           stats.RudderStats
+	batchTimeStat              stats.RudderStats
+	routerProxyStat            stats.RudderStats
+	rt                         *HandleT
+	failedJobIDMap             map[string]int64
+	retryForJobMap             map[int64]time.Time
+	jobCountsByDestAndUser     map[string]*destJobCountsT
+	abortedUserIDMap           map[string]int
+	channel                    chan workerMessageT
+	localResultSet             *resultSetT
+	destinationJobs            []types.DestinationJobT
+	routerJobs                 []types.RouterJobT
+	sleepTime                  time.Duration
+	failedJobs                 int
+	workerID                   int
+	retryForJobMapMutex        sync.RWMutex
+	abortedUserMutex           sync.RWMutex
+	failedJobIDMutex           sync.RWMutex
 	encounteredRouterTransform bool
-
-	localResultSet *resultSetT
 }
 
 type destJobCountsT struct {
-	total  int
 	byUser map[string]int
+	total  int
 }
 
 var (
@@ -230,8 +226,8 @@ type requestMetric struct {
 }
 
 type resultSetT struct {
-	id                 int64
 	resultSetBeginTime time.Time
+	id                 int64
 	timeAllotted       time.Duration
 }
 
@@ -960,13 +956,13 @@ func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostP
 }
 
 type JobResponse struct {
-	jobID                  int64
+	status                 *jobsdb.JobStatusT
 	destinationJob         *types.DestinationJobT
 	destinationJobMetadata *types.JobMetadataT
-	respStatusCode         int
 	respBody               string
+	respStatusCode         int
+	jobID                  int64
 	attemptedToSendTheJob  bool
-	status                 *jobsdb.JobStatusT
 }
 
 func (worker *workerT) recordCountsByDestAndUser(destID, userID string) {

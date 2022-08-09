@@ -43,18 +43,16 @@ type DestinationManager interface {
 
 // CustomManagerT handles this module
 type CustomManagerT struct {
-	destType    string
-	managerType string
-
-	stateMu  sync.RWMutex // protecting all 4 maps below
-	config   map[string]backendconfig.DestinationT
-	breaker  map[string]breakerHolder
-	clientMu map[string]*sync.RWMutex
-	client   map[string]*clientHolder
-
-	timeout                  time.Duration
-	breakerTimeout           time.Duration
+	client                   map[string]*clientHolder
+	config                   map[string]backendconfig.DestinationT
+	breaker                  map[string]breakerHolder
+	clientMu                 map[string]*sync.RWMutex
 	backendConfigInitialized chan struct{}
+	managerType              string
+	destType                 string
+	breakerTimeout           time.Duration
+	timeout                  time.Duration
+	stateMu                  sync.RWMutex
 }
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination

@@ -7,8 +7,8 @@ import (
 )
 
 type TransformRequestT struct {
-	Event          []transformer.TransformerEventT
 	Stage          string
+	Event          []transformer.TransformerEventT
 	ProcessingTime float64
 	Index          int
 }

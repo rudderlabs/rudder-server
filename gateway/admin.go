@@ -43,9 +43,9 @@ type SqlRunner struct {
 }
 
 type SourceEvents struct {
-	Count int
 	Name  string
 	ID    string
+	Count int
 }
 
 func (r *SqlRunner) getUniqueSources() ([]SourceEvents, error) {
@@ -182,7 +182,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error
 	for _, sourceEvent := range sources {
 		name, found := sourceIDToNameMap[sourceEvent.ID[1:len(sourceEvent.ID)-1]]
 		if found {
-			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{sourceEvent.Count, name, sourceEvent.ID})
+			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{name, sourceEvent.ID, sourceEvent.Count})
 		}
 	}
 	configSubscriberLock.RUnlock()

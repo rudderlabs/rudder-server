@@ -72,66 +72,64 @@ var (
 )
 
 type HandleT struct {
-	destType                    string
-	destinationsMap             map[string]*router_utils.BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap    map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
-	netHandle                   *http.Client
-	processQ                    chan *BatchDestinationDataT
+	failedJobCount              stats.RudderStats
+	logger                      logger.LoggerI
+	fileManagerFactory          filemanager.FileManagerFactory
+	backendConfig               backendconfig.BackendConfig
+	drainedJobsStat             stats.RudderStats
 	jobsDB                      jobsdb.JobsDB
 	errorDB                     jobsdb.JobsDB
-	isEnabled                   bool
-	batchRequestsMetricLock     sync.RWMutex
+	rsourcesService             rsources.JobService
+	transientSources            transientsource.Service
 	multitenantI                multitenant.MultiTenantI
-	diagnosisTicker             *time.Ticker
-	batchRequestsMetric         []batchRequestMetric
-	logger                      logger.LoggerI
-	noOfWorkers                 int
-	maxEventsInABatch           int
-	maxFailedCountForJob        int
-	asyncUploadTimeout          time.Duration
-	uploadIntervalMap           map[string]time.Duration
-	retryTimeWindow             time.Duration
+	pollTimeStat                stats.RudderStats
 	reporting                   types.ReportingI
-	reportingEnabled            bool
-	workers                     []*workerT
-	drainedJobsStat             stats.RudderStats
-	backendConfig               backendconfig.BackendConfig
-	fileManagerFactory          filemanager.FileManagerFactory
-	inProgressMap               map[string]bool
-	inProgressMapLock           sync.RWMutex
-	lastExecMap                 map[string]int64
-	lastExecMapLock             sync.RWMutex
-	configSubscriberLock        sync.RWMutex
+	failedJobsTimeStat          stats.RudderStats
+	backgroundCtx               context.Context
+	successfulJobCount          stats.RudderStats
+	abortedJobCount             stats.RudderStats
 	encounteredMergeRuleMap     map[string]map[string]bool
-	uploadedRawDataJobsCache    map[string]map[string]bool
-	encounteredMergeRuleMapLock sync.RWMutex
-	isBackendConfigInitialized  bool
-	backendConfigInitialized    chan bool
+	uploadIntervalMap           map[string]time.Duration
+	backgroundGroup             *errgroup.Group
+	backgroundWait              func() error
+	diagnosisTicker             *time.Ticker
 	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
+	processQ                    chan *BatchDestinationDataT
+	netHandle                   *http.Client
+	connectionWHNamespaceMap    map[string]string
+	inProgressMap               map[string]bool
+	destinationsMap             map[string]*router_utils.BatchDestinationT
+	lastExecMap                 map[string]int64
+	backendConfigInitialized    chan bool
+	uploadedRawDataJobsCache    map[string]map[string]bool
+	backgroundCancel            context.CancelFunc
+	destType                    string
+	batchRequestsMetric         []batchRequestMetric
+	workers                     []*workerT
+	noOfWorkers                 int
+	payloadLimit                int64
 	jobQueryBatchSize           int
 	pollStatusLoopSleep         time.Duration
-	pollTimeStat                stats.RudderStats
-	failedJobsTimeStat          stats.RudderStats
-	successfulJobCount          stats.RudderStats
-	failedJobCount              stats.RudderStats
-	abortedJobCount             stats.RudderStats
-
-	backgroundGroup  *errgroup.Group
-	backgroundCtx    context.Context
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
-
-	payloadLimit         int64
-	transientSources     transientsource.Service
-	rsourcesService      rsources.JobService
-	jobsDBCommandTimeout time.Duration
-	jobdDBMaxRetries     int
+	jobsDBCommandTimeout        time.Duration
+	jobdDBMaxRetries            int
+	retryTimeWindow             time.Duration
+	asyncUploadTimeout          time.Duration
+	maxFailedCountForJob        int
+	maxEventsInABatch           int
+	configSubscriberLock        sync.RWMutex
+	inProgressMapLock           sync.RWMutex
+	lastExecMapLock             sync.RWMutex
+	batchRequestsMetricLock     sync.RWMutex
+	encounteredMergeRuleMapLock sync.RWMutex
+	isBackendConfigInitialized  bool
+	isEnabled                   bool
+	reportingEnabled            bool
 }
 
 type BatchDestinationDataT struct {
+	parentWG         *sync.WaitGroup
 	batchDestination router_utils.BatchDestinationT
 	jobs             []*jobsdb.JobT
-	parentWG         *sync.WaitGroup
 }
 type AsyncPollT struct {
 	Config   map[string]interface{} `json:"config"`
@@ -223,25 +221,25 @@ type batchRequestMetric struct {
 }
 
 type StorageUploadOutput struct {
+	Error            error
 	Config           map[string]interface{}
 	Key              string
 	FileLocation     string
-	LocalFilePaths   []string
-	JournalOpID      int64
-	Error            error
 	FirstEventAt     string
 	LastEventAt      string
+	LocalFilePaths   []string
+	JournalOpID      int64
 	TotalEvents      int
 	UseRudderStorage bool
 }
 
 type AsyncStatusResponse struct {
-	Success        bool
-	StatusCode     int
-	HasFailed      bool
-	HasWarning     bool
 	FailedJobsURL  string
 	WarningJobsURL string
+	StatusCode     int
+	Success        bool
+	HasFailed      bool
+	HasWarning     bool
 }
 type ErrorResponseT struct {
 	Error string
@@ -1835,19 +1833,19 @@ func (brt *HandleT) initWorkers() {
 }
 
 type workerT struct {
-	workerID int // identifies the worker
 	brt      *HandleT
+	workerID int
 }
 
 type DestinationT struct {
-	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
+	Source      backendconfig.SourceT
 }
 
 type BatchJobsT struct {
-	Jobs             []*jobsdb.JobT
-	BatchDestination *DestinationT
 	TimeWindow       time.Time
+	BatchDestination *DestinationT
+	Jobs             []*jobsdb.JobT
 }
 
 func connectionIdentifier(batchDestination DestinationT) string {

@@ -53,9 +53,9 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 
 // HandleT is a handle to this object used in main.go
 type HandleT struct {
-	backendConfig        backendconfig.BackendConfig
-	transformer          transformer.Transformer
-	lastJobID            int64
+	stats                processorStats
+	statsFactory         stats.Stats
+	transientSources     transientsource.Service
 	gatewayDB            jobsdb.JobsDB
 	routerDB             jobsdb.JobsDB
 	batchRouterDB        jobsdb.JobsDB
@@ -64,35 +64,35 @@ type HandleT struct {
 	eventSchemaHandler   types.EventSchemasI
 	dedupHandler         dedup.DedupI
 	reporting            types.ReportingI
-	reportingEnabled     bool
+	transformer          transformer.Transformer
 	multitenantI         multitenant.MultiTenantI
-	backgroundWait       func() error
+	backendConfig        backendconfig.BackendConfig
+	rsourcesService      rsources.JobService
 	backgroundCancel     context.CancelFunc
+	backgroundWait       func() error
 	transformerFeatures  json.RawMessage
 	readLoopSleep        time.Duration
 	maxLoopSleep         time.Duration
 	storeTimeout         time.Duration
-	statsFactory         stats.Stats
-	stats                processorStats
 	payloadLimit         int64
 	jobsDBCommandTimeout time.Duration
 	jobdDBMaxRetries     int
-	transientSources     transientsource.Service
-	rsourcesService      rsources.JobService
+	lastJobID            int64
+	reportingEnabled     bool
 }
 
 type processorStats struct {
-	transformEventsByTimeMutex     sync.RWMutex
-	destTransformEventsByTimeTaken transformRequestPQ
-	userTransformEventsByTimeTaken transformRequestPQ
-	pStatsJobs                     *misc.PerfStats
-	pStatsDBR                      *misc.PerfStats
+	statProcErrDBW                 stats.RudderStats
+	transformationsThroughput      stats.RudderStats
+	processJobThroughput           stats.RudderStats
+	DBReadThroughput               stats.RudderStats
+	statBatchDestNumOutputEvents   stats.RudderStats
 	statGatewayDBR                 stats.RudderStats
-	pStatsDBW                      *misc.PerfStats
+	statDestNumOutputEvents        stats.RudderStats
 	statGatewayDBW                 stats.RudderStats
 	statRouterDBW                  stats.RudderStats
 	statBatchRouterDBW             stats.RudderStats
-	statProcErrDBW                 stats.RudderStats
+	statDBWriteBatchEvents         stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
@@ -103,7 +103,7 @@ type processorStats struct {
 	statUserTransform              stats.RudderStats
 	statDestTransform              stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
-	destProcessing                 stats.RudderStats
+	statDBWriteBatchPayloadBytes   stats.RudderStats
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
@@ -116,15 +116,15 @@ type processorStats struct {
 	statDBWriteStatusTime          stats.RudderStats
 	statDBWriteJobsTime            stats.RudderStats
 	statDBWriteRouterPayloadBytes  stats.RudderStats
-	statDBWriteBatchPayloadBytes   stats.RudderStats
+	destProcessing                 stats.RudderStats
 	statDBWriteRouterEvents        stats.RudderStats
-	statDBWriteBatchEvents         stats.RudderStats
-	statDestNumOutputEvents        stats.RudderStats
-	statBatchDestNumOutputEvents   stats.RudderStats
-	DBReadThroughput               stats.RudderStats
-	processJobThroughput           stats.RudderStats
-	transformationsThroughput      stats.RudderStats
 	DBWriteThroughput              stats.RudderStats
+	pStatsDBW                      *misc.PerfStats
+	pStatsDBR                      *misc.PerfStats
+	pStatsJobs                     *misc.PerfStats
+	userTransformEventsByTimeTaken transformRequestPQ
+	destTransformEventsByTimeTaken transformRequestPQ
+	transformEventsByTimeMutex     sync.RWMutex
 }
 
 var defaultTransformerFeatures = `{
@@ -147,12 +147,12 @@ type DestStatT struct {
 }
 
 type ParametersT struct {
+	RecordID                interface{} `json:"record_id"`
 	SourceID                string      `json:"source_id"`
-	DestinationID           string      `json:"destination_id"`
 	ReceivedAt              string      `json:"received_at"`
 	TransformAt             string      `json:"transform_at"`
 	MessageID               string      `json:"message_id"`
-	GatewayJobID            int64       `json:"gateway_job_id"`
+	DestinationID           string      `json:"destination_id"`
 	SourceBatchID           string      `json:"source_batch_id"`
 	SourceTaskID            string      `json:"source_task_id"`
 	SourceTaskRunID         string      `json:"source_task_run_id"`
@@ -163,8 +163,8 @@ type ParametersT struct {
 	SourceDefinitionID      string      `json:"source_definition_id"`
 	DestinationDefinitionID string      `json:"destination_definition_id"`
 	SourceCategory          string      `json:"source_category"`
-	RecordID                interface{} `json:"record_id"`
 	WorkspaceId             string      `json:"workspaceId"`
+	GatewayJobID            int64       `json:"gateway_job_id"`
 }
 
 type MetricMetadata struct {
@@ -1412,41 +1412,38 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 	// processJob throughput per second.
 	proc.stats.processJobThroughput.Count(processJobThroughput)
 	return transformationMessage{
-		groupedEvents,
+		start,
+		subJobs.rsourcesStats,
 		trackingPlanEnabledMap,
 		eventsByMessageID,
 		uniqueMessageIdsBySrcDestKey,
-		reportMetrics,
-		statusList,
-		procErrorJobs,
-		sourceDupStats,
 		uniqueMessageIds,
+		sourceDupStats,
+		groupedEvents,
+		statusList,
+		reportMetrics,
+		procErrorJobs,
 
 		totalEvents,
-		start,
 
 		subJobs.hasMore,
-		subJobs.rsourcesStats,
 	}
 }
 
 type transformationMessage struct {
-	groupedEvents map[string][]transformer.TransformerEventT
-
+	start                        time.Time
+	rsourcesStats                rsources.StatsCollector
 	trackingPlanEnabledMap       map[SourceIDT]bool
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
-	reportMetrics                []*types.PUReportedMetric
-	statusList                   []*jobsdb.JobStatusT
-	procErrorJobs                []*jobsdb.JobT
-	sourceDupStats               map[string]int
 	uniqueMessageIds             map[string]struct{}
-
-	totalEvents int
-	start       time.Time
-
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
+	sourceDupStats               map[string]int
+	groupedEvents                map[string][]transformer.TransformerEventT
+	statusList                   []*jobsdb.JobStatusT
+	reportMetrics                []*types.PUReportedMetric
+	procErrorJobs                []*jobsdb.JobT
+	totalEvents                  int
+	hasMore                      bool
 }
 
 func (proc *HandleT) transformations(in transformationMessage) storeMessage {
@@ -1503,40 +1500,35 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
 	proc.stats.transformationsThroughput.Count(transformationsThroughput)
 	return storeMessage{
-		in.statusList,
-		destJobs,
-		batchDestJobs,
-
-		procErrorJobsByDestID,
-		in.procErrorJobs,
-
-		in.reportMetrics,
+		in.start,
+		in.rsourcesStats,
 		in.sourceDupStats,
 		in.uniqueMessageIds,
+		procErrorJobsByDestID,
+		batchDestJobs,
+		in.procErrorJobs,
+		in.statusList,
+		destJobs,
+
+		in.reportMetrics,
 		in.totalEvents,
-		in.start,
 		in.hasMore,
-		in.rsourcesStats,
 	}
 }
 
 type storeMessage struct {
-	statusList    []*jobsdb.JobStatusT
-	destJobs      []*jobsdb.JobT
-	batchDestJobs []*jobsdb.JobT
-
+	start                 time.Time
+	rsourcesStats         rsources.StatsCollector
+	sourceDupStats        map[string]int
+	uniqueMessageIds      map[string]struct{}
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
+	batchDestJobs         []*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
-
-	reportMetrics    []*types.PUReportedMetric
-	sourceDupStats   map[string]int
-	uniqueMessageIds map[string]struct{}
-
-	totalEvents int
-	start       time.Time
-
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
+	statusList            []*jobsdb.JobStatusT
+	destJobs              []*jobsdb.JobT
+	reportMetrics         []*types.PUReportedMetric
+	totalEvents           int
+	hasMore               bool
 }
 
 func (proc *HandleT) Store(in storeMessage) {
@@ -1697,10 +1689,10 @@ func (proc *HandleT) Store(in storeMessage) {
 }
 
 type transformSrcDestOutput struct {
+	errorsPerDestID map[string][]*jobsdb.JobT
 	reportMetrics   []*types.PUReportedMetric
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
-	errorsPerDestID map[string][]*jobsdb.JobT
 }
 
 func (proc *HandleT) transformSrcDest(
@@ -2313,9 +2305,9 @@ func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
 //So, to keep track of sub-batch we have `hasMore` variable.
 //each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
+	rsourcesStats rsources.StatsCollector
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
-	rsourcesStats rsources.StatsCollector
 }
 
 func jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {

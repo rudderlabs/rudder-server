@@ -71,33 +71,33 @@ func (ra *Admin) Status() interface{} {
 }
 
 type RouterRpcHandler struct {
-	jobsDBPrefix          string
 	readonlyRouterDB      jobsdb.ReadonlyJobsDB
 	readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
+	jobsDBPrefix          string
 }
 
 type JobCountsByStateAndDestination struct {
-	Count       int
 	State       string
 	Destination string
+	Count       int
 }
 
 type ErrorCodeCountsByDestination struct {
-	Count         int
 	ErrorCode     string
 	Destination   string
 	DestinationID string
+	Count         int
 }
 
 type JobCountByConnections struct {
-	Count         int
 	SourceId      string
 	DestinationId string
+	Count         int
 }
 
 type LatestJobStatusCounts struct {
-	Count int
 	State string
+	Count int
 	Rank  int
 }
 
