@@ -58,8 +58,6 @@ type BackendConfig interface {
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
-
-	getConfig() ConfigT
 }
 
 type backendConfigImpl struct {
@@ -175,7 +173,8 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces st
 	}
 }
 
-func (bc *backendConfigImpl) getConfig() ConfigT {
+func getConfig() ConfigT {
+	bc, _ := DefaultBackendConfig.(*backendConfigImpl)
 	bc.curSourceJSONLock.RLock()
 	defer bc.curSourceJSONLock.RUnlock()
 	return bc.curSourceJSON

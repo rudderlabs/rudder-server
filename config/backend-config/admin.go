@@ -19,7 +19,7 @@ func (bca *admin) RoutingConfig(filterProcessor bool, reply *string) (err error)
 		}
 	}()
 
-	outputJSON := DefaultBackendConfig.getConfig()
+	outputJSON := getConfig()
 	if filterProcessor {
 		outputJSON = filterProcessorEnabledDestinations(outputJSON)
 	}

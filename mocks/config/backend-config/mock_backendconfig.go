@@ -170,17 +170,3 @@ func (mr *MockBackendConfigMockRecorder) WaitForConfig(arg0 interface{}) *gomock
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForConfig", reflect.TypeOf((*MockBackendConfig)(nil).WaitForConfig), arg0)
 }
-
-// getConfig mocks base method.
-func (m *MockBackendConfig) getConfig() backendconfig.ConfigT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "getConfig")
-	ret0, _ := ret[0].(backendconfig.ConfigT)
-	return ret0
-}
-
-// getConfig indicates an expected call of getConfig.
-func (mr *MockBackendConfigMockRecorder) getConfig() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "getConfig", reflect.TypeOf((*MockBackendConfig)(nil).getConfig))
-}
