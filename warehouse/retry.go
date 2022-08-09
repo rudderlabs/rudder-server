@@ -120,7 +120,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Coun
 	// Retry request should trigger on these cases.
 	// 1. Either provide the retry interval.
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
-	count, err := retryReq.uploadsToRetry(ctx, sourceIDs)
+	count, err := retryReq.countUploadsToRetry(ctx, sourceIDs)
 	if err != nil {
 		return
 	}
@@ -178,7 +178,7 @@ func (retryReq *RetryRequest) retryUploads(ctx context.Context, sourceIDs []stri
 	return
 }
 
-func (retryReq *RetryRequest) uploadsToRetry(ctx context.Context, sourceIDs []string) (count int64, err error) {
+func (retryReq *RetryRequest) countUploadsToRetry(ctx context.Context, sourceIDs []string) (count int64, err error) {
 	var clausesQuery string
 	var clauses []string
 	var clausesArgs []interface{}
