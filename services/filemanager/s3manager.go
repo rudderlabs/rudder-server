@@ -192,6 +192,9 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		}
 		manager.Config.Region = aws.String(region)
 	}
+	if manager.Config.Region == nil {
+		return nil, errors.New("no storage bucket region configured")
+	}
 	return awsutils.CreateSession(manager.getSessionConfig())
 }
 
@@ -257,7 +260,7 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	var s3Config S3Config
 	if err := mapstructure.Decode(config, &s3Config); err != nil {
 		pkgLogger.Errorf("unable to code config into S3Config: %w", err)
-		return nil
+		s3Config = S3Config{}
 	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 	s3Config.RegionHint = regionHint
