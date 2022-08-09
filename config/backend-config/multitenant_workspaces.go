@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ type WorkspacesT struct {
 
 type multiTenantWorkspacesConfig struct {
 	Token                     string
-	configBackendURL          string
+	configBackendURL          *url.URL
 	configEnvHandler          types.ConfigEnvI
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
@@ -89,20 +90,24 @@ func (wc *multiTenantWorkspacesConfig) Get(ctx context.Context, workspaces strin
 
 // getFromApi gets the workspace config from api
 func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+	if wc.configBackendURL == nil {
+		return ConfigT{}, fmt.Errorf("multi tenant workspace: config backend url is nil")
+	}
+
 	var (
-		url        string
+		u          string
 		respBody   []byte
 		statusCode int
 	)
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", wc.configBackendURL)
+		u = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", wc.configBackendURL)
 	} else {
-		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", wc.configBackendURL)
+		u = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", wc.configBackendURL)
 	}
 	operation := func() error {
 		var fetchError error
-		pkgLogger.Debugf("Fetching config from %s", url)
-		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, url)
+		pkgLogger.Debugf("Fetching config from %s", u)
+		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, u)
 		return fetchError
 	}
 

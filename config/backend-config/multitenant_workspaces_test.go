@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -116,9 +117,12 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
+		parsedSrvURL, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
 		wc := &multiTenantWorkspacesConfig{
 			Token:            secretToken,
-			configBackendURL: srv.URL,
+			configBackendURL: parsedSrvURL,
 		}
 		conf, err := wc.Get(context.Background(), "")
 		require.NoError(t, err)
@@ -141,32 +145,38 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 
+		parsedSrvURL, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
 		wc := &multiTenantWorkspacesConfig{
 			Token:            secretToken,
-			configBackendURL: srv.URL,
+			configBackendURL: parsedSrvURL,
 		}
 		conf, err := wc.Get(context.Background(), "")
 		require.ErrorContains(t, err, "invalid response from backend config")
 		require.Equal(t, ConfigT{}, conf)
 	})
 
-	t.Run("invalid request", func(t *testing.T) {
+	t.Run("invalid url", func(t *testing.T) {
+		parsedSrvURL, err := url.Parse("")
+		require.NoError(t, err)
+
 		wc := &multiTenantWorkspacesConfig{
 			Token:            "some-token",
-			configBackendURL: "://example.com",
+			configBackendURL: parsedSrvURL,
 		}
 		conf, err := wc.Get(context.Background(), "")
-		require.ErrorContains(t, err, "missing protocol scheme")
+		require.ErrorContains(t, err, "unsupported protocol scheme")
 		require.Equal(t, ConfigT{}, conf)
 	})
 
-	t.Run("invalid URL", func(t *testing.T) {
+	t.Run("nil url", func(t *testing.T) {
 		wc := &multiTenantWorkspacesConfig{
 			Token:            "some-token",
-			configBackendURL: "invalid",
+			configBackendURL: nil,
 		}
 		conf, err := wc.Get(context.Background(), "")
-		require.Error(t, err)
+		require.ErrorContains(t, err, "config backend url is nil")
 		require.Equal(t, ConfigT{}, conf)
 	})
 }

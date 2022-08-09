@@ -106,7 +106,7 @@ func TestBadResponse(t *testing.T) {
 			Logger:           &logger.NOP{},
 		},
 		"multi-tenant": &multiTenantWorkspacesConfig{
-			configBackendURL: server.URL,
+			configBackendURL: parsedURL,
 		},
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: server.URL,

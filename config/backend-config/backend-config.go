@@ -219,7 +219,7 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
 			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
-				configBackendURL: parsedConfigBackendURL.String(),
+				configBackendURL: parsedConfigBackendURL,
 				configEnvHandler: configEnvHandler,
 			}
 		}
