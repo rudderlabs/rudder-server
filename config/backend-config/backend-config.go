@@ -62,7 +62,7 @@ type BackendConfig interface {
 }
 
 type commonBackendConfig struct {
-	workspaceConfig   workspaceConfig
+	workspaceConfig
 	eb                *pubsub.PublishSubscriber
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -286,25 +286,6 @@ func (bc *commonBackendConfig) WaitForConfig(ctx context.Context) {
 		case <-time.After(pollInterval):
 		}
 	}
-}
-
-func (bc *commonBackendConfig) SetUp() error        { return bc.workspaceConfig.SetUp() }
-func (bc *commonBackendConfig) AccessToken() string { return bc.workspaceConfig.AccessToken() }
-
-func (bc *commonBackendConfig) Get(ctx context.Context, s string) (ConfigT, error) {
-	return bc.workspaceConfig.Get(ctx, s)
-}
-
-func (bc *commonBackendConfig) GetWorkspaceIDForWriteKey(s string) string {
-	return bc.workspaceConfig.GetWorkspaceIDForWriteKey(s)
-}
-
-func (bc *commonBackendConfig) GetWorkspaceIDForSourceID(s string) string {
-	return bc.workspaceConfig.GetWorkspaceIDForSourceID(s)
-}
-
-func (bc *commonBackendConfig) GetWorkspaceLibrariesForWorkspaceID(s string) LibrariesT {
-	return bc.workspaceConfig.GetWorkspaceLibrariesForWorkspaceID(s)
 }
 
 func GetConfigBackendURL() string {
