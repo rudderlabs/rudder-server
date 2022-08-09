@@ -87,14 +87,13 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 	}
 
 	var (
-		respBody   []byte
-		statusCode int
-		u          = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", wc.configBackendURL)
+		respBody []byte
+		u        = fmt.Sprintf("%s/workspaceConfig?fetchAll=true", wc.configBackendURL)
 	)
 
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = wc.makeHTTPRequest(ctx, u)
+		respBody, fetchError = wc.makeHTTPRequest(ctx, u)
 		return fetchError
 	}
 
@@ -115,7 +114,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		pkgLogger.Errorf("Error while parsing request: %v", err)
 		return ConfigT{}, err
 	}
 
@@ -144,10 +143,10 @@ func (wc *singleWorkspaceConfig) getFromFile() (ConfigT, error) {
 	return configJSON, nil
 }
 
-func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
+func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	req.SetBasicAuth(wc.Token, "")
@@ -156,19 +155,19 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, getNotOKError(respBody, resp.StatusCode)
+		return nil, getNotOKError(respBody, resp.StatusCode)
 	}
 
-	return respBody, resp.StatusCode, nil
+	return respBody, nil
 }

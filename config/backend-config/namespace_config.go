@@ -111,16 +111,12 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		return ConfigT{}, fmt.Errorf("namespace is not configured")
 	}
 
-	var (
-		respBody   []byte
-		statusCode int
-	)
-
+	var respBody []byte
 	u := *nc.ConfigBackendURL
 	u.Path = fmt.Sprintf("/data-plane/v1/namespace/%s/config", nc.Namespace)
 	operation := func() (fetchError error) {
 		nc.Logger.Debugf("Fetching config from %s", u.String())
-		respBody, statusCode, fetchError = nc.makeHTTPRequest(ctx, u.String())
+		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
 		return fetchError
 	}
 
@@ -140,7 +136,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		nc.Logger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		nc.Logger.Errorf("Error while parsing request: %v", err)
 		return ConfigT{}, err
 	}
 
@@ -168,30 +164,30 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	return sourcesJSON, nil
 }
 
-func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, int, error) {
+func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", nc.HostedServiceSecret))
 	resp, err := nc.Client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, getNotOKError(respBody, resp.StatusCode)
+		return nil, getNotOKError(respBody, resp.StatusCode)
 	}
 
-	return respBody, resp.StatusCode, nil
+	return respBody, nil
 }
 
 func (nc *namespaceConfig) AccessToken() string {
