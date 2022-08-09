@@ -13,8 +13,8 @@ import (
 // MigrationCheckpointT captures an event of export/import to recover from incase of a crash during migration
 type MigrationCheckpointT struct {
 	TimeStamp     time.Time       `json:"TimeStamp"`
-	Status        string          `json:"Status"`
-	MigrationType MigrationOp     `json:"MigrationType"`
+	Status        string          `json:"Status"`        // ENUM : Look up 'Values for Status'
+	MigrationType MigrationOp     `json:"MigrationType"` // ENUM : export, import, acceptNewEvents
 	FromNode      string          `json:"FromNode"`
 	FileLocation  string          `json:"FileLocation"`
 	ToNode        string          `json:"ToNode"`

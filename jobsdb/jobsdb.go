@@ -77,9 +77,10 @@ func IsMasterBackupEnabled() bool {
 
 // QueryConditions holds jobsdb query conditions
 type QueryConditions struct {
-	CustomValFilters              []string
-	ParameterFilters              []ParameterFilterT
-	StateFilters                  []string
+	CustomValFilters []string
+	ParameterFilters []ParameterFilterT
+	StateFilters     []string
+	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
 	IgnoreCustomValFiltersInQuery bool
 }
 
@@ -87,12 +88,23 @@ type QueryConditions struct {
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
 type GetQueryParamsT struct {
-	CustomValFilters              []string
-	ParameterFilters              []ParameterFilterT
-	StateFilters                  []string
-	PayloadSizeLimit              int64
-	JobsLimit                     int
-	EventsLimit                   int
+	// query conditions
+	CustomValFilters []string
+	ParameterFilters []ParameterFilterT
+	StateFilters     []string
+	// Limit the total job payload size
+	// A value less than or equal to zero will disable this limit (no limit),
+	// only values greater than zero are considered as valid limits.
+	PayloadSizeLimit int64
+	// Limit the total number of jobs.
+	// A value less than or equal to zero will return no results
+	JobsLimit int
+	// Limit the total number of events, 1 job contains 1+ event(s).
+	// A value less than or equal to zero will disable this limit (no limit),
+	// only values greater than zero are considered as valid limits.
+	EventsLimit int
+
+	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
 	IgnoreCustomValFiltersInQuery bool
 }
 
@@ -308,7 +320,7 @@ ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 type JobStatusT struct {
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
-	JobState      string          `json:"JobState"`
+	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
 	WorkspaceId   string          `json:"WorkspaceId"`
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
@@ -384,18 +396,20 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	migrationState              migrationState
-	tablesQueriedStat           stats.RudderStats
-	statDropDSPeriod            stats.RudderStats
-	invalidCacheKeyStat         stats.RudderStats
-	statNewDSPeriod             stats.RudderStats
-	statDSCount                 stats.RudderStats
-	logger                      logger.LoggerI
-	statTableCount              stats.RudderStats
-	jobsFileUploader            filemanager.FileManager
-	unionQueryTime              stats.RudderStats
-	dsEmptyResultCache          map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry
-	BackupSettings              *backupSettings
+	migrationState      migrationState
+	tablesQueriedStat   stats.RudderStats
+	statDropDSPeriod    stats.RudderStats
+	invalidCacheKeyStat stats.RudderStats
+	statNewDSPeriod     stats.RudderStats
+	statDSCount         stats.RudderStats
+	logger              logger.LoggerI
+	statTableCount      stats.RudderStats
+	jobsFileUploader    filemanager.FileManager
+	unionQueryTime      stats.RudderStats
+	dsEmptyResultCache  map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry
+	BackupSettings      *backupSettings
+	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
+	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS             func() <-chan time.Time
 	inProgressMigrationTargetDS *dataSetT
 	dbHandle                    *sql.DB
@@ -424,10 +438,12 @@ type HandleT struct {
 		mu      sync.Mutex
 		started bool
 	}
-	dsCacheLock                   sync.Mutex
-	enableReaderQueue             bool
-	enableWriterQueue             bool
-	registerStatusHandler         bool
+	dsCacheLock           sync.Mutex
+	enableReaderQueue     bool
+	enableWriterQueue     bool
+	registerStatusHandler bool
+	// skipSetupDBSetup is useful for testing as we mock the database client
+	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup              bool
 	isStatDropDSPeriodInitialized bool
 	clearAll                      bool

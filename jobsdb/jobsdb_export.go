@@ -149,7 +149,7 @@ type SQLJobStatusT struct {
 	ExecTime      sql.NullTime
 	RetryTime     sql.NullTime
 	ErrorResponse sql.NullString
-	JobState      sql.NullString
+	JobState      sql.NullString // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated
 	ErrorCode     sql.NullString
 	AttemptNum    sql.NullInt64
 	JobID         sql.NullInt64
