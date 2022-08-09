@@ -37,8 +37,8 @@ type ProxyResponseTc struct {
 	// The delay in response from proxy endpoint in transformer
 	proxyTimeoutValue time.Duration
 	// The timeout we have set from router
-	// Router will have the timeout of 2 * rtTimeout
-	// For http client timeout scenarios, we need to have a proxyTimeout which is > 2 * rtTimeout
+	// Router will have the timeout of rtTimeout + <timeout_at_router_transform>
+	// For http client timeout scenarios, we need to have a proxyTimeout which is > rtTimeout + <timeout_at_router_transform>
 	rtTimeout time.Duration
 	// Transformed response that needs to be sent to destination
 	postParametersT integrations.PostParametersT
@@ -78,8 +78,8 @@ var proxyResponseTcs = map[string]ProxyResponseTc{
 		ExpectedBody:      `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
 		proxyStatusCode:   http.StatusOK,
 		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
-		proxyTimeoutValue: 40 * time.Millisecond,
-		rtTimeout:         18 * time.Millisecond,
+		proxyTimeoutValue: time.Duration(1.2 * 1e9),
+		rtTimeout:         8 * time.Millisecond,
 		postParametersT: integrations.PostParametersT{
 			Type:          "REST",
 			URL:           "http://www.good_dest_1.domain.com",
@@ -161,6 +161,7 @@ func Initialization() {
 }
 
 func TestProxyRequest(t *testing.T) {
+	t.Setenv("RSERVER_HTTP_CLIENT_TIMEOUT", "1s")
 	Initialization()
 
 	srvMux := mux.NewRouter()
