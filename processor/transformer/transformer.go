@@ -60,9 +60,10 @@ type MetadataT struct {
 	RudderID                string                            `json:"rudderId"`
 	ReceivedAt              string                            `json:"receivedAt"`
 	DestinationDefinitionID string                            `json:"destinationDefinitionId"`
-	MessageIDs              []string                          `json:"messageIds"`
-	JobID                   int64                             `json:"jobId"`
-	TrackingPlanVersion     int                               `json:"trackingPlanVersion"`
+	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
+	MessageIDs          []string `json:"messageIds"`
+	JobID               int64    `json:"jobId"`
+	TrackingPlanVersion int      `json:"trackingPlanVersion"`
 }
 
 type TransformerEventT struct {
@@ -120,6 +121,7 @@ func loadConfig() {
 }
 
 type TransformerResponseT struct {
+	// Not marking this Singular Event, since this not a RudderEvent
 	Output           map[string]interface{} `json:"output"`
 	Metadata         MetadataT              `json:"metadata"`
 	Error            string                 `json:"error"`

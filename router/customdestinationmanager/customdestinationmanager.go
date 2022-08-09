@@ -52,7 +52,7 @@ type CustomManagerT struct {
 	destType                 string
 	breakerTimeout           time.Duration
 	timeout                  time.Duration
-	stateMu                  sync.RWMutex
+	stateMu                  sync.RWMutex // protecting all 4 maps above
 }
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination

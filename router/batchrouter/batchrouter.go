@@ -96,9 +96,9 @@ type HandleT struct {
 	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
 	processQ                    chan *BatchDestinationDataT
 	netHandle                   *http.Client
-	connectionWHNamespaceMap    map[string]string
+	connectionWHNamespaceMap    map[string]string // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	inProgressMap               map[string]bool
-	destinationsMap             map[string]*router_utils.BatchDestinationT
+	destinationsMap             map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	lastExecMap                 map[string]int64
 	backendConfigInitialized    chan bool
 	uploadedRawDataJobsCache    map[string]map[string]bool

@@ -95,7 +95,7 @@ type HandleT struct {
 	resultSetMeta                          map[int64]*resultSetT
 	failuresMetric                         map[string]map[string]int
 	diagnosisTicker                        *time.Ticker
-	destinationsMap                        map[string]*router_utils.BatchDestinationT
+	destinationsMap                        map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	toClearFailJobIDMap                    map[int][]string
 	failedEventsList                       *list.List
 	backgroundGroup                        *errgroup.Group
@@ -103,7 +103,7 @@ type HandleT struct {
 	perfStats                              *misc.PerfStats
 	workspaceSet                           map[string]struct{}
 	backgroundWait                         func() error
-	throttledUserMap                       map[string]struct{}
+	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
 	failedEventsChan                       chan jobsdb.JobStatusT
 	sourceIDWorkspaceMap                   map[string]string
 	destName                               string
@@ -180,21 +180,21 @@ type workerT struct {
 	deliveryTimeStat           stats.RudderStats
 	batchTimeStat              stats.RudderStats
 	routerProxyStat            stats.RudderStats
-	rt                         *HandleT
-	failedJobIDMap             map[string]int64
-	retryForJobMap             map[int64]time.Time
+	rt                         *HandleT            // handle to router
+	failedJobIDMap             map[string]int64    // user to failed jobId
+	retryForJobMap             map[int64]time.Time // jobID to next retry time map
 	jobCountsByDestAndUser     map[string]*destJobCountsT
-	abortedUserIDMap           map[string]int
-	channel                    chan workerMessageT
+	abortedUserIDMap           map[string]int      // aborted user to count of jobs allowed map
+	channel                    chan workerMessageT // the worker job channel
 	localResultSet             *resultSetT
-	destinationJobs            []types.DestinationJobT
-	routerJobs                 []types.RouterJobT
-	sleepTime                  time.Duration
-	failedJobs                 int
-	workerID                   int
-	retryForJobMapMutex        sync.RWMutex
+	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
+	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	sleepTime                  time.Duration           // the sleep duration for every job of the worker
+	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
+	workerID                   int                     // identifies the worker
+	retryForJobMapMutex        sync.RWMutex            // lock to protect structure retryForJobMap
 	abortedUserMutex           sync.RWMutex
-	failedJobIDMutex           sync.RWMutex
+	failedJobIDMutex           sync.RWMutex // lock to protect structure failedJobIDMap
 	encounteredRouterTransform bool
 }
 
