@@ -134,15 +134,29 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 	defer cancel()
 
 	// List the blobs in the container
-	var marker string
-	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
-	if err != nil {
-		return
+	var response *azblob.ListBlobsFlatSegmentResponse
+	var startAfterTime time.Time
+	if manager.Config.StartAfter != "" {
+		startAfterTime, err = time.Parse(time.RFC3339, manager.Config.StartAfter)
+		if err != nil {
+			return
+		}
 	}
 
-	fileObjects = make([]*FileObject, len(response.Segment.BlobItems))
-	for idx := range response.Segment.BlobItems {
-		fileObjects[idx] = &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified}
+	for maxItems > 0 && manager.Config.Marker.NotDone() {
+		response, err = containerURL.ListBlobsFlatSegment(ctx, manager.Config.Marker, segmentOptions)
+		if err != nil {
+			return
+		}
+		manager.Config.Marker = response.NextMarker
+
+		fileObjects = make([]*FileObject, 0)
+		for _, item := range response.Segment.BlobItems {
+			if startAfterTime.IsZero() || item.Properties.LastModified.After(startAfterTime) {
+				fileObjects = append(fileObjects, &FileObject{item.Name, item.Properties.LastModified})
+				maxItems--
+			}
+		}
 	}
 	return
 }
@@ -202,8 +216,9 @@ func (manager *AzureBlobStorageManager) SetTimeout(timeout *time.Duration) {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	var containerName, accountName, accountKey, prefix string
+	var containerName, accountName, accountKey, prefix, startAfter string
 	var endPoint *string
+	var marker azblob.Marker
 	var forcePathStyle, disableSSL *bool
 	if config["containerName"] != nil {
 		tmp, ok := config["containerName"].(string)
@@ -215,6 +230,12 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		tmp, ok := config["prefix"].(string)
 		if ok {
 			prefix = tmp
+		}
+	}
+	if config["startAfter"] != nil {
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
 		}
 	}
 	if config["accountName"] != nil {
@@ -255,6 +276,8 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
+		StartAfter:     startAfter,
+		Marker:         marker,
 	}
 }
 
@@ -266,6 +289,8 @@ type AzureBlobStorageConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
+	StartAfter     string
+	Marker         azblob.Marker
 }
 
 func (manager *AzureBlobStorageManager) DeleteObjects(ctx context.Context, keys []string) (err error) {

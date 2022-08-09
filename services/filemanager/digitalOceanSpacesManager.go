@@ -117,6 +117,9 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 }
 
 func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	if !manager.Config.IsTruncated {
+		return
+	}
 	fileObjects = make([]*FileObject, 0)
 
 	sess, err := manager.getSession()
@@ -130,17 +133,27 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix 
 	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
 	defer cancel()
 
-	// Get the list of items
-	resp, err := svc.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+	listObjectsV2Input := s3.ListObjectsV2Input{
 		Bucket:  aws.String(manager.Config.Bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
-	})
+	}
+	// startAfter is to resume a paused task.
+	if manager.Config.StartAfter != "" {
+		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
+	}
+	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+
+	// Get the list of items
+	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
 		return
 	}
-
+	if resp.IsTruncated != nil {
+		manager.Config.IsTruncated = *resp.IsTruncated
+	}
+	manager.Config.ContinuationToken = resp.NextContinuationToken
 	for _, item := range resp.Contents {
 		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
 	}
@@ -201,7 +214,8 @@ func (manager *DOSpacesManager) SetTimeout(timeout *time.Duration) {
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
-	var bucketName, prefix, endPoint, accessKeyID, accessKey string
+	var bucketName, prefix, endPoint, accessKeyID, accessKey, startAfter string
+	var continuationToken *string
 	var region *string
 	var forcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
@@ -234,6 +248,12 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 			accessKey = tmp
 		}
 	}
+	if config["startAfter"] != nil {
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
+		}
+	}
 	if config["region"] != nil {
 		tmp, ok := config["region"].(string)
 		if ok {
@@ -253,26 +273,32 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 		}
 	}
 	return &DOSpacesConfig{
-		Bucket:         bucketName,
-		EndPoint:       endPoint,
-		Prefix:         prefix,
-		AccessKeyID:    accessKeyID,
-		AccessKey:      accessKey,
-		Region:         region,
-		ForcePathStyle: forcePathStyle,
-		DisableSSL:     disableSSL,
+		Bucket:            bucketName,
+		EndPoint:          endPoint,
+		Prefix:            prefix,
+		AccessKeyID:       accessKeyID,
+		AccessKey:         accessKey,
+		Region:            region,
+		ForcePathStyle:    forcePathStyle,
+		DisableSSL:        disableSSL,
+		StartAfter:        startAfter,
+		ContinuationToken: continuationToken,
+		IsTruncated:       true,
 	}
 }
 
 type DOSpacesConfig struct {
-	Bucket         string
-	Prefix         string
-	EndPoint       string
-	AccessKeyID    string
-	AccessKey      string
-	Region         *string
-	ForcePathStyle *bool
-	DisableSSL     *bool
+	Bucket            string
+	Prefix            string
+	EndPoint          string
+	AccessKeyID       string
+	AccessKey         string
+	Region            *string
+	ForcePathStyle    *bool
+	DisableSSL        *bool
+	StartAfter        string
+	ContinuationToken *string
+	IsTruncated       bool
 }
 
 func (manager *DOSpacesManager) GetConfiguredPrefix() string {

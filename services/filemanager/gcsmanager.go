@@ -70,20 +70,32 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 	defer cancel()
 
 	// Create GCS Bucket handle
-	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
-		Prefix:    prefix,
-		Delimiter: "",
-	})
+	if manager.Config.Iterator != nil {
+		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
+			Prefix:    prefix,
+			Delimiter: "",
+		})
+	}
+	var attrs *storage.ObjectAttrs
+	var startAfterTime time.Time
+	if manager.Config.StartAfter != "" {
+		startAfterTime, err = time.Parse(time.RFC3339, manager.Config.StartAfter)
+		if err != nil {
+			return
+		}
+	}
 	for {
-		if maxItems == 0 {
+		if maxItems <= 0 {
 			break
 		}
-		attrs, err := it.Next()
+		attrs, err = manager.Config.Iterator.Next()
 		if err == iterator.Done || err != nil {
 			break
 		}
-		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
-		maxItems--
+		if startAfterTime.IsZero() || attrs.Updated.After(startAfterTime) {
+			fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
+			maxItems--
+		}
 	}
 	return
 }
@@ -159,7 +171,7 @@ func (manager *GCSManager) SetTimeout(timeout *time.Duration) {
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
-	var bucketName, prefix, credentials string
+	var bucketName, prefix, credentials, startAfter string
 	var endPoint *string
 	var forcePathStyle, disableSSL *bool
 
@@ -179,6 +191,12 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 		tmp, ok := config["credentials"].(string)
 		if ok {
 			credentials = tmp
+		}
+	}
+	if config["startAfter"] != nil {
+		tmp, ok := config["startAfter"].(string)
+		if ok {
+			startAfter = tmp
 		}
 	}
 	if config["endPoint"] != nil {
@@ -206,6 +224,7 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
+		StartAfter:     startAfter,
 	}
 }
 
@@ -216,6 +235,8 @@ type GCSConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
+	StartAfter     string
+	Iterator       *storage.ObjectIterator
 }
 
 func (manager *GCSManager) DeleteObjects(ctx context.Context, locations []string) (err error) {
