@@ -61,7 +61,7 @@ type BackendConfig interface {
 	GetConfig() ConfigT
 }
 
-type commonBackendConfig struct {
+type backendConfigImpl struct {
 	workspaceConfig
 	eb                *pubsub.PublishSubscriber
 	ctx               context.Context
@@ -128,7 +128,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *commonBackendConfig) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
+func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
 	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
@@ -161,7 +161,7 @@ func (bc *commonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	bc.initializedLock.Unlock()
 }
 
-func (bc *commonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
 	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
@@ -174,7 +174,7 @@ func (bc *commonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces 
 	}
 }
 
-func (bc *commonBackendConfig) GetConfig() ConfigT {
+func (bc *backendConfigImpl) GetConfig() ConfigT {
 	bc.curSourceJSONLock.RLock()
 	defer bc.curSourceJSONLock.RUnlock()
 	return bc.curSourceJSON
@@ -189,12 +189,12 @@ Available topics are:
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receive all regulations
 */
-func (bc *commonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
+func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
-	backendConfig := &commonBackendConfig{
+	backendConfig := &backendConfigImpl{
 		eb: pubsub.New(),
 	}
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -248,7 +248,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *commonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -259,7 +259,7 @@ func (bc *commonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	})
 }
 
-func (bc *commonBackendConfig) Stop() {
+func (bc *backendConfigImpl) Stop() {
 	if bc.cancel != nil {
 		bc.cancel()
 		<-bc.blockChan
@@ -270,7 +270,7 @@ func (bc *commonBackendConfig) Stop() {
 }
 
 // WaitForConfig waits until backend config has been initialized
-func (bc *commonBackendConfig) WaitForConfig(ctx context.Context) {
+func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 	for {
 		bc.initializedLock.RLock()
 		if bc.initialized {

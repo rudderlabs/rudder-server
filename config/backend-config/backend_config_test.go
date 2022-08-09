@@ -119,7 +119,7 @@ func TestBadResponse(t *testing.T) {
 			pkgLogger = &logger.NOP{}
 			atomic.StoreInt32(&calls, 0)
 
-			bc := &commonBackendConfig{
+			bc := &backendConfigImpl{
 				workspaceConfig: conf,
 			}
 			bc.StartWithIDs(ctx, "")
@@ -145,7 +145,7 @@ func TestNewForDeployment(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
 		conf, err := newForDeployment(deployment.DedicatedType, nil)
 		require.NoError(t, err)
-		cb, ok := conf.(*commonBackendConfig)
+		cb, ok := conf.(*backendConfigImpl)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*singleWorkspaceConfig)
 		require.True(t, ok)
@@ -156,7 +156,7 @@ func TestNewForDeployment(t *testing.T) {
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
-		cb, ok := conf.(*commonBackendConfig)
+		cb, ok := conf.(*backendConfigImpl)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*multiTenantWorkspacesConfig)
 		require.True(t, ok)
@@ -170,7 +170,7 @@ func TestNewForDeployment(t *testing.T) {
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
-		cb, ok := conf.(*commonBackendConfig)
+		cb, ok := conf.(*backendConfigImpl)
 		require.True(t, ok)
 		_, ok = cb.workspaceConfig.(*namespaceConfig)
 		require.True(t, ok)
@@ -198,7 +198,7 @@ func TestConfigUpdate(t *testing.T) {
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
 		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 
-		bc := &commonBackendConfig{workspaceConfig: wc}
+		bc := &backendConfigImpl{workspaceConfig: wc}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 		require.False(t, bc.initialized)
 	})
@@ -215,7 +215,7 @@ func TestConfigUpdate(t *testing.T) {
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
 		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 
-		bc := &commonBackendConfig{
+		bc := &backendConfigImpl{
 			workspaceConfig: wc,
 			curSourceJSON:   sampleBackendConfig, // same as the one returned by the workspace config
 		}
@@ -237,7 +237,7 @@ func TestConfigUpdate(t *testing.T) {
 		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 
 		pubSub := pubsub.PublishSubscriber{}
-		bc := &commonBackendConfig{
+		bc := &backendConfigImpl{
 			eb:              &pubSub,
 			workspaceConfig: wc,
 		}
@@ -267,7 +267,7 @@ func TestSubscribe(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		bc := &commonBackendConfig{
+		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
 			curSourceJSON: sampleBackendConfig,
 		}
@@ -284,7 +284,7 @@ func TestSubscribe(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		bc := &commonBackendConfig{
+		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
 			curSourceJSON: sampleBackendConfig,
 		}
@@ -305,7 +305,7 @@ func TestWaitForConfig(t *testing.T) {
 		)
 		defer ctrl.Finish()
 
-		bc := &commonBackendConfig{initialized: true}
+		bc := &backendConfigImpl{initialized: true}
 		bc.WaitForConfig(ctx)
 	})
 
@@ -318,7 +318,7 @@ func TestWaitForConfig(t *testing.T) {
 
 		pkgLogger = &logger.NOP{}
 		pollInterval = time.Millisecond
-		bc := &commonBackendConfig{initialized: false}
+		bc := &backendConfigImpl{initialized: false}
 
 		var done int32
 		go func() {
