@@ -1,16 +1,18 @@
 package backendconfig
 
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+//go:generate mockgen -destination=./mock_workspaceconfig.go -package=backendconfig -source=./backend-config.go workspaceConfig
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
+	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -23,52 +25,55 @@ import (
 )
 
 var (
-	backendConfig                         BackendConfig
+	// environment variables
 	configBackendURL                      string
 	pollInterval, regulationsPollInterval time.Duration
-	configFromFile                        bool
 	configJSONPath                        string
-	curSourceJSON                         ConfigT
-	curSourceJSONLock                     sync.RWMutex
-	LastSync                              string
-	LastRegulationSync                    string
+	configFromFile                        bool
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
 
+	LastSync           string
+	LastRegulationSync string
+
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
 	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
 	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
 )
 
-type BackendConfig interface {
+type workspaceConfig interface {
 	SetUp() error
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
+}
+
+type BackendConfig interface {
+	workspaceConfig
 	WaitForConfig(ctx context.Context)
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
 }
 
-type CommonBackendConfig struct {
-	eb               *pubsub.PublishSubscriber
-	configEnvHandler types.ConfigEnvI
-	ctx              context.Context
-	cancel           context.CancelFunc
-	blockChan        chan struct{}
-	initializedLock  sync.RWMutex
-	initialized      bool
+type backendConfigImpl struct {
+	workspaceConfig
+	eb                *pubsub.PublishSubscriber
+	ctx               context.Context
+	cancel            context.CancelFunc
+	blockChan         chan struct{}
+	initializedLock   sync.RWMutex
+	initialized       bool
+	curSourceJSON     ConfigT
+	curSourceJSONLock sync.RWMutex
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
@@ -122,8 +127,8 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
-	sourceJSON, err := backendConfig.Get(ctx, workspaces)
+func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
+	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
@@ -136,16 +141,18 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
-	if !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+	bc.curSourceJSONLock.Lock()
+	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
 		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
-		curSourceJSONLock.Lock()
-		trackConfig(curSourceJSON, sourceJSON)
+		trackConfig(bc.curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
-		curSourceJSON = sourceJSON
-		curSourceJSONLock.Unlock()
+		bc.curSourceJSON = sourceJSON
+		bc.curSourceJSONLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
 		bc.eb.Publish(string(TopicBackendConfig), sourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+	} else {
+		bc.curSourceJSONLock.Unlock()
 	}
 
 	bc.initializedLock.Lock()
@@ -153,7 +160,7 @@ func (bc *CommonBackendConfig) configUpdate(ctx context.Context, statConfigBacke
 	bc.initializedLock.Unlock()
 }
 
-func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
 	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
@@ -166,22 +173,11 @@ func (bc *CommonBackendConfig) pollConfigUpdate(ctx context.Context, workspaces 
 	}
 }
 
-func GetConfig() ConfigT {
-	curSourceJSONLock.RLock()
-	defer curSourceJSONLock.RUnlock()
-	return curSourceJSON
-}
-
-func GetWorkspaceIDForWriteKey(writeKey string) string {
-	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-}
-
-func GetWorkspaceIDForSourceID(sourceID string) string {
-	return backendConfig.GetWorkspaceIDForSourceID(sourceID)
-}
-
-func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
-	return backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceId)
+func getConfig() ConfigT {
+	bc, _ := DefaultBackendConfig.(*backendConfigImpl)
+	bc.curSourceJSONLock.RLock()
+	defer bc.curSourceJSONLock.RUnlock()
+	return bc.curSourceJSON
 }
 
 /*
@@ -193,37 +189,38 @@ Available topics are:
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 - TopicRegulations: Will receive all regulations
 */
-func (bc *CommonBackendConfig) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
+func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
 func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
-	var backendConfig BackendConfig
+	backendConfig := &backendConfigImpl{
+		eb: pubsub.New(),
+	}
+	parsedConfigBackendURL, err := url.Parse(configBackendURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config backend URL: %v", err)
+	}
 
 	switch deploymentType {
 	case deployment.DedicatedType:
-		backendConfig = &SingleWorkspaceConfig{
-			CommonBackendConfig: CommonBackendConfig{
-				configEnvHandler: configEnvHandler,
-				eb:               pubsub.New(),
-			},
+		backendConfig.workspaceConfig = &singleWorkspaceConfig{
+			configJSONPath:   configJSONPath,
+			configBackendURL: parsedConfigBackendURL,
+			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			backendConfig = &NamespaceConfig{
-				CommonBackendConfig: CommonBackendConfig{
-					configEnvHandler: configEnvHandler,
-					eb:               pubsub.New(),
-				},
+			backendConfig.workspaceConfig = &namespaceConfig{
+				ConfigBackendURL: parsedConfigBackendURL,
+				configEnvHandler: configEnvHandler,
 			}
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
-			backendConfig = &MultiTenantWorkspacesConfig{
-				CommonBackendConfig: CommonBackendConfig{
-					configEnvHandler: configEnvHandler,
-					eb:               pubsub.New(),
-				},
+			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
+				configBackendURL: parsedConfigBackendURL,
+				configEnvHandler: configEnvHandler,
 			}
 		}
 	default:
@@ -240,18 +237,18 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err = newForDeployment(deploymentType, configEnvHandler)
+	backendConfig, err := newForDeployment(deploymentType, configEnvHandler)
 	if err != nil {
 		return err
 	}
 
 	DefaultBackendConfig = backendConfig
 
-	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
+	adminpkg.RegisterAdminHandler("BackendConfig", &admin{})
 	return nil
 }
 
-func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -262,7 +259,7 @@ func (bc *CommonBackendConfig) StartWithIDs(ctx context.Context, workspaces stri
 	})
 }
 
-func (bc *CommonBackendConfig) Stop() {
+func (bc *backendConfigImpl) Stop() {
 	if bc.cancel != nil {
 		bc.cancel()
 		<-bc.blockChan
@@ -273,7 +270,7 @@ func (bc *CommonBackendConfig) Stop() {
 }
 
 // WaitForConfig waits until backend config has been initialized
-func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
+func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 	for {
 		bc.initializedLock.RLock()
 		if bc.initialized {
@@ -293,4 +290,12 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) {
 
 func GetConfigBackendURL() string {
 	return configBackendURL
+}
+
+func getNotOKError(respBody []byte, statusCode int) error {
+	errMsg := ""
+	if len(respBody) > 0 {
+		errMsg = fmt.Sprintf(": %s", respBody)
+	}
+	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
 }

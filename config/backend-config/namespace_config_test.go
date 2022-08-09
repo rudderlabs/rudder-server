@@ -1,4 +1,4 @@
-package backendconfig_test
+package backendconfig
 
 import (
 	"context"
@@ -11,13 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &backendconfig.NamespaceConfig{}
+		client           = &namespaceConfig{}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -54,7 +53,7 @@ func Test_Namespace_Get(t *testing.T) {
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
 
-	client := &backendconfig.NamespaceConfig{
+	client := &namespaceConfig{
 		Logger: logger.NewLogger(),
 
 		Client:           ts.Client(),
@@ -83,7 +82,7 @@ func Test_Namespace_Get(t *testing.T) {
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,
-			backendconfig.LibrariesT{
+			LibrariesT{
 				{VersionID: "20MirO0IhCtS39Qjva2PSAbA9KM"},
 				{VersionID: "ghi"},
 				{VersionID: "2AWJpFCIGcpZhOrsIp7Kasw72vb"},
@@ -94,7 +93,7 @@ func Test_Namespace_Get(t *testing.T) {
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {
-		client := &backendconfig.NamespaceConfig{
+		client := &namespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
@@ -105,12 +104,12 @@ func Test_Namespace_Get(t *testing.T) {
 		require.NoError(t, client.SetUp())
 
 		c, err := client.Get(context.Background(), "")
-		require.EqualError(t, err, "unexpected status code: 401") // Unauthorized
+		require.EqualError(t, err, `backend config request failed with 401: {"message":"Unauthorized"}`) // Unauthorized
 		require.Empty(t, c)
 	})
 
 	t.Run("empty namespace", func(t *testing.T) {
-		client := &backendconfig.NamespaceConfig{
+		client := &namespaceConfig{
 			Client:           ts.Client(),
 			ConfigBackendURL: httpSrvURL,
 
@@ -121,7 +120,7 @@ func Test_Namespace_Get(t *testing.T) {
 		require.NoError(t, client.SetUp())
 
 		c, err := client.Get(context.Background(), workspaceID1)
-		require.EqualError(t, err, "unexpected status code: 404")
+		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})
 }
