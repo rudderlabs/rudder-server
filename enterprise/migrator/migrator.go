@@ -2,7 +2,7 @@ package migrator
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -102,7 +102,7 @@ func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 		conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
 	case "GCS":
 		credentialsFilePath := config.GetRequiredEnv("GOOGLE_APPLICATION_CREDENTIALS")
-		credentials, err := ioutil.ReadFile(credentialsFilePath)
+		credentials, err := os.ReadFile(credentialsFilePath)
 		if err != nil {
 			panic(fmt.Sprintf("Error when reading GCS credentials file: %s", credentialsFilePath))
 		}
