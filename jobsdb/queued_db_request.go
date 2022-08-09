@@ -44,10 +44,10 @@ const (
 )
 
 type dbRequest struct {
-	reqType dbReqType
-	name    string
 	tags    *statTags
 	command func() interface{}
+	name    string
+	reqType dbReqType
 }
 
 func newReadDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {

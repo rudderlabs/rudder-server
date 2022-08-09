@@ -12,16 +12,16 @@ import (
 
 // MigrationCheckpointT captures an event of export/import to recover from incase of a crash during migration
 type MigrationCheckpointT struct {
-	ID            int64           `json:"ID"`
-	MigrationType MigrationOp     `json:"MigrationType"` // ENUM : export, import, acceptNewEvents
-	FromNode      string          `json:"FromNode"`
-	ToNode        string          `json:"ToNode"`
-	JobsCount     int64           `json:"JobsCount"`
-	FileLocation  string          `json:"FileLocation"`
-	Status        string          `json:"Status"` // ENUM : Look up 'Values for Status'
-	StartSeq      int64           `json:"StartSeq"`
-	Payload       json.RawMessage `json:"Payload"`
 	TimeStamp     time.Time       `json:"TimeStamp"`
+	Status        string          `json:"Status"`
+	MigrationType MigrationOp     `json:"MigrationType"`
+	FromNode      string          `json:"FromNode"`
+	FileLocation  string          `json:"FileLocation"`
+	ToNode        string          `json:"ToNode"`
+	Payload       json.RawMessage `json:"Payload"`
+	JobsCount     int64           `json:"JobsCount"`
+	ID            int64           `json:"ID"`
+	StartSeq      int64           `json:"StartSeq"`
 }
 
 // MigrationOp is a custom type for supported types in migrationCheckpoint
@@ -156,7 +156,18 @@ func NewSetupCheckpointEvent(migrationType MigrationOp, node string) MigrationCh
 
 // NewMigrationCheckpoint is a constructor for MigrationCheckpoint struct
 func NewMigrationCheckpoint(migrationType MigrationOp, fromNode, toNode string, jobsCount int64, fileLocation, status string, startSeq int64) MigrationCheckpointT {
-	return MigrationCheckpointT{0, migrationType, fromNode, toNode, jobsCount, fileLocation, status, startSeq, []byte("{}"), time.Now()}
+	return MigrationCheckpointT{
+		time.Now(),
+		status,
+		migrationType,
+		fromNode,
+		fileLocation,
+		toNode,
+		[]byte("{}"),
+		jobsCount,
+		0,
+		startSeq,
+	}
 }
 
 // SetupForMigration prepares jobsdb to start migrations

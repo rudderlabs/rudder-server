@@ -34,9 +34,9 @@ type ReadonlyJobsDB interface {
 }
 
 type ReadonlyHandleT struct {
+	logger      logger.LoggerI
 	DbHandle    *sql.DB
 	tablePrefix string
-	logger      logger.LoggerI
 }
 
 type DSPair struct {
@@ -53,24 +53,24 @@ type EventStatusDetailed struct {
 }
 
 type EventStatusStats struct {
-	StatsNums []EventStatusDetailed
 	DSList    string
+	StatsNums []EventStatusDetailed
 }
 
 type FailedJobs struct {
-	JobID         int
+	ExecTime      time.Time
 	UserID        string
 	CustomVal     string
-	ExecTime      time.Time
 	ErrorCode     string
 	ErrorResponse string
+	JobID         int
 }
 
 type ErrorCodeCountsByDestination struct {
-	Count         int
 	ErrorCode     string
 	Destination   string
 	DestinationID string
+	Count         int
 }
 
 type ErrorCodeCountStats struct {

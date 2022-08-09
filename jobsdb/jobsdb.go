@@ -62,9 +62,9 @@ const preDropTablePrefix = "pre_drop_"
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type backupSettings struct {
+	PathPrefix            string
 	instanceBackupEnabled bool
 	FailedOnly            bool
-	PathPrefix            string
 }
 
 func (b *backupSettings) isBackupEnabled() bool {
@@ -77,38 +77,23 @@ func IsMasterBackupEnabled() bool {
 
 // QueryConditions holds jobsdb query conditions
 type QueryConditions struct {
-	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
-	IgnoreCustomValFiltersInQuery bool
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
+	IgnoreCustomValFiltersInQuery bool
 }
 
 //
 // GetQueryParamsT is a struct to hold jobsdb query params.
 //
 type GetQueryParamsT struct {
-	// query conditions
-
-	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
-	IgnoreCustomValFiltersInQuery bool
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
-
-	// query limits
-
-	// Limit the total number of jobs.
-	// A value less than or equal to zero will return no results
-	JobsLimit int
-	// Limit the total number of events, 1 job contains 1+ event(s).
-	// A value less than or equal to zero will disable this limit (no limit),
-	// only values greater than zero are considered as valid limits.
-	EventsLimit int
-	// Limit the total job payload size
-	// A value less than or equal to zero will disable this limit (no limit),
-	// only values greater than zero are considered as valid limits.
-	PayloadSizeLimit int64
+	PayloadSizeLimit              int64
+	JobsLimit                     int
+	EventsLimit                   int
+	IgnoreCustomValFiltersInQuery bool
 }
 
 // statTags is a struct to hold tags for stats
@@ -321,15 +306,15 @@ job status. State can be one of
 ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
-	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
-	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
+	JobState      string          `json:"JobState"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	WorkspaceId   string          `json:"WorkspaceId"`
+	JobID         int64           `json:"JobID"`
+	AttemptNum    int             `json:"AttemptNum"`
 }
 
 func (r *JobStatusT) sanitizeJson() {
@@ -343,18 +328,18 @@ by the system and LastJobStatus is populated when reading a processed
 job  while rest should be set by the user.
 */
 type JobT struct {
-	UUID          uuid.UUID       `json:"UUID"`
-	JobID         int64           `json:"JobID"`
-	UserID        string          `json:"UserID"`
 	CreatedAt     time.Time       `json:"CreatedAt"`
 	ExpireAt      time.Time       `json:"ExpireAt"`
-	CustomVal     string          `json:"CustomVal"`
-	EventCount    int             `json:"EventCount"`
-	EventPayload  json.RawMessage `json:"EventPayload"`
-	PayloadSize   int64           `json:"PayloadSize"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
-	Parameters    json.RawMessage `json:"Parameters"`
+	UserID        string          `json:"UserID"`
+	CustomVal     string          `json:"CustomVal"`
 	WorkspaceId   string          `json:"WorkspaceId"`
+	EventPayload  json.RawMessage `json:"EventPayload"`
+	Parameters    json.RawMessage `json:"Parameters"`
+	EventCount    int             `json:"EventCount"`
+	JobID         int64           `json:"JobID"`
+	PayloadSize   int64           `json:"PayloadSize"`
+	UUID          uuid.UUID       `json:"UUID"`
 }
 
 func (job *JobT) String() string {
@@ -374,24 +359,24 @@ type dataSetT struct {
 }
 
 type dataSetRangeT struct {
+	ds        dataSetT
 	minJobID  int64
 	maxJobID  int64
 	startTime int64
 	endTime   int64
-	ds        dataSetT
 }
 
 // migrationState maintains the state required during the migration process
 type migrationState struct {
+	nonExportedJobsCountByDS   map[string]int64
+	doesDSHaveJobsToMigrateMap map[string]bool
+	importLock                 *sync.RWMutex
 	dsForNewEvents             dataSetT
 	dsForImport                dataSetT
 	lastDsForExport            dataSetT
-	importLock                 *sync.RWMutex
 	migrationMode              string
 	fromVersion                int
 	toVersion                  int
-	nonExportedJobsCountByDS   map[string]int64
-	doesDSHaveJobsToMigrateMap map[string]bool
 }
 
 /*
@@ -399,72 +384,65 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle                      *sql.DB
-	ownerType                     OwnerType
-	tablePrefix                   string
-	datasetList                   []dataSetT
-	datasetRangeList              []dataSetRangeT
-	dsListLock                    lock.DSListLocker
-	dsMigrationLock               sync.RWMutex
-	MinDSRetentionPeriod          time.Duration
-	MaxDSRetentionPeriod          time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry // DS -> workspace -> customVal -> params -> state -> cacheEntry
-	dsCacheLock                   sync.Mutex
-	BackupSettings                *backupSettings
-	jobsFileUploader              filemanager.FileManager
-	statTableCount                stats.RudderStats
-	statDSCount                   stats.RudderStats
-	statNewDSPeriod               stats.RudderStats
-	invalidCacheKeyStat           stats.RudderStats
-	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              stats.RudderStats
-	unionQueryTime                stats.RudderStats
-	tablesQueriedStat             stats.RudderStats
-	isStatDropDSPeriodInitialized bool
-	migrationState                migrationState
-	inProgressMigrationTargetDS   *dataSetT
-	logger                        logger.LoggerI
-	writeCapacity                 chan struct{}
-	readCapacity                  chan struct{}
-	registerStatusHandler         bool
-	enableWriterQueue             bool
-	enableReaderQueue             bool
-	clearAll                      bool
-	maxReaders                    int
-	maxWriters                    int
-	maxOpenConnections            int
-	analyzeThreshold              int
-	MaxDSSize                     *int
-	queryFilterKeys               QueryFiltersT
-	backgroundCancel              context.CancelFunc
-	backgroundGroup               *errgroup.Group
-	maxBackupRetryTime            time.Duration
-	preBackupHandlers             []prebackup.Handler
-
-	// skipSetupDBSetup is useful for testing as we mock the database client
-	// TODO: Remove this flag once we have test setup that uses real database
-	skipSetupDBSetup bool
-
-	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
-	// TODO: Ideally we should refactor the code to not use this override.
-	TriggerAddNewDS  func() <-chan time.Time
-	TriggerMigrateDS func() <-chan time.Time
-
-	lifecycle struct {
+	migrationState              migrationState
+	tablesQueriedStat           stats.RudderStats
+	statDropDSPeriod            stats.RudderStats
+	invalidCacheKeyStat         stats.RudderStats
+	statNewDSPeriod             stats.RudderStats
+	statDSCount                 stats.RudderStats
+	logger                      logger.LoggerI
+	statTableCount              stats.RudderStats
+	jobsFileUploader            filemanager.FileManager
+	unionQueryTime              stats.RudderStats
+	dsEmptyResultCache          map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry
+	BackupSettings              *backupSettings
+	TriggerAddNewDS             func() <-chan time.Time
+	inProgressMigrationTargetDS *dataSetT
+	dbHandle                    *sql.DB
+	writeCapacity               chan struct{}
+	readCapacity                chan struct{}
+	backgroundGroup             *errgroup.Group
+	backgroundCancel            context.CancelFunc
+	TriggerMigrateDS            func() <-chan time.Time
+	MaxDSSize                   *int
+	ownerType                   OwnerType
+	tablePrefix                 string
+	queryFilterKeys             QueryFiltersT
+	preBackupHandlers           []prebackup.Handler
+	datasetRangeList            []dataSetRangeT
+	datasetList                 []dataSetT
+	maxBackupRetryTime          time.Duration
+	maxOpenConnections          int
+	MinDSRetentionPeriod        time.Duration
+	analyzeThreshold            int
+	maxReaders                  int
+	maxWriters                  int
+	MaxDSRetentionPeriod        time.Duration
+	dsMigrationLock             sync.RWMutex
+	dsListLock                  lock.DSListLocker
+	lifecycle                   struct {
 		mu      sync.Mutex
 		started bool
 	}
+	dsCacheLock                   sync.Mutex
+	enableReaderQueue             bool
+	enableWriterQueue             bool
+	registerStatusHandler         bool
+	skipSetupDBSetup              bool
+	isStatDropDSPeriodInitialized bool
+	clearAll                      bool
+	isStatNewDSPeriodInitialized  bool
 }
 
 type QueryFiltersT struct {
-	CustomVal        bool
 	ParameterFilters []string
+	CustomVal        bool
 }
 
 // The struct which is written to the journal
 type journalOpPayloadT struct {
-	From []dataSetT `json:"from"`
 	To   dataSetT   `json:"to"`
+	From []dataSetT `json:"from"`
 }
 
 type ParameterFilterT struct {
@@ -562,9 +540,9 @@ func (jd *HandleT) Status() interface{} {
 }
 
 type jobStateT struct {
+	State      string
 	isValid    bool
 	isTerminal bool
-	State      string
 }
 
 // State definitions
@@ -2365,8 +2343,8 @@ const (
 )
 
 type cacheEntry struct {
-	Value cacheValue `json:"value"`
 	T     time.Time  `json:"set_at"`
+	Value cacheValue `json:"value"`
 }
 
 func (jd *HandleT) dropDSFromCache(ds dataSetT) {
@@ -3670,10 +3648,10 @@ const (
 )
 
 type JournalEntryT struct {
-	OpID      int64
 	OpType    string
-	OpDone    bool
 	OpPayload json.RawMessage
+	OpID      int64
+	OpDone    bool
 }
 
 func (jd *HandleT) dropJournal() {

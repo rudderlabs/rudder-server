@@ -146,13 +146,13 @@ func BuildStatus(job *JobT, jobState string) *JobStatusT {
 
 // SQLJobStatusT is a temporary struct to handle nulls from postgres query
 type SQLJobStatusT struct {
-	JobID         sql.NullInt64
-	JobState      sql.NullString // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated
-	AttemptNum    sql.NullInt64
 	ExecTime      sql.NullTime
 	RetryTime     sql.NullTime
-	ErrorCode     sql.NullString
 	ErrorResponse sql.NullString
+	JobState      sql.NullString
+	ErrorCode     sql.NullString
+	AttemptNum    sql.NullInt64
+	JobID         sql.NullInt64
 }
 
 func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, error) {
