@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -45,8 +46,12 @@ func main() {
 }
 
 func Run(ctx context.Context) {
+	admin.Init()
+	if err := backendconfig.Setup(nil); err != nil {
+		panic(fmt.Errorf("error while setting up backend config: %v", err))
+	}
 	dest := &destination.DestMiddleware{
-		Dest: &backendconfig.SingleWorkspaceConfig{},
+		Dest: backendconfig.DefaultBackendConfig,
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
