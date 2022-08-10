@@ -1,4 +1,4 @@
-package backendconfig_test
+package mssql_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestBackendConfig(t *testing.T) {
+func TestMssql(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "BackendConfig Suite")
+	RunSpecs(t, "Mssql Suite")
 }

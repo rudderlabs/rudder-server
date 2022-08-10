@@ -73,8 +73,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 	isMultipart := len(postInfo.Files) > 0
 
 	// going forward we may want to support GraphQL and multipart requests
-	// the files key in the response is specifically to handle the multipart usecase
-	// for type GraphQL may need to support more keys like expected response format etc
+	// the files key in the response is specifically to handle the multipart use case
+	// for type GraphQL may need to support more keys like expected response format etc.
 	// in future it's expected that we will build on top of this response type
 	// so, code addition should be done here instead of version bumping of response.
 	if isRest && !isMultipart {
@@ -140,13 +140,11 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 		}
 
-		// add queryparams to the url
+		// add query params to the url
 		// support of array type in params is handled if the
 		// response from transformers are "," separated
 		queryParams := req.URL.Query()
-		for key, val := range requestQueryParams {
-
-			// list := strings.Split(valString, ",")
+		for key, val := range requestQueryParams { // list := strings.Split(valString, ",")
 			// for _, listItem := range list {
 			// 	queryParams.Add(key, fmt.Sprint(listItem))
 			// }
@@ -170,7 +168,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 		}
 
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -191,7 +189,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		}
 		mediaType, _, _ := mime.ParseMediaType(contentTypeHeader)
 
-		// If media type is not in some human readable format (text,json,xml), override the response with an empty string
+		// If media type is not in some human-readable format (text,json,xml), override the response with an empty string
 		// https://www.iana.org/assignments/media-types/media-types.xhtml
 		isHumanReadable := contentTypeRegex.MatchString(mediaType)
 		if !isHumanReadable {

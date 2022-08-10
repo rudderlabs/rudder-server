@@ -18,7 +18,6 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
 
-	dbRetention := time.Minute * 5
 	migrationMode := ""
 
 	maxDSSize := 2
@@ -27,7 +26,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		CustomVal: true,
 	}
 
-	jobDB.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
 	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
