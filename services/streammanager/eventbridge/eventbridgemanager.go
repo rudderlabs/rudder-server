@@ -28,7 +28,7 @@ type EventBridgeClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*EventBridgeProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*EventBridgeProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, eventbridge.ServiceName)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 	putEventsOutput, err := client.PutEvents(&requestInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[EventBridge] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorf("[EventBridge] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 

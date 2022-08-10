@@ -13,12 +13,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// NamespaceConfig TODO check what attributes can be unexported
-type NamespaceConfig struct {
-	CommonBackendConfig
-
+type namespaceConfig struct {
+	configEnvHandler          types.ConfigEnvI
 	mapsMutex                 sync.RWMutex
 	writeKeyToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -27,17 +26,13 @@ type NamespaceConfig struct {
 	Logger logger.LoggerI
 	Client *http.Client
 
-	BasicAuthUsername string
-	BasicAuthPassword string
-
-	// ServiceSecret is used for legacy endpoints, expected to be removed
-	ServiceSecret string
+	HostedServiceSecret string
 
 	Namespace        string
 	ConfigBackendURL *url.URL
 }
 
-func (nc *NamespaceConfig) SetUp() (err error) {
+func (nc *namespaceConfig) SetUp() (err error) {
 	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if nc.Namespace == "" {
@@ -46,20 +41,8 @@ func (nc *NamespaceConfig) SetUp() (err error) {
 			return err
 		}
 	}
-	if nc.BasicAuthUsername == "" {
-		nc.BasicAuthUsername, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_USERNAME")
-		if err != nil {
-			return err
-		}
-	}
-	if nc.BasicAuthPassword == "" {
-		nc.BasicAuthPassword, err = config.GetEnvErr("CONTROL_PLANE_BASIC_AUTH_PASSWORD")
-		if err != nil {
-			return err
-		}
-	}
-	if nc.ServiceSecret == "" {
-		nc.ServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
+	if nc.HostedServiceSecret == "" {
+		nc.HostedServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
 		if err != nil {
 			return err
 		}
@@ -84,7 +67,7 @@ func (nc *NamespaceConfig) SetUp() (err error) {
 	return nil
 }
 
-func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (nc *namespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -95,7 +78,7 @@ func (nc *NamespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-func (nc *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
+func (nc *namespaceConfig) GetWorkspaceIDForSourceID(source string) string {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -107,7 +90,7 @@ func (nc *NamespaceConfig) GetWorkspaceIDForSourceID(source string) string {
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (nc *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 
@@ -118,26 +101,22 @@ func (nc *NamespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID strin
 }
 
 // Get returns sources from the workspace
-func (nc *NamespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
 	return nc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
 	if nc.Namespace == "" {
 		return ConfigT{}, fmt.Errorf("namespace is not configured")
 	}
 
-	var (
-		respBody   []byte
-		statusCode int
-	)
-
+	var respBody []byte
 	u := *nc.ConfigBackendURL
-	u.Path = fmt.Sprintf("/dataPlane/v1/namespace/%s/config", nc.Namespace)
+	u.Path = fmt.Sprintf("/data-plane/v1/namespace/%s/config", nc.Namespace)
 	operation := func() (fetchError error) {
 		nc.Logger.Debugf("Fetching config from %s", u.String())
-		respBody, statusCode, fetchError = nc.makeHTTPRequest(ctx, u.String())
+		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
 		return fetchError
 	}
 
@@ -149,18 +128,15 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		nc.Logger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
-	configEnvHandler := nc.CommonBackendConfig.configEnvHandler
+	configEnvHandler := nc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
-	}
-	if statusCode != http.StatusOK {
-		return ConfigT{}, fmt.Errorf("unexpected status code: %d", statusCode)
 	}
 
 	var workspaces WorkspacesT
 	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		nc.Logger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
+		nc.Logger.Errorf("Error while parsing request: %v", err)
 		return ConfigT{}, err
 	}
 
@@ -188,30 +164,32 @@ func (nc *NamespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	return sourcesJSON, nil
 }
 
-func (nc *NamespaceConfig) makeHTTPRequest(
-	ctx context.Context, url string,
-) ([]byte, int, error) {
+func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
-	req.SetBasicAuth(nc.BasicAuthUsername, nc.BasicAuthPassword)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", nc.HostedServiceSecret))
 	resp, err := nc.Client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		return nil, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
-	return respBody, resp.StatusCode, nil
+	if resp.StatusCode >= 300 {
+		return nil, getNotOKError(respBody, resp.StatusCode)
+	}
+
+	return respBody, nil
 }
 
-func (nc *NamespaceConfig) AccessToken() string {
-	return nc.ServiceSecret
+func (nc *namespaceConfig) AccessToken() string {
+	return nc.HostedServiceSecret
 }

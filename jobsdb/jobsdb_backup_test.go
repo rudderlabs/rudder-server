@@ -158,7 +158,6 @@ func TestBackupTable(t *testing.T) {
 type backupTestCase struct{}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
@@ -170,7 +169,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -200,7 +199,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 }
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time)
@@ -213,7 +211,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		CustomVal: true,
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")
