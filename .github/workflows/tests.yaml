@@ -34,14 +34,44 @@ jobs:
       if: matrix.FEATURES == 'enterprise'
       run: go test -v ./docker_test.go -tags=integration -count 1
       env:
-        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
         ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
 
     - name: Integration test for oss
       if: matrix.FEATURES == 'oss'
       run: go test -v ./docker_test.go -tags=integration -count 1
       env:
-        BIGQUERY_INTEGRATION_TEST_USER_CRED: ${{ secrets.BIGQUERY_INTEGRATION_TEST_USER_CRED }}
+        RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+
+  warehouse-integration:
+    name: Warehouse Service Integration
+    runs-on: 'ubuntu-18.04'
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '~1.17.8'
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: rudderlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Warehouse Integration Test
+        run: make run-warehouse-integration
+        env:
+          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+          REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
+          DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
 
   unit:
     name: Unit
@@ -64,4 +94,5 @@ jobs:
     - run: (cd /tmp && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest)
     - run: ginkgo version
     - run: make test
+    - uses: codecov/codecov-action@v2
 

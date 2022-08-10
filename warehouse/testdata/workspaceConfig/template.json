@@ -1,0 +1,977 @@
+{
+  "enableMetrics": false,
+  "workspaceId": "{{.workspaceId}}",
+  "sources": [
+    {
+      "config": {
+        "eventUpload": false,
+        "eventUploadTS": 1637229453729
+      },
+      "id": "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+      "name": "postgres-wh-integration",
+      "writeKey": "{{.postgresWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+      "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2021-08-08T14:49:21.580Z",
+      "updatedAt": "2021-11-18T09:57:33.742Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.postgresHost}}",
+            "database": "{{.postgresDatabase}}",
+            "user": "{{.postgresUser}}",
+            "password": "{{.postgresPassword}}",
+            "port": "{{.postgresPort}}",
+            "sslMode": "disable",
+            "namespace": "",
+            "bucketProvider": "MINIO",
+            "bucketName": "{{.minioBucketName}}",
+            "accessKeyID": "{{.minioAccesskeyID}}",
+            "secretAccessKey": "{{.minioSecretAccessKey}}",
+            "useSSL": false,
+            "endPoint": "{{.minioEndpoint}}",
+            "syncFrequency": "30",
+            "useRudderStorage": false
+          },
+          "secretConfig": {},
+          "id": "216ZvbavR21Um6eGKQCagZHqLGZ",
+          "name": "postgres-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2021-11-18T19:28:48.030Z",
+          "updatedAt": "2021-11-18T19:28:48.030Z",
+          "revisionId": "29eeuu9kywWsRAybaXcxcnTVEl8",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "database",
+                  "user",
+                  "password",
+                  "port",
+                  "sslMode",
+                  "namespace",
+                  "bucketProvider",
+                  "bucketName",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "secretAccessKey",
+                  "useSSL",
+                  "containerName",
+                  "endPoint",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey",
+                "accountKey",
+                "secretAccessKey",
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "id": "1bJ4YC7INdkvBTzotNh0zta5jDm",
+            "name": "POSTGRES",
+            "displayName": "Postgres",
+            "category": "warehouse",
+            "createdAt": "2020-05-01T12:41:47.463Z",
+            "updatedAt": "2021-11-11T07:56:08.667Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+        "name": "Javascript",
+        "displayName": "Javascript",
+        "category": null,
+        "createdAt": "2019-11-12T12:35:30.464Z",
+        "updatedAt": "2021-09-28T02:27:30.373Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "eventUpload": false,
+        "eventUploadTS": 1637229453729
+      },
+      "id": "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+      "name": "clickhouse-wh-integration",
+      "writeKey": "{{.clickHouseWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+      "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2021-08-08T14:49:21.580Z",
+      "updatedAt": "2021-11-18T09:57:33.742Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.clickHouseHost}}",
+            "database": "{{.clickHouseDatabase}}",
+            "cluster": "",
+            "user": "{{.clickHouseUser}}",
+            "password": "{{.clickHousePassword}}",
+            "port": "{{.clickHousePort}}",
+            "secure": false,
+            "namespace": "",
+            "bucketProvider": "MINIO",
+            "bucketName": "{{.minioBucketName}}",
+            "accessKeyID": "{{.minioAccesskeyID}}",
+            "secretAccessKey": "{{.minioSecretAccessKey}}",
+            "useSSL": false,
+            "endPoint": "{{.minioEndpoint}}",
+            "syncFrequency": "30",
+            "useRudderStorage": false
+          },
+          "secretConfig": {},
+          "id": "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+          "name": "clickhouse-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2021-11-21T18:21:25.599Z",
+          "updatedAt": "2021-11-21T18:21:25.599Z",
+          "revisionId": "29eeuTnqbBKn0XVTj5z9XQIbaru",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "database",
+                  "cluster",
+                  "user",
+                  "password",
+                  "port",
+                  "bucketName",
+                  "bucketProvider",
+                  "containerName",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountKey",
+                  "accountName",
+                  "credentials",
+                  "secretAccessKey",
+                  "useSSL",
+                  "endPoint",
+                  "prefix",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "secure",
+                  "skipVerify",
+                  "caCertificate",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey",
+                "accountKey",
+                "secretAccessKey",
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "id": "1eBvkIRSwc2ESGMK9dj6OXq2G12",
+            "name": "CLICKHOUSE",
+            "displayName": "ClickHouse",
+            "category": "warehouse",
+            "createdAt": "2020-07-03T20:25:41.439Z",
+            "updatedAt": "2021-11-11T07:55:35.140Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+        "name": "Javascript",
+        "displayName": "Javascript",
+        "category": null,
+        "createdAt": "2019-11-12T12:35:30.464Z",
+        "updatedAt": "2021-09-28T02:27:30.373Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "eventUpload": false,
+        "eventUploadTS": 1637229453729
+      },
+      "id": "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+      "name": "clickhouse-cluster-wh-integration",
+      "writeKey": "{{.clickhouseClusterWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+      "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2021-08-08T14:49:21.580Z",
+      "updatedAt": "2021-11-18T09:57:33.742Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.clickhouseClusterHost}}",
+            "database": "{{.clickhouseClusterDatabase}}",
+            "cluster": "{{.clickhouseClusterCluster}}",
+            "user": "{{.clickhouseClusterUser}}",
+            "password": "{{.clickhouseClusterPassword}}",
+            "port": "{{.clickhouseClusterPort}}",
+            "secure": false,
+            "namespace": "",
+            "bucketProvider": "MINIO",
+            "bucketName": "{{.minioBucketName}}",
+            "accessKeyID": "{{.minioAccesskeyID}}",
+            "secretAccessKey": "{{.minioSecretAccessKey}}",
+            "useSSL": false,
+            "endPoint": "{{.minioEndpoint}}",
+            "syncFrequency": "30",
+            "useRudderStorage": false
+          },
+          "secretConfig": {},
+          "id": "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+          "name": "clickhouse-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2021-11-21T18:21:25.599Z",
+          "updatedAt": "2021-11-21T18:21:25.599Z",
+          "revisionId": "29eelRZYrY0nZQUz7DbKDu1KORG",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "database",
+                  "cluster",
+                  "user",
+                  "password",
+                  "port",
+                  "bucketName",
+                  "bucketProvider",
+                  "containerName",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountKey",
+                  "accountName",
+                  "credentials",
+                  "secretAccessKey",
+                  "useSSL",
+                  "endPoint",
+                  "prefix",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "secure",
+                  "skipVerify",
+                  "caCertificate",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey",
+                "accountKey",
+                "secretAccessKey",
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "id": "1eBvkIRSwc2ESGMK9dj6OXq2G12",
+            "name": "CLICKHOUSE",
+            "displayName": "ClickHouse",
+            "category": "warehouse",
+            "createdAt": "2020-07-03T20:25:41.439Z",
+            "updatedAt": "2021-11-11T07:55:35.140Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+        "name": "Javascript",
+        "displayName": "Javascript",
+        "category": null,
+        "createdAt": "2019-11-12T12:35:30.464Z",
+        "updatedAt": "2021-09-28T02:27:30.373Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "eventUpload": false,
+        "eventUploadTS": 1637229453729
+      },
+      "id": "1wRvLmEnMOONMbdspwaZhyCqXRE",
+      "name": "mssql-wh-integration",
+      "writeKey": "{{.mssqlWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
+      "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2021-08-08T14:49:21.580Z",
+      "updatedAt": "2021-11-18T09:57:33.742Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.mssqlHost}}",
+            "database": "{{.mssqlDatabase}}",
+            "user": "{{.mssqlUser}}",
+            "password": "{{.mssqlPassword}}",
+            "port": "{{.mssqlPort}}",
+            "sslMode": "disable",
+            "namespace": "",
+            "bucketProvider": "MINIO",
+            "bucketName": "{{.minioBucketName}}",
+            "accessKeyID": "{{.minioAccesskeyID}}",
+            "secretAccessKey": "{{.minioSecretAccessKey}}",
+            "useSSL": false,
+            "endPoint": "{{.minioEndpoint}}",
+            "syncFrequency": "30",
+            "useRudderStorage": false
+          },
+          "secretConfig": {},
+          "id": "21Ezdq58khNMj07VJB0VJmxLvgu",
+          "name": "mssql-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2021-11-21T18:58:44.286Z",
+          "updatedAt": "2021-11-21T18:58:44.286Z",
+          "revisionId": "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "database",
+                  "user",
+                  "password",
+                  "port",
+                  "sslMode",
+                  "namespace",
+                  "bucketProvider",
+                  "bucketName",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "secretAccessKey",
+                  "useSSL",
+                  "containerName",
+                  "endPoint",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey",
+                "accountKey",
+                "secretAccessKey",
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": {},
+            "id": "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
+            "name": "MSSQL",
+            "displayName": "Microsoft SQL Server",
+            "category": "warehouse",
+            "createdAt": "2021-04-09T10:10:26.589Z",
+            "updatedAt": "2021-11-11T07:55:15.622Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1TW3fuvuaZqJs877OEailT17KzZ",
+        "name": "Javascript",
+        "displayName": "Javascript",
+        "category": null,
+        "createdAt": "2019-11-12T12:35:30.464Z",
+        "updatedAt": "2021-09-28T02:27:30.373Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "id": "24p1HhPk09FW25Kuzvx7GshCLKR",
+      "name": "bigquery-wh-integration",
+      "writeKey": "{{.bigqueryWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+            "project": "{{.bigqueryProjectID}}",
+            "location": "{{.bigqueryLocation}}",
+            "bucketName": "{{.bigqueryBucketName}}",
+            "credentials": "{{.bigqueryCredentials}}",
+            "prefix": "",
+            "namespace": "",
+            "syncFrequency": "30"
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "26Bgm9FrQDZjvadSwAlpd35atwn",
+          "name": "bigquery-wh-integration",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-03-10T08:55:49.791Z",
+          "updatedAt": "2022-03-10T08:55:49.791Z",
+          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "project",
+                  "location",
+                  "bucketName",
+                  "credentials",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow"
+                ]
+              },
+              "secretKeys": [
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+            "name": "BQ",
+            "displayName": "BigQuery",
+            "category": "warehouse",
+            "createdAt": "2019-12-10T08:21:15.841Z",
+            "updatedAt": "2022-02-08T06:46:30.483Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "id": "24p1HhPk09FW25Kuzvx7GshCLKR",
+      "name": "snowflake-wh-integration",
+      "writeKey": "{{.snowflakeWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+            "account": "{{.snowflakeAccount}}",
+            "database": "{{.snowflakeDBName}}",
+            "warehouse": "{{.snowflakeWHName}}",
+            "user": "{{.snowflakeUsername}}",
+            "password": "{{.snowflakePassword}}",
+            "cloudProvider": "AWS",
+            "bucketName": "{{.snowflakeBucketName}}",
+            "storageIntegration": "",
+            "accessKeyID": "{{.snowflakeAccessKeyID}}",
+            "accessKey": "{{.snowflakeAccessKey}}",
+            "namespace": "",
+            "prefix": "snowflake-prefix",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "24qeADObp6eIhjjDnEppO6P1SNc",
+          "name": "snowflake-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-02-08T23:19:58.278Z",
+          "updatedAt": "2022-05-17T08:18:33.587Z",
+          "revisionId": "29HgdgvNPwqFDMONSgmIZ3YSehV",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "account",
+                  "database",
+                  "warehouse",
+                  "user",
+                  "password",
+                  "cloudProvider",
+                  "bucketName",
+                  "containerName",
+                  "storageIntegration",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "namespace",
+                  "prefix",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+            "name": "SNOWFLAKE",
+            "displayName": "Snowflake",
+            "category": "warehouse",
+            "createdAt": "2020-02-13T05:39:20.184Z",
+            "updatedAt": "2022-02-08T06:46:45.432Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "id": "279L3gEKqwruBoKGsXZtSVX7vIy",
+      "name": "redshift-wh-integration",
+      "writeKey": "{{.redshiftWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-03-31T11:45:57.339Z",
+      "updatedAt": "2022-05-23T22:56:32.000Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.redshiftHost}}",
+            "port": "{{.redshiftPort}}",
+            "database": "{{.redshiftDbName}}",
+            "user": "{{.redshiftUsername}}",
+            "password": "{{.redshiftPassword}}",
+            "bucketName": "{{.redshiftBucketName}}",
+            "accessKeyID": "{{.redshiftAccessKeyID}}",
+            "accessKey": "{{.redshiftAccessKey}}",
+            "prefix": "",
+            "namespace": "",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "27SthahyhhqZE74HT4NTtNPl06V",
+          "name": "redshift-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-04-07T09:57:14.783Z",
+          "updatedAt": "2022-05-17T08:16:32.613Z",
+          "revisionId": "29HgOWobrn0RYZLpaSwPIbN2987",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "port",
+                  "database",
+                  "user",
+                  "password",
+                  "bucketName",
+                  "accessKeyID",
+                  "accessKey",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+            "name": "RS",
+            "displayName": "Redshift",
+            "category": "warehouse",
+            "createdAt": "2019-12-04T07:17:28.337Z",
+            "updatedAt": "2022-02-08T06:46:22.804Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "eventUpload": false,
+        "eventUploadTS": 1648195575635
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1648195575635
+      },
+      "id": "25H5EpYzojqQSepRSaGBrrPx3e4",
+      "name": "deltalake-wh-integration",
+      "writeKey": "{{.deltalakeWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1TW48i2bIzEl1HPf825cEznfIM8",
+      "createdBy": "1wDN9v6bW9ymBaR7b7r0EjV3leC",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-02-18T07:57:42.736Z",
+      "updatedAt": "2022-03-25T08:06:15.642Z",
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.deltalakeHost}}",
+            "port": "{{.deltalakePort}}",
+            "path": "{{.deltalakePath}}",
+            "token": "{{.deltalakeToken}}",
+            "namespace": "",
+            "bucketProvider": "AZURE_BLOB",
+            "containerName": "{{.deltalakeContainerName}}",
+            "prefix": "",
+            "useSTSTokens": false,
+            "enableSSE": false,
+            "accountName": "{{.deltalakeAccountName}}",
+            "accountKey": "{{.deltalakeAccountKey}}",
+            "syncFrequency": "30",
+            "eventDelivery": false,
+            "eventDeliveryTS": 1648195480174
+          },
+          "liveEventsConfig": {
+            "eventDelivery": false,
+            "eventDeliveryTS": 1648195480174
+          },
+          "secretConfig": {},
+          "id": "25IDjdnoEus6DDNrth3SWO1FOpu",
+          "name": "deltalake-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-02-18T17:37:22.146Z",
+          "updatedAt": "2022-05-25T07:38:38.033Z",
+          "revisionId": "29eClxJQQlaWzMWyqnQctFDP5T2",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "port",
+                  "path",
+                  "token",
+                  "namespace",
+                  "bucketProvider",
+                  "bucketName",
+                  "containerName",
+                  "prefix",
+                  "useSTSTokens",
+                  "accessKeyID",
+                  "accessKey",
+                  "enableSSE",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow",
+                  "enableExternalLocation",
+                  "externalLocation"
+                ]
+              },
+              "secretKeys": [
+                "accessKeyID",
+                "accessKey",
+                "accountName",
+                "accountKey",
+                "credentials",
+                "token"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "warehouse",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": {},
+            "options": null,
+            "id": "23HLpnDJnIg7DsBvDWGU6DQzFEo",
+            "name": "DELTALAKE",
+            "displayName": "Databricks (Delta Lake)",
+            "category": "warehouse",
+            "createdAt": "2022-01-05T12:37:30.136Z",
+            "updatedAt": "2022-05-25T15:07:06.596Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1TW48i2bIzEl1HPf825cEznfIM8",
+        "name": "Javascript",
+        "displayName": "Javascript",
+        "category": null,
+        "createdAt": "2019-11-12T12:39:19.885Z",
+        "updatedAt": "2020-06-18T11:54:06.114Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    }
+  ],
+  "libraries": [
+    {
+      "versionId": "23Uxw7QEiOg8e0KkQV8LmNfWaWh"
+    }
+  ]
+}

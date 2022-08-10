@@ -214,7 +214,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	pkgLogger.Infof("SF: Starting load for table:%s\n", tableName)
 
 	if dbHandle == nil {
-		dbHandle, err = connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+		dbHandle, err = Connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 		if err != nil {
 			pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
 			return
@@ -352,7 +352,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 		return err
 	}
 
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
 		pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
 		return
@@ -390,7 +390,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return err
 	}
 
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
 		pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
 		return
@@ -552,23 +552,23 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 type SnowflakeCredentialsT struct {
-	account    string
-	whName     string
-	dbName     string
-	username   string
-	password   string
+	Account    string
+	WHName     string
+	DBName     string
+	Username   string
+	Password   string
 	schemaName string
 	timeout    time.Duration
 }
 
-func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
+func Connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:     cred.account,
-		User:        cred.username,
-		Password:    cred.password,
-		Database:    cred.dbName,
+		Account:     cred.Account,
+		User:        cred.Username,
+		Password:    cred.Password,
+		Database:    cred.DBName,
 		Schema:      cred.schemaName,
-		Warehouse:   cred.whName,
+		Warehouse:   cred.WHName,
 		Application: "Rudderstack",
 	}
 
@@ -751,7 +751,7 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
@@ -787,11 +787,11 @@ type OptionalCredsT struct {
 
 func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCredentialsT {
 	return SnowflakeCredentialsT{
-		account:    warehouseutils.GetConfigValue(SFAccount, sf.Warehouse),
-		whName:     warehouseutils.GetConfigValue(SFWarehouse, sf.Warehouse),
-		dbName:     warehouseutils.GetConfigValue(SFDbName, sf.Warehouse),
-		username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
-		password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
+		Account:    warehouseutils.GetConfigValue(SFAccount, sf.Warehouse),
+		WHName:     warehouseutils.GetConfigValue(SFWarehouse, sf.Warehouse),
+		DBName:     warehouseutils.GetConfigValue(SFDbName, sf.Warehouse),
+		Username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
+		Password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
 		schemaName: opts.schemaName,
 		timeout:    sf.ConnectTimeout,
 	}
@@ -804,13 +804,13 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	sf.Uploader = uploader
 	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	return err
 }
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	sf.Warehouse = warehouse
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
@@ -834,7 +834,7 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
@@ -907,7 +907,7 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
-	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return client.Client{}, err
 	}
