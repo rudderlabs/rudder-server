@@ -41,6 +41,7 @@ func Test_Namespace_Get(t *testing.T) {
 		namespace    = "free-us-1"
 		workspaceID1 = "2CCgbmvBSa8Mv81YaIgtR36M7aW"
 		workspaceID2 = "2CChLejq5aIWi3qsKVm1PjHkyTj"
+		cpRouterURL  = "mockCpRouterURL"
 	)
 
 	be := &backendConfigServer{
@@ -62,6 +63,7 @@ func Test_Namespace_Get(t *testing.T) {
 		Namespace: namespace,
 
 		HostedServiceSecret: "service-secret",
+		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
 
@@ -79,6 +81,9 @@ func Test_Namespace_Get(t *testing.T) {
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
 	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
+
+	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
+	require.True(t, c.ConnectionFlags.Services["warehouse"])
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,
