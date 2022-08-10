@@ -14,7 +14,8 @@ import (
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/enterprise/replay/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -22,21 +23,22 @@ import (
 )
 
 type SourceWorkerT struct {
-	channel     chan *jobsdb.JobT
-	workerID    int
-	replayer    *HandleT
-	tablePrefix string
-	transformer transformer.Transformer
+	channel       chan *jobsdb.JobT
+	workerID      int
+	replayHandler *Handler
+	tablePrefix   string
+	transformer   transformer.Transformer
+	uploader      filemanager.FileManager
 }
 
 var userTransformBatchSize int
 
-func (worker *SourceWorkerT) workerProcess() {
+func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 	pkgLogger.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
 		pkgLogger.Debugf("job received: %s", job.EventPayload)
 
-		worker.replayJobsInFile(gjson.GetBytes(job.EventPayload, "location").String())
+		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
 
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -47,11 +49,14 @@ func (worker *SourceWorkerT) workerProcess() {
 			ErrorResponse: []byte(`{}`), // check
 			Parameters:    []byte(`{}`), // check
 		}
-		worker.replayer.db.UpdateJobStatus(context.TODO(), []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		err := worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
-func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
+func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) {
 	filePathTokens := strings.Split(filePath, "/")
 
 	var err error
@@ -75,7 +80,7 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 		panic(err) // Cant open file to write
 	}
 
-	_, err = fileuploader.Download(file, filePath, worker.replayer.bucket)
+	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
 		panic(err) // failed to download
 	}
@@ -101,7 +106,7 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 
 	defer rawf.Close()
 
-	jobs := []*jobsdb.JobT{}
+	var jobs []*jobsdb.JobT
 
 	var transEvents []transformer.TransformerEventT
 	transformationVersionID := config.GetEnv("TRANSFORMATION_VERSION_ID", "")
@@ -118,6 +123,7 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 				Parameters:   []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(parameters)).String()),
 				CustomVal:    gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(customVal)).String(),
 				EventPayload: []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()),
+				WorkspaceId:  gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(workspaceID)).String(),
 			}
 			jobs = append(jobs, &job)
 			continue
@@ -177,9 +183,9 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 		}
 
 	}
-	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayer.toDB.Identifier())
+	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
 
-	err = worker.replayer.toDB.Store(context.TODO(), jobs)
+	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
 		panic(err)
 	}
@@ -195,6 +201,7 @@ const (
 	parameters   = "parameters"
 	customVal    = "customVal"
 	eventPayload = "eventPaylod"
+	workspaceID  = "workspaceID"
 )
 
 func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
@@ -208,6 +215,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 			return "custom_val"
 		case eventPayload:
 			return "event_payload"
+		case workspaceID:
+			return "workspace_id"
 		default:
 			return ""
 		}
