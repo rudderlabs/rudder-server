@@ -381,12 +381,9 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		  pg_notifier_queue
 		SET
 		  payload = payload || $1
-		where
+		WHERE
 		  batch_id = $2;`
-	_, err = txn.Exec(sqlStatement, []interface{}{
-		uploadSchemaJSON,
-		batchID,
-	}...)
+	_, err = txn.Exec(sqlStatement, uploadSchemaJSON, batchID)
 	if err != nil {
 		err = fmt.Errorf("PgNotifier: Failed updating uploadschema for publishing with error: %w", err)
 		return
