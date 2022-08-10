@@ -46,111 +46,137 @@ type ProxyResponseTc struct {
 }
 
 // error response from destination in transformer proxy
-var proxyResponseTcs = map[string]ProxyResponseTc{
-	"good_dest": {
-		name:              "should pass for good_dest",
-		ExpectedBody:      `{"authErrorCategory": "", "message": "", "destinationResponse":"good_dest"}`,
-		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest"}}`,
-		ExpectedStCode:    http.StatusOK,
-		proxyStatusCode:   http.StatusOK,
-		proxyTimeoutValue: 0,
-		rtTimeout:         10 * time.Millisecond,
-		postParametersT: integrations.PostParametersT{
-			Type:          "REST",
-			URL:           "http://www.good_dest.domain.com",
-			RequestMethod: http.MethodPost,
-			QueryParams:   map[string]interface{}{},
-			Body: map[string]interface{}{
-				"JSON": map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
+var (
+	proxyResponseTcs = map[string]ProxyResponseTc{
+		"good_dest": {
+			name:              "should pass for good_dest",
+			ExpectedBody:      `{"authErrorCategory": "", "message": "", "destinationResponse":"good_dest"}`,
+			proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest"}}`,
+			ExpectedStCode:    http.StatusOK,
+			proxyStatusCode:   http.StatusOK,
+			proxyTimeoutValue: 0,
+			rtTimeout:         10 * time.Millisecond,
+			postParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.good_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
 				},
-				"FORM":       map[string]interface{}{},
-				"JSON_ARRAY": map[string]interface{}{},
-				"XML":        map[string]interface{}{},
+				Files: map[string]interface{}{},
 			},
-			Files: map[string]interface{}{},
 		},
-	},
-	"good_dest_1": {
-		name:              "should throw timeout exception as the timeout in http.client is lower than proxy",
-		ExpectedStCode:    http.StatusGatewayTimeout,
-		ExpectedBody:      `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
-		proxyStatusCode:   http.StatusOK,
-		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
-		proxyTimeoutValue: time.Duration(1.2 * 1e9),
-		rtTimeout:         8 * time.Millisecond,
-		postParametersT: integrations.PostParametersT{
-			Type:          "REST",
-			URL:           "http://www.good_dest_1.domain.com",
-			RequestMethod: http.MethodPost,
-			QueryParams:   map[string]interface{}{},
-			Body: map[string]interface{}{
-				"JSON": map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
+		"good_dest_1": {
+			name:              "should throw timeout exception as the timeout in http.client is lower than proxy",
+			ExpectedStCode:    http.StatusGatewayTimeout,
+			ExpectedBody:      `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
+			proxyStatusCode:   http.StatusOK,
+			proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
+			proxyTimeoutValue: time.Duration(1.2 * 1e9),
+			rtTimeout:         8 * time.Millisecond,
+			postParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.good_dest_1.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
 				},
-				"FORM":       map[string]interface{}{},
-				"JSON_ARRAY": map[string]interface{}{},
-				"XML":        map[string]interface{}{},
+				Files: map[string]interface{}{},
 			},
-			Files: map[string]interface{}{},
 		},
-	},
-	"ctx_timeout_dest": {
-		name:              "should throw timeout exception due to context getting timedout",
-		ExpectedStCode:    http.StatusGatewayTimeout,
-		ExpectedBody:      `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
-		proxyStatusCode:   http.StatusOK,
-		proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
-		proxyTimeoutValue: 4 * time.Millisecond,
-		context: ProxyContextTc{
-			Timeout: 2 * time.Millisecond,
-		},
-		postParametersT: integrations.PostParametersT{
-			Type:          "REST",
-			URL:           "http://www.ctx_timeout_dest.domain.com",
-			RequestMethod: http.MethodPost,
-			QueryParams:   map[string]interface{}{},
-			Body: map[string]interface{}{
-				"JSON": map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
+		"ctx_timeout_dest": {
+			name:              "should throw timeout exception due to context getting timedout",
+			ExpectedStCode:    http.StatusGatewayTimeout,
+			ExpectedBody:      `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
+			proxyStatusCode:   http.StatusOK,
+			proxyResponse:     `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
+			proxyTimeoutValue: 4 * time.Millisecond,
+			context: ProxyContextTc{
+				Timeout: 2 * time.Millisecond,
+			},
+			postParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
 				},
-				"FORM":       map[string]interface{}{},
-				"JSON_ARRAY": map[string]interface{}{},
-				"XML":        map[string]interface{}{},
+				Files: map[string]interface{}{},
 			},
-			Files: map[string]interface{}{},
 		},
-	},
-	"ctx_cancel_dest": {
-		name:            "should throw timeout exception due to context getting cancelled immediately",
-		ExpectedStCode:  http.StatusInternalServerError,
-		ExpectedBody:    `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
-		proxyStatusCode: http.StatusOK,
-		proxyResponse:   `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_cancel_dest"}}`,
-		context: ProxyContextTc{
-			Cancel: true,
-		},
-		postParametersT: integrations.PostParametersT{
-			Type:          "REST",
-			URL:           "http://www.ctx_timeout_dest.domain.com",
-			RequestMethod: http.MethodPost,
-			QueryParams:   map[string]interface{}{},
-			Body: map[string]interface{}{
-				"JSON": map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
+		"ctx_cancel_dest": {
+			name:            "should throw timeout exception due to context getting cancelled immediately",
+			ExpectedStCode:  http.StatusInternalServerError,
+			ExpectedBody:    `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
+			proxyStatusCode: http.StatusOK,
+			proxyResponse:   `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_cancel_dest"}}`,
+			context: ProxyContextTc{
+				Cancel: true,
+			},
+			postParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.ctx_timeout_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
 				},
-				"FORM":       map[string]interface{}{},
-				"JSON_ARRAY": map[string]interface{}{},
-				"XML":        map[string]interface{}{},
+				Files: map[string]interface{}{},
 			},
-			Files: map[string]interface{}{},
 		},
-	},
-}
+		"not_found_dest": {
+			name:            "should fail with not found error for not_found_dest",
+			ExpectedBody:    `post "%s/v0/destinations/not_found_dest/proxy" not found`,
+			proxyResponse:   `Not Found`,
+			ExpectedStCode:  http.StatusNotFound,
+			proxyStatusCode: http.StatusNotFound,
+			rtTimeout:       10 * time.Millisecond,
+			postParametersT: integrations.PostParametersT{
+				Type:          "REST",
+				URL:           "http://www.not_found_dest.domain.com",
+				RequestMethod: http.MethodPost,
+				QueryParams:   map[string]interface{}{},
+				Body: map[string]interface{}{
+					"JSON": map[string]interface{}{
+						"key_1": "val_1",
+						"key_2": "val_2",
+					},
+					"FORM":       map[string]interface{}{},
+					"JSON_ARRAY": map[string]interface{}{},
+					"XML":        map[string]interface{}{},
+				},
+				Files: map[string]interface{}{},
+			},
+		},
+	}
+)
 
 func Initialization() {
 	config.Load()
@@ -200,7 +226,7 @@ func TestProxyRequest(t *testing.T) {
 			assert.Equal(t, tc.ExpectedStCode, stCd)
 			if gjson.GetBytes([]byte(resp), "message").Raw != "" {
 				require.JSONEq(t, tc.ExpectedBody, resp)
-			} else if tc.ExpectedStCode == http.StatusGatewayTimeout {
+			} else if tc.ExpectedStCode == http.StatusGatewayTimeout || tc.ExpectedStCode == http.StatusNotFound {
 				expectedBodyStr := fmt.Sprintf(tc.ExpectedBody, srv.URL)
 				require.Equal(t, expectedBodyStr, resp)
 			}
@@ -213,8 +239,10 @@ func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	destName, ok := vars["destName"]
 	if !ok {
-		// Modify this case ?
-		panic(fmt.Errorf("Wrong url being sent"))
+		// This case wouldn't occur I guess
+		w.WriteHeader(http.StatusNotFound)
+		checkAndSendResponse(&w, []byte("Wrong url being sent"))
+		return
 	}
 	tc := proxyResponseTcs[destName]
 	// sleep is being used to mimic the waiting in actual transformer response
@@ -224,7 +252,11 @@ func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(tc.proxyStatusCode)
 	// Lint error fix
-	_, err := w.Write([]byte(tc.proxyResponse))
+	checkAndSendResponse(&w, []byte(tc.proxyResponse))
+}
+
+func checkAndSendResponse(w *http.ResponseWriter, resp []byte) {
+	_, err := (*w).Write(resp)
 	if err != nil {
 		// Is there a better way to handle this ?
 		panic(fmt.Errorf("Provided response is faulty, please check it. Err: %v", err))

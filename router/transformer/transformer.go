@@ -307,12 +307,14 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 		// This was an error, but not a timeout
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
 		return []byte{}, http.StatusInternalServerError, err
+	} else if resp.StatusCode == http.StatusNotFound {
+		// Actually Router wouldn't send any destination to proxy unless it already exists
+		// But if accidentally such a request is sent, we'd probably need to handle for better
+		// understanding of the response
+		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, notFoundErr)
+		return []byte{}, resp.StatusCode, notFoundErr
 	}
-
-	// if err != nil {
-	// 	trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
-	// 	return []byte{}, http.StatusBadRequest, err
-	// }
 
 	// error handling if body is missing
 	if resp.Body == nil {
