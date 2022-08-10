@@ -111,43 +111,27 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 }
 
 func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
-	if maxItems <= 0 {
-		return
-	}
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core
-	minioClient, err := manager.getClient()
+	core, err := minio.NewCore(manager.Config.EndPoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(manager.Config.AccessKeyID, manager.Config.SecretAccessKey, ""),
+		Secure: manager.Config.UseSSL,
+	})
 	if err != nil {
 		return
 	}
 
-	opts := minio.ListObjectsOptions{
-		Prefix:    prefix,
-		MaxKeys:   int(maxItems),
-		Recursive: true,
-	}
-
-	if manager.Config.StartAfter != "" {
-		opts.StartAfter = manager.Config.StartAfter
-	}
-
 	// List the Objects in the bucket
-	if manager.Config.ObjectCh == nil {
-		objects := minioClient.ListObjects(ctx, manager.Config.Bucket, opts)
-		if err != nil {
-			return
-		}
-		manager.Config.ObjectCh = objects
+	result, err := core.ListObjectsV2(manager.Config.Bucket, manager.Config.Prefix, manager.Config.StartAfter, manager.Config.ContinuationToken, "", int(maxItems))
+	if err != nil {
+		return
 	}
 
-	for item := range manager.Config.ObjectCh {
+	for _, item := range result.Contents {
 		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
-		maxItems--
-		if maxItems <= 0 {
-			break
-		}
 	}
+	manager.Config.ContinuationToken = result.NextContinuationToken
 	return
 }
 
@@ -170,7 +154,7 @@ func (manager *MinioManager) GetConfiguredPrefix() string {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey, startAfter string
+	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey, startAfter, continuationToken string
 	var useSSL, ok bool
 	if config["bucketName"] != nil {
 		tmp, ok := config["bucketName"].(string)
@@ -215,13 +199,14 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 
 	return &MinioConfig{
-		Bucket:          bucketName,
-		Prefix:          prefix,
-		EndPoint:        endPoint,
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		UseSSL:          useSSL,
-		StartAfter:      startAfter,
+		Bucket:            bucketName,
+		Prefix:            prefix,
+		EndPoint:          endPoint,
+		AccessKeyID:       accessKeyID,
+		SecretAccessKey:   secretAccessKey,
+		UseSSL:            useSSL,
+		StartAfter:        startAfter,
+		ContinuationToken: continuationToken,
 	}
 }
 
@@ -236,12 +221,12 @@ func (manager *MinioManager) SetTimeout(timeout *time.Duration) {
 }
 
 type MinioConfig struct {
-	Bucket          string
-	Prefix          string
-	EndPoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
-	StartAfter      string
-	ObjectCh        <-chan minio.ObjectInfo
+	Bucket            string
+	Prefix            string
+	EndPoint          string
+	AccessKeyID       string
+	SecretAccessKey   string
+	UseSSL            bool
+	StartAfter        string
+	ContinuationToken string
 }
