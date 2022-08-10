@@ -130,8 +130,8 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
-// schemaNameWithQuotes returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
-func (sf *HandleT) schemaNameWithQuotes() string {
+// schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
+func (sf *HandleT) schemaIdentifier() string {
 	DatabaseName := warehouseutils.GetConfigValue(SFDbName, sf.Warehouse)
 	return fmt.Sprintf(`"%s"."%s"`,
 		DatabaseName,
@@ -140,8 +140,8 @@ func (sf *HandleT) schemaNameWithQuotes() string {
 }
 
 func (sf *HandleT) createTable(tableName string, columns map[string]string) (err error) {
-	schemaWithQuotes := sf.schemaNameWithQuotes()
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s."%s" ( %v )`, schemaWithQuotes, tableName, ColumnsWithDataTypes(columns, ""))
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s."%s" ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -180,16 +180,16 @@ func (sf *HandleT) schemaExists() (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	schemaWithQuotes := sf.schemaNameWithQuotes()
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "%s" %s`, schemaWithQuotes, tableName, columnName, dataTypesMap[columnType])
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "%s" %s`, schemaIdentifier, tableName, columnName, dataTypesMap[columnType])
 	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
 }
 
 func (sf *HandleT) createSchema() (err error) {
-	schemaWithQuotes := sf.schemaNameWithQuotes()
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaWithQuotes)
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
 	pkgLogger.Infof("SF: Creating schemaname in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -253,9 +253,9 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
 
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaWithQuotes, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaIdentifier, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -273,7 +273,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// Truncating the columns by default so as to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaWithQuotes, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -331,7 +331,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaWithQuotes)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
 	} else {
 		sqlStatement = fmt.Sprintf(`MERGE INTO %[8]s."%[1]s" AS original
 										USING (
@@ -341,7 +341,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 										) AS staging
 										ON (original."%[3]s" = staging."%[3]s" %[6]s)
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaWithQuotes)
+										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
 	}
 
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -373,9 +373,9 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 
 	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaWithQuotes, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -410,9 +410,9 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaWithQuotes, stagingTableName, identityMappingsTable)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -421,7 +421,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, schemaWithQuotes, stagingTableName)
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, schemaIdentifier, stagingTableName)
 	pkgLogger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
@@ -431,7 +431,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaWithQuotes, stagingTableName), loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
 
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -450,7 +450,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 									WHEN MATCHED THEN
 									UPDATE SET original."RUDDER_ID" = staging."RUDDER_ID", original."UPDATED_AT" =  staging."UPDATED_AT"
 									WHEN NOT MATCHED THEN
-									INSERT ("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") VALUES (staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT")`, identityMappingsTable, stagingTableName, schemaWithQuotes)
+									INSERT ("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") VALUES (staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT")`, identityMappingsTable, stagingTableName, schemaIdentifier)
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -496,7 +496,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), usersTable), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" AS (SELECT DISTINCT * FROM
 										(
@@ -512,7 +512,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 											)
 										)
 									)`,
-		schemaWithQuotes,                    // 1
+		schemaIdentifier,                    // 1
 		stagingTableName,                    // 2
 		strings.Join(firstValProps, ","),    // 3
 		usersTable,                          // 4
@@ -549,7 +549,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 									WHEN MATCHED THEN
 									UPDATE SET %[5]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[3]s) VALUES (%[6]s)`, usersTable, stagingTableName, columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues, schemaWithQuotes)
+									INSERT (%[3]s) VALUES (%[6]s)`, usersTable, stagingTableName, columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues, schemaIdentifier)
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", usersTable, sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -608,14 +608,14 @@ func Connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 
 func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	schemaExists, err = sf.schemaExists()
 	if err != nil {
-		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", schemaWithQuotes, err)
+		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", schemaIdentifier, err)
 		return err
 	}
 	if schemaExists {
-		pkgLogger.Infof("SF: Skipping creating schema: %s since it already exists", schemaWithQuotes)
+		pkgLogger.Infof("SF: Skipping creating schema: %s since it already exists", schemaIdentifier)
 		return
 	}
 	return sf.createSchema()
@@ -626,8 +626,8 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 }
 
 func (sf *HandleT) DropTable(tableName string) (err error) {
-	schemaWithQuotes := sf.schemaNameWithQuotes()
-	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, schemaWithQuotes, tableName)
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, schemaIdentifier, tableName)
 	pkgLogger.Infof("SF: Dropping table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -635,10 +635,10 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 
 func (sf *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	err = sf.addColumn(tableName, columnName, columnType)
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	if err != nil {
 		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, schemaWithQuotes, tableName, err)
+			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, schemaIdentifier, tableName, err)
 			err = nil
 		}
 	}
@@ -658,8 +658,8 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			return
 		}
 
-		schemaWithQuotes := sf.schemaNameWithQuotes()
-		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s."%s"`, schemaWithQuotes, tableName)
+		schemaIdentifier := sf.schemaIdentifier()
+		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s."%s"`, schemaIdentifier, tableName)
 		var totalRows int64
 		err = sf.Db.QueryRow(sqlStatement).Scan(&totalRows)
 		if err != nil {
@@ -692,7 +692,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		var offset int64
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
-			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s."%s" LIMIT %d OFFSET %d`, toSelectFields, schemaWithQuotes, tableName, batchSize, offset)
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s."%s" LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
 			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)
@@ -769,8 +769,8 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if !exists {
 			continue
 		}
-		schemaWithQuotes := sf.schemaNameWithQuotes()
-		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s."%s"`, schemaWithQuotes, tableName)
+		schemaIdentifier := sf.schemaIdentifier()
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s."%s"`, schemaIdentifier, tableName)
 		var count int64
 		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
 		if err != nil {
@@ -893,11 +893,11 @@ func (sf *HandleT) LoadTable(tableName string) error {
 }
 
 func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
-	schemaWithQuotes := sf.schemaNameWithQuotes()
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s."%[2]s"`, schemaWithQuotes, tableName)
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s."%[2]s"`, schemaIdentifier, tableName)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
-		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, schemaWithQuotes, tableName)
+		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, schemaIdentifier, tableName)
 	}
 	return
 }
@@ -921,10 +921,10 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 func (sf *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
-	schemaWithQuotes := sf.schemaNameWithQuotes()
+	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
-		fmt.Sprintf(`%s."%s"`, schemaWithQuotes, tableName),
+		fmt.Sprintf(`%s."%s"`, schemaIdentifier, tableName),
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		loadFolder,
 		sf.authString(),
