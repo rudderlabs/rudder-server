@@ -25,7 +25,7 @@ type transformerBatchResponseT struct {
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponseT {
+func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerResponseT {
 	resp := transformerResponseT{
 		err:        response.GetStatus(reason),
 		statusCode: response.GetStatusCode(reason),
@@ -49,7 +49,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))
@@ -119,32 +119,32 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 			outputInterface, ok := respElemMap["output"]
 			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerFailedToReadOutput)
+				batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerFailedToReadOutput)
 				continue
 			}
 
 			output, ok := outputInterface.(map[string]interface{})
 			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
+				batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerInvalidOutputFormatInResponse)
 				continue
 			}
 
 			_, ok = output["batch"]
 			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
+				batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerInvalidOutputFormatInResponse)
 				continue
 			}
 
 			marshalledOutput, err := json.Marshal(output)
 			if err != nil {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputJSON)
+				batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerInvalidOutputJSON)
 				continue
 			}
 
 			bt.stats.receivedStat.Count(1)
 			batchResponse.responses[idx] = transformerResponseT{output: marshalledOutput}
 		} else {
-			batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidResponseFormat)
+			batchResponse.responses[idx] = bt.markResponseFail(response.SourceTransformerInvalidResponseFormat)
 		}
 	}
 	return batchResponse
