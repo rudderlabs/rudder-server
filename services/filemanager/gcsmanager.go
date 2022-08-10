@@ -70,20 +70,14 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 	defer cancel()
 
 	// Create GCS Bucket handle
-	if manager.Config.Iterator != nil {
+	if manager.Config.Iterator == nil {
 		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
-			Prefix:    prefix,
-			Delimiter: "",
+			Prefix:      prefix,
+			Delimiter:   "",
+			StartOffset: manager.Config.StartAfter,
 		})
 	}
 	var attrs *storage.ObjectAttrs
-	var startAfterTime time.Time
-	if manager.Config.StartAfter != "" {
-		startAfterTime, err = time.Parse(time.RFC3339, manager.Config.StartAfter)
-		if err != nil {
-			return
-		}
-	}
 	for {
 		if maxItems <= 0 {
 			break
@@ -92,10 +86,8 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 		if err == iterator.Done || err != nil {
 			break
 		}
-		if startAfterTime.IsZero() || attrs.Updated.After(startAfterTime) {
-			fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
-			maxItems--
-		}
+		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
+		maxItems--
 	}
 	return
 }
