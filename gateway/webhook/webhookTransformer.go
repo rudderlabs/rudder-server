@@ -53,13 +53,13 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: err}
+		return transformerBatchResponseT{batchError: errors.New(response.GetStatus(response.RequestBodyReadFailed)), statusCode: response.GetStatusCode(response.RequestBodyReadFailed)}
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		pkgLogger.Errorf("Source Transformer returned status code: %v", resp.StatusCode)
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: fmt.Errorf("source Transformer returned non-success status code: %v, Error: %v", resp.StatusCode, string(respBody))}
+		return transformerBatchResponseT{batchError: fmt.Errorf("source Transformer returned non-success status code: %v, Error: %v", resp.StatusCode, resp.Status)}
 	}
 
 	/*
