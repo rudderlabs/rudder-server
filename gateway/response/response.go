@@ -109,5 +109,5 @@ func GetStatusCode(key string) int {
 }
 
 func MakeResponse(msg string) string {
-	return fmt.Sprintf(`{"msg": "%s"}`, msg)
+	return fmt.Sprintf("str: %q", msg)
 }
