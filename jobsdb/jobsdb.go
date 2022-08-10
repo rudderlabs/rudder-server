@@ -2063,10 +2063,10 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 	if err != nil {
 		return failAll(err)
 	}
-	/*err = jd.internalStoreJobsInTx(ctx, tx, ds, jobList)
+	err = jd.internalStoreJobsInTx(ctx, tx, ds, jobList)
 	if err == nil {
 		return
-	}*/
+	}
 	_, err = tx.ExecContext(ctx, rollbackSql)
 	if err != nil {
 		return failAll(err)

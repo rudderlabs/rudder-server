@@ -105,7 +105,7 @@ func GetStatusCode(key string) int {
 	if status, ok := statusMap[key]; ok {
 		return status.code
 	}
-	return http.StatusOK
+	return http.StatusInternalServerError
 }
 
 func MakeResponse(msg string) string {

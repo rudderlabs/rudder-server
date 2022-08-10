@@ -104,7 +104,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	writeKeyFailStats := make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat, "reqType": "webhook"})
-	statusCode := 400
+	statusCode := http.StatusBadRequest
 	if code != 0 {
 		statusCode = code
 	}
@@ -189,7 +189,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.err)
 	if resp.err != "" {
-		code := 400
+		code := http.StatusBadRequest
 		if resp.statusCode != 0 {
 			code = resp.statusCode
 		}
@@ -290,7 +290,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
 		if batchResponse.batchError != nil {
-			statusCode := 500
+			statusCode := http.StatusInternalServerError
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
