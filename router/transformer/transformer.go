@@ -67,18 +67,16 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry              int
-	retrySleep            time.Duration
-	timeoutDuration       time.Duration
-	retryWithBackoffCount int64
-	pkgLogger             logger.LoggerI
+	maxRetry        int
+	retrySleep      time.Duration
+	timeoutDuration time.Duration
+	pkgLogger       logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
-	config.RegisterInt64ConfigVariable(3, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
 }
 
 func Init() {
