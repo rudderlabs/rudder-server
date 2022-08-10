@@ -319,7 +319,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -333,38 +333,74 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 	// Using transactions for bulk copying
 	txn, err := notifier.dbHandle.Begin()
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating transaction for publishing with error: %w", err)
 		return
 	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txn.Rollback(); rollbackErr != nil {
+				pkgLogger.Errorf("PgNotifier: Failed rollback transaction for publishing with error: %s", rollbackErr.Error())
+			}
+		}
+	}()
 
 	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
 	}
-	defer func() { _ = stmt.Close() }()
+	defer stmt.Close()
 
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
 		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
 		if err != nil {
+			err = fmt.Errorf("PgNotifier: Failed executing prepared statement for publishing with error: %w", err)
 			return
 		}
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed publishing prepared statement for publishing with error: %w", err)
 		return
 	}
+
+	uploadSchemaJSON, err := json.Marshal(struct {
+		UploadSchema whUtils.SchemaT
+	}{
+		UploadSchema: *schema,
+	})
+	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed unmarshalling uploadschema for publishing with error: %w", err)
+		return
+	}
+
+	sqlStatement := `
+		UPDATE
+		  pg_notifier_queue
+		SET
+		  payload = payload || $1
+		WHERE
+		  batch_id = $2;`
+	_, err = txn.Exec(sqlStatement, uploadSchemaJSON, batchID)
+	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed updating uploadschema for publishing with error: %w", err)
+		return
+	}
+
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed committing transaction for publishing with error: %w", err)
 		return
 	}
+
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
+
 	notifier.trackBatch(batchID, &ch)
 	return
 }
@@ -415,12 +451,6 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 func GetCurrentSQLTimestamp() string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return time.Now().Format(SQLTimeFormat)
-}
-
-// GetSQLTimestamp to get sql complaint current datetime string from the given duration
-func GetSQLTimestamp(t time.Time) string {
-	const SQLTimeFormat = "2006-01-02 15:04:05"
-	return t.Format(SQLTimeFormat)
 }
 
 // RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
