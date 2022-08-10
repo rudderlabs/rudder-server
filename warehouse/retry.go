@@ -52,6 +52,7 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 		}
 	}()
 	if err != nil {
+		err = fmt.Errorf("failed validating request, error: %s", err.Error())
 		return
 	}
 
@@ -73,6 +74,7 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
 	uploadsRetried, err := retryReq.retryUploads(ctx, sourceIDs)
 	if err != nil {
+		err = fmt.Errorf("failed retrying uploads, error: %s", err.Error())
 		return
 	}
 
@@ -101,6 +103,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Coun
 		}
 	}()
 	if err != nil {
+		err = fmt.Errorf("failed validating request, error: %s", err.Error())
 		return
 	}
 
@@ -122,6 +125,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Coun
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
 	count, err := retryReq.countUploadsToRetry(ctx, sourceIDs)
 	if err != nil {
+		err = fmt.Errorf("failed counting uploads to retry, error: %s", err.Error())
 		return
 	}
 
