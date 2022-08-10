@@ -1,29 +1,27 @@
 //go:build warehouse_integration
 
-package bigquery_test
+package deltalake_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"testing"
 
+	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/require"
 
-	"cloud.google.com/go/bigquery"
-
-	"github.com/gofrs/uuid"
-	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
 type TestHandle struct {
-	DB       *bigquery.Client
+	DB       *databricks.DBHandleT
 	WriteKey string
 	Schema   string
 	Tables   []string
@@ -32,61 +30,61 @@ type TestHandle struct {
 var handle *TestHandle
 
 const (
-	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
+	TestCredentialsKey = testhelper.DeltalakeIntegrationTestCredentials
 )
 
-// bigqueryCredentials extracting big query credentials
-func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
+// databricksCredentials extracting deltalake credentials
+func databricksCredentials() (databricksCredentials databricks.CredentialsT, err error) {
 	cred, exists := os.LookupEnv(TestCredentialsKey)
 	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
+		err = fmt.Errorf("following %s does not exists while running the Deltalake test", TestCredentialsKey)
 		return
 	}
 
-	err = json.Unmarshal([]byte(cred), &bqCredentials)
+	err = json.Unmarshal([]byte(cred), &databricksCredentials)
 	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
+		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
 		return
 	}
 	return
 }
 
-// TestConnection test connection for big query
+// TestConnection test connection for deltalake
 func (*TestHandle) TestConnection() error {
-	credentials, err := bigqueryCredentials()
+	credentials, err := databricksCredentials()
 	if err != nil {
 		return err
 	}
 
 	err = testhelper.ConnectWithBackoff(func() (err error) {
-		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
+		handle.DB, err = deltalake.Connect(&credentials, 0)
 		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
+			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
 			return
 		}
 		return
 	})
 	if err != nil {
-		return fmt.Errorf("error while running test connection for bigquery with err: %s", err.Error())
+		return fmt.Errorf("error while running test connection for deltalake with err: %s", err.Error())
 	}
 	return nil
 }
 
-func TestBigQueryIntegration(t *testing.T) {
+func TestDeltalakeIntegration(t *testing.T) {
 	t.Run("Merge Mode", func(t *testing.T) {
 		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
-				Key:   "Warehouse.bigquery.isDedupEnabled",
-				Value: true,
+				Key:   "Warehouse.deltalake.loadTableStrategy",
+				Value: "MERGE",
 			},
 		}))
 
 		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
-				BQ:   handle.DB,
-				Type: client.BQClient,
+				DBHandleT: handle.DB,
+				Type:      client.DBClient,
 			},
 			WriteKey:             handle.WriteKey,
 			Schema:               handle.Schema,
@@ -94,7 +92,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
@@ -148,7 +146,6 @@ func TestBigQueryIntegration(t *testing.T) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
-			"_groups":       1,
 			"gateway":       48,
 			"batchRT":       64,
 		}
@@ -161,16 +158,16 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
-				Key:   "Warehouse.bigquery.isDedupEnabled",
-				Value: false,
+				Key:   "Warehouse.deltalake.loadTableStrategy",
+				Value: "APPEND",
 			},
 		}))
 
 		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
-				BQ:   handle.DB,
-				Type: client.BQClient,
+				DBHandleT: handle.DB,
+				Type:      client.DBClient,
 			},
 			WriteKey:             handle.WriteKey,
 			Schema:               handle.Schema,
@@ -178,34 +175,61 @@ func TestBigQueryIntegration(t *testing.T) {
 			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 		}
 
 		// Scenario 1
 		// Sending the first set of events.
-		// Since we don't handle dedupe on the staging table, we can just send the events.
-		// And then verify the count on the warehouse.
+		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendEvents(t, warehouseTest)
+
+		// Setting up the events map
+		// Checking for Gateway and Batch router events
+		// Checking for the events count for each table
+		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       24,
+			"batchRT":       32,
+		}
+		testhelper.VerifyingGatewayEvents(t, warehouseTest)
+		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+		// Scenario 2
+		// Re-Setting up the events map
+		// Sending the second set of events.
+		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
 		// Checking for the events count for each table
-		// Since because of append events count will be equal to the number of events being sent
+		// Since because of merge everything comes down to a single event in warehouse
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        4,
-			"_groups":       4,
-			"gateway":       24,
-			"batchRT":       32,
+			"identifies":    2,
+			"users":         2,
+			"tracks":        2,
+			"product_track": 2,
+			"pages":         2,
+			"screens":       2,
+			"aliases":       2,
+			"groups":        2,
+			"gateway":       48,
+			"batchRT":       64,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -213,28 +237,17 @@ func TestBigQueryIntegration(t *testing.T) {
 	})
 }
 
-func TestUnsupportedCredentials(t *testing.T) {
-	credentials := bigquery2.BQCredentialsT{
-		ProjectID:   "projectId",
-		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
-	}
-
-	_, err := bigquery2.Connect(context.Background(), &credentials)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
-}
-
 func TestMain(m *testing.M) {
 	_, exists := os.LookupEnv(TestCredentialsKey)
 	if !exists {
-		log.Println("Skipping Bigquery Test as the Test credentials does not exits.")
+		log.Println("Skipping Deltalake Test as the Test credentials does not exits.")
 		return
 	}
 
 	handle = &TestHandle{
-		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   "bigquery_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		WriteKey: "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		Schema:   "deltalake_wh_integration",
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
