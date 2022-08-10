@@ -2097,7 +2097,6 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 			_, txErr = tx.ExecContext(ctx, rollbackSql)
 		}
 
-		errorMessagesMap[job.UUID] = "test error"
 	}
 
 	return
