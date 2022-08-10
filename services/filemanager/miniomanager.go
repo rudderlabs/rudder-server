@@ -123,8 +123,9 @@ func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix str
 	}
 
 	opts := minio.ListObjectsOptions{
-		Prefix:  prefix,
-		MaxKeys: int(maxItems),
+		Prefix:    prefix,
+		MaxKeys:   int(maxItems),
+		Recursive: true,
 	}
 
 	if manager.Config.StartAfter != "" {

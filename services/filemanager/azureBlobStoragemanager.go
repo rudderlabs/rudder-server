@@ -151,9 +151,9 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 		manager.Config.Marker = response.NextMarker
 
 		fileObjects = make([]*FileObject, 0)
-		for _, item := range response.Segment.BlobItems {
-			if startAfterTime.IsZero() || item.Properties.LastModified.After(startAfterTime) {
-				fileObjects = append(fileObjects, &FileObject{item.Name, item.Properties.LastModified})
+		for idx := range response.Segment.BlobItems {
+			if startAfterTime.IsZero() || response.Segment.BlobItems[idx].Properties.LastModified.After(startAfterTime) {
+				fileObjects = append(fileObjects, &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified})
 				maxItems--
 			}
 		}
