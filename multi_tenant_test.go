@@ -50,13 +50,13 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.NoError(t, err)
 
 	var (
-		group                         errgroup.Group
-		etcdContainer                 *thEtcd.Resource
-		postgresContainer             *destination.PostgresResource
-		serverInstanceID              = "1"
-		workspaceNamespace            = "test-workspace-namespace"
-		controlPlaneBasicAuthUsername = "my-username"
-		controlPlaneBasicAuthPassword = "my-password"
+		group              errgroup.Group
+		etcdContainer      *thEtcd.Resource
+		postgresContainer  *destination.PostgresResource
+		serverInstanceID   = "1"
+		workspaceNamespace = "test-workspace-namespace"
+
+		hostedServiceSecret = "service-secret"
 	)
 
 	group.Go(func() (err error) {
@@ -92,9 +92,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	}
 
 	multiTenantSvcSecret := "so-secret"
-	expectedAuthorizationHeader := fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString([]byte(
-		controlPlaneBasicAuthUsername+":"+controlPlaneBasicAuthPassword,
-	)))
+	expectedAuthorizationHeader := fmt.Sprintf("Bearer %s", hostedServiceSecret)
 	backedConfigHandler := func(w http.ResponseWriter, r *http.Request) {
 		require.Equalf(t, expectedAuthorizationHeader, r.Header.Get("Authorization"),
 			"Expected HTTP basic authentication to be %q, got %q instead",
@@ -104,8 +102,12 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.Equal(t, marshalledWorkspaces.Len(), n)
 	}
 	backendConfRouter.
-		HandleFunc("/dataPlane/v1/namespace/"+workspaceNamespace+"/config", backedConfigHandler).
+		HandleFunc("/data-plane/v1/namespace/"+workspaceNamespace+"/config", backedConfigHandler).
 		Methods("GET")
+	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
+		w.WriteHeader(http.StatusNotFound)
+	})
 
 	backendConfigSrv := httptest.NewServer(backendConfRouter)
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
@@ -140,8 +142,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", multiTenantSvcSecret)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-	t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", controlPlaneBasicAuthUsername)
-	t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", controlPlaneBasicAuthPassword)
+
+	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", hostedServiceSecret)
+
 	t.Setenv("WORKSPACE_NAMESPACE", workspaceNamespace)
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))

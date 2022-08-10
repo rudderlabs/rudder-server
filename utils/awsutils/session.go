@@ -1,7 +1,7 @@
 package awsutils
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,14 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/mitchellh/mapstructure"
 )
 
 type SessionConfig struct {
-	Region      string
-	AccessKeyID string
-	AccessKey   string
-	IAMRoleARN  string
-	ExternalID  string
+	Region      string `mapstructure:"region"`
+	AccessKeyID string `mapstructure:"accessKeyID"`
+	AccessKey   string `mapstructure:"accessKey"`
+	IAMRoleARN  string `mapstructure:"iamRoleARN"`
+	ExternalID  string `mapstructure:"externalID"`
 	Service     string
 	Timeout     time.Duration
 }
@@ -64,16 +65,14 @@ func CreateSession(config *SessionConfig) *session.Session {
 	}))
 }
 
-func NewSessionConfig(destinationConfig interface{}, timeout time.Duration, serviceName string) (*SessionConfig, error) {
-	sessionConfig := SessionConfig{}
-
-	jsonConfig, err := json.Marshal(destinationConfig)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] Error while marshalling destination config :: %w", serviceName, err)
+func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+	if destinationConfig == nil {
+		return nil, errors.New("destinationConfig should not be nil")
 	}
-	err = json.Unmarshal(jsonConfig, &sessionConfig)
+	sessionConfig := SessionConfig{}
+	err := mapstructure.Decode(destinationConfig, &sessionConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[%s] Error while unmarshalling destination config :: %w", serviceName, err)
+		return nil, errors.New("unable to populate session config using destinationConfig")
 	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -21,47 +24,48 @@ type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
 
-type MultiTenantWorkspacesConfig struct {
-	CommonBackendConfig
+type multiTenantWorkspacesConfig struct {
 	Token                     string
+	configBackendURL          *url.URL
+	configEnvHandler          types.ConfigEnvI
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() error {
-	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
+func (wc *multiTenantWorkspacesConfig) SetUp() error {
+	wc.writeKeyToWorkspaceIDMap = make(map[string]string)
+	if wc.Token == "" {
+		wc.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
-	if workspaceConfig.Token == "" {
+	if wc.Token == "" {
 		return fmt.Errorf("multi tenant workspace: empty workspace config token")
 	}
 	return nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
-	return workspaceConfig.Token
+func (wc *multiTenantWorkspacesConfig) AccessToken() string {
+	return wc.Token
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+	if workspaceID, ok := wc.writeKeyToWorkspaceIDMap[writeKey]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
 	// TODO use another map later
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.sourceToWorkspaceIDMap[source]; ok {
+	if workspaceID, ok := wc.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 
@@ -69,37 +73,40 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(so
 }
 
 // GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceLibraries, ok := workspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
+	if workspaceLibraries, ok := wc.workspaceIDToLibrariesMap[workspaceID]; ok {
 		return workspaceLibraries
 	}
 	return LibrariesT{}
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
-	return workspaceConfig.getFromAPI(ctx, workspaces)
+func (wc *multiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+	return wc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+	if wc.configBackendURL == nil {
+		return ConfigT{}, fmt.Errorf("multi tenant workspace: config backend url is nil")
+	}
+
 	var (
-		url        string
-		respBody   []byte
-		statusCode int
+		u        string
+		respBody []byte
 	)
 	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
+		u = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", wc.configBackendURL)
 	} else {
-		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+		u = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", wc.configBackendURL)
 	}
 	operation := func() error {
 		var fetchError error
-		pkgLogger.Debugf("Fetching config from %s", url)
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(ctx, url)
+		pkgLogger.Debugf("Fetching config from %s", u)
+		respBody, fetchError = wc.makeHTTPRequest(ctx, u)
 		return fetchError
 	}
 
@@ -111,7 +118,7 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 		pkgLogger.Errorf("Error sending request to the server: %v", err)
 		return ConfigT{}, err
 	}
-	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	configEnvHandler := wc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
@@ -119,8 +126,8 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Errorf("Error while parsing request [%d]: %v", statusCode, err)
-		return ConfigT{}, err
+		pkgLogger.Errorf("Error while parsing request: %v", err)
+		return ConfigT{}, fmt.Errorf("invalid response from backend config: %v", err)
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
@@ -136,27 +143,26 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(ctx context.Conte
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
-	workspaceConfig.workspaceWriteKeysMapLock.Lock()
-	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
+	wc.workspaceWriteKeysMapLock.Lock()
+	wc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	wc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
+	wc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	wc.workspaceWriteKeysMapLock.Unlock()
 
 	return sourcesJSON, nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
-	ctx context.Context, url string,
-) ([]byte, int, error) {
-	req, err := Http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+func (wc *multiTenantWorkspacesConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, err
 	}
+
 	// TODO: hacky way to get the backend config for multi tenant through older hosted backend config
 	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
 	} else {
-		req.SetBasicAuth(workspaceConfig.Token, "")
+		req.SetBasicAuth(wc.Token, "")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -164,14 +170,19 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, err
 	}
 
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer func() { _ = resp.Body.Close() }()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	return respBody, resp.StatusCode, nil
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		return nil, getNotOKError(respBody, resp.StatusCode)
+	}
+
+	return respBody, nil
 }

@@ -29,7 +29,7 @@ type FireHoseClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*FireHoseProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*FireHoseProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, firehose.ServiceName)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 
 	if errorRec != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(errorRec)
-		pkgLogger.Errorf("[FireHose] error  :: %s : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorf("[FireHose] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 
