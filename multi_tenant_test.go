@@ -258,13 +258,16 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.NoError(t, err)
 		t.Log("Triggering degraded mode")
 
-		select {
-		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
-			require.Len(t, ack.Events, 1)
-			require.Equal(t, "test-ack/2", string(ack.Events[0].Kv.Key))
-			require.Equal(t, `{"status":"DEGRADED"}`, string(ack.Events[0].Kv.Value))
-		case <-time.After(20 * time.Second):
-			t.Fatal("Timeout waiting for server-mode test-ack")
+		switch appType {
+		case app.EMBEDDED:
+			select {
+			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
+				require.Len(t, ack.Events, 1)
+				require.Equal(t, "test-ack/2", string(ack.Events[0].Kv.Key))
+				require.Equal(t, `{"status":"DEGRADED"}`, string(ack.Events[0].Kv.Value))
+			case <-time.After(20 * time.Second):
+				t.Fatal("Timeout waiting for server-mode test-ack")
+			}
 		}
 
 		sendEventsToGateway(t, httpPort, writeKey)

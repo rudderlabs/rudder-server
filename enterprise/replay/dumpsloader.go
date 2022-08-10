@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/enterprise/replay/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,9 +22,9 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay").Child("dumpsLoader")
 }
 
-// DumpsLoaderHandleT - dumpsloader handle
-type DumpsLoaderHandleT struct {
-	DbHandle      *jobsdb.HandleT
+// DumpsLoaderHandleT - dumps-loader handle
+type dumpsLoaderHandleT struct {
+	dbHandle      *jobsdb.HandleT
 	prefix        string
 	bucket        string
 	startAfterKey string
@@ -33,16 +34,19 @@ type DumpsLoaderHandleT struct {
 	tablePrefix   string
 	procError     *ProcErrorRequestHandler
 	gwReplay      *GWReplayRequestHandler
+	uploader      filemanager.FileManager
 }
 
-// ProcErrorRequestHandler is an empty struct to capture Proc Error Restream request handling functionality
+// ProcErrorRequestHandler is an empty struct to capture Proc Error re-stream request handling functionality
 type ProcErrorRequestHandler struct {
 	tablePrefix string
+	handle      *dumpsLoaderHandleT
 }
 
-// GWReplayRequestHandler is an empty struct to capture Gateway replay  handling functionality
+// GWReplayRequestHandler is an empty struct to capture Gateway replay handling functionality
 type GWReplayRequestHandler struct {
 	tablePrefix string
+	handle      *dumpsLoaderHandleT
 }
 
 func getMinMaxCreatedAt(key string) (int64, int64, error) {
@@ -74,26 +78,25 @@ type dbObjectT struct {
 	Job       *jobsdb.JobT
 }
 
-func (handle *GWReplayRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHandleT) {
-	var continuationToken *string
-	startTimeMilli := handleDump.startTime.UnixNano() / int64(time.Millisecond)
-	endTimeMilli := handleDump.endTime.UnixNano() / int64(time.Millisecond)
+func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
+	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
+	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
 
 	for {
 		pkgLogger.Info("fetching files list")
 		objects := make([]dbObjectT, 0)
-		s3Objects, err := fileuploader.ListFilesWithPrefix(handleDump.prefix, handleDump.bucket, handleDump.startAfterKey, continuationToken)
+		s3Objects, err := gwHandle.handle.uploader.ListFilesWithPrefix(ctx, gwHandle.handle.prefix, 1000)
 		if err != nil {
-			panic(fmt.Errorf("Failed to fetch File names.%w", err))
+			panic(fmt.Errorf("failed to fetch File names with error:%w", err))
 		}
 
-		if len(s3Objects.Objects) == 0 {
+		if len(s3Objects) == 0 {
 			break
 		}
 
-		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, s3Objects.Objects[0].Key, s3Objects.Objects[0].LastModifiedTime, s3Objects.Objects[len(s3Objects.Objects)-1].Key, s3Objects.Objects[len(s3Objects.Objects)-1].LastModifiedTime)
+		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, s3Objects[0].Key, s3Objects[0].LastModified, s3Objects[len(s3Objects)-1].Key, s3Objects[len(s3Objects)-1].LastModified)
 
-		for _, object := range s3Objects.Objects {
+		for _, object := range s3Objects {
 			if strings.Contains(object.Key, "gw_jobs_") {
 				// Getting rid of migrated dump files (ex: gw_jobs_1_1)
 				key := object.Key
@@ -113,7 +116,7 @@ func (handle *GWReplayRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHand
 				} else {
 					pkgLogger.Infof("gw dump name(%s) is not of the expected format. Parse failed with error %w", object.Key, err)
 					pkgLogger.Info("falling back to comparing start and end time stamps with gw dump last modified.")
-					pass = object.LastModifiedTime.After(handleDump.startTime) && object.LastModifiedTime.Before(handleDump.endTime)
+					pass = object.LastModified.After(gwHandle.handle.startTime) && object.LastModified.Before(gwHandle.handle.endTime)
 				}
 
 				if pass {
@@ -129,8 +132,6 @@ func (handle *GWReplayRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHand
 			}
 		}
 
-		continuationToken = s3Objects.ContinuationToken
-
 		// sorting dumps list on index
 		sort.Slice(objects, func(i, j int) bool {
 			return objects[i].SortIndex < objects[j].SortIndex
@@ -142,40 +143,35 @@ func (handle *GWReplayRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHand
 		}
 
 		pkgLogger.Info("Total gw_dumps count from S3 : ", len(objects))
-		err = handleDump.DbHandle.Store(context.TODO(), jobs)
+		err = gwHandle.handle.dbHandle.Store(ctx, jobs)
 		if err != nil {
-			panic(fmt.Errorf("Failed to write gw_dumps locations to DB with error: %w", err))
-		}
-
-		if !s3Objects.Truncated {
-			break
+			panic(fmt.Errorf("failed to write gw_dumps locations to DB with error: %w", err))
 		}
 	}
 
 	pkgLogger.Info("Dumps loader job is done")
-	handleDump.done = true
+	gwHandle.handle.done = true
 }
 
-func (handle *ProcErrorRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHandleT) {
-	var continuationToken *string
+func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	for {
 		objects := make([]dbObjectT, 0)
 		pkgLogger.Info("fetching files list")
-		s3Objects, err := fileuploader.ListFilesWithPrefix(handleDump.prefix, handleDump.bucket, handleDump.startAfterKey, continuationToken)
+		s3Objects, err := procHandle.handle.uploader.ListFilesWithPrefix(ctx, procHandle.handle.prefix, 1000)
 		if err != nil {
-			panic(fmt.Errorf("Failed to fetch File names.%w", err))
+			panic(fmt.Errorf("failed to fetch File names with error: %w", err))
 		}
 
-		if len(s3Objects.Objects) == 0 {
+		if len(s3Objects) == 0 {
 			break
 		}
 
-		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, s3Objects.Objects[0].Key, s3Objects.Objects[0].LastModifiedTime, s3Objects.Objects[len(s3Objects.Objects)-1].Key, s3Objects.Objects[len(s3Objects.Objects)-1].LastModifiedTime)
+		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, s3Objects[0].Key, s3Objects[0].LastModified, s3Objects[len(s3Objects)-1].Key, s3Objects[len(s3Objects)-1].LastModified)
 
-		for _, object := range s3Objects.Objects {
+		for _, object := range s3Objects {
 			if strings.Contains(object.Key, "rudder-proc-err-logs") {
-				if object.LastModifiedTime.Before(handleDump.startTime) || (object.LastModifiedTime.Sub(handleDump.endTime).Hours() > 1) {
-					pkgLogger.Debugf("skipping S3 object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModifiedTime)
+				if object.LastModified.Before(procHandle.handle.startTime) || (object.LastModified.Sub(procHandle.handle.endTime).Hours() > 1) {
+					pkgLogger.Debugf("skipping S3 object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
 					continue
 				}
 				key := object.Key
@@ -199,8 +195,6 @@ func (handle *ProcErrorRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHan
 			}
 		}
 
-		continuationToken = s3Objects.ContinuationToken
-
 		// sorting dumps list on index
 		sort.Slice(objects, func(i, j int) bool {
 			return objects[i].SortIndex < objects[j].SortIndex
@@ -213,49 +207,41 @@ func (handle *ProcErrorRequestHandler) fetchDumpsList(handleDump *DumpsLoaderHan
 
 		pkgLogger.Info("Total proc_error_dumps count from S3 : ", len(objects))
 		if len(jobs) > 0 {
-			err = handleDump.DbHandle.Store(context.TODO(), jobs)
+			err = procHandle.handle.dbHandle.Store(ctx, jobs)
 			if err != nil {
-				panic(fmt.Errorf("Failed to write proc_error_dumps locations to DB with error: %w", err))
+				panic(fmt.Errorf("failed to write proc_error_dumps locations to DB with error: %w", err))
 			}
-		}
-
-		if !s3Objects.Truncated {
-			break
 		}
 	}
 
 	pkgLogger.Info("Dumps loader job is done")
-	handleDump.done = true
+	procHandle.handle.done = true
 }
 
-func (handle *DumpsLoaderHandleT) handleRecovery() {
+func (handle *dumpsLoaderHandleT) handleRecovery() {
 	// remove dangling executing
-	handle.DbHandle.DeleteExecuting()
+	handle.dbHandle.DeleteExecuting()
 }
 
-// SetUp sets up dumpsloader.
-func (handle *DumpsLoaderHandleT) SetUp(db *jobsdb.HandleT, tablePrefix string) {
+// Setup sets up dumps-loader.
+func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string) {
 	var err error
-	handle.DbHandle = db
+	handle.dbHandle = db
 	handle.handleRecovery()
 
-	lastJob := handle.DbHandle.GetLastJob()
+	lastJob := handle.dbHandle.GetLastJob()
 	handle.startAfterKey = gjson.GetBytes(lastJob.EventPayload, "location").String()
-
-	handle.bucket = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET", ""))
-	if handle.bucket == "" {
-		panic("Bucket is not configured.")
-	}
-
-	handle.prefix = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET_PREFIX", ""))
-	handle.tablePrefix = tablePrefix
-	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix}
-	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix}
+	handle.bucket = bucket
+	handle.uploader = uploader
 	startTimeStr := strings.TrimSpace(config.GetEnv("START_TIME", "2000-10-02T15:04:05.000Z"))
 	handle.startTime, err = time.Parse(misc.RFC3339Milli, startTimeStr)
 	if err != nil {
-		panic(fmt.Errorf("invalid START_TIME. Err: %w", err))
+		panic("invalid start time format provided")
 	}
+	handle.prefix = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET_PREFIX", ""))
+	handle.tablePrefix = tablePrefix
+	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
+	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}
 
 	endTimeStr := strings.TrimSpace(config.GetEnv("END_TIME", ""))
 	if endTimeStr == "" {
@@ -267,9 +253,10 @@ func (handle *DumpsLoaderHandleT) SetUp(db *jobsdb.HandleT, tablePrefix string) 
 		}
 	}
 
-	if tablePrefix == "gw" {
-		go handle.gwReplay.fetchDumpsList(handle)
-	} else {
-		go handle.procError.fetchDumpsList(handle)
+	switch tablePrefix {
+	case "gw":
+		go handle.gwReplay.fetchDumpsList(ctx)
+	default:
+		go handle.procError.fetchDumpsList(ctx)
 	}
 }
