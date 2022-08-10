@@ -1,4 +1,4 @@
-package config_test
+package deltalake_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestConfig(t *testing.T) {
+func TestDeltalake(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Config Suite")
+	RunSpecs(t, "Deltalake Suite")
 }

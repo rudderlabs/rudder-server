@@ -169,6 +169,16 @@ func EmptyUpdateSafeTx() UpdateSafeTx {
 	return &updateSafeTx{}
 }
 
+// HandleInspector is only intended to be used by tests for verifying the handle's internal state
+type HandleInspector struct {
+	*HandleT
+}
+
+// DSListSize returns the current size of the handle's dsList
+func (h *HandleInspector) DSListSize() int {
+	return len(h.HandleT.getDSList())
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -396,7 +406,8 @@ type HandleT struct {
 	datasetRangeList              []dataSetRangeT
 	dsListLock                    lock.DSListLocker
 	dsMigrationLock               sync.RWMutex
-	dsRetentionPeriod             time.Duration
+	MinDSRetentionPeriod          time.Duration
+	MaxDSRetentionPeriod          time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry // DS -> workspace -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *backupSettings
@@ -434,9 +445,10 @@ type HandleT struct {
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
 
-	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
+	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
-	TriggerAddNewDS func() <-chan time.Time
+	TriggerAddNewDS  func() <-chan time.Time
+	TriggerMigrateDS func() <-chan time.Time
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -705,12 +717,6 @@ func WithClearDB(clearDB bool) OptsFunc {
 	}
 }
 
-func WithRetention(period time.Duration) OptsFunc {
-	return func(jd *HandleT) {
-		jd.dsRetentionPeriod = period
-	}
-}
-
 func WithQueryFilterKeys(filters QueryFiltersT) OptsFunc {
 	return func(jd *HandleT) {
 		jd.queryFilterKeys = filters
@@ -757,7 +763,6 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 			migrationMode: "",
 			importLock:    &sync.RWMutex{},
 		},
-		dsRetentionPeriod: 0,
 	}
 
 	for _, fn := range opts {
@@ -774,17 +779,14 @@ Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
 tablePrefix must be unique and is used to separate
 multiple users of JobsDB
-dsRetentionPeriod = A DS is not deleted if it has some activity
-in the retention time
 */
 func (jd *HandleT) Setup(
-	ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string,
+	ownerType OwnerType, clearAll bool, tablePrefix, migrationMode string,
 	registerStatusHandler bool, queryFilterKeys QueryFiltersT, preBackupHandlers []prebackup.Handler,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
-	jd.dsRetentionPeriod = retentionPeriod
 	jd.migrationState.migrationMode = migrationMode
 	jd.registerStatusHandler = registerStatusHandler
 	jd.queryFilterKeys = queryFilterKeys
@@ -803,6 +805,12 @@ func (jd *HandleT) init() {
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
 			return time.After(addNewDSLoopSleepDuration)
+		}
+	}
+
+	if jd.TriggerMigrateDS == nil {
+		jd.TriggerMigrateDS = func() <-chan time.Time {
+			return time.After(migrateDSLoopSleepDuration)
 		}
 	}
 
@@ -883,6 +891,11 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterIntConfigVariable(20, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
 	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
 	config.RegisterIntConfigVariable(30000, &jd.analyzeThreshold, false, 1, analyzeThresholdKeys...)
+
+	minDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "minDSRetention", "JobsDB." + "minDSRetention"}
+	config.RegisterDurationConfigVariable(0, &jd.MinDSRetentionPeriod, true, time.Minute, minDSRetentionPeriodKeys...)
+	maxDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxDSRetention", "JobsDB." + "maxDSRetention"}
+	config.RegisterDurationConfigVariable(90, &jd.MaxDSRetentionPeriod, true, time.Minute, maxDSRetentionPeriodKeys...)
 }
 
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
@@ -1177,13 +1190,17 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	// If records are newer than what is required. One example use case is
 	// gateway DB where records are kept to dedup
 
-	var lastUpdate time.Time
-	sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
+	var minCreatedAt, maxCreatedAt time.Time
+	sqlStatement = fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, ds.JobTable)
 	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&lastUpdate)
+	err = row.Scan(&minCreatedAt, &maxCreatedAt)
 	jd.assertError(err)
-	if jd.dsRetentionPeriod > time.Duration(0) && time.Since(lastUpdate) < jd.dsRetentionPeriod {
+
+	if jd.MinDSRetentionPeriod > time.Duration(0) && time.Since(maxCreatedAt) < jd.MinDSRetentionPeriod {
 		return false, totalCount - delCount
+	}
+	if jd.MaxDSRetentionPeriod > time.Duration(0) && time.Since(minCreatedAt) > jd.MaxDSRetentionPeriod {
+		return true, totalCount - delCount
 	}
 
 	if (float64(delCount)/float64(totalCount) > jobDoneMigrateThres) ||
@@ -1214,6 +1231,17 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
+	var minJobCreatedAt sql.NullTime
+	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM "%s"`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&minJobCreatedAt)
+	if err != nil && err != sql.ErrNoRows {
+		jd.assertError(err)
+	}
+	if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
+		return true
+	}
+
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
 		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
@@ -2987,7 +3015,7 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 	for {
 		select {
-		case <-time.After(migrateDSLoopSleepDuration):
+		case <-jd.TriggerMigrateDS():
 		case <-ctx.Done():
 			return
 		}
@@ -3394,13 +3422,14 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 
 // getFileUploader get a file uploader
 func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
-	if jd.jobsFileUploader != nil {
-		return jd.jobsFileUploader, nil
+	var err error
+	if jd.jobsFileUploader == nil {
+		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
+		})
 	}
-	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv(),
-	})
+	return jd.jobsFileUploader, err
 }
 
 func isBackupConfigured() bool {

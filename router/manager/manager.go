@@ -28,7 +28,7 @@ type LifecycleManager struct {
 }
 
 func (*LifecycleManager) Run(ctx context.Context) error {
-	return nil
+	return ctx.Err()
 }
 
 // Start starts a Router, this is not a blocking call.
@@ -80,37 +80,47 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 	routerFactory.RouterDB.DeleteExecuting()
 	batchrouterFactory.RouterDB.DeleteExecuting()
 
-	for config := range ch {
-		sources := config.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				// For batch router destinations
-				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
-					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
-						brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
-						brt.Start()
-						cleanup = append(cleanup, brt.Shutdown)
-						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-					}
-				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-						rt := routerFactory.New(destination.DestinationDefinition)
-						rt.Start()
-						cleanup = append(cleanup, rt.Shutdown)
-						dstToRouter[destination.DestinationDefinition.Name] = rt
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			pkgLogger.Infof("Router monitor stopped Context Cancelled")
+			break loop
+		case config, open := <-ch:
+			if !open {
+				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
+				break loop
+			}
+			sources := config.Data.(backendconfig.ConfigT)
+			enabledDestinations := make(map[string]bool)
+			for _, source := range sources.Sources {
+				for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
+					enabledDestinations[destination.DestinationDefinition.Name] = true
+					// For batch router destinations
+					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+						misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) ||
+						misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
+							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
+							brt.Start()
+							cleanup = append(cleanup, brt.Shutdown)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
+						}
+					} else {
+						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
+							rt := routerFactory.New(destination.DestinationDefinition)
+							rt.Start()
+							cleanup = append(cleanup, rt.Shutdown)
+							dstToRouter[destination.DestinationDefinition.Name] = rt
+						}
 					}
 				}
 			}
 		}
-
 	}
 
 	g, _ := errgroup.WithContext(context.Background())

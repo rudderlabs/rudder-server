@@ -1,4 +1,4 @@
-package warehouse_test
+package datalake_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestUtils(t *testing.T) {
+func TestDatalake(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Warehouse Suite")
+	RunSpecs(t, "Datalake Suite")
 }
