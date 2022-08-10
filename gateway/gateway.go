@@ -744,7 +744,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 			r.Header.Get("Content-Length"),
 			string(payload),
 		)
-		return payload, fmt.Errorf("read all request body: %w", err)
+		return payload, errors.New(response.RequestBodyReadFailed)
 	}
 	return payload, nil
 }
