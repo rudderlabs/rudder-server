@@ -82,7 +82,6 @@ func Test_Namespace_Get(t *testing.T) {
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
 	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
 
-	t.Log("Connection Flaf Asserts")
 	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
 	require.True(t, c.ConnectionFlags.Services["warehouse"])
 
