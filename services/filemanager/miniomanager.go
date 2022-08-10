@@ -123,13 +123,13 @@ func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix str
 	}
 
 	// List the Objects in the bucket
-	result, err := core.ListObjectsV2(manager.Config.Bucket, manager.Config.Prefix, manager.Config.StartAfter, manager.Config.ContinuationToken, "", int(maxItems))
+	result, err := core.ListObjectsV2(manager.Config.Bucket, prefix, manager.Config.StartAfter, manager.Config.ContinuationToken, "", int(maxItems))
 	if err != nil {
 		return
 	}
 
-	for _, item := range result.Contents {
-		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
+	for idx := range result.Contents {
+		fileObjects = append(fileObjects, &FileObject{result.Contents[idx].Key, result.Contents[idx].LastModified})
 	}
 	manager.Config.ContinuationToken = result.NextContinuationToken
 	return
