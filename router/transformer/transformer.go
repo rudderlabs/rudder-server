@@ -199,10 +199,10 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyReq
 	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": proxyReqParams.DestName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobId)
 
-	rdl_time := time.Now()
+	rdlTime := time.Now()
 	respData, respCode, requestError := trans.makeTfProxyRequest(ctx, proxyReqParams)
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
-	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdl_time))
+	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
 	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {

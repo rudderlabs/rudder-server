@@ -196,6 +196,10 @@ func TestProxyRequest(t *testing.T) {
 	defer srv.Close()
 
 	for destName, tc := range proxyResponseTcs {
+		// skip tests for the mentioned destinations
+		if destName == "not_found_dest" {
+			continue
+		}
 		t.Run(tc.name, func(t *testing.T) {
 			tr := rtTf.NewTransformer()
 			// Logic for executing test-cases not manipulating test-cases
@@ -226,12 +230,29 @@ func TestProxyRequest(t *testing.T) {
 			assert.Equal(t, tc.ExpectedStCode, stCd)
 			if gjson.GetBytes([]byte(resp), "message").Raw != "" {
 				require.JSONEq(t, tc.ExpectedBody, resp)
-			} else if tc.ExpectedStCode == http.StatusGatewayTimeout || tc.ExpectedStCode == http.StatusNotFound {
+			} else if tc.ExpectedStCode == http.StatusGatewayTimeout {
 				expectedBodyStr := fmt.Sprintf(tc.ExpectedBody, srv.URL)
 				require.Equal(t, expectedBodyStr, resp)
 			}
 		})
 	}
+
+	// Not found case
+	tc := proxyResponseTcs["not_found_dest"]
+	t.Run(tc.name, func(t *testing.T) {
+		tr := rtTf.NewTransformer()
+		tr.Setup(tc.rtTimeout)
+		ctx := context.TODO()
+		reqParams := &rtTf.ProxyRequestParams{
+			ResponseData: tc.postParametersT,
+			DestName:     "not_found_dest",
+			BaseUrl:      srv.URL,
+		}
+		stCd, resp := tr.ProxyRequest(ctx, reqParams)
+		assert.Equal(t, tc.ExpectedStCode, stCd)
+		expectedBodyStr := fmt.Sprintf(tc.ExpectedBody, srv.URL)
+		require.Equal(t, expectedBodyStr, resp)
+	})
 }
 
 // A kind of mock for transformer proxy endpoint in transformer
