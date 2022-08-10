@@ -240,8 +240,7 @@ func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 	destName, ok := vars["destName"]
 	if !ok {
 		// This case wouldn't occur I guess
-		w.WriteHeader(http.StatusNotFound)
-		checkAndSendResponse(&w, []byte("Wrong url being sent"))
+		http.Error(w, "Wrong url being sent", http.StatusInternalServerError)
 		return
 	}
 	tc := proxyResponseTcs[destName]
@@ -258,7 +257,6 @@ func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
 func checkAndSendResponse(w *http.ResponseWriter, resp []byte) {
 	_, err := (*w).Write(resp)
 	if err != nil {
-		// Is there a better way to handle this ?
-		panic(fmt.Errorf("Provided response is faulty, please check it. Err: %v", err))
+		http.Error(*w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 	}
 }
