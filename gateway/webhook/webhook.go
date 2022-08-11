@@ -120,14 +120,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
-		webhook.failRequest(w, r, response.GetStatus(response.NoWriteKeyInQueryParams), response.GetStatusCode(response.NoWriteKeyInQueryParams), "noWriteKey")
+		webhook.failRequest(w, r, response.GetStatus(response.NoWriteKeyInQueryParams), response.GetErrorStatusCode(response.NoWriteKeyInQueryParams), "noWriteKey")
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 
 	sourceDefName, ok := webhook.gwHandle.GetWebhookSourceDefName(writeKey)
 	if !ok {
-		webhook.failRequest(w, r, response.GetStatus(response.InvalidWriteKey), response.GetStatusCode(response.InvalidWriteKey), writeKey)
+		webhook.failRequest(w, r, response.GetStatus(response.InvalidWriteKey), response.GetErrorStatusCode(response.InvalidWriteKey), writeKey)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
@@ -141,14 +141,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseForm), response.GetStatusCode(response.ErrorInParseForm), "couldNotParseForm")
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseForm), response.GetErrorStatusCode(response.ErrorInParseForm), "couldNotParseForm")
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseMultiform), response.GetStatusCode(response.ErrorInParseMultiform), "couldNotParseMultiform")
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseMultiform), response.GetErrorStatusCode(response.ErrorInParseMultiform), "couldNotParseMultiform")
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
@@ -161,14 +161,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = json.Marshal(multipartForm)
 		if err != nil {
-			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetStatusCode(response.ErrorInMarshal), "couldNotMarshal")
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetErrorStatusCode(response.ErrorInMarshal), "couldNotMarshal")
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 	} else if len(postFrom) != 0 {
 		jsonByte, err = json.Marshal(postFrom)
 		if err != nil {
-			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetStatusCode(response.ErrorInMarshal), "couldNotMarshal")
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetErrorStatusCode(response.ErrorInMarshal), "couldNotMarshal")
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}

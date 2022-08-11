@@ -101,7 +101,7 @@ func GetPixelResponse() string {
 	return transPixelResponse
 }
 
-func GetStatusCode(key string) int {
+func GetErrorStatusCode(key string) int {
 	if status, ok := statusMap[key]; ok {
 		return status.code
 	}
@@ -109,5 +109,5 @@ func GetStatusCode(key string) int {
 }
 
 func MakeResponse(msg string) string {
-	return fmt.Sprintf("str: %q", msg)
+	return fmt.Sprintf(`{"msg": %q}`, msg)
 }
