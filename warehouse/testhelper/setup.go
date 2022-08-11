@@ -54,6 +54,7 @@ type WareHouseTest struct {
 	UserId               string
 	MessageId            string
 	Tables               []string
+	Provider             string
 }
 
 type WarehouseTestSetup interface {

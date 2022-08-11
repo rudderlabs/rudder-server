@@ -63,6 +63,7 @@ func TestPostgresIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
+		Provider:             "POSTGRES",
 	}
 
 	// Scenario 1
@@ -72,7 +73,7 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -104,7 +105,7 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events

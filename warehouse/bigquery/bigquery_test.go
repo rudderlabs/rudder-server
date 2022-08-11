@@ -95,6 +95,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             "BQ",
 		}
 
 		// Scenario 1
@@ -103,7 +104,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -133,7 +134,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -179,6 +180,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             "BQ",
 		}
 
 		// Scenario 1
@@ -186,7 +188,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Since we don't handle dedupe on the staging table, we can just send the events.
 		// And then verify the count on the warehouse.
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
