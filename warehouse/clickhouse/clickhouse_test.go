@@ -278,7 +278,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 			}
 			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
-			
+
 			_, err := clusterDB.Exec(sqlStatement)
 			require.NoError(t, err)
 		}
