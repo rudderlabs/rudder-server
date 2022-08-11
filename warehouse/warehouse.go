@@ -87,6 +87,7 @@ var (
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
+	columnCountLimitThreshold           float64
 	configBackendURL                    string
 )
 
@@ -187,6 +188,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	config.RegisterFloat64ConfigVariable(0.8, &columnCountLimitThreshold, true, "Warehouse.columnCountLimitThreshold")
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
