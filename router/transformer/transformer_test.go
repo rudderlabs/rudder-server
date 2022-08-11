@@ -29,8 +29,10 @@ type TcExpected struct {
 
 type TcProxy struct {
 	// The expected response body from proxy endpoint in transformer
-	Response     string
-	StCode       int
+	Response string
+	// The response status code from proxy endpoint in transformer
+	StCode int
+	// The delay in response from proxy endpoint in transformer
 	TimeoutValue time.Duration
 }
 type ProxyContextTc struct {
@@ -42,13 +44,6 @@ type ProxyResponseTc struct {
 	name     string
 	Expected TcExpected
 	Proxy    TcProxy
-	// ExpectedBody   string
-	// proxyResponse  string
-	// ExpectedStCode int
-	// // The response status code from proxy endpoint in transformer
-	// proxyStatusCode int
-	// // The delay in response from proxy endpoint in transformer
-	// proxyTimeoutValue time.Duration
 	// The timeout we have set from router
 	// Router will have the timeout of rtTimeout + <timeout_at_router_transform>
 	// For http client timeout scenarios, we need to have a proxyTimeout which is > rtTimeout + <timeout_at_router_transform>

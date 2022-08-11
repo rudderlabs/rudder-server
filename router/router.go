@@ -676,11 +676,11 @@ func (worker *workerT) processDestinationJobs() {
 								var cancel context.CancelFunc
 								// transformer proxy start
 								if worker.rt.transformerProxy {
-									jobId := destinationJob.JobMetadataArray[0].JobID
-									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobId)
+									jobID := destinationJob.JobMetadataArray[0].JobID
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
 									proxyReqparams := &transformer.ProxyRequestParams{
 										DestName:     worker.rt.destName,
-										JobId:        jobId,
+										JobID:        jobID,
 										ResponseData: val,
 									}
 									// For http.client for proxy we are using
@@ -689,12 +689,12 @@ func (worker *workerT) processDestinationJobs() {
 									// Should we reduce the value from 20 to 10 ms ?
 									prxCtxTimeout := worker.rt.backendProxyTimeout + worker.rt.netClientTimeout + 20*time.Millisecond
 									sendCtx, cancel = context.WithTimeout(ctx, prxCtxTimeout)
-									defer cancel()
+									cancel()
 									rtlTime := time.Now()
 									// Should we change this context to sendCtx and probably adjust the timeout for the context ?
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(sendCtx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
-									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
+									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
 									authType := routerutils.GetAuthType(destinationJob.Destination)
 									if routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
@@ -710,7 +710,7 @@ func (worker *workerT) processDestinationJobs() {
 									}
 								} else {
 									sendCtx, cancel = context.WithTimeout(ctx, worker.rt.netClientTimeout)
-									defer cancel()
+									cancel()
 									rdlTime := time.Now()
 									resp := worker.rt.netHandle.SendPost(sendCtx, val)
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
