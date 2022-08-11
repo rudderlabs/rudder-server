@@ -1599,6 +1599,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 		case utilTypes.DiffStatus:
 			sd.Count--
+			completedJobsList = append(completedJobsList, resp.JobT)
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 		}
 
