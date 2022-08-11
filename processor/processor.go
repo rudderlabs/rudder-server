@@ -945,13 +945,21 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 }
 
 func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled, trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
-	failedMetrics := make([]*types.PUReportedMetric, 0)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]*types.StatusDetail)
-	failedCountMap := make(map[string]int64)
-	var failedEventsToStore []*jobsdb.JobT
+	var (
+		failedMetrics        = make([]*types.PUReportedMetric, 0)
+		connectionDetailsMap = make(map[string]*types.ConnectionDetails)
+		statusDetailsMap     = make(map[string]*types.StatusDetail)
+		failedCountMap       = make(map[string]int64)
+		failedEventsToStore  []*jobsdb.JobT
+	)
 	for _, failedEvent := range response.FailedEvents {
 		if failedEvent.StatusCode == transformer.DropStatusCode {
+			procDroppedEventsStat := stats.NewTaggedStat("proc_dropped_event_counts", stats.CountType, stats.Tags{
+				"destName":   commonMetaData.DestinationType,
+				"statusCode": strconv.Itoa(failedEvent.StatusCode),
+				"stage":      stage,
+			})
+			procDroppedEventsStat.Increment()
 			continue
 		}
 		var messages []types.SingularEventT
