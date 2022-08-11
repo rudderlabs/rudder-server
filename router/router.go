@@ -1123,6 +1123,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		switch respStatusCode {
 		case transformer.DropStatusCode:
 			status.JobState = jobsdb.Aborted.State
+			addToAbortMap = false
 		case types.RouterTimedOutStatusCode, types.RouterUnMarshalErrorCode:
 			addToFailedMap = false
 			addToAbortMap = false
