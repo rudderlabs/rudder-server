@@ -412,7 +412,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
