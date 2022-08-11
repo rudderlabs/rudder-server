@@ -108,6 +108,10 @@ func (d *Dynamic) Run(ctx context.Context) error {
 			}
 
 			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			if d.GatewayComponent {
+				d.logger.Infof("Gateway component, not changing the mode")
+				continue
+			}
 			err := d.handleModeChange(req.Mode())
 			if err != nil {
 				d.logger.Error(err)

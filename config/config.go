@@ -776,6 +776,13 @@ func SetString(key, value string) {
 	viper.Set(key, value)
 }
 
+func SetHotReloadablesForcefully(key string, value interface{}) {
+	viper.Set(key, value)
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+	_ = checkAndHotReloadConfig(hotReloadableConfig)
+}
+
 // GetWorkspaceToken returns the workspace token provided in the environment variables
 // Env variable CONFIG_BACKEND_TOKEN is deprecating soon
 // WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN

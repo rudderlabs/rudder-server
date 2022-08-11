@@ -55,7 +55,7 @@ func (manager *DOSpacesManager) Upload(ctx context.Context, file *os.File, prefi
 	}
 	DOmanager := SpacesManager.NewUploader(uploadSession)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	output, err := DOmanager.UploadWithContext(ctx, uploadInput)
@@ -75,7 +75,7 @@ func (manager *DOSpacesManager) Download(ctx context.Context, output *os.File, k
 		return fmt.Errorf("error starting Digital Ocean Spaces session: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
@@ -127,7 +127,7 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix 
 	// Create S3 service client
 	svc := s3.New(sess)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Get the list of items
@@ -173,7 +173,7 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 			},
 		}
 
-		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
@@ -193,11 +193,19 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 
 type DOSpacesManager struct {
 	Config  *DOSpacesConfig
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *DOSpacesManager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *DOSpacesManager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *DOSpacesManager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "DIGITAL_OCEAN_SPACES", 120, time.Second)
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {

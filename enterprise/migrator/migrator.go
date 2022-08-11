@@ -2,7 +2,7 @@ package migrator
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -43,22 +43,20 @@ func New(mode string, jobsDB *jobsdb.HandleT, pf pathfinder.ClusterStateT) Migra
 	case db.EXPORT:
 		migrator.exporter = &exporterT{}
 		migrator.exporter.Setup(&migrator, pf)
-		return migrator
 	case db.IMPORT:
 		migrator.importer = &importerT{}
 		migrator.importer.Setup(&migrator)
-		return migrator
 	case db.IMPORT_EXPORT:
 		migrator.exporter = &exporterT{}
 		migrator.importer = &importerT{}
 		// Order of this setup is important. Exporter should be first setup before importer because export needs to capture last ds for export before accepting new events
 		migrator.exporter.Setup(&migrator, pf)
 		migrator.importer.Setup(&migrator)
-		return migrator
+	default:
+		jobsDB.RecoverFromMigrationJournal()
+		panic(fmt.Sprintf("Unknown Migration Mode : %s", mode))
 	}
-	jobsDB.RecoverFromMigrationJournal()
-
-	panic(fmt.Sprintf("Unknown Migration Mode : %s", mode))
+	return migrator
 }
 
 func loadConfig() {
@@ -104,8 +102,8 @@ func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 		conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
 	case "GCS":
 		credentialsFilePath := config.GetRequiredEnv("GOOGLE_APPLICATION_CREDENTIALS")
-		credentials, error := ioutil.ReadFile(credentialsFilePath)
-		if error != nil {
+		credentials, err := os.ReadFile(credentialsFilePath)
+		if err != nil {
 			panic(fmt.Sprintf("Error when reading GCS credentials file: %s", credentialsFilePath))
 		}
 		conf["credentials"] = string(credentials)
@@ -114,11 +112,12 @@ func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 	}
 
 	settings := filemanager.SettingsT{Provider: provider, Config: conf}
-	fm, err := filemanager.DefaultFileManagerFactory.New(&settings)
-	if err == nil {
-		return fm
+	fileManagerFactory := filemanager.DefaultFileManagerFactory
+	uploader, err := fileManagerFactory.New(&settings)
+	if err != nil {
+		panic("Unable to get file-manager")
 	}
-	panic("Unable to get filemanager")
+	return uploader
 }
 
 // GetMigratingFromVersion gives the from version during migration

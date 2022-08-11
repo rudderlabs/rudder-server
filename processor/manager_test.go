@@ -169,7 +169,6 @@ func TestProcessorManager(t *testing.T) {
 	enablePipelining = false
 	RegisterTestingT(t)
 
-	dbRetention := time.Minute * 5
 	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
@@ -183,7 +182,7 @@ func TestProcessorManager(t *testing.T) {
 	queryFilters := jobsdb.QueryFiltersT{
 		CustomVal: true,
 	}
-	err := tempDB.Setup(jobsdb.Write, true, "gw", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
