@@ -931,8 +931,8 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 
 	// If the destinationJob has come through router transform,
 	// drop the request if it is of a failed user, else send
-	for _, metadata := range destinationJob.JobMetadataArray {
-		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
+	for i := range destinationJob.JobMetadataArray {
+		if _, ok := failedUserIDsMap[destinationJob.JobMetadataArray[i].UserID]; ok {
 			return false
 		}
 	}
