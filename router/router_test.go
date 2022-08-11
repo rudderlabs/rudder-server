@@ -27,6 +27,7 @@ import (
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
+	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -759,11 +760,11 @@ var _ = Describe("Router", func() {
 				Job3 u2
 				Job4 u2
 				Job5 u3
-			{[1]: T200 [2]: T500, [3]: T500, [4]: T200, [5]: T200}
+			{[1]: T200 [2]: T400, [3]: T722, [4]: T200, [5]: T200}
 
 			[1] should be sent
 			[2] shouldn't be sent
-			[3] shouldn't be sent
+			[3] shouldn't be sent and saved to proc_error
 			[4] should be dropped
 			[5] should be sent
 		*/
@@ -925,7 +926,7 @@ var _ = Describe("Router", func() {
 							},
 							Batched:    false,
 							Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-							StatusCode: 500,
+							StatusCode: 400,
 						},
 						{
 							Message: []byte(`{"message": "some transformed message"}`),
@@ -938,7 +939,7 @@ var _ = Describe("Router", func() {
 							},
 							Batched:    false,
 							Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-							StatusCode: 200,
+							StatusCode: transformer.DropStatusCode,
 						},
 						{
 							Message: []byte(`{"message": "some transformed message"}`),
@@ -959,6 +960,21 @@ var _ = Describe("Router", func() {
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
+					Expect(len(jobList)).To(Equal(1))
+					job := jobList[0]
+					var parameters map[string]interface{}
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						panic(err)
+					}
+
+					Expect(parameters["stage"]).To(Equal("router"))
+					Expect(job.JobID).To(Equal(unprocessedJobsList[1].JobID))
+					Expect(job.CustomVal).To(Equal(unprocessedJobsList[1].CustomVal))
+					Expect(job.UserID).To(Equal(unprocessedJobsList[1].UserID))
+				})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
