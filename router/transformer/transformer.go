@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	netUrl "net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -54,11 +54,17 @@ type ProxyRequestParams struct {
 	BaseUrl      string
 }
 
+type HTTPProxyResponse struct {
+	respData   []byte
+	statusCode int
+	err        error
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
 	Setup(timeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody string, contentType string)
 }
 
 // NewTransformer creates a new transformer
@@ -195,27 +201,19 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
 	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": proxyReqParams.DestName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobId)
 
 	rdlTime := time.Now()
-	respData, respCode, requestError := trans.makeTfProxyRequest(ctx, proxyReqParams)
+	httpPrxResp := trans.makeTfProxyRequest(ctx, proxyReqParams)
+	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
 	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
 	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {
-		return respCode, requestError.Error()
-	}
-
-	// Detecting content type of the respBody
-	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
-	// If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(contentTypeHeader, "text") ||
-		strings.Contains(contentTypeHeader, "application/json") ||
-		strings.Contains(contentTypeHeader, "application/xml")) {
-		respData = []byte("")
+		return respCode, requestError.Error(), "text/plain; charset=utf-8"
 	}
 
 	/**
@@ -239,17 +237,11 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyReq
 	if err != nil {
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
-		respData = []byte(errStr)
-		respCode = http.StatusBadRequest
-		return respCode, string(respData)
-	}
-	// unmarshal success
-	respData, err = jsonfast.Marshal(transformerResponse)
-	if err != nil {
-		panic(fmt.Errorf("[TransformerProxy]:: failed to Marshal proxy response : %+v", err))
+		respCode = http.StatusInternalServerError
+		return respCode, errStr, "text/plain; charset=utf-8"
 	}
 
-	return respCode, string(respData)
+	return respCode, string(respData), "application/json"
 }
 
 // is it ok to use same client for network and transformer calls? need to understand timeout setup in router
@@ -264,9 +256,8 @@ func (trans *HandleT) Setup(netClientTimeout time.Duration) {
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ([]byte, int, error) {
+func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) HTTPProxyResponse {
 	var respData []byte
-	var respCode int
 
 	baseUrl := proxyReqParams.BaseUrl
 	destName := proxyReqParams.DestName
@@ -280,7 +271,11 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusBadRequest, err
+		return HTTPProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.tfProxyTimeout+timeoutDuration).Milliseconds(), 10))
@@ -297,42 +292,63 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 		"destination": destName,
 	}).SendTiming(reqRoundTripTime)
 
-	if err, ok := err.(*netUrl.Error); ok && err.Timeout() {
+	if os.IsTimeout(err) {
 		// A timeout error occurred
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusGatewayTimeout, err
+		return HTTPProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusGatewayTimeout,
+			err:        err,
+		}
 	} else if err != nil {
 		// This was an error, but not a timeout
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusInternalServerError, err
+		return HTTPProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
 	} else if resp.StatusCode == http.StatusNotFound {
 		// Actually Router wouldn't send any destination to proxy unless it already exists
 		// But if accidentally such a request is sent, we'd probably need to handle for better
 		// understanding of the response
 		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, notFoundErr)
-		return []byte{}, resp.StatusCode, notFoundErr
+		return HTTPProxyResponse{
+			respData:   []byte{},
+			statusCode: resp.StatusCode,
+			err:        notFoundErr,
+		}
 	}
 
 	// error handling if body is missing
 	if resp.Body == nil {
-		respData = []byte("[TransformerProxy] :: transformer returned empty response body")
-		respCode = http.StatusBadRequest
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, respCode, string(respData))
-		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
+		errStr := "empty response body"
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, http.StatusBadRequest, string(respData))
+		return HTTPProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        fmt.Errorf(errStr),
+		}
 	}
 
 	respData, err = io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`[TransformerProxy] :: failed to read response body, Error:: %+v`, err))
-		respCode = http.StatusBadRequest
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, respCode, respCode, string(respData))
-		return respData, respCode, err
+		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, http.StatusBadRequest, string(respData))
+		return HTTPProxyResponse{
+			respData:   []byte{}, // sending this as it is not getting sent at all
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
 	}
-	respCode = resp.StatusCode
-	return respData, respCode, nil
+
+	return HTTPProxyResponse{
+		respData:   respData,
+		statusCode: resp.StatusCode,
+	}
 }
 
 func getBatchURL() string {

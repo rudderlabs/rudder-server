@@ -670,8 +670,8 @@ func (worker *workerT) processDestinationJobs() {
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-								defer cancel()
+								var sendCtx context.Context
+								var cancel context.CancelFunc
 								// transformer proxy start
 								if worker.rt.transformerProxy {
 									jobId := destinationJob.JobMetadataArray[0].JobID
@@ -681,9 +681,16 @@ func (worker *workerT) processDestinationJobs() {
 										JobId:        jobId,
 										ResponseData: val,
 									}
+									// For http.client for proxy we are using
+									// backendProxyTimeout + netClientTimeout as the timeout value
+									// we are adding 20ms extra here to make sure the context timeout is at higher value
+									// Should we reduce the value from 20 to 10 ms ?
+									prxCtxTimeout := worker.rt.backendProxyTimeout + worker.rt.netClientTimeout + 20*time.Millisecond
+									sendCtx, cancel = context.WithTimeout(ctx, prxCtxTimeout)
+									defer cancel()
 									rtlTime := time.Now()
 									// Should we change this context to sendCtx and probably adjust the timeout for the context ?
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
+									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(sendCtx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobId)
 									authType := router_utils.GetAuthType(destinationJob.Destination)
@@ -700,6 +707,8 @@ func (worker *workerT) processDestinationJobs() {
 										})
 									}
 								} else {
+									sendCtx, cancel = context.WithTimeout(ctx, worker.rt.netClientTimeout)
+									defer cancel()
 									rdlTime := time.Now()
 									resp := worker.rt.netHandle.SendPost(sendCtx, val)
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
