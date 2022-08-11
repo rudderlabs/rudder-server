@@ -255,7 +255,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s."%s" LIKE "%s"`, schemaIdentifier, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
