@@ -64,7 +64,7 @@ type HTTPProxyResponse struct {
 type Transformer interface {
 	Setup(timeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody string, contentType string)
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
 }
 
 // NewTransformer creates a new transformer
