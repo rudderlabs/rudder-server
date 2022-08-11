@@ -266,7 +266,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	for _, clusterDB := range handle.ClusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			sqlStatement := fmt.Sprintf(`
-			ALTER TABLE rudderdb.%[1]s_shard`,
+				ALTER TABLE rudderdb.%[1]s_shard`,
 				tableName,
 			)
 			for _, columnInfo := range columnInfos {
@@ -278,6 +278,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 			}
 			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
+			
 			_, err := clusterDB.Exec(sqlStatement)
 			require.NoError(t, err)
 		}
