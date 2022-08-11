@@ -1236,9 +1236,9 @@ func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, 
 	// Sending destination response to config backend
 	switch status.ErrorCode {
 	// no live event in case of internal errors
-	case strconv.Itoa(transformer.DropStatusCode):
-	case strconv.Itoa(types.RouterUnMarshalErrorCode):
-	case strconv.Itoa(types.RouterTimedOutStatusCode):
+	case strconv.Itoa(transformer.DropStatusCode),
+		strconv.Itoa(types.RouterUnMarshalErrorCode),
+		strconv.Itoa(types.RouterTimedOutStatusCode):
 	default:
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
