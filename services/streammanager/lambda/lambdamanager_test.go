@@ -3,6 +3,9 @@ package lambda
 import (
 	"encoding/json"
 	"errors"
+	"testing"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/golang/mock/gomock"
@@ -10,8 +13,6 @@ import (
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 var (
