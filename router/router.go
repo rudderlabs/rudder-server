@@ -320,7 +320,7 @@ func loadConfig() {
 func (worker *workerT) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if worker.rt.transformerProxy {
-		d = worker.rt.backendProxyTimeout * 2
+		d = (worker.rt.backendProxyTimeout + worker.rt.netClientTimeout) * 2
 	} else {
 		d = worker.rt.netClientTimeout * 2
 	}

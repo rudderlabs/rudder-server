@@ -42,6 +42,7 @@ type ProxyContextTc struct {
 type ProxyResponseTc struct {
 	// The test-case name for better understanding of what we're trying to do!
 	name     string
+	destName string
 	Expected TcExpected
 	Proxy    TcProxy
 	// The timeout we have set from router
@@ -55,9 +56,10 @@ type ProxyResponseTc struct {
 
 // error response from destination in transformer proxy
 var (
-	proxyResponseTcs = map[string]ProxyResponseTc{
-		"good_dest": {
-			name: "should pass for good_dest",
+	proxyResponseTcs = []ProxyResponseTc{
+		{
+			name:     "should pass for good_dest",
+			destName: "good_dest",
 			Expected: TcExpected{
 				StCode:      http.StatusOK,
 				Body:        `{"status": 200, "message": "", "destinationResponse":"good_dest"}`,
@@ -86,8 +88,9 @@ var (
 				Files: map[string]interface{}{},
 			},
 		},
-		"good_dest_1": {
-			name: "should throw timeout exception as the timeout in http.client is lower than proxy",
+		{
+			name:     "should throw timeout exception as the timeout in http.client is lower than proxy",
+			destName: "good_dest_1",
 			Expected: TcExpected{
 				StCode:      http.StatusGatewayTimeout,
 				Body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
@@ -116,8 +119,9 @@ var (
 				Files: map[string]interface{}{},
 			},
 		},
-		"ctx_timeout_dest": {
-			name: "should throw timeout exception due to context getting timedout",
+		{
+			name:     "should throw timeout exception due to context getting timedout",
+			destName: "ctx_timeout_dest",
 			Expected: TcExpected{
 				StCode:      http.StatusGatewayTimeout,
 				Body:        `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
@@ -148,8 +152,9 @@ var (
 				Files: map[string]interface{}{},
 			},
 		},
-		"ctx_cancel_dest": {
-			name: "should throw timeout exception due to context getting cancelled immediately",
+		{
+			name:     "should throw timeout exception due to context getting cancelled immediately",
+			destName: "ctx_cancel_dest",
 			Expected: TcExpected{
 				StCode:      http.StatusInternalServerError,
 				Body:        `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
@@ -179,8 +184,9 @@ var (
 				Files: map[string]interface{}{},
 			},
 		},
-		"not_found_dest": {
-			name: "should fail with not found error for not_found_dest",
+		{
+			name:     "should fail with not found error for not_found_dest",
+			destName: "not_found_dest",
 			Expected: TcExpected{
 				StCode:      http.StatusNotFound,
 				Body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
@@ -223,17 +229,14 @@ func TestProxyRequest(t *testing.T) {
 	t.Setenv("RSERVER_HTTP_CLIENT_TIMEOUT", "1s")
 	Initialization()
 
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/v0/destinations/{destName}/proxy", proxyHandlerFunc)
-	srv := httptest.NewServer(srvMux)
-	defer srv.Close()
-
-	for destName, tc := range proxyResponseTcs {
+	for _, tc := range proxyResponseTcs {
 		// skip tests for the mentioned destinations
-		if destName == "not_found_dest" {
+		if tc.destName == "not_found_dest" {
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(mockProxyHandler(tc))
+			defer srv.Close()
 			tr := rtTf.NewTransformer()
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
@@ -255,7 +258,7 @@ func TestProxyRequest(t *testing.T) {
 
 			reqParams := &rtTf.ProxyRequestParams{
 				ResponseData: tc.postParametersT,
-				DestName:     destName,
+				DestName:     tc.destName,
 				BaseUrl:      srv.URL,
 			}
 			stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
@@ -272,8 +275,11 @@ func TestProxyRequest(t *testing.T) {
 	}
 
 	// Not found case
-	tc := proxyResponseTcs["not_found_dest"]
+	tc := proxyResponseTcs[4]
 	t.Run(tc.name, func(t *testing.T) {
+		srv := httptest.NewServer(mockProxyHandler(tc))
+		defer srv.Close()
+
 		tr := rtTf.NewTransformer()
 		tr.Setup(tc.rtTimeout)
 		ctx := context.TODO()
@@ -291,23 +297,27 @@ func TestProxyRequest(t *testing.T) {
 }
 
 // A kind of mock for transformer proxy endpoint in transformer
-func proxyHandlerFunc(w http.ResponseWriter, req *http.Request) {
-	vars := mux.Vars(req)
-	destName, ok := vars["destName"]
-	if !ok {
-		// This case wouldn't occur I guess
-		http.Error(w, "Wrong url being sent", http.StatusInternalServerError)
-		return
-	}
-	tc := proxyResponseTcs[destName]
-	// sleep is being used to mimic the waiting in actual transformer response
-	if tc.Proxy.TimeoutValue.Milliseconds() > 0 {
-		time.Sleep(tc.Proxy.TimeoutValue)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(tc.Proxy.StCode)
-	// Lint error fix
-	checkAndSendResponse(&w, []byte(tc.Proxy.Response))
+func mockProxyHandler(tc ProxyResponseTc) *mux.Router {
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/v0/destinations/{destName}/proxy", func(w http.ResponseWriter, req *http.Request) {
+		vars := mux.Vars(req)
+		_, ok := vars["destName"]
+		if !ok {
+			// This case wouldn't occur I guess
+			http.Error(w, "Wrong url being sent", http.StatusInternalServerError)
+			return
+		}
+
+		// sleep is being used to mimic the waiting in actual transformer response
+		if tc.Proxy.TimeoutValue.Milliseconds() > 0 {
+			time.Sleep(tc.Proxy.TimeoutValue)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(tc.Proxy.StCode)
+		// Lint error fix
+		checkAndSendResponse(&w, []byte(tc.Proxy.Response))
+	})
+	return srvMux
 }
 
 func checkAndSendResponse(w *http.ResponseWriter, resp []byte) {
