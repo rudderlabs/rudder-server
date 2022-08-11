@@ -3,10 +3,8 @@ package main_test
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -36,8 +33,7 @@ import (
 
 var (
 	testData               []test
-	mu                     sync.Mutex
-	testDataInitialized    = make(chan string)
+	testDataMu             sync.Mutex
 	manager                kvstoremanager.KVStoreManager
 	fieldCountBeforeDelete []int
 	fieldCountAfterDelete  []int
@@ -48,7 +44,6 @@ var (
 	uploadOutputs []filemanager.UploadOutput
 
 	redisAddress, minioEndpoint string
-	hold                        bool
 	fileList                    []string
 
 	minioAccessKeyId     = "MYACCESSKEY"
@@ -74,134 +69,36 @@ const (
 	goldenDir = "./goldenDir"
 )
 
-func TestMain(m *testing.M) {
+func TestFlow(t *testing.T) {
+	defer blockOnHold(t)
+
+	// Loading config
 	initialize.Init()
-	os.Exit(run(m))
-}
-
-func handler() http.Handler {
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
-	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
-
-	return srvMux
-}
-
-func insertRedisData(address string) {
-	redisInputTestData = []struct {
-		key    string
-		fields map[string]interface{}
-	}{
-		{
-			key: "Jermaine1473336609491897794707338",
-			fields: map[string]interface{}{
-				"Phone": "6463633841",
-				"Email": "dorowane8n285680461479465450293436@gmail.com",
-			},
-		},
-	}
-
-	destName := "REDIS"
-	destConfig := map[string]interface{}{
-		"clusterMode": false,
-		"address":     address,
-	}
-	manager = kvstoremanager.New(destName, destConfig)
-
-	// inserting test data in Redis
-	for _, test := range redisInputTestData {
-		err := manager.HMSet(test.key, test.fields)
-		if err != nil {
-			fmt.Println("error while inserting into redis using HMSET: ", err)
-		}
-	}
-
-	fieldCountBeforeDelete = make([]int, len(redisInputTestData))
-	for i, test := range redisInputTestData {
-		result, err := manager.HGetAll(test.key)
-		if err != nil {
-			fmt.Println("error while getting data from redis using HMGET: ", err)
-		}
-		fieldCountBeforeDelete[i] = len(result)
-	}
-}
-
-func insertMinioData() {
-	// getting list of files in `testData` directory while will be used to testing filemanager.
-	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-		if regexRequiredSuffix.Match([]byte(path)) {
-			fileList = append(fileList, path)
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	if len(fileList) == 0 {
-		panic("file list empty, no data to test.")
-	}
-	fmFactory := filemanager.FileManagerFactoryT{}
-	fm, err := fmFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
-		Config:   minioConfig,
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	// upload all files
-	for _, file := range fileList {
-		filePtr, err := os.Open(file)
-		if err != nil {
-			panic(err)
-		}
-		uploadOutput, err := fm.Upload(context.TODO(), filePtr)
-		if err != nil {
-			panic(err)
-		}
-		uploadOutputs = append(uploadOutputs, uploadOutput)
-		filePtr.Close()
-	}
-	fmt.Println("test files upload to minio mock bucket successful")
-}
-
-func run(m *testing.M) int {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
 
 	// starting redis server to mock redis-destination
 	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
+	require.NoError(t, err)
 
 	resource, err := pool.Run("redis", "alpine3.14", []string{})
-	if err != nil {
-		log.Panicf("Could not start resource: %s", err)
-	}
-	defer func() {
+	require.NoError(t, err)
+	t.Cleanup(func() {
 		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			t.Logf("Could not purge resource: %s", err)
 		}
-	}()
+	})
 
 	redisAddress = fmt.Sprintf("localhost:%s", resource.GetPort("6379/tcp"))
-	if err := pool.Retry(func() error {
-		var err error
+	err = pool.Retry(func() error {
 		client := redis.NewClient(&redis.Options{
 			Addr:     redisAddress,
 			Password: "",
 			DB:       0,
 		})
-		if err != nil {
-			return err
-		}
 		return client.Ping().Err()
-	}); err != nil {
-		log.Panicf("Could not connect to docker: %s", err)
-	}
-	insertRedisData(redisAddress)
+	})
+	require.NoError(t, err)
+	t.Log("Redis server is up and running")
+	insertRedisData(t, redisAddress)
 
 	// starting minio server for batch-destination
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -214,19 +111,17 @@ func run(m *testing.M) int {
 			fmt.Sprintf("MINIO_SITE_REGION=%s", minioRegion),
 		},
 	})
-	if err != nil {
-		panic(fmt.Errorf("Could not start resource: %s", err))
-	}
-	defer func() {
+	require.NoError(t, err)
+	t.Cleanup(func() {
 		if err := pool.Purge(minioResource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			t.Logf("Could not purge resource: %s", err)
 		}
-	}()
+	})
 
 	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 	minioConfig["endPoint"] = minioEndpoint
 	// check if minio server is up & running.
-	if err := pool.Retry(func() error {
+	err = pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -236,90 +131,71 @@ func run(m *testing.M) int {
 			return fmt.Errorf("status code not OK")
 		}
 		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-	fmt.Println("minio is up & running properly")
+	})
+	require.NoError(t, err)
 
 	minioClient, err := minio.New(minioEndpoint, minioAccessKeyId, minioSecretAccessKey, false)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("minioClient created successfully")
+	require.NoError(t, err)
 
 	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(minioBucket, minioRegion)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("bucket created successfully")
-	insertMinioData()
+	require.NoError(t, err)
+	insertMinioData(t)
+	t.Log("Minio server is up and running")
 
 	// starting http server to mock regulation-manager
-	svr := httptest.NewServer(handler())
-	defer svr.Close()
+	srv := httptest.NewServer(handler(t))
+	t.Cleanup(srv.Close)
+	t.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
+	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	t.Setenv("URL_PREFIX", srv.URL)
+	backendconfig.Init()
+
+	// Preparing data for testing
+	testData = []test{
+		{
+			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			getJobRespCode:    200,
+			updateJobRespCode: 201,
+			status:            "pending",
+		},
+		{
+			respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			getJobRespCode:    200,
+			updateJobRespCode: 201,
+			status:            "pending",
+		},
+	}
+
+	// Starting service
+	done := make(chan struct{})
 	svcCtx, svcCancel := context.WithCancel(context.Background())
-	code := make(chan int, 1)
+	t.Cleanup(func() { svcCancel(); <-done })
 	go func() {
-		os.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-		os.Setenv("CONFIG_BACKEND_URL", svr.URL)
-		os.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
-		backendconfig.Init()
-		c := m.Run()
-		svcCancel()
-		code <- c
+		defer close(done)
+		defer svcCancel()
+		main.Run(svcCtx)
 	}()
-	<-testDataInitialized
-	_ = os.Setenv("URL_PREFIX", svr.URL)
-	main.Run(svcCtx)
-	statusCode := <-code
 
-	blockOnHold()
-	return statusCode
-}
-
-type test struct {
-	respBody          string
-	getJobRespCode    int
-	updateJobRespCode int
-	status            model.JobStatus
-}
-
-func TestFlow(t *testing.T) {
-	t.Run("TestFlow", func(t *testing.T) {
-		testData = []test{
-			{
-				respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
-				getJobRespCode:    200,
-				updateJobRespCode: 201,
-				status:            "pending",
-			},
-			{
-				respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
-				getJobRespCode:    200,
-				updateJobRespCode: 201,
-				status:            "pending",
-			},
-		}
-		testDataInitialized <- "done"
+	t.Run("test-flow", func(t *testing.T) {
 		require.Eventually(t, func() bool {
+			testDataMu.Lock()
+			defer testDataMu.Unlock()
 			for _, test := range testData {
-				mu.Lock()
-				status := test.status
-				mu.Unlock()
-				if status == "pending" && test.getJobRespCode == 200 {
+				if test.status == "pending" && test.getJobRespCode == 200 {
 					return false
 				}
 			}
 			return true
-		}, time.Minute*3, time.Second*2)
+		}, 3*time.Minute, 150*time.Millisecond)
 
 		fieldCountAfterDelete = make([]int, len(redisInputTestData))
 		for i, test := range redisInputTestData {
 			key := fmt.Sprintf("user:%s", test.key)
 			result, err := manager.HGetAll(key)
 			if err != nil {
-				fmt.Println("error while getting data from redis using HMGET: ", err)
+				t.Logf("Error while getting data from redis using HMGET: %v", err)
 			}
 			fieldCountAfterDelete[i] = len(result)
 		}
@@ -333,11 +209,12 @@ func TestFlow(t *testing.T) {
 	})
 }
 
-func getJob(w http.ResponseWriter, r *http.Request) {
+func getJob(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	testDataMu.Lock()
+	defer testDataMu.Unlock()
 	for i, test := range testData {
-		status := test.status
-		if status == "pending" {
+		if test.status == "pending" {
 			w.WriteHeader(testData[i].getJobRespCode)
 			_, _ = w.Write([]byte(testData[i].respBody))
 			return
@@ -355,12 +232,13 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	testDataMu.Lock()
 	if status.Status == "complete" {
-		mu.Lock()
 		testData[jobID-1].status = "complete"
-		mu.Unlock()
 	}
-	w.WriteHeader(testData[jobID-1].updateJobRespCode)
+	updateJobRespCode := testData[jobID-1].updateJobRespCode
+	testDataMu.Unlock()
+	w.WriteHeader(updateJobRespCode)
 
 	body, err := json.Marshal(struct{}{})
 	if err != nil {
@@ -371,7 +249,7 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func getWorkspaceConfig(w http.ResponseWriter, r *http.Request) {
+func getWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
@@ -418,71 +296,154 @@ func verifyBatchDelete(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
+	require.NoError(t, err, "batch verification failed")
 	if len(goldenFileList) == 0 {
-		require.NoError(t, fmt.Errorf("golden file list empty."), "expected no error")
+		t.Fatalf("Expected no error but found golden file list empty")
 	}
 
 	filePtr, err := os.Open(goldenFileList[0])
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
+	require.NoError(t, err, "batch verification failed")
 	goldenFile, err := io.ReadAll(filePtr)
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
-	filePtr.Close()
+	require.NoError(t, err, "batch verification failed")
+	require.NoError(t, filePtr.Close())
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config:   minioConfig,
 	})
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
+	require.NoError(t, err, "batch verification failed")
 
 	DownloadedFileName := "TmpDownloadedFile"
 	filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
-	defer os.Remove(DownloadedFileName)
+	require.NoError(t, err, "batch verification failed")
+	defer func() { _ = os.Remove(DownloadedFileName) }()
 	key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
 	err = fm.Download(context.TODO(), filePtr, key)
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
-	filePtr.Close()
+	require.NoError(t, err, "batch verification failed")
+	require.NoError(t, filePtr.Close())
 
 	filePtr, err = os.Open(DownloadedFileName)
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
-	}
+	require.NoError(t, err, "batch verification failed")
 	downloadedFile, err := io.ReadAll(filePtr)
-	if err != nil {
-		require.NoError(t, err, "batch verification failed")
+	require.NoError(t, err, "batch verification failed")
+	require.NoError(t, filePtr.Close())
+	require.Equal(t, string(goldenFile), string(downloadedFile), "downloaded file different than golden file")
+}
+
+func handler(t *testing.T) http.Handler {
+	t.Helper()
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
+	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
+	srvMux.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			t.Logf("Got call to %s", req.URL.Path)
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	return srvMux
+}
+
+func insertRedisData(t *testing.T, address string) {
+	t.Helper()
+
+	redisInputTestData = []struct {
+		key    string
+		fields map[string]interface{}
+	}{
+		{
+			key: "Jermaine1473336609491897794707338",
+			fields: map[string]interface{}{
+				"Phone": "6463633841",
+				"Email": "dorowane8n285680461479465450293436@gmail.com",
+			},
+		},
 	}
-	filePtr.Close()
-	equal := strings.Compare(string(goldenFile), string(downloadedFile))
-	if equal != 0 {
-		require.NoError(t, fmt.Errorf("downloaded file different than golden file"), "batch verification failed")
+
+	destName := "REDIS"
+	destConfig := map[string]interface{}{
+		"clusterMode": false,
+		"address":     address,
+	}
+	manager = kvstoremanager.New(destName, destConfig)
+
+	// inserting test data in Redis
+	for _, test := range redisInputTestData {
+		err := manager.HMSet(test.key, test.fields)
+		if err != nil {
+			t.Logf("Error while inserting into redis using HMSET: %v", err)
+		}
+	}
+
+	fieldCountBeforeDelete = make([]int, len(redisInputTestData))
+	for i, test := range redisInputTestData {
+		result, err := manager.HGetAll(test.key)
+		if err != nil {
+			t.Logf("Error while getting data from redis using HMGET: %v", err)
+		}
+		fieldCountBeforeDelete[i] = len(result)
 	}
 }
 
-func blockOnHold() {
-	if !hold {
+func insertMinioData(t *testing.T) {
+	t.Helper()
+
+	// getting list of files in `testData` directory while will be used to testing filemanager.
+	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
+		if regexRequiredSuffix.MatchString(path) {
+			fileList = append(fileList, path)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	if len(fileList) == 0 {
+		t.Fatal("File list empty, no data to test")
+	}
+
+	fmFactory := filemanager.FileManagerFactoryT{}
+	fm, err := fmFactory.New(&filemanager.SettingsT{
+		Provider: "S3",
+		Config:   minioConfig,
+	})
+	require.NoError(t, err)
+
+	// upload all files
+	for _, file := range fileList {
+		filePtr, err := os.Open(file)
+		require.NoError(t, err)
+		uploadOutput, err := fm.Upload(context.TODO(), filePtr)
+		require.NoError(t, err)
+		uploadOutputs = append(uploadOutputs, uploadOutput)
+		require.NoError(t, filePtr.Close())
+	}
+
+	t.Log("Test files upload to minio mock bucket successful")
+}
+
+func blockOnHold(t *testing.T) {
+	t.Helper()
+	if os.Getenv("HOLD") != "1" {
 		return
 	}
 
-	log.Println("Test on hold, before cleanup")
-	log.Println("Press Ctrl+C to exit")
+	t.Log("Test on hold, before cleanup")
+	t.Log("Press Ctrl+C to exit")
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 	<-c
-	close(c)
+}
+
+type test struct {
+	respBody          string
+	getJobRespCode    int
+	updateJobRespCode int
+	status            model.JobStatus
+}
+
+type statusJobSchema struct {
+	Status string `json:"status"`
 }

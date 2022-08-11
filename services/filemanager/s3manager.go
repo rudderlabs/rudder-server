@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -14,27 +15,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	appConfig "github.com/rudderlabs/rudder-server/config"
 )
 
 // Upload passed in file to s3
 func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	uploadInput := &awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
@@ -48,11 +35,11 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 
 	uploadSession, err := manager.getSession(ctx)
 	if err != nil {
-		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
+		return UploadOutput{}, fmt.Errorf("error starting S3 session: %w", err)
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	output, err := s3manager.UploadWithContext(ctx, uploadInput)
@@ -69,12 +56,12 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 func (manager *S3Manager) Download(ctx context.Context, output *os.File, key string) error {
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return fmt.Errorf(`error starting S3 session: %v`, err)
+		return fmt.Errorf("error starting S3 session: %w", err)
 	}
 
-	downloader := s3manager.NewDownloader(sess)
+	downloader := awsS3Manager.NewDownloader(sess)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	_, err = downloader.DownloadWithContext(ctx, output,
@@ -122,7 +109,7 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return fmt.Errorf(`error starting S3 session: %v`, err)
+		return fmt.Errorf("error starting S3 session: %w", err)
 	}
 
 	var objects []*s3.ObjectIdentifier
@@ -145,7 +132,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 			},
 		}
 
-		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
 
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
@@ -175,11 +162,13 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		return nil, errors.New("no storage bucket configured to downloader")
 	}
 	var region string
-	var err error
 	if !manager.Config.UseGlue || manager.Config.Region == nil {
-		getRegionSession := session.Must(session.NewSession())
+		getRegionSession, err := session.NewSession()
+		if err != nil {
+			return nil, err
+		}
 
-		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
 
 		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
@@ -191,25 +180,32 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		region = *manager.Config.Region
 	}
 	var sess *session.Session
+	var err error
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
 		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess = session.Must(session.NewSession(&aws.Config{
+		sess, err = session.NewSession(&aws.Config{
 			Region:                        aws.String(region),
 			CredentialsChainVerboseErrors: aws.Bool(true),
 			Endpoint:                      manager.Config.Endpoint,
 			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
 			DisableSSL:                    manager.Config.DisableSSL,
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess = session.Must(session.NewSession(&aws.Config{
+		sess, err = session.NewSession(&aws.Config{
 			Region:                        aws.String(region),
 			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 			CredentialsChainVerboseErrors: aws.Bool(true),
 			Endpoint:                      manager.Config.Endpoint,
 			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
 			DisableSSL:                    manager.Config.DisableSSL,
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return sess, nil
 }
@@ -224,7 +220,7 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return []*FileObject{}, fmt.Errorf(`error starting S3 session: %v`, err)
+		return []*FileObject{}, fmt.Errorf("error starting S3 session: %w", err)
 	}
 	// Create S3 service client
 	svc := s3.New(sess)
@@ -240,7 +236,7 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	}
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Get the list of items
@@ -265,11 +261,19 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 type S3Manager struct {
 	Config  *S3Config
 	session *session.Session
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *S3Manager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *S3Manager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "S3", 120, time.Second)
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

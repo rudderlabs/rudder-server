@@ -98,7 +98,11 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpStatus := http.StatusInternalServerError
+		if errors.Is(err, rsources.ErrOperationNotSupported) {
+			httpStatus = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), httpStatus)
 		return
 	}
 

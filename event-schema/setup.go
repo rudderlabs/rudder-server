@@ -21,8 +21,10 @@ func GetInstance() types.EventSchemasI {
 	defer eventSchemaManagerLock.Unlock()
 	if eventSchemaManager == nil {
 		appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-		schemaManager := &EventSchemaManagerT{disableInMemoryCache: appTypeStr == app.GATEWAY}
-		schemaManager.Setup()
+		schemaManager := getEventSchemaManager(
+			createDBConnection(),
+			appTypeStr == app.GATEWAY)
+		schemaManager.Setup() // Kickoff the corresponding supporting services.
 		eventSchemaManager = schemaManager
 	}
 	return eventSchemaManager

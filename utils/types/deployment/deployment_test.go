@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func Test_GetFromEnv(t *testing.T) {
@@ -45,21 +46,6 @@ func Test_GetFromEnv(t *testing.T) {
 				"HOSTED_SERVICE": "false",
 			},
 			expectedType: deployment.DedicatedType,
-		},
-
-		// HostedType:
-		{
-			name: "legacy HOSTED_SERVICE is set",
-			envs: map[string]string{
-				"HOSTED_SERVICE": "true",
-			},
-			expectedType: deployment.HostedType,
-		},
-		{
-			envs: map[string]string{
-				"DEPLOYMENT_TYPE": "HOSTED",
-			},
-			expectedType: deployment.HostedType,
 		},
 
 		// MultiTenantType:

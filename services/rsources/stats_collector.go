@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/gofrs/uuid"
 	"github.com/tidwall/gjson"
@@ -72,6 +74,10 @@ type statKey struct {
 	JobTargetKey
 }
 
+func (sk statKey) String() string {
+	return strings.Join([]string{sk.jobRunId, sk.TaskRunID, sk.SourceID, sk.DestinationID}, `#`)
+}
+
 var _ StatsCollector = (*statsCollector)(nil)
 
 type statsCollector struct {
@@ -81,6 +87,28 @@ type statsCollector struct {
 	jobIdsToRecordIdIndex map[int64]json.RawMessage
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]json.RawMessage
+}
+
+func (r *statsCollector) orderedStatMapKeys() []statKey {
+	keys := make([]statKey, 0, len(r.statsIndex))
+	for k := range r.statsIndex {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].String() < keys[j].String()
+	})
+	return keys
+}
+
+func (r *statsCollector) orderedFailedRecordsKeys() []statKey {
+	keys := make([]statKey, 0, len(r.failedRecordsIndex))
+	for k := range r.failedRecordsIndex {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].String() < keys[j].String()
+	})
+	return keys
 }
 
 func (r *statsCollector) JobsStored(jobs []*jobsdb.JobT) {
@@ -140,7 +168,11 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	if r.jobService == nil {
 		return fmt.Errorf("No JobService provided during initialization")
 	}
-	for k, v := range r.statsIndex {
+	// sort the maps to avoid deadlocks
+	statKeys := r.orderedStatMapKeys()
+	for i := range statKeys {
+		k := statKeys[i]
+		v := r.statsIndex[k]
 		if v.Failed+v.In+v.Out == 0 {
 			continue
 		}
@@ -149,7 +181,10 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 	}
-	for k, v := range r.failedRecordsIndex {
+	failedRecordsKeys := r.orderedFailedRecordsKeys()
+	for i := range failedRecordsKeys {
+		k := failedRecordsKeys[i]
+		v := r.failedRecordsIndex[k]
 		err := r.jobService.AddFailedRecords(ctx, tx, k.jobRunId, k.JobTargetKey, v)
 		if err != nil {
 			return err

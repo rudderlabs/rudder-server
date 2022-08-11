@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
@@ -498,6 +501,54 @@ var _ = Describe("Misc", func() {
 		Entry("Unique Test 2 : ", []string{"a", "b", "c"}, []string{"a", "b", "c"}),
 	)
 })
+
+func TestReplaceMultiRegex(t *testing.T) {
+	inputs := []struct {
+		expression string
+		expList    map[string]string
+		expected   string
+	}{
+		{
+			expression: `CREDENTIALS = (AWS_KEY_ID='RS8trQDxFH3dbzPL' AWS_SECRET_KEY='dWcwQblVpEZgELvK' AWS_TOKEN='BxyNrYig8z5yXPpiEMK8niux')`,
+			expList: map[string]string{
+				"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+				"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+				"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
+			},
+			expected: `CREDENTIALS = (AWS_KEY_ID='***' AWS_SECRET_KEY='***' AWS_TOKEN='***')`,
+		},
+		{
+			expression: `STORAGE_INTEGRATION = 'VAVDUDJPxa2w8vk1EY6BA4on'`,
+			expList: map[string]string{
+				"STORAGE_INTEGRATION = '[^']*'": "STORAGE_INTEGRATION = '***'",
+			},
+			expected: `STORAGE_INTEGRATION = '***'`,
+		},
+		{
+			expression: `ACCESS_KEY_ID 'RS8trQDxFH3dbzPL' SECRET_ACCESS_KEY 'dWcwQblVpEZgELvK' SESSION_TOKEN 'BxyNrYig8z5yXPpiEMK8niux'`,
+			expList: map[string]string{
+				"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+				"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+				"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+			},
+			expected: `ACCESS_KEY_ID '***' SECRET_ACCESS_KEY '***' SESSION_TOKEN '***'`,
+		},
+		{
+			expression: `CREDENTIALS ( 'awsKeyId' = 'RS8trQDxFH3dbzPL', 'awsSecretKey' = 'dWcwQblVpEZgELvK', 'awsSessionToken' = 'BxyNrYig8z5yXPpiEMK8niux' )`,
+			expList: map[string]string{
+				"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
+				"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
+				"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
+			},
+			expected: `CREDENTIALS ( 'awsKeyId' = '***', 'awsSecretKey' = '***', 'awsSessionToken' = '***' )`,
+		},
+	}
+	for _, input := range inputs {
+		got, err := ReplaceMultiRegex(input.expression, input.expList)
+		require.NoError(t, err)
+		require.Equal(t, got, input.expected)
+	}
+}
 
 // FolderExists Check if folder exists at particular path
 func FolderExists(path string) (exists bool, err error) {

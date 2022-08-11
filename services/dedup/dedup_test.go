@@ -1,7 +1,6 @@
 package dedup_test
 
 import (
-	"math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -9,21 +8,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
 )
-
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
 
 func Test_Dedup(t *testing.T) {
 	config.Load()
@@ -140,8 +131,7 @@ var duplicateIndexes []int
 func Benchmark_Dedup(b *testing.B) {
 	config.Load()
 	logger.Init()
-	rand.Seed(time.Now().UnixNano())
-	dbPath := path.Join("./testdata", "tmp", randSeq(10), "/DB_Benchmark_Dedup")
+	dbPath := path.Join("./testdata", "tmp", rand.String(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.MkdirAll(dbPath, 0o750)

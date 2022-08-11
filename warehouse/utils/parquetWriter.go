@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/xitongsys/parquet-go/writer"
 )
@@ -70,9 +69,7 @@ func CreateParquetWriter(schema TableSchemaT, outputFilePath, destType string) (
 	if err != nil {
 		return nil, err
 	}
-	var noOfParallelWriters int64
-	config.RegisterInt64ConfigVariable(8, &noOfParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
-	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, noOfParallelWriters)
+	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, parquetParallelWriters)
 	if err != nil {
 		return nil, err
 	}
