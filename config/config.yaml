@@ -1,6 +1,4 @@
 maxProcess: 12
-gwDBRetention: 0h
-routerDBRetention: 0h
 enableProcessor: true
 enableRouter: true
 enableStats: true

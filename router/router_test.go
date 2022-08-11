@@ -277,7 +277,6 @@ var _ = Describe("Router", func() {
 			count := router.readAndProcess()
 			Expect(count).To(Equal(2))
 			<-done
-			router.Shutdown()
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
@@ -364,7 +363,6 @@ var _ = Describe("Router", func() {
 			count := router.readAndProcess()
 			Expect(count).To(Equal(1))
 			<-done
-			router.Shutdown()
 		})
 
 		It("aborts events that are older than a configurable duration", func() {
@@ -454,8 +452,6 @@ var _ = Describe("Router", func() {
 		})
 
 		It("can batch jobs together", func() {
-			// Skip("FIXME skip this test for now")
-
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -973,7 +969,6 @@ var _ = Describe("Router", func() {
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(5))
-			router.Shutdown()
 			<-done
 		})
 
@@ -1133,7 +1128,6 @@ var _ = Describe("Router", func() {
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(3))
-			router.Shutdown()
 			<-done
 		})
 	})

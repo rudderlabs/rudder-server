@@ -4,28 +4,35 @@ import (
 	"context"
 	"math/rand"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
-type HandleT struct {
-	bucket      string
-	db          *jobsdb.HandleT
-	toDB        *jobsdb.HandleT
-	noOfWorkers int
-	workers     []*SourceWorkerT
-	dumpsLoader *DumpsLoaderHandleT
-	dbReadSize  int
-	tablePrefix string
+type Handler struct {
+	bucket                   string
+	db                       *jobsdb.HandleT
+	toDB                     *jobsdb.HandleT
+	noOfWorkers              int
+	workers                  []*SourceWorkerT
+	dumpsLoader              *dumpsLoaderHandleT
+	dbReadSize               int
+	tablePrefix              string
+	uploader                 filemanager.FileManager
+	initSourceWorkersChannel chan bool
 }
 
-func (handle *HandleT) generatorLoop() {
+func (handle *Handler) generatorLoop(ctx context.Context) {
 	pkgLogger.Infof("generator reading from replay_jobs_* started")
 	var breakLoop bool
+	select {
+	case <-ctx.Done():
+		return
+	case <-handle.initSourceWorkersChannel:
+	}
 	for {
 		queryParams := jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{"replay"},
@@ -63,7 +70,7 @@ func (handle *HandleT) generatorLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
-		// List of jobs wich can be processed mapped per channel
+		// List of jobs which can be processed mapped per channel
 		type workerJobT struct {
 			worker *SourceWorkerT
 			job    *jobsdb.JobT
@@ -88,7 +95,10 @@ func (handle *HandleT) generatorLoop() {
 		}
 
 		// Mark the jobs as executing
-		handle.db.UpdateJobStatus(context.TODO(), statusList, []string{"replay"}, nil)
+		err := handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
+		if err != nil {
+			panic(err)
+		}
 
 		// Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
@@ -102,36 +112,34 @@ func (handle *HandleT) generatorLoop() {
 	}
 }
 
-func (handle *HandleT) initSourceWorkers() {
+func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.workers = make([]*SourceWorkerT, handle.noOfWorkers)
 	for i := 0; i < handle.noOfWorkers; i++ {
 		worker := &SourceWorkerT{
-			channel:     make(chan *jobsdb.JobT, handle.dbReadSize),
-			workerID:    i,
-			replayer:    handle,
-			tablePrefix: handle.tablePrefix,
+			channel:       make(chan *jobsdb.JobT, handle.dbReadSize),
+			workerID:      i,
+			replayHandler: handle,
+			tablePrefix:   handle.tablePrefix,
+			uploader:      handle.uploader,
 		}
 		handle.workers[i] = worker
 		worker.transformer = transformer.NewTransformer()
 		worker.transformer.Setup()
-		go worker.workerProcess()
+		go worker.workerProcess(ctx)
 	}
+	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *HandleT) Setup(dumpsLoader *DumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string) {
+func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string) {
 	handle.db = db
 	handle.toDB = toDB
-	handle.bucket = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET", ""))
-	if handle.bucket == "" {
-		panic("Bucket is not configured.")
-	}
+	handle.bucket = bucket
+	handle.uploader = uploader
 	handle.noOfWorkers = config.GetEnvAsInt("WORKERS_PER_SOURCE", 4)
 	handle.dumpsLoader = dumpsLoader
 	handle.dbReadSize = config.GetEnvAsInt("DB_READ_SIZE", 10)
 	handle.tablePrefix = tablePrefix
 
-	go handle.initSourceWorkers()
-	// sleep till workers are setup
-	time.Sleep(5 * time.Second)
-	go handle.generatorLoop()
+	go handle.initSourceWorkers(ctx)
+	go handle.generatorLoop(ctx)
 }

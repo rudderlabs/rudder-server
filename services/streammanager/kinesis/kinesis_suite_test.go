@@ -25,7 +25,7 @@ func TestKinesis(t *testing.T) {
 }
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]string{
+	destinationConfig := map[string]interface{}{
 		"Region":     "us-east-1",
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",

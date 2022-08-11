@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -334,7 +333,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -355,7 +354,7 @@ var _ = Describe("jobsdb", func() {
 		BeforeEach(func() {
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 

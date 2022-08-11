@@ -39,7 +39,7 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	output, err := s3manager.UploadWithContext(ctx, uploadInput)
@@ -61,7 +61,7 @@ func (manager *S3Manager) Download(ctx context.Context, output *os.File, key str
 
 	downloader := awsS3Manager.NewDownloader(sess)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	_, err = downloader.DownloadWithContext(ctx, output,
@@ -132,7 +132,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 			},
 		}
 
-		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
 
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
@@ -168,7 +168,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 			return nil, err
 		}
 
-		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
 
 		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
@@ -236,7 +236,7 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	}
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Get the list of items
@@ -261,11 +261,19 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 type S3Manager struct {
 	Config  *S3Config
 	session *session.Session
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *S3Manager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *S3Manager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "S3", 120, time.Second)
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

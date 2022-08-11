@@ -194,31 +194,11 @@ func checkAndIgnoreAlreadyExistError(errorCode, ignoreError string) bool {
 	return false
 }
 
-// connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+// Connect creates database connection with CredentialsT
+func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
-
-	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Connect",
-	})
-	connStat.Start()
-	defer connStat.End()
-
-	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Close",
-	})
 
 	ctx := context.Background()
 	identifier := uuid.Must(uuid.NewV4()).String()
@@ -227,19 +207,19 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Port:            cred.Port,
 		HttpPath:        cred.Path,
 		Pwd:             cred.Token,
-		Schema:          cred.Schema,
-		SparkServerType: cred.SparkServerType,
-		AuthMech:        cred.AuthMech,
-		Uid:             cred.UID,
-		ThriftTransport: cred.ThriftTransport,
-		Ssl:             cred.SSL,
-		UserAgentEntry:  cred.UserAgentEntry,
+		Schema:          schema,
+		SparkServerType: sparkServerType,
+		AuthMech:        authMech,
+		Uid:             uid,
+		ThriftTransport: thriftTransport,
+		Ssl:             ssl,
+		UserAgentEntry:  userAgent,
 	}
 
 	// Getting timeout context
 	timeout := grpcTimeout
-	if dl.ConnectTimeout != 0 {
-		timeout = dl.ConnectTimeout
+	if connectTimeout != 0 {
+		timeout = connectTimeout
 	}
 	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -250,11 +230,11 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		execTimeouts := stats.DefaultStats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
-		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("connection timed out to Delta lake: %w", err)
 		return
 	}
 	if err != nil {
-		err = fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("error while creating grpc connection to Delta lake: %w", err)
 		return
 	}
 
@@ -264,11 +244,11 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Identifier: identifier,
 	})
 	if err != nil {
-		err = fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("error connecting to Delta lake: %w", err)
 		return
 	}
 	if connectionResponse.GetErrorCode() != "" {
-		err = fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
+		err = fmt.Errorf("error connecting to Delta lake with response: %s", connectionResponse.GetErrorMessage())
 		return
 	}
 
@@ -278,7 +258,6 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Conn:           conn,
 		Client:         dbClient,
 		Context:        ctx,
-		CloseStats:     closeConnStat,
 	}
 	return
 }
@@ -737,21 +716,40 @@ func (dl *HandleT) dropDanglingStagingTables() {
 }
 
 // connectToWarehouse returns the database connection configured with CredentialsT
-func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
+func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err error) {
 	credT := &databricks.CredentialsT{
-		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
-		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
-		Path:            warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
-		Token:           warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
-		Schema:          schema,
-		SparkServerType: sparkServerType,
-		AuthMech:        authMech,
-		UID:             uid,
-		ThriftTransport: thriftTransport,
-		SSL:             ssl,
-		UserAgentEntry:  userAgent,
+		Host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
+		Port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
+		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
+		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	}
-	return dl.connect(credT)
+	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"destination": dl.Warehouse.Destination.ID,
+		"destType":    dl.Warehouse.Type,
+		"source":      dl.Warehouse.Source.ID,
+		"namespace":   dl.Warehouse.Namespace,
+		"identifier":  dl.Warehouse.Identifier,
+		"queryType":   "Connect",
+	})
+	connStat.Start()
+	defer connStat.End()
+
+	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"destination": dl.Warehouse.Destination.ID,
+		"destType":    dl.Warehouse.Type,
+		"source":      dl.Warehouse.Source.ID,
+		"namespace":   dl.Warehouse.Namespace,
+		"identifier":  dl.Warehouse.Identifier,
+		"queryType":   "Close",
+	})
+
+	dbHandleT, err = Connect(credT, dl.ConnectTimeout)
+	if err != nil {
+		return
+	}
+
+	dbHandleT.CloseStats = closeConnStat
+	return
 }
 
 // CreateTable creates tables with table name and columns

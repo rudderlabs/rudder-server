@@ -1318,6 +1318,31 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name, stagingFile.BatchDestination.Source.ID)
 }
 
+func setConfigHandler(w http.ResponseWriter, r *http.Request) {
+	pkgLogger.LogRequest(r)
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var kvs []warehouseutils.KeyValue
+	err = json.Unmarshal(body, &kvs)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
+		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		return
+	}
+
+	for _, kv := range kvs {
+		config.SetHotReloadablesForcefully(kv.Key, kv.Value)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
@@ -1643,6 +1668,7 @@ func startWebHandler(ctx context.Context) error {
 			// triggers uploads for a source
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
+			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
 			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
