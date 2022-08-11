@@ -951,7 +951,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	failedCountMap := make(map[string]int64)
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
-		if failedEvent.StatusCode == transformer.DROP_STATUS_CODE {
+		if failedEvent.StatusCode == transformer.DropStatusCode {
 			continue
 		}
 		var messages []types.SingularEventT

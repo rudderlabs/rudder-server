@@ -1120,12 +1120,19 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
-		if respStatusCode >= 500 {
-			timeElapsed := time.Since(firstAttemptedAtTime)
-			if respStatusCode == transformer.DROP_STATUS_CODE {
-				status.JobState = jobsdb.Aborted.State
-			} else if respStatusCode != types.RouterTimedOutStatusCode &&
-				respStatusCode != types.RouterUnMarshalErrorCode {
+		switch respStatusCode {
+		case transformer.DropStatusCode:
+			status.JobState = jobsdb.Aborted.State
+		case types.RouterTimedOutStatusCode, types.RouterUnMarshalErrorCode:
+			addToFailedMap = false
+			addToAbortMap = false
+		case http.StatusTooManyRequests:
+			worker.retryForJobMapMutex.Lock()
+			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
+			worker.retryForJobMapMutex.Unlock()
+		default:
+			if respStatusCode >= 500 {
+				timeElapsed := time.Since(firstAttemptedAtTime)
 				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
 					worker.retryForJobMapMutex.Lock()
@@ -1137,15 +1144,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 					worker.retryForJobMapMutex.Unlock()
 				}
 			} else {
-				addToFailedMap = false
-				addToAbortMap = false
+				status.JobState = jobsdb.Aborted.State
 			}
-		} else if respStatusCode == 429 {
-			worker.retryForJobMapMutex.Lock()
-			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-			worker.retryForJobMapMutex.Unlock()
-		} else {
-			status.JobState = jobsdb.Aborted.State
 		}
 
 		if status.JobState == jobsdb.Aborted.State {
@@ -1236,7 +1236,7 @@ func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, 
 	// Sending destination response to config backend
 	switch status.ErrorCode {
 	// no live event in case of internal errors
-	case strconv.Itoa(transformer.DROP_STATUS_CODE):
+	case strconv.Itoa(transformer.DropStatusCode):
 	case strconv.Itoa(types.RouterUnMarshalErrorCode):
 	case strconv.Itoa(types.RouterTimedOutStatusCode):
 	default:
@@ -1559,7 +1559,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				sampleEvent = routerutils.EmptyPayload
 			}
 			reportState := resp.status.JobState
-			if resp.status.ErrorCode == strconv.Itoa(transformer.DROP_STATUS_CODE) {
+			if resp.status.ErrorCode == strconv.Itoa(transformer.DropStatusCode) {
 				reportState = utilTypes.DiffStatus
 			}
 			sd = utilTypes.CreateStatusDetail(
