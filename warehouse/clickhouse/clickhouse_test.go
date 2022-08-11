@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -264,22 +265,22 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	// Alter columns to all the cluster tables
 	for _, clusterDB := range handle.ClusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
+			sqlStatement := fmt.Sprintf(`
+				ALTER TABLE rudderdb.%[1]s_shard`,
+				tableName,
+			)
 			for _, columnInfo := range columnInfos {
-				sqlStatement := fmt.Sprintf(`
-					ALTER TABLE
-					  rudderdb.% [1]s_shard
-					ADD
-					  COLUMN IF NOT EXISTS % [2]s % [3]s;
-				`,
-					tableName,
+				sqlStatement += fmt.Sprintf(`
+					ADD COLUMN IF NOT EXISTS %[1]s %[2]s,`,
 					columnInfo.ColumnName,
 					columnInfo.ColumnType,
 				)
-				log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
-
-				_, err := clusterDB.Exec(sqlStatement)
-				require.NoError(t, err)
 			}
+			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
+			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
+
+			_, err := clusterDB.Exec(sqlStatement)
+			require.NoError(t, err)
 		}
 	}
 }
