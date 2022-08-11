@@ -104,6 +104,8 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
+		// Integrated events has events set to skipReservedKeywordsEscaping to True
+		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
@@ -187,7 +189,10 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Sending the first set of events.
 		// Since we don't handle dedupe on the staging table, we can just send the events.
 		// And then verify the count on the warehouse.
+		// Sending 1 event to groups and 3 to _groups
 		testhelper.SendEvents(t, warehouseTest)
+		// Integrated events has events set to skipReservedKeywordsEscaping to True
+		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
@@ -204,8 +209,8 @@ func TestBigQueryIntegration(t *testing.T) {
 			"pages":         4,
 			"screens":       4,
 			"aliases":       4,
-			"groups":        4,
-			"_groups":       4,
+			"groups":        1,
+			"_groups":       3,
 			"gateway":       24,
 			"batchRT":       32,
 		}
@@ -236,7 +241,7 @@ func TestMain(m *testing.M) {
 	handle = &TestHandle{
 		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
 		Schema:   "bigquery_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
