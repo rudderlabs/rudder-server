@@ -596,10 +596,13 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 
 func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) {
 	fmt.Printf("%v\n", asyncjob)
+	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
+
 	whManager, err := manager.New(asyncjob.DestType)
 	if err != nil {
 		panic(err)
 	}
+	whManager.Setup(warehouse, asyncjob)
 }
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
