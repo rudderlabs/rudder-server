@@ -1,17 +1,18 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/lambda/mock_lambda.go -package mock_lambda github.com/rudderlabs/rudder-server/services/streammanager/lambda LambdaClient
+
 package lambda
 
 import (
 	"encoding/json"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"errors"
+
 	"github.com/aws/aws-sdk-go/service/lambda"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/mitchellh/mapstructure"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // Config is the config that is required to send data to Lambda
 type Config struct {
@@ -35,10 +36,13 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*LambdaProducer, error) {
+func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*LambdaProducer, error) {
 	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, lambda.ServiceName)
 	if err != nil {
 		return nil, err
+	}
+	if sessionConfig.Region == "" {
+		return nil, errors.New("could not find region configuration")
 	}
 	return &LambdaProducer{client: lambda.New(awsutils.CreateSession(sessionConfig))}, nil
 }
@@ -55,13 +59,9 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	}
 
 	var config Config
-	jsonConfig, err := jsonfast.Marshal(destConfig)
+	err := mapstructure.Decode(destConfig, &config)
 	if err != nil {
-		return simpleErrorResponse("error while marshalling destination config :: " + err.Error())
-	}
-	err = jsonfast.Unmarshal(jsonConfig, &config)
-	if err != nil {
-		return simpleErrorResponse("error while unmarshalling destination config :: " + err.Error())
+		return simpleErrorResponse("error while decoding destination config :: " + err.Error())
 	}
 
 	var invokeInput lambda.InvokeInput
@@ -78,7 +78,9 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 
 	_, err = client.Invoke(&invokeInput)
 	if err != nil {
-		return invokeErrorResponse(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		pkgLogger.Errorf("[Lambda] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		return statusCode, respStatus, responseMessage
 	}
 
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
@@ -87,23 +89,5 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 func simpleErrorResponse(message string) (int, string, string) {
 	respStatus := "Failure"
 	returnMessage := "[Lambda] error :: " + message
-	pkgLogger.Errorf(returnMessage)
 	return 400, respStatus, returnMessage
-}
-
-func invokeErrorResponse(err error) (int, string, string) {
-	if awsErr, ok := err.(awserr.Error); ok {
-		switch awsErr.Code() {
-		case lambda.ErrCodeTooManyRequestsException, lambda.ErrCodeEC2ThrottledException:
-			return 429, awsErr.Code(), awsErr.Message()
-		case lambda.ErrCodeServiceException, lambda.ErrCodeResourceNotReadyException,
-			lambda.ErrCodeResourceConflictException, lambda.ErrCodeEFSMountTimeoutException,
-			lambda.ErrCodeEFSMountConnectivityException:
-			return 500, awsErr.Code(), awsErr.Message()
-		default:
-			return 400, awsErr.Code(), awsErr.Message()
-		}
-	}
-	responseMessage := "Invocation error" + err.Error()
-	return simpleErrorResponse(responseMessage)
 }
