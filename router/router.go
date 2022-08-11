@@ -900,9 +900,7 @@ func (worker *workerT) processDestinationJobs() {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
 			}
-			if routerJobResponse.status.ErrorCode != strconv.Itoa(transformer.DROP_STATUS_CODE) {
-				worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
-			}
+			worker.sendDestinationResponseToConfigBackend(payload, routerJobResponse.destinationJobMetadata, routerJobResponse.status, sourcesIDs)
 			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
@@ -1124,9 +1122,10 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		if respStatusCode >= 500 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
-			if respStatusCode != types.RouterTimedOutStatusCode &&
-				respStatusCode != types.RouterUnMarshalErrorCode &&
-				respStatusCode != transformer.DROP_STATUS_CODE {
+			if respStatusCode == transformer.DROP_STATUS_CODE {
+				status.JobState = jobsdb.Aborted.State
+			} else if respStatusCode != types.RouterTimedOutStatusCode &&
+				respStatusCode != types.RouterUnMarshalErrorCode {
 				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
 					worker.retryForJobMapMutex.Lock()
@@ -1137,8 +1136,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 					worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 					worker.retryForJobMapMutex.Unlock()
 				}
-			} else if respStatusCode == transformer.DROP_STATUS_CODE {
-				status.JobState = jobsdb.Aborted.State
 			} else {
 				addToFailedMap = false
 				addToAbortMap = false
@@ -1237,7 +1234,12 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 
 func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	// Sending destination response to config backend
-	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) && status.ErrorCode != fmt.Sprint(types.RouterTimedOutStatusCode) {
+	switch status.ErrorCode {
+	// no live event in case of internal errors
+	case strconv.Itoa(transformer.DROP_STATUS_CODE):
+	case strconv.Itoa(types.RouterUnMarshalErrorCode):
+	case strconv.Itoa(types.RouterTimedOutStatusCode):
+	default:
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
 			SourceID:      strings.Join(sourceIDs, ","),
@@ -1572,7 +1574,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			statusDetailsMap[key] = sd
 		}
 
-		switch resp.status.JobState {
+		switch sd.Status {
 		case jobsdb.Failed.State:
 			if resp.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) && resp.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
 				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
@@ -1586,17 +1588,15 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		case jobsdb.Aborted.State:
-			if resp.status.ErrorCode != strconv.Itoa(transformer.DROP_STATUS_CODE) {
-				sd.Count++
-				routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-				PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
-				completedJobsList = append(completedJobsList, resp.JobT)
-			} else {
-				sd.Count--
-			}
+			sd.Count++
+			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+			completedJobsList = append(completedJobsList, resp.JobT)
 			routerWorkspaceJobStatusCount[workspaceID] += 1
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
-
+		case utilTypes.DiffStatus:
+			sd.Count--
+			routerWorkspaceJobStatusCount[workspaceID] += 1
 		}
 
 		// REPORTING - ROUTER - END
