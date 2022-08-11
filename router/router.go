@@ -1521,15 +1521,17 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		workspaceID := resp.status.WorkspaceId
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
-		key := fmt.Sprintf(
-			"%s:%s:%s:%s:%s:%s:%s",
-			parameters.SourceID,
-			parameters.DestinationID,
-			parameters.SourceBatchID,
-			resp.status.JobState,
-			resp.status.ErrorCode,
-			eventName,
-			eventType,
+		key := strings.Join(
+			[]string{
+				parameters.SourceID,
+				parameters.DestinationID,
+				parameters.SourceBatchID,
+				resp.status.JobState,
+				resp.status.ErrorCode,
+				eventName,
+				eventType,
+			},
+			":",
 		)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
