@@ -1094,6 +1094,136 @@ var _ = Describe("Processor", func() {
 
 			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
+
+		It("should drop jobs when transformer returns DropStatusCode response", func() {
+			messages := map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				"message-2": {
+					id:                        "2",
+					jobid:                     1011,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+			}
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.Must(uuid.NewV4()),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+			}
+			transformerResponses := []transformer.TransformerResponseT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					StatusCode: 400,
+					Error:      "error-1",
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					StatusCode: transformer.DropStatusCode,
+					Error:      "server side identify is not on",
+				},
+			}
+			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(job.CustomVal).To(Equal("enabled-destination-a-definition-name"))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+
+				var paramsMap, expectedParamsMap map[string]interface{}
+				err := json.Unmarshal(job.Parameters, &paramsMap)
+				Expect(err).To(BeNil())
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, SourceIDEnabled, i+1))
+				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				Expect(err).To(BeNil())
+				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+				Expect(equals).To(Equal(true))
+
+				// compare payloads
+				var payload []map[string]interface{}
+				err = json.Unmarshal(job.EventPayload, &payload)
+				Expect(err).To(BeNil())
+				Expect(len(payload)).To(Equal(1))
+				message := messages[fmt.Sprintf(`message-%v`, i+1)]
+				Expect(fmt.Sprintf(`message-%s`, message.id)).To(Equal(payload[0]["messageId"]))
+				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message.id)))
+				Expect(message.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
+			}
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			payloadLimit := 100 * bytesize.MB
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: gatewayCustomVal,
+				JobsLimit:        c.dbReadBatchSize,
+				EventsLimit:      c.processEventSize,
+				PayloadSizeLimit: payloadLimit,
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			// Test transformer failure
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Return(transformer.ResponseT{
+					Events:       []transformer.TransformerResponseT{},
+					FailedEvents: transformerResponses,
+				})
+
+			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
+
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+				})
+			// will be used to save failed events to failed keys table
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
+				_ = f(nil)
+			}).Times(1)
+
+			// One Store call is expected for all events
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(1))
+					for i, job := range jobs {
+						assertErrStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+
+			processor := &HandleT{
+				transformer: mockTransformer,
+			}
+
+			processorSetupAndAssertJobHandling(processor, c, false, false)
+		})
 	})
 
 	Context("MainLoop Tests", func() {
