@@ -41,8 +41,6 @@ const (
 
 var (
 	EnableDiagnostics               bool
-	endpoint                        string
-	writekey                        string
 	EnableServerStartMetric         bool
 	EnableConfigIdentifyMetric      bool
 	EnableServerStartedMetric       bool
@@ -51,6 +49,9 @@ var (
 	EnableRouterMetric              bool
 	EnableBatchRouterMetric         bool
 	EnableDestinationFailuresMetric bool
+
+	endpoint string
+	writekey string
 )
 var Diagnostics DiagnosticsI
 
@@ -104,7 +105,7 @@ func (d *diagnostics) Track(event string, properties map[string]interface{}) {
 		properties[StartTime] = d.StartTime
 		properties[InstanceId] = d.InstanceId
 
-		d.Client.Enqueue(
+		_ = d.Client.Enqueue(
 			analytics.Track{
 				Event:       event,
 				Properties:  properties,
@@ -113,11 +114,6 @@ func (d *diagnostics) Track(event string, properties map[string]interface{}) {
 			},
 		)
 	}
-}
-
-// Deprecated! Use instance of diagnostics instead;
-func Track(event string, properties map[string]interface{}) {
-	Diagnostics.Track(event, properties)
 }
 
 func (d *diagnostics) DisableMetrics(enableMetrics bool) {
@@ -131,27 +127,17 @@ func (d *diagnostics) DisableMetrics(enableMetrics bool) {
 	}
 }
 
-// Deprecated! Use instance of diagnostics instead;
-func DisableMetrics(enableMetrics bool) {
-	Diagnostics.DisableMetrics(enableMetrics)
-}
-
 func (d *diagnostics) Identify(properties map[string]interface{}) {
 	if EnableDiagnostics {
 		// add in traits
 		if val, ok := properties[ConfigIdentify]; ok {
 			d.UserId = val.(string)
 		}
-		d.Client.Enqueue(
+		_ = d.Client.Enqueue(
 			analytics.Identify{
 				AnonymousId: d.UniqueId,
 				UserId:      d.UserId,
 			},
 		)
 	}
-}
-
-// Deprecated! Use instance of diagnostics instead;
-func Identify(properties map[string]interface{}) {
-	Diagnostics.Identify(properties)
 }

@@ -10,13 +10,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//this is to make sure that we don't have more than `maxClient` in-memory at any point of time. As, having more http client than `maxClient`
+// this is to make sure that we don't have more than `maxClient` in-memory at any point of time. As, having more http client than `maxClient`
 // may lead to gateway OOM kill.
 func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
-
-	var requests = make(chan struct{}, maxRequests)
+	requests := make(chan struct{}, maxRequests)
 	return func(next http.Handler) http.Handler {
-
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if maxRequests != 0 {
 				select {
@@ -36,7 +34,7 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 
 func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := stats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := stats.DefaultStats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
 	go func() {
 		for {
 			select {

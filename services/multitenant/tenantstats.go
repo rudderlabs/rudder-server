@@ -14,9 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	pkgLogger logger.LoggerI
-)
+var pkgLogger logger.LoggerI
 
 type Stats struct {
 	routerJobCountMutex sync.RWMutex
@@ -36,15 +34,15 @@ type Stats struct {
 }
 
 type MultiTenantI interface {
-	CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool)
+	CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool)
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
-	UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64)
+	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 	lifecycle
 }
 
 type lifecycle interface {
-	Start()
+	Start() error
 	Stop()
 }
 
@@ -53,7 +51,7 @@ func (*Stats) Stop() {
 	metric.GetManager().Reset()
 }
 
-func (t *Stats) Start() {
+func (t *Stats) Start() error {
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
@@ -70,6 +68,7 @@ func (t *Stats) Start() {
 
 	t.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
 	t.processorStageTime = time.Now()
+	return nil
 }
 
 type workspaceScore struct {
@@ -106,7 +105,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	return &t
 }
 
-func (t *Stats) UpdateWorkspaceLatencyMap(destType string, workspaceID string, val float64) {
+func (t *Stats) UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64) {
 	t.routerLatencyMutex.Lock()
 	defer t.routerLatencyMutex.Unlock()
 	_, ok := t.routerTenantLatencyStat[destType]
@@ -120,7 +119,7 @@ func (t *Stats) UpdateWorkspaceLatencyMap(destType string, workspaceID string, v
 	t.routerTenantLatencyStat[destType][workspaceID].Add(val)
 }
 
-func (t *Stats) CalculateSuccessFailureCounts(workspace string, destType string, isSuccess bool, isDrained bool) {
+func (t *Stats) CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool) {
 	t.routerSuccessRateMutex.Lock()
 	defer t.routerSuccessRateMutex.Unlock()
 
@@ -193,7 +192,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 
 	workspacesWithJobs := getWorkspacesWithPendingJobs(destType, t.routerTenantLatencyStat[destType])
 	boostedRouterTimeOut := getBoostedRouterTimeOut(routerTimeOut, timeGained, noOfWorkers)
-	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
+	// TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
 	runningJobCount := jobQueryBatchSize
 	runningTimeCounter := float64(noOfWorkers) * float64(boostedRouterTimeOut) / float64(time.Second)
@@ -203,7 +202,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 	minLatency, maxLatency := getMinMaxWorkspaceLatency(workspacesWithJobs, t.routerTenantLatencyStat[destType])
 
 	scores := t.getSortedWorkspaceScoreList(workspacesWithJobs, maxLatency, minLatency, t.routerTenantLatencyStat[destType], destType)
-	//Latency sorted input rate pass
+	// Latency sorted input rate pass
 	for _, scoredWorkspace := range scores {
 		workspaceKey := scoredWorkspace.workspaceId
 		workspaceCountKey, ok := t.routerInputRates["rt"][workspaceKey]
@@ -212,20 +211,20 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 			if ok {
 
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
-					//Adding BETA
+					// Adding BETA
 					if metric.PendingEvents("rt", workspaceKey, destType).Value() > 0 {
 						usedLatencies[workspaceKey] = t.routerTenantLatencyStat[destType][workspaceKey].Value()
 						workspacePickUpCount[workspaceKey] = 1
 					}
 					continue
 				}
-				//TODO : Get rid of unReliableLatencyORInRate hack
+				// TODO : Get rid of unReliableLatencyORInRate hack
 				unReliableLatencyORInRate := false
 				pendingEvents := metric.PendingEvents("rt", workspaceKey, destType).IntValue()
 				if t.routerTenantLatencyStat[destType][workspaceKey].Value() != 0 {
 					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(t.routerTenantLatencyStat[destType][workspaceKey].Value())))
 					if tmpPickCount < 1 {
-						tmpPickCount = 1 //Adding BETA
+						tmpPickCount = 1 // Adding BETA
 						pkgLogger.Debugf("[DRAIN DEBUG] %v  checking for high latency/low in rate workspace %v latency value %v in rate %v", destType, workspaceKey, t.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value())
 						unReliableLatencyORInRate = true
 					}
@@ -249,7 +248,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 		}
 	}
 
-	//Sort by workspaces who can get to realtime quickly
+	// Sort by workspaces who can get to realtime quickly
 	secondaryScores := t.getSortedWorkspaceSecondaryScoreList(workspacesWithJobs, workspacePickUpCount, destType, t.routerTenantLatencyStat[destType])
 	for _, scoredWorkspace := range secondaryScores {
 		workspaceKey := scoredWorkspace.workspaceId
@@ -257,7 +256,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 		if pendingEvents <= 0 {
 			continue
 		}
-		//BETA already added in the above loop
+		// BETA already added in the above loop
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
 			break
 		}
@@ -278,10 +277,9 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 	}
 
 	return workspacePickUpCount, usedLatencies
-
 }
 
-func (t *Stats) getFailureRate(workspaceKey string, destType string) float64 {
+func (t *Stats) getFailureRate(workspaceKey, destType string) float64 {
 	t.routerSuccessRateMutex.RLock()
 	defer t.routerSuccessRateMutex.RUnlock()
 	_, ok := t.failureRate[workspaceKey]
@@ -294,7 +292,7 @@ func (t *Stats) getFailureRate(workspaceKey string, destType string) float64 {
 	return 0.0
 }
 
-func (t *Stats) getLastDrainedTimestamp(workspaceKey string, destType string) time.Time {
+func (t *Stats) getLastDrainedTimestamp(workspaceKey, destType string) time.Time {
 	t.routerSuccessRateMutex.RLock()
 	defer t.routerSuccessRateMutex.RUnlock()
 	destWiseMap, ok := t.lastDrainedTimestamps[workspaceKey]
@@ -322,9 +320,9 @@ func getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.
 }
 
 func getBoostedRouterTimeOut(routerTimeOut time.Duration, timeGained float64, noOfWorkers int) time.Duration {
-	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inRate pass
-	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
-	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
+	// Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inRate pass
+	// boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
+	// if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
 	return time.Duration(1.3*float64(routerTimeOut)) + time.Duration(timeGained*float64(time.Second)/float64(noOfWorkers))
 }
 
@@ -332,7 +330,7 @@ func getMinMaxWorkspaceLatency(workspacesWithJobs []string, latencyMap map[strin
 	minLatency := math.MaxFloat64
 	maxLatency := -math.MaxFloat64
 
-	//Below two loops, normalize the values and compute the score of each workspace
+	// Below two loops, normalize the values and compute the score of each workspace
 	for _, workspaceKey := range workspacesWithJobs {
 		if minLatency > latencyMap[workspaceKey].Value() {
 			minLatency = latencyMap[workspaceKey].Value()
@@ -369,7 +367,7 @@ func (t *Stats) getSortedWorkspaceScoreList(workspacesWithJobs []string, maxLate
 }
 
 func (t *Stats) getSortedWorkspaceSecondaryScoreList(workspacesWithJobs []string, workspacePickUpCount map[string]int, destType string, latencyMap map[string]metric.MovingAverage) []workspaceScore {
-	//Sort by workspaces who can get to realtime quickly
+	// Sort by workspaces who can get to realtime quickly
 	scores := make([]workspaceScore, len(workspacesWithJobs))
 	for i, workspaceKey := range workspacesWithJobs {
 		scores[i] = workspaceScore{}

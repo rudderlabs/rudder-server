@@ -1,122 +1,186 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"testing"
 
-	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	"github.com/stretchr/testify/require"
 )
 
-var SampleWorkspaceSourcesMultitenant = map[string]ConfigT{
-	workspaceId: SampleBackendConfig,
-}
-var _ = Describe("workspace-config", func() {
-	BeforeEach(func() {
-		backendConfig = &MultiTenantWorkspacesConfig{
-			writeKeyToWorkspaceIDMap: map[string]string{"testKey": "testWorkSpaceId"},
+func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForWriteKey(t *testing.T) {
+	t.Run("found", func(t *testing.T) {
+		writeKey := "some-write-key"
+		workspaceID := "some-workspace-id"
+		wc := &multiTenantWorkspacesConfig{
+			writeKeyToWorkspaceIDMap: map[string]string{
+				writeKey: workspaceID,
+			},
 		}
-		ctrl = gomock.NewController(GinkgoT())
-		mockLogger = mock_logger.NewMockLoggerI(ctrl)
-		pkgLogger = mockLogger
-	})
-	AfterEach(func() {
-		ctrl.Finish()
-		backendConfig = originalBackendConfig
-		Http = originalHttp
-		pkgLogger = originalLogger
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForWriteKey(writeKey))
 	})
 
-	Context("GetWorkspaceIDForWriteKey method: Multitenant", func() {
-		It("Expect to get the correct workspace id: Multitenant", func() {
-			workspaceID := backendConfig.GetWorkspaceIDForWriteKey("testKey")
-			Expect(workspaceID).To(Equal("testWorkSpaceId"))
-		})
-		It("Expect to get empty string if no workspace id found: Multitenant", func() {
-			workspaceID := backendConfig.GetWorkspaceIDForWriteKey("keyNotExists")
-			Expect(workspaceID).To(Equal(""))
-		})
+	t.Run("not found", func(t *testing.T) {
+		writeKey := "some-write-key"
+		workspaceID := "some-workspace-id"
+		wc := &multiTenantWorkspacesConfig{
+			writeKeyToWorkspaceIDMap: map[string]string{
+				writeKey: workspaceID,
+			},
+		}
+		require.Equal(t, "", wc.GetWorkspaceIDForWriteKey("non-existent-write-key"))
+	})
+}
+
+func TestMultiTenantWorkspacesConfig_GetWorkspaceIDForSourceID(t *testing.T) {
+	t.Run("found", func(t *testing.T) {
+		source := "some-source"
+		workspaceID := "some-workspace-id"
+		wc := &multiTenantWorkspacesConfig{
+			sourceToWorkspaceIDMap: map[string]string{
+				source: workspaceID,
+			},
+		}
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForSourceID(source))
 	})
 
-	Context("Get method : Multitenant", func() {
-		var mockHttp *mock_sysUtils.MockHttpI
-		BeforeEach(func() {
-			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
-		})
-		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 1", func() {
-			backendConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
-			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				username, pass, ok := req.BasicAuth()
-				Expect(username).To(Equal("multitenantWorkspaceSecret"))
-				Expect(pass).To(Equal(""))
-				Expect(ok).To(BeTrue())
-				Expect(req.Header.Get("Content-Type")).To(Equal("application/json"))
-				rw.WriteHeader(http.StatusAccepted)
-				js, _ := json.Marshal(SampleWorkspaceSources)
-				rw.Header().Set("Content-Type", "application/json")
-				rw.Write(js)
-			}))
-			defer server.Close()
-
-			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET",
-				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).Times(1)
-
-			config, ok := backendConfig.Get("testToken")
-			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
-			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
-			Expect(ok).To(BeTrue())
-			multiConfig := SampleBackendConfig
-			Expect(config).To(Equal(multiConfig))
-		})
-
-		It("Expect to execute request with the correct body and headers and return successful response: Multitenant - 2", func() {
-			backendConfig.(*MultiTenantWorkspacesConfig).Token = "multitenantWorkspaceSecret"
-			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				rw.WriteHeader(http.StatusNoContent)
-				rw.Header().Set("Content-Type", "application/json")
-				rw.Write([]byte(`""`))
-			}))
-			defer server.Close()
-
-			testRequest, _ := http.NewRequest("GET", server.URL, nil)
-			mockHttp.EXPECT().NewRequest("GET",
-				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).Times(1)
-
-			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
-			config, ok := backendConfig.Get("testToken")
-			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
-		})
-		It("Expect to make the correct actions if fail to create the request: Multitenant", func() {
-			mockHttp.EXPECT().NewRequest("GET",
-				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
-					configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
-			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
-			config, ok := backendConfig.Get("testToken")
-			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
-		})
-		It("Expect to make the correct actions if fail to send the request: Multitenant", func() {
-			testRequest, _ := http.NewRequest("GET", "", nil)
-			mockHttp.EXPECT().NewRequest("GET",
-				fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=[\"testToken\"]&fetchAll=true",
-					configBackendURL), nil).Return(testRequest, nil).AnyTimes()
-			mockLogger.EXPECT().Errorf("Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
-			config, ok := backendConfig.Get("testToken")
-			Expect(config).To(Equal(ConfigT{}))
-			Expect(ok).To(BeFalse())
-		})
+	t.Run("not found", func(t *testing.T) {
+		source := "some-source"
+		workspaceID := "some-workspace-id"
+		wc := &multiTenantWorkspacesConfig{
+			sourceToWorkspaceIDMap: map[string]string{
+				source: workspaceID,
+			},
+		}
+		require.Equal(t, "", wc.GetWorkspaceIDForSourceID("non-existent-source"))
 	})
-})
+}
+
+func TestMultiTenantWorkspacesConfig_GetWorkspaceLibrariesForWorkspaceID(t *testing.T) {
+	t.Run("found", func(t *testing.T) {
+		workspaceID := "some-workspace-id"
+		libraries := LibrariesT{{
+			VersionID: "123",
+		}, {
+			VersionID: "456",
+		}}
+		wc := &multiTenantWorkspacesConfig{
+			workspaceIDToLibrariesMap: map[string]LibrariesT{
+				workspaceID: libraries,
+			},
+		}
+		require.Equal(t, libraries, wc.GetWorkspaceLibrariesForWorkspaceID(workspaceID))
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		workspaceID := "some-workspace-id"
+		libraries := LibrariesT{{
+			VersionID: "123",
+		}, {
+			VersionID: "456",
+		}}
+		wc := &multiTenantWorkspacesConfig{
+			workspaceIDToLibrariesMap: map[string]LibrariesT{
+				workspaceID: libraries,
+			},
+		}
+		require.Equal(t, LibrariesT{}, wc.GetWorkspaceLibrariesForWorkspaceID("non-existent-workspace-id"))
+	})
+}
+
+func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
+	initBackendConfig()
+
+	t.Run("ok", func(t *testing.T) {
+		var (
+			secretToken            = "multitenantWorkspaceSecret"
+			workspaceID            = "testWorkspaceId"
+			sampleWorkspaceSources = map[string]ConfigT{
+				workspaceID: sampleBackendConfig,
+			}
+			cpRouterURL = "mockCPRouterURL"
+		)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			username, password, ok := r.BasicAuth()
+			require.Equal(t, secretToken, username)
+			require.Equal(t, "", password)
+			require.True(t, ok)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+			js, err := json.Marshal(sampleWorkspaceSources)
+			require.NoError(t, err)
+			w.WriteHeader(http.StatusAccepted)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(js)
+		}))
+		t.Cleanup(srv.Close)
+
+		parsedSrvURL, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
+		wc := &multiTenantWorkspacesConfig{
+			Token:            secretToken,
+			configBackendURL: parsedSrvURL,
+			cpRouterURL:      cpRouterURL,
+		}
+		conf, err := wc.Get(context.Background(), "")
+		require.NoError(t, err)
+		multiTenantWorkspacesConfig := sampleBackendConfig
+		multiTenantWorkspacesConfig.ConnectionFlags = ConnectionFlags{URL: cpRouterURL, Services: map[string]bool{"warehouse": true}}
+		require.Equal(t, multiTenantWorkspacesConfig, conf)
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForWriteKey("d2"))
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForWriteKey("d"))
+	})
+
+	t.Run("ok with empty response", func(t *testing.T) {
+		secretToken := "multitenantWorkspaceSecret"
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			username, password, ok := r.BasicAuth()
+			require.Equal(t, secretToken, username)
+			require.Equal(t, "", password)
+			require.True(t, ok)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+			w.WriteHeader(http.StatusNoContent)
+			w.Header().Set("Content-Type", "application/json")
+		}))
+		t.Cleanup(srv.Close)
+
+		parsedSrvURL, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
+		wc := &multiTenantWorkspacesConfig{
+			Token:            secretToken,
+			configBackendURL: parsedSrvURL,
+		}
+		conf, err := wc.Get(context.Background(), "")
+		require.ErrorContains(t, err, "invalid response from backend config")
+		require.Equal(t, ConfigT{}, conf)
+	})
+
+	t.Run("invalid url", func(t *testing.T) {
+		configBackendURL, err := url.Parse("")
+		require.NoError(t, err)
+
+		wc := &multiTenantWorkspacesConfig{
+			Token:            "some-token",
+			configBackendURL: configBackendURL,
+		}
+		conf, err := wc.Get(context.Background(), "")
+		require.ErrorContains(t, err, "unsupported protocol scheme")
+		require.Equal(t, ConfigT{}, conf)
+	})
+
+	t.Run("nil url", func(t *testing.T) {
+		wc := &multiTenantWorkspacesConfig{
+			Token:            "some-token",
+			configBackendURL: nil,
+		}
+		conf, err := wc.Get(context.Background(), "")
+		require.ErrorContains(t, err, "config backend url is nil")
+		require.Equal(t, ConfigT{}, conf)
+	})
+}

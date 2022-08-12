@@ -14,9 +14,17 @@ func init() {
 	}
 }
 
-func populateFrequencyCounters(schemaHash string, frequencyCounters []*FrequencyCounter) {
+// populateFrequencyCountersBounded is responsible for capturing the frequency counters which
+// are available in the db and store them in memory but in a bounded manner.
+func populateFrequencyCounters(schemaHash string, frequencyCounters []*FrequencyCounter, bound int) {
 	frequencyCountersMap := make(map[string]*FrequencyCounter)
-	for _, fc := range frequencyCounters {
+	for idx, fc := range frequencyCounters {
+		// If count exceeds for a particular schema hash, break
+		// the loop
+		if idx >= bound {
+			break
+		}
+
 		frequencyCountersMap[fc.Name] = NewPeristedFrequencyCounter(fc)
 	}
 	countersCache[schemaHash] = frequencyCountersMap
@@ -36,15 +44,44 @@ func getAllFrequencyCounters(schemaHash string) []*FrequencyCounter {
 	return frequencyCounters
 }
 
-func getFrequencyCounter(schemaHash string, key string) *FrequencyCounter {
+// pruneFrequencyCounters brings the frequency counters back to desired bound.
+func pruneFrequencyCounters(schemaHash string, bound int) {
+	countersMap := countersCache[schemaHash]
+	diff := bound - len(countersMap)
+
+	if diff >= 0 {
+		return
+	}
+
+	toDelete := -1 * diff
+	for k := range countersMap {
+		if toDelete > 0 {
+			delete(countersMap, k)
+			toDelete--
+
+			continue
+		}
+
+		break
+	}
+}
+
+// getFrequencyCounter simply returns frequency counter for flattened
+// event key. It creates a new fc in case the key doesn't exist in map.
+func getFrequencyCounter(schemaHash, key string, bound int) *FrequencyCounter {
 	schemaVersionCounters, ok := countersCache[schemaHash]
 	if !ok {
 		schemaVersionCounters = make(map[string]*FrequencyCounter)
 		countersCache[schemaHash] = schemaVersionCounters
 	}
 
+	// Here we add a new frequency counter for schemaVersionCounter
 	frequencyCounter, ok := schemaVersionCounters[key]
 	if !ok {
+		if len(schemaVersionCounters) >= bound {
+			return nil
+		}
+
 		frequencyCounter = NewFrequencyCounter(key)
 		schemaVersionCounters[key] = frequencyCounter
 	}
@@ -63,7 +100,7 @@ func getSchemaVersionCounters(schemaHash string) map[string][]*CounterItem {
 		for _, entry := range entries {
 
 			freq := entry.Frequency
-			//Capping the freq to 1
+			// Capping the freq to 1
 			if freq > 1 {
 				freq = 1.0
 			}

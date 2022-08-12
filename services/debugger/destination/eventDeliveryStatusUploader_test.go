@@ -1,6 +1,7 @@
 package destinationdebugger
 
 import (
+	"context"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -204,13 +205,14 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		}
 		disableEventDeliveryStatusUploads = false
 		mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-			Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				// on Subscribe, emulate a backend configuration event
-				go func() {
-					channel <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
-					c.configInitialised = true
-					close(channel)
-				}()
+				ch := make(chan pubsub.DataEvent, 1)
+				ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+				c.configInitialised = true
+				close(ch)
+
+				return ch
 			})
 	})
 
@@ -221,9 +223,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
-			}).Return().Times(1)
+				return make(pubsub.DataChannel)
+			}).Times(1)
 
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			disableEventDeliveryStatusUploads = true
@@ -232,9 +235,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
-			}).Return().Times(1)
+
+				return make(pubsub.DataChannel)
+			}).Times(1)
 
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
@@ -242,9 +247,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("records events", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
-			}).Return().Times(1)
+				return make(pubsub.DataChannel)
+			}).Times(1)
 
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			eventuallyFunc := func() bool { return RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
@@ -253,9 +259,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("transforms payload properly", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
-			}).Return().Times(1)
+				return nil
+			}).Times(1)
 
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
@@ -267,9 +274,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("sends empty json if transformation fails", func() {
 			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(channel chan pubsub.DataEvent, topic backendconfig.Topic) {
+			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				tFunc()
-			}).Return().Times(1)
+				return nil
+			}).Times(1)
 
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}

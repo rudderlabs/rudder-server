@@ -11,7 +11,7 @@ type LimitStore interface {
 	// Inc increments current window limit counter for key
 	Dec(key string, count int64, window time.Time) error
 	// Get gets value of previous window counter and current window counter for key
-	Get(key string, previousWindow, currentWindow time.Time) (prevValue int64, currValue int64, err error)
+	Get(key string, previousWindow, currentWindow time.Time) (prevValue, currValue int64, err error)
 }
 
 // RateLimiter is a simple rate-limiter for any resources inspired by Cloudflare's approach: https://blog.cloudflare.com/counting-things-a-lot-of-different-things/
@@ -23,7 +23,6 @@ type RateLimiter struct {
 
 // New creates new rate limiter. A dataStore is internal limiter data store, requestsLimit and windowSize are parameters of limiter e.g. requestsLimit: 5 and windowSize: 1*time.Minute means that limiter allows up to 5 requests per minute
 func New(dataStore LimitStore, requestsLimit int64, windowSize time.Duration) *RateLimiter {
-
 	return &RateLimiter{
 		dataStore:     dataStore,
 		requestsLimit: requestsLimit,
@@ -40,7 +39,7 @@ func (r *RateLimiter) Inc(key string, currentTime time.Time) error {
 	return r.dataStore.Inc(key, currentWindow)
 }
 
-// Inc increments limiter counter for a given key or returns error when it's not possible
+// Dec decrements limiter counter for a given key or returns error when it's not possible
 func (r *RateLimiter) Dec(key string, count int64, currentTime time.Time) error {
 	if currentTime.IsZero() {
 		currentTime = time.Now()
@@ -72,7 +71,7 @@ func (r *RateLimiter) Check(key string, currentTime time.Time) (limitStatus *Lim
 	}
 	timeFromCurrWindow := currentTime.UTC().Sub(currentWindow)
 
-	rate := float64((float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize))*float64(prevValue) + float64(currentValue)
+	rate := (float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize)*float64(prevValue) + float64(currentValue)
 	limitStatus = &LimitStatus{}
 	if rate >= float64(r.requestsLimit) {
 		limitStatus.IsLimited = true
@@ -82,10 +81,6 @@ func (r *RateLimiter) Check(key string, currentTime time.Time) (limitStatus *Lim
 	limitStatus.CurrentRate = rate
 
 	return limitStatus, nil
-}
-
-func (r *RateLimiter) calcRate(timeFromCurrWindow time.Duration, prevValue int64, currentValue int64) float64 {
-	return float64((float64(r.windowSize)-float64(timeFromCurrWindow))/float64(r.windowSize))*float64(prevValue) + float64(currentValue)
 }
 
 func (r *RateLimiter) calcLimitDuration(prevValue, currValue int64, timeFromCurrWindow time.Duration) time.Duration {

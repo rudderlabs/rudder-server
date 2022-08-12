@@ -3,12 +3,13 @@ package configuration_testing
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/gofrs/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"strings"
 )
 
 var (
@@ -55,9 +56,10 @@ func fileManager(req *DestinationValidationRequest) (fileManager filemanager.Fil
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
 			Config:           destination.Config,
-			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+		}),
 	})
-	fileManager.SetTimeout(&fileManagerTimeout)
+	fileManager.SetTimeout(fileManagerTimeout)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config for testing this destination id %s: err %v", destination.ID, err)
 		return

@@ -14,6 +14,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gorilla/mux"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
@@ -32,19 +33,16 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//ProcessorApp is the type for Processor type implemention
+// ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
 var (
-	gatewayDB         jobsdb.HandleT
+	gatewayDB         *jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
@@ -79,15 +77,18 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
-	if processor.App.Features().Reporting != nil {
-		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-
-		g.Go(misc.WithBugsnag(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
-			return nil
-		}))
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
+	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+
+	reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+
+	g.Go(misc.WithBugsnag(func() error {
+		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		return nil
+	}))
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
@@ -100,23 +101,25 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
+	rsourcesService, err := NewRsourcesService(deploymentType)
+	if err != nil {
+		return err
+	}
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
-	gatewayDB = *gwDBForProcessor
+	gatewayDB = gwDBForProcessor
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(router.QueryFilters),
@@ -126,7 +129,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
@@ -136,7 +138,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
@@ -164,9 +165,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 				g.Go(func() error {
 					clearDB := false
 					if enableProcessor {
-						StartProcessor(
+						return StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources,
+							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)
 					}
 					return nil
@@ -175,7 +176,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 			startRouterFunc := func() {
 				if enableRouter {
 					g.Go(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources)
+						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
 						return nil
 					})
 				}
@@ -185,24 +186,18 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
+				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) // TODO
 				return nil
 			})
 		}
 	}
 	var modeProvider cluster.ChangeEventProvider
 
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to get deployment type: %v", err)
-	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
-
 	switch deploymentType {
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
+	case deployment.DedicatedType:
 		// FIXME: hacky way to determine servermode
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
@@ -214,7 +209,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, rsourcesService)
 
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
@@ -223,6 +218,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		RouterDB:         tenantRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -231,6 +227,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
@@ -246,22 +243,19 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		MultiTenantStat:  multitenantStats,
 	}
 
-	if enableReplay && processor.App.Features().Replay != nil {
-		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
-		defer replayDB.TearDown()
-		processor.App.Features().Replay.Setup(&replayDB, gwDBForProcessor, routerDB, batchRouterDB)
-	}
-
 	g.Go(func() error {
 		return startHealthWebHandler(ctx)
 	})
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
-		//because if this start before that then there might be a case when ReadDB will try to read the owner table
-		//which gets created after either Write or ReadWrite DB is created.
+		// because if this start before that then there might be a case when ReadDB will try to read the owner table
+		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
+	})
+
+	g.Go(func() error {
+		return rsourcesService.CleanupLoop(ctx)
 	})
 
 	return g.Wait()
@@ -272,11 +266,11 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 }
 
 func startHealthWebHandler(ctx context.Context) error {
-	//Port where Processor health handler is running
+	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", healthHandler)
-	srvMux.HandleFunc("/", healthHandler)
+	srvMux.HandleFunc("/health", app.LivenessHandler(gatewayDB))
+	srvMux.HandleFunc("/", app.LivenessHandler(gatewayDB))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
@@ -296,8 +290,4 @@ func startHealthWebHandler(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, &gatewayDB)
 }

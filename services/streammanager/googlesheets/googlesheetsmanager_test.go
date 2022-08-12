@@ -16,6 +16,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
@@ -52,11 +53,11 @@ func Test_Timeout(t *testing.T) {
 		},
 		TestConfig: testConfig,
 	}
-	client, err := NewProducer(config, Opts{Timeout: 10 * time.Second})
+	producer, err := NewProducer(config, common.Opts{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf(" %+v", err)
 	}
-	client.opts = Opts{Timeout: 1 * time.Microsecond}
+	producer.client.opts = common.Opts{Timeout: 1 * time.Microsecond}
 	json := fmt.Sprintf(`{
 		"spreadSheetId": "%s",
 		"spreadSheet": "%s",
@@ -65,7 +66,7 @@ func Test_Timeout(t *testing.T) {
 			"1": { "attributeKey": "%s", "attributeValue": "5900"}
 		}
 	}`, sheetId, sheetName, header1, header2)
-	statusCode, respStatus, responseMessage := Produce([]byte(json), client, nil)
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(json), nil)
 	const expectedStatusCode = 504
 	if statusCode != expectedStatusCode {
 		t.Errorf("Expected status code %d, got %d.", expectedStatusCode, statusCode)
@@ -126,21 +127,21 @@ func blockOnHold() {
 	<-c
 }
 
-type deferer interface {
-	Defer(func() error)
+type cleaner interface {
+	Cleanup(func())
+	Log(...interface{})
 }
 
-func SetupTestGoogleSheets(pool *dockertest.Pool, d deferer) (*TestConfig, error) {
+func SetupTestGoogleSheets(pool *dockertest.Pool, cln cleaner) (*TestConfig, error) {
 	var config TestConfig
 	dockerContainer, err := pool.Run("atzoum/simulator-google-sheets", "latest", []string{})
 	if err != nil {
 		return nil, fmt.Errorf("Could not start resource: %s", err)
 	}
-	d.Defer(func() error {
+	cln.Cleanup(func() {
 		if err := pool.Purge(dockerContainer); err != nil {
-			return fmt.Errorf("Could not purge resource: %s \n", err)
+			cln.Log(fmt.Errorf("could not purge resource: %v", err))
 		}
-		return nil
 	})
 	config.Endpoint = fmt.Sprintf("https://127.0.0.1:%s/", dockerContainer.GetPort("8443/tcp"))
 	config.AccessToken = "cd887efc-7c7d-4e8e-9580-f7502123badf"

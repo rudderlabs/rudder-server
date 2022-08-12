@@ -9,18 +9,18 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/allisson/go-pglock/v2"
+	"github.com/gofrs/uuid"
+	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
 
-	pglock "github.com/allisson/go-pglock/v2"
-	uuid "github.com/gofrs/uuid"
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	whUtils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -96,9 +96,8 @@ func loadPGNotifierConfig() {
 	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 }
 
-//New Given default connection info return pg notifiew object from it
-func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
-
+// New Given default connection info return pg notifiew object from it
+func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
 	// by default connection info is fallback connection info
 	connectionInfo := fallbackConnectionInfo
 
@@ -113,16 +112,16 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 	}
 
 	// setup metrics
-	pgNotifierModuleTag := warehouseutils.Tag{Name: "module", Value: "pgnotifier"}
+	pgNotifierModuleTag := whUtils.Tag{Name: "module", Value: "pgnotifier"}
 	// publish metrics
-	pgNotifierPublish = warehouseutils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
-	pgNotifierPublishTime = warehouseutils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
+	pgNotifierPublish = whUtils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
+	pgNotifierPublishTime = whUtils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
 	// claim metrics
-	pgNotifierClaimSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
-	pgNotifierClaimFailed = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
-	pgNotifierClaimSucceededTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
-	pgNotifierClaimFailedTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
-	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
+	pgNotifierClaimSucceeded = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailed = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimSucceededTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailedTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimUpdateFailed = whUtils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
 
 	notifier = PgNotifierT{
 		dbHandle:            dbHandle,
@@ -138,13 +137,12 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 }
 
 func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
-
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
 		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s'", queueName, notifier.workspaceIdentifier)
 		pkgLogger.Infof("PgNotifier: Deleting all jobs for workspace: %s", notifier.workspaceIdentifier)
-		_, err = notifier.dbHandle.Exec(stmt)
+		_, err = notifier.dbHandle.ExecContext(ctx, stmt)
 		if err != nil {
 			return
 		}
@@ -190,7 +188,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				if err != nil {
 					panic(err)
 				}
-				responses := []ResponseT{}
+				var responses []ResponseT
 				for rows.Next() {
 					var status, jobError, output sql.NullString
 					var jobID int64
@@ -205,7 +203,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 						Error:  jobError.String,
 					})
 				}
-				rows.Close()
+				_ = rows.Close()
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
 				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = '%s'`, queueName, batchID)
@@ -222,7 +220,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 }
 
 func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
-	//rruntime.GoForWarehouse(func() {
+	// rruntime.GoForWarehouse(func() {
 	//	response := <-ch
 	var err error
 	if response.Err != nil {
@@ -289,18 +287,24 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		return
 	}
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt)
-
+	defer func() {
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				err = fmt.Errorf("%v: %w", err, rollbackErr)
+			}
+		}
+	}()
+	if err == sql.ErrNoRows {
+		return
+	}
 	if err != nil {
-		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
-		tx.Rollback()
+		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		return
 	}
 
 	err = tx.Commit()
-
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error commiting claim txn: %v", err)
-		tx.Rollback()
+		pkgLogger.Errorf("PgNotifier: Error committing claim txn: %v", err)
 		return
 	}
 
@@ -315,7 +319,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -326,14 +330,23 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 
 	ch = make(chan []ResponseT)
 
-	//Using transactions for bulk copying
+	// Using transactions for bulk copying
 	txn, err := notifier.dbHandle.Begin()
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating transaction for publishing with error: %w", err)
 		return
 	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txn.Rollback(); rollbackErr != nil {
+				pkgLogger.Errorf("PgNotifier: Failed rollback transaction for publishing with error: %s", rollbackErr.Error())
+			}
+		}
+	}()
 
 	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
 	}
 	defer stmt.Close()
@@ -343,30 +356,56 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan [
 	for _, job := range jobs {
 		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
 		if err != nil {
+			err = fmt.Errorf("PgNotifier: Failed executing prepared statement for publishing with error: %w", err)
 			return
 		}
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed publishing prepared statement for publishing with error: %w", err)
 		return
 	}
+
+	uploadSchemaJSON, err := json.Marshal(struct {
+		UploadSchema whUtils.SchemaT
+	}{
+		UploadSchema: *schema,
+	})
+	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed unmarshalling uploadschema for publishing with error: %w", err)
+		return
+	}
+
+	sqlStatement := `
+		UPDATE
+		  pg_notifier_queue
+		SET
+		  payload = payload || $1
+		WHERE
+		  batch_id = $2;`
+	_, err = txn.Exec(sqlStatement, uploadSchemaJSON, batchID)
+	if err != nil {
+		err = fmt.Errorf("PgNotifier: Failed updating uploadschema for publishing with error: %w", err)
+		return
+	}
+
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+		err = fmt.Errorf("PgNotifier: Failed committing transaction for publishing with error: %w", err)
 		return
 	}
+
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
+
 	notifier.trackBatch(batchID, &ch)
 	return
 }
 
 func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
-
 	jobs := make(chan ClaimT, jobsBufferSize)
 	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
@@ -408,34 +447,35 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	return
 }
 
-//GetCurrentSQLTimestamp to get sql complaint current datetime string
+// GetCurrentSQLTimestamp to get sql complaint current datetime string
 func GetCurrentSQLTimestamp() string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return time.Now().Format(SQLTimeFormat)
 }
 
-//GetSQLTimestamp to get sql complaint current datetime string from the given duration
-func GetSQLTimestamp(t time.Time) string {
-	const SQLTimeFormat = "2006-01-02 15:04:05"
-	return t.Format(SQLTimeFormat)
-}
-
 // RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
 // which were left behind by dead workers in executing state
-//
 func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
 	if err != nil {
 		return err
 	}
+
+	var locked bool
+	defer func() {
+		if locked {
+			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
+				pkgLogger.Errorf("Error while unlocking maintenance worker lock: %v", err)
+			}
+		}
+	}()
 	for {
-		locked, err := maintenanceWorkerLock.Lock(ctx)
+		locked, err = maintenanceWorkerLock.Lock(ctx)
 		if err != nil {
-			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
+			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock: %v", err)
 		}
 		if locked {
-			defer maintenanceWorkerLock.Unlock(ctx)
 			break
 		}
 
@@ -446,7 +486,6 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 		}
 	}
 	for {
-
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
  								updated_at = '%[2]s'
  								WHERE id IN (
@@ -474,7 +513,7 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 			}
 			ids = append(ids, id)
 		}
-		rows.Close()
+		_ = rows.Close()
 		pkgLogger.Debugf("PgNotifier: Retriggered job ids: %v", ids)
 
 		select {
@@ -482,7 +521,5 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 			return nil
 		case <-time.After(jobOrphanTimeout / 5):
 		}
-
 	}
-
 }

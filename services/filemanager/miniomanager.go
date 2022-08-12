@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
-	var protocol = "http"
+	protocol := "http"
 	if manager.Config.UseSSL {
 		protocol = "https"
 	}
@@ -30,7 +31,7 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 		return UploadOutput{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	if err = minioClient.MakeBucketWithContext(ctx, manager.Config.Bucket, "us-east-1"); err != nil {
@@ -40,20 +41,7 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 		}
 	}
 
-	fileName := ""
-	splitFileName := strings.Split(file.Name(), "/")
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	_, err = minioClient.FPutObjectWithContext(ctx, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
@@ -69,7 +57,7 @@ func (manager *MinioManager) Download(ctx context.Context, file *os.File, key st
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	err = minioClient.FGetObjectWithContext(ctx, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
@@ -103,7 +91,6 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 }
 
 func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
-
 	objectChannel := make(chan string, len(keys))
 	for _, key := range keys {
 		objectChannel <- key
@@ -115,7 +102,7 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	tmp := <-minioClient.RemoveObjectsWithContext(ctx, manager.Config.Bucket, objectChannel)
@@ -210,11 +197,19 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 type MinioManager struct {
 	Config  *MinioConfig
 	client  *minio.Client
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *MinioManager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *MinioManager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *MinioManager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "MINIO", 120, time.Second)
 }
 
 type MinioConfig struct {

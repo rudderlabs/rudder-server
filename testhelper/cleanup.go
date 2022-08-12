@@ -1,20 +1,22 @@
 package testhelper
 
-import "log"
+import "fmt"
 
 type Cleanup struct {
-	fns []func() error
+	fns []func()
 }
 
-func (c *Cleanup) Defer(fn func() error) {
+func (*Cleanup) Log(a ...interface{}) {
+	fmt.Println(a...)
+}
+
+func (c *Cleanup) Cleanup(fn func()) {
 	c.fns = append(c.fns, fn)
 }
 
 func (c *Cleanup) Run() {
 	l := len(c.fns) - 1
 	for i := range c.fns {
-		if err := c.fns[l-i](); err != nil {
-			log.Println(err)
-		}
+		c.fns[l-i]()
 	}
 }

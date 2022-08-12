@@ -1,3 +1,5 @@
+//go:build integration
+
 package jobsdb
 
 import (
@@ -6,15 +8,15 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_mustRenameDS(t *testing.T) {
 	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
-
 		// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
 		dbHandle := postgresql.DB
 		jobsdb := &HandleT{
@@ -48,10 +50,9 @@ func Test_mustRenameDS(t *testing.T) {
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable), 1)
 		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable), 1)
 	})
-
 }
-func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 
+func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
 		dbHandle := postgresql.DB
 
@@ -102,7 +103,7 @@ func withPostgreSQL(t *testing.T, f func(postgresql *destination.PostgresResourc
 		t.Fatalf("Could not start postgres: %s", err)
 	}
 
-	fmt.Println("DB_DSN:", postgresql.DB_DSN)
+	fmt.Println("DB_DSN:", postgresql.DBDsn)
 	f(postgresql)
 }
 

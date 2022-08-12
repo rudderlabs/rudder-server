@@ -10,9 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -20,6 +18,9 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Config struct {
@@ -45,10 +46,7 @@ type Credentials struct {
 
 type Client struct {
 	service *sheets.Service
-	opts    Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts    common.Opts
 }
 
 var pkgLogger logger.LoggerI
@@ -57,8 +55,12 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlesheets")
 }
 
+type GoogleSheetsProducer struct {
+	client *Client
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
+func NewProducer(destinationConfig interface{}, o common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -80,7 +82,6 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 
 	service, err := generateService(opts...)
-
 	// If err is not nil then retrun
 	if err != nil {
 		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
@@ -88,7 +89,7 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	}
 
 	// ** Preparing the Header Data **
-	// Creating the array of string which are then coverted in to an array of interface which are to
+	// Creating the array of string which are then converted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
 	// Example: | First Name | Last Name | Birth Day | Item Purchased | ..
 	// Here messageId is by default the first column
@@ -103,12 +104,11 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	// Inserting header to the sheet
 	err = insertHeaderDataToSheet(client, config.SheetId, config.SheetName, headerRow)
 
-	return client, err
+	return &GoogleSheetsProducer{client}, err
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, _ interface{}) (statusCode int, respStatus string, responseMessage string) {
-
-	client := producer.(*Client)
+func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	client := producer.client
 	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
@@ -153,7 +153,7 @@ func generateService(opts ...option.ClientOption) (*sheets.Service, error) {
 
 // insertHeaderDataToSheet inserts header data.
 // Returns error for failure cases of API calls otherwise returns nil
-func insertHeaderDataToSheet(client *Client, spreadSheetId string, spreadSheetTab string, data []interface{}) error {
+func insertHeaderDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, data []interface{}) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -171,7 +171,7 @@ func insertHeaderDataToSheet(client *Client, spreadSheetId string, spreadSheetTa
 
 // insertRowDataToSheet appends row data list.
 // Returns error for failure cases of API calls otherwise returns nil
-func insertRowDataToSheet(client *Client, spreadSheetId string, spreadSheetTab string, dataList [][]interface{}) error {
+func insertRowDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, dataList [][]interface{}) error {
 	// Creating value range for inserting row into sheet
 	vr := sheets.ValueRange{
 		MajorDimension: "ROWS",
@@ -193,32 +193,35 @@ func insertRowDataToSheet(client *Client, spreadSheetId string, spreadSheetTab s
 // and we are storing the data into designated position in array based on transformer
 // mappings.
 // Example payload we have from transformer without batching:
-// {
-//		message:{
-//			1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//			2: { attributeKey: "Product Value, attributeValue: "5900"}
-//			..
-// 		}
-// }
-// Example Payload we have from transformer with batching:
-// {
-// 		batch:[
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
-//			},
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
+//
+//	{
+//			message:{
+//				1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//				2: { attributeKey: "Product Value, attributeValue: "5900"}
+//				..
 //			}
-// 		]
-// }
+//	}
+//
+// Example Payload we have from transformer with batching:
+//
+//	{
+//			batch:[
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				},
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				}
+//			]
+//	}
 func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 	batch := source.Get("batch")
 	messages := batch.Array()

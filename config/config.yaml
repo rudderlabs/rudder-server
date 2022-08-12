@@ -1,6 +1,4 @@
 maxProcess: 12
-gwDBRetention: 0h
-routerDBRetention: 0h
 enableProcessor: true
 enableRouter: true
 enableStats: true
@@ -162,6 +160,7 @@ Warehouse:
     maxParallelLoads: 20
   postgres:
     maxParallelLoads: 3
+    enableSQLStatementExecutionPlan: false
   mssql:
     maxParallelLoads: 3
   azure_synapse:

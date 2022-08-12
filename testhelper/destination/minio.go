@@ -15,12 +15,16 @@ import (
 )
 
 type MINIOResource struct {
-	MinioEndpoint   string
-	MinioBucketName string
-	Port            string
+	Endpoint   string
+	BucketName string
+	Port       string
+	AccessKey  string
+	SecretKey  string
+	SiteRegion string
+	Client     *minio.Client
 }
 
-func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
+func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -37,18 +41,21 @@ func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
 		},
-		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
+		Env: []string{
+			"MINIO_ACCESS_KEY=MYACCESSKEY",
+			"MINIO_SECRET_KEY=MYSECRETKEY",
+			"MINIO_SITE_REGION=us-east-1",
+		},
 	}
 
 	minioContainer, err := pool.RunWithOptions(options)
 	if err != nil {
 		return nil, err
 	}
-	d.Defer(func() error {
+	d.Cleanup(func() {
 		if err := pool.Purge(minioContainer); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+			d.Log("Could not purge resource:", err)
 		}
-		return nil
 	})
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", minioContainer.GetPort("9000/tcp"))
@@ -81,8 +88,12 @@ func SetupMINIO(pool *dockertest.Pool, d deferer) (*MINIOResource, error) {
 		return nil, err
 	}
 	return &MINIOResource{
-		MinioEndpoint:   minioEndpoint,
-		MinioBucketName: minioBucketName,
-		Port:            minioContainer.GetPort("9000/tcp"),
+		Endpoint:   minioEndpoint,
+		BucketName: minioBucketName,
+		Port:       minioContainer.GetPort("9000/tcp"),
+		AccessKey:  "MYACCESSKEY",
+		SecretKey:  "MYSECRETKEY",
+		SiteRegion: "us-east-1",
+		Client:     minioClient,
 	}, nil
 }

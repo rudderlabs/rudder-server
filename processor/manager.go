@@ -2,13 +2,13 @@ package processor
 
 import (
 	"context"
-
-	"golang.org/x/sync/errgroup"
+	"sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -17,7 +17,7 @@ type LifecycleManager struct {
 	HandleT          *HandleT
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
-	waitGroup        *errgroup.Group
+	waitGroup        interface{ Wait() }
 	gatewayDB        *jobsdb.HandleT
 	routerDB         *jobsdb.HandleT
 	batchRouterDB    *jobsdb.HandleT
@@ -28,40 +28,50 @@ type LifecycleManager struct {
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
+	rsourcesService  rsources.JobService
 }
 
 // Start starts a processor, this is not a blocking call.
-//If the processor is not completely started and the data started coming then also it will not be problematic as we
-//are assuming that the DBs will be up.
-func (proc *LifecycleManager) Start() {
+// If the processor is not completely started and the data started coming then also it will not be problematic as we
+// are assuming that the DBs will be up.
+func (proc *LifecycleManager) Start() error {
 	if proc.Transformer != nil {
 		proc.HandleT.transformer = proc.Transformer
 	}
 
-	proc.HandleT.Setup(proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB,
-		proc.errDB, proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources)
+	proc.HandleT.Setup(
+		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
+		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.rsourcesService,
+	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
 
-	g, ctx := errgroup.WithContext(currentCtx)
-	proc.waitGroup = g
-	g.Go(func() error {
-		proc.HandleT.Start(ctx)
-		return nil
-	})
+	var wg sync.WaitGroup
+	proc.waitGroup = &wg
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := proc.HandleT.Start(currentCtx); err != nil {
+			proc.HandleT.logger.Errorf("Error starting processor: %v", err)
+		}
+	}()
+	return nil
 }
 
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
 	proc.HandleT.Shutdown()
-	_ = proc.waitGroup.Wait()
+	proc.waitGroup.Wait()
 }
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service) *LifecycleManager {
+	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service,
+	rsourcesService rsources.JobService,
+) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
 		mainCtx:          ctx,
@@ -74,6 +84,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
 		transientSources: transientSources,
+		rsourcesService:  rsourcesService,
 	}
 	return proc
 }

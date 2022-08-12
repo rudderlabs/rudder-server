@@ -34,17 +34,19 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/sjson"
+
+	"github.com/thoas/go-funk"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/thoas/go-funk"
 )
 
 var (
@@ -57,7 +59,8 @@ var (
 
 const (
 	// RFC3339Milli with milli sec precision
-	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
+	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05"
 )
 
 const (
@@ -78,7 +81,7 @@ type ErrorStoreT struct {
 	Errors []RudderError
 }
 
-//RudderError : to store rudder error
+// RudderError : to store rudder error
 type RudderError struct {
 	StartTime         int64
 	CrashTime         int64
@@ -151,14 +154,14 @@ func saveErrorStore(errorStore ErrorStoreT) {
 		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
-	err = os.WriteFile(errorStorePath, errorStoreJSON, 0644)
+	err = os.WriteFile(errorStorePath, errorStoreJSON, 0o644)
 	if err != nil {
 		pkgLogger.Fatal("failed to write to errorStore")
 	}
 }
 
-//AppendError creates or appends second error to first error
-func AppendError(callingMethodName string, firstError *error, secondError *error) {
+// AppendError creates or appends second error to first error
+func AppendError(callingMethodName string, firstError, secondError *error) {
 	if *firstError != nil {
 		*firstError = fmt.Errorf("%v ; %v : %w", (*firstError).Error(), callingMethodName, *secondError)
 	} else {
@@ -166,7 +169,7 @@ func AppendError(callingMethodName string, firstError *error, secondError *error
 	}
 }
 
-//RecordAppError appends the error occured to error_store.json
+// RecordAppError appends the error occurred to error_store.json
 func RecordAppError(err error) {
 	if err == nil {
 		return
@@ -187,7 +190,7 @@ func RecordAppError(err error) {
 
 	crashTime := time.Now().Unix()
 
-	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
+	// TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
 	errorStore.Errors = append(errorStore.Errors,
 		RudderError{
 			StartTime:         AppStartTime,
@@ -207,15 +210,14 @@ func GetHash(s string) int {
 	return int(h.Sum32())
 }
 
-//GetMD5Hash returns EncodeToString(md5 hash of the input string)
+// GetMD5Hash returns EncodeToString(md5 hash of the input string)
 func GetMD5Hash(input string) string {
 	hash := md5.Sum([]byte(input))
 	return hex.EncodeToString(hash[:])
 }
 
-//GetRudderEventVal returns the value corresponding to the key in the message structure
+// GetRudderEventVal returns the value corresponding to the key in the message structure
 func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{}, bool) {
-
 	rudderVal, ok := rudderEvent[key]
 	if !ok {
 		return nil, false
@@ -223,7 +225,7 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 	return rudderVal, true
 }
 
-//ParseRudderEventBatch looks for the batch structure inside event
+// ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
 	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
@@ -235,12 +237,12 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	return gatewayBatchEvent.Batch, true
 }
 
-//GetRudderID return the UserID from the object
+// GetRudderID return the UserID from the object
 func GetRudderID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("rudderId", event)
 	if !ok {
-		//TODO: Remove this in next build.
-		//This is for backwards compatibilty, esp for those with sessions.
+		// TODO: Remove this in next build.
+		// This is for backwards compatibility, esp for those with sessions.
 		userID, ok = GetRudderEventVal("anonymousId", event)
 		if !ok {
 			return "", false
@@ -252,7 +254,6 @@ func GetRudderID(event types.SingularEventT) (string, bool) {
 
 // ZipFiles compresses files[] into zip at filename
 func ZipFiles(filename string, files []string) error {
-
 	newZipFile, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -273,7 +274,6 @@ func ZipFiles(filename string, files []string) error {
 
 // AddFileToZip adds file to zip including size header stats
 func AddFileToZip(zipWriter *zip.Writer, filename string) error {
-
 	fileToZip, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -419,7 +419,7 @@ func CreateTMPDIR() (string, error) {
 	return tmpdirPath, nil
 }
 
-//PerfStats is the class for managing performance stats. Not multi-threaded safe now
+// PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
 	eventCount      int64
 	elapsedTime     time.Duration
@@ -428,17 +428,17 @@ type PerfStats struct {
 	instantRateCall float64
 }
 
-//Setup initializes the stat collector
+// Setup initializes the stat collector
 func (stats *PerfStats) Setup(comp string) {
 	stats.compStr = comp
 }
 
-//Start marks the start of event collection
+// Start marks the start of event collection
 func (stats *PerfStats) Start() {
 	stats.tmpStart = time.Now()
 }
 
-//End marks the end of one round of stat collection. events is number of events processed since start
+// End marks the end of one round of stat collection. events is number of events processed since start
 func (stats *PerfStats) End(events int) {
 	elapsed := time.Since(stats.tmpStart)
 	stats.elapsedTime += elapsed
@@ -463,8 +463,8 @@ func (stats *PerfStats) Status() map[string]interface{} {
 	}
 }
 
-//Copy copies the exported fields from src to dest
-//Used for copying the default transport
+// Copy copies the exported fields from src to dest
+// Used for copying the default transport
 func Copy(dst, src interface{}) {
 	srcV := reflect.ValueOf(src)
 	dstV := reflect.ValueOf(dst)
@@ -636,7 +636,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 	}
 	typeInterface := reflect.TypeOf(interfaceT).Kind()
 	if !(typeInterface != reflect.Slice) && !(typeInterface != reflect.Array) {
-		return intArr, errors.New("didn't recieve array from transformer")
+		return intArr, errors.New("didn't receive array from transformer")
 	}
 
 	interfaceArray := interfaceT.([]interface{})
@@ -702,7 +702,6 @@ func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Durat
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("Failed to make call. Error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return respBody, statusCode
@@ -729,7 +728,7 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 
 func SingleQuoteLiteralJoin(slice []string) string {
 	var str string
-	//TODO: use strings.Join() instead
+	// TODO: use strings.Join() instead
 	for index, key := range slice {
 		if index > 0 {
 			str += `, `
@@ -745,7 +744,7 @@ type BufferedWriter struct {
 }
 
 func CreateBufferedWriter(s string) (w BufferedWriter, err error) {
-	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o660)
 	if err != nil {
 		return
 	}
@@ -780,7 +779,7 @@ type GZipWriter struct {
 }
 
 func CreateGZ(s string) (w GZipWriter, err error) {
-	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o660)
 	if err != nil {
 		return
 	}
@@ -910,7 +909,7 @@ func GetOutboundIP() (net.IP, error) {
 RunWithTimeout runs provided function f until provided timeout d.
 If the timeout is reached, onTimeout callback will be called.
 */
-func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
+func RunWithTimeout(f, onTimeout func(), d time.Duration) {
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -1050,7 +1049,6 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 		return clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap
-
 }
 
 func GetSpacesLocation(location string) (region string) {
@@ -1063,19 +1061,18 @@ func GetSpacesLocation(location string) (region string) {
 	return region
 }
 
-//GetNodeID returns the nodeId of the current node
+// GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
 	nodeID := config.GetRequiredEnv("INSTANCE_ID")
 	return nodeID
 }
 
-//MakeRetryablePostRequest is Util function to make a post request.
-func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
+// MakeRetryablePostRequest is Util function to make a post request.
+func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
 	backendURL := fmt.Sprintf("%s%s", url, endpoint)
 	dataJSON, err := json.Marshal(data)
 
 	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
-
 	if err != nil {
 		return nil, -1, err
 	}
@@ -1087,7 +1084,7 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 	return body, resp.StatusCode, nil
 }
 
-//GetMD5UUID hashes the given string into md5 and returns it as auuid
+// GetMD5UUID hashes the given string into md5 and returns it as auuid
 func GetMD5UUID(str string) (uuid.UUID, error) {
 	md5Sum := md5.Sum([]byte(str))
 	u, err := uuid.FromBytes(md5Sum[:])
@@ -1134,7 +1131,7 @@ func parseTag(tag string) (string, string) {
 	return tag, ""
 }
 
-//GetMandatoryJSONFieldNames returns all the json field names defined against the json tag for each field.
+// GetMandatoryJSONFieldNames returns all the json field names defined against the json tag for each field.
 func GetMandatoryJSONFieldNames(st interface{}) []string {
 	v := reflect.TypeOf(st)
 	mandatoryJSONFieldNames := make([]string, 0, v.NumField())
@@ -1168,7 +1165,7 @@ func MaxInt(a, b int) int {
 	return b
 }
 
-//GetTagName gets the tag name using a uuid and name
+// GetTagName gets the tag name using a uuid and name
 func GetTagName(id string, names ...string) string {
 	var truncatedNames string
 	for _, name := range names {
@@ -1178,7 +1175,7 @@ func GetTagName(id string, names ...string) string {
 	return truncatedNames + TailTruncateStr(id, 6)
 }
 
-//UpdateJSONWithNewKeyVal enhances the json passed with key, val
+// UpdateJSONWithNewKeyVal enhances the json passed with key, val
 func UpdateJSONWithNewKeyVal(params []byte, key string, val interface{}) []byte {
 	updatedParams, err := sjson.SetBytes(params, key, val)
 	if err != nil {
@@ -1251,8 +1248,7 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
 			notifyOnce.Do(func() {
-				RecordAppError(fmt.Errorf("%v", r))
-				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
 						"Number": runtime.NumGoroutine(),
 					},
@@ -1260,10 +1256,10 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 						"Name": team,
 					},
 				})
+				RecordAppError(fmt.Errorf("%v", r))
+				pkgLogger.Fatal(r)
+				panic(r)
 			})
-
-			pkgLogger.Fatal(r)
-			panic(r)
 		}
 	}
 }
@@ -1358,9 +1354,9 @@ func SortMap(inputMap map[string]metric.MovingAverage) []string {
 
 	sort.Sort(pairArr)
 	var sortedWorkspaceList []string
-	//p is sorted
+	// p is sorted
 	for _, k := range pairArr {
-		//Workspace ID - RS Check
+		// Workspace ID - RS Check
 		sortedWorkspaceList = append(sortedWorkspaceList, k.key)
 	}
 	return sortedWorkspaceList

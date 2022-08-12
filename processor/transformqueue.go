@@ -2,6 +2,7 @@ package processor
 
 import (
 	"container/heap"
+
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
@@ -53,7 +54,7 @@ func (pq *transformRequestPQ) Remove(item *TransformRequestT) {
 	heap.Remove(pq, item.Index)
 }
 
-func (pq *transformRequestPQ) Update(item *TransformRequestT, nextItem *TransformRequestT) {
+func (pq *transformRequestPQ) Update(item, nextItem *TransformRequestT) {
 	index := item.Index
 	item = nextItem
 	item.Index = index

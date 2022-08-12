@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,7 +71,7 @@ type OAuthErrResHandler struct {
 
 type Authorizer interface {
 	Setup()
-	DisableDestination(destination backendconfig.DestinationT, workspaceId string, rudderAccountId string) (statusCode int, resBody string)
+	DisableDestination(destination *backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, resBody string)
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
 }
@@ -102,9 +102,10 @@ const (
 	INVALID_REFRESH_TOKEN_GRANT = "refresh_token_invalid_grant"
 )
 
+// This struct only exists for marshalling and sending payload to control-plane
 type RefreshTokenBodyParams struct {
-	HasExpired    bool   `json:"hasExpired"`
-	ExpiredSecret string `json:"expiredSecret"`
+	HasExpired    bool            `json:"hasExpired"`
+	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }
 
 type tokenProvider interface {
@@ -120,7 +121,7 @@ func Init() {
 func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
-	//This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
+	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
@@ -160,7 +161,6 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 }
 
 func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
-
 	startTime := time.Now()
 	defer func() {
 		authStats.statName = fmt.Sprintf("%v_total_req_latency", refTokenParams.EventNamePrefix)
@@ -173,14 +173,14 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if router_utils.IsNotEmptyString(string(refTokenParams.Secret)) {
 		refTokenBody = RefreshTokenBodyParams{
 			HasExpired:    true,
-			ExpiredSecret: string(refTokenParams.Secret),
+			ExpiredSecret: refTokenParams.Secret,
 		}
 	}
 	accountMutex.RLock()
 	refVal, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 	if ok {
-		isInvalidAccountSecretForRefresh := (router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
-			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret))
+		isInvalidAccountSecretForRefresh := router_utils.IsNotEmptyString(string(refVal.Account.Secret)) &&
+			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret)
 		if isInvalidAccountSecretForRefresh {
 			accountMutex.RUnlock()
 			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.Secret)
@@ -233,7 +233,8 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 // This method hits the Control Plane to get the account information
 // As well update the account information into the destAuthInfoMap(which acts as an in-memory cache)
 func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
-	authStats *OAuthStats, logTypeName string) (statusCode int) {
+	authStats *OAuthStats, logTypeName string,
+) (statusCode int) {
 	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
@@ -343,7 +344,7 @@ func (refStats *OAuthStats) SendCountStat() {
 	}).Increment()
 }
 
-func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string, rudderAccountId string) (statusCode int, respBody string) {
+func (authErrHandler *OAuthErrResHandler) DisableDestination(destination *backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := destination.ID
 	disableDestMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
@@ -434,15 +435,15 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
-		respData, ioUtilReadErr = ioutil.ReadAll(resp.Body)
+		respData, ioUtilReadErr = io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
 		}
 	}
-	//Detecting content type of the respData
+	// Detecting content type of the respData
 	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
-	//If content type is not of type "*text*", overriding it with empty string
+	// If content type is not of type "*text*", overriding it with empty string
 	if !(strings.Contains(contentTypeHeader, "text") ||
 		strings.Contains(contentTypeHeader, "application/json") ||
 		strings.Contains(contentTypeHeader, "application/xml")) {
@@ -460,7 +461,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		reqBody = bytes.NewBufferString(cpReq.Body)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
 	} else {
-		req, err = http.NewRequest(cpReq.Method, cpReq.Url, nil)
+		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)

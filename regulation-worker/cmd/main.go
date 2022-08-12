@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -26,7 +28,6 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
-
 	initialize.Init()
 	backendconfig.Init()
 
@@ -42,13 +43,15 @@ func main() {
 		close(c)
 	}()
 	Run(ctx)
-
 }
 
 func Run(ctx context.Context) {
-
+	admin.Init()
+	if err := backendconfig.Setup(nil); err != nil {
+		panic(fmt.Errorf("error while setting up backend config: %v", err))
+	}
 	dest := &destination.DestMiddleware{
-		Dest: &backendconfig.SingleWorkspaceConfig{},
+		Dest: backendconfig.DefaultBackendConfig,
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
@@ -77,11 +80,10 @@ func Run(ctx context.Context) {
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
 	err = l.Loop(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}
-
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

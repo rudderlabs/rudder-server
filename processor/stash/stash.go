@@ -52,14 +52,14 @@ type StoreErrorOutputT struct {
 }
 
 type HandleT struct {
-	errorDB         jobsdb.JobsDB
-	errProcessQ     chan []*jobsdb.JobT
-	errFileUploader filemanager.FileManager
-	stats           stats.Stats
-	statErrDBR      stats.RudderStats
-	statErrDBW      stats.RudderStats
-	logger          logger.LoggerI
-	transientSource transientsource.Service
+	errorDB              jobsdb.JobsDB
+	errProcessQ          chan []*jobsdb.JobT
+	errFileUploader      filemanager.FileManager
+	statErrDBR           stats.RudderStats
+	logger               logger.LoggerI
+	transientSource      transientsource.Service
+	jobsDBCommandTimeout time.Duration
+	jobdDBMaxRetries     int
 }
 
 func New() *HandleT {
@@ -69,10 +69,10 @@ func New() *HandleT {
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
-	st.stats = stats.DefaultStats
-	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
-	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
+	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	st.crashRecover()
 }
 
@@ -132,7 +132,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
-				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
+				uploadStat := stats.DefaultStats.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
 				st.setErrJobStatus(jobs, output)
@@ -177,7 +177,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		}
 		contentSlice = append(contentSlice, rawJob)
 	}
-	content := bytes.Join(contentSlice[:], []byte("\n"))
+	content := bytes.Join(contentSlice, []byte("\n"))
 	if _, err := gzWriter.Write(content); err != nil {
 		panic(err)
 	}
@@ -228,7 +228,9 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+	})
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
@@ -246,7 +248,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
-			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
+			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,
@@ -309,8 +311,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-
-			err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+			err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
+			})
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)

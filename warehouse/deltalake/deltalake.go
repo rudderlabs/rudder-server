@@ -3,9 +3,10 @@ package deltalake
 import (
 	"context"
 	"fmt"
-	"github.com/iancoleman/strcase"
 	"strings"
 	"time"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
@@ -186,38 +187,18 @@ func GetDatabricksConnectorURL() string {
 }
 
 // checkAndIgnoreAlreadyExistError checks and ignores native errors.
-func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
+func checkAndIgnoreAlreadyExistError(errorCode, ignoreError string) bool {
 	if errorCode == "" || errorCode == ignoreError {
 		return true
 	}
 	return false
 }
 
-// connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+// Connect creates database connection with CredentialsT
+func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHandleT *databricks.DBHandleT, err error) {
 	if err := checkHealth(); err != nil {
 		return nil, fmt.Errorf("error connecting to databricks related deployement. Please contact Rudderstack support team")
 	}
-
-	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Connect",
-	})
-	connStat.Start()
-	defer connStat.End()
-
-	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Close",
-	})
 
 	ctx := context.Background()
 	identifier := uuid.Must(uuid.NewV4()).String()
@@ -226,19 +207,19 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Port:            cred.Port,
 		HttpPath:        cred.Path,
 		Pwd:             cred.Token,
-		Schema:          cred.Schema,
-		SparkServerType: cred.SparkServerType,
-		AuthMech:        cred.AuthMech,
-		Uid:             cred.UID,
-		ThriftTransport: cred.ThriftTransport,
-		Ssl:             cred.SSL,
-		UserAgentEntry:  cred.UserAgentEntry,
+		Schema:          schema,
+		SparkServerType: sparkServerType,
+		AuthMech:        authMech,
+		Uid:             uid,
+		ThriftTransport: thriftTransport,
+		Ssl:             ssl,
+		UserAgentEntry:  userAgent,
 	}
 
 	// Getting timeout context
 	timeout := grpcTimeout
-	if dl.ConnectTimeout != 0 {
-		timeout = dl.ConnectTimeout
+	if connectTimeout != 0 {
+		timeout = connectTimeout
 	}
 	tCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -246,14 +227,14 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	// Creating grpc connection using timeout context
 	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
+		execTimeouts := stats.DefaultStats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
-		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("connection timed out to Delta lake: %w", err)
 		return
 	}
 	if err != nil {
-		err = fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("error while creating grpc connection to Delta lake: %w", err)
 		return
 	}
 
@@ -263,11 +244,11 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Identifier: identifier,
 	})
 	if err != nil {
-		err = fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("error connecting to Delta lake: %w", err)
 		return
 	}
 	if connectionResponse.GetErrorCode() != "" {
-		err = fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
+		err = fmt.Errorf("error connecting to Delta lake with response: %s", connectionResponse.GetErrorMessage())
 		return
 	}
 
@@ -277,7 +258,6 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Conn:           conn,
 		Client:         dbClient,
 		Context:        ctx,
-		CloseStats:     closeConnStat,
 	}
 	return
 }
@@ -312,7 +292,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 }
 
 // ExecuteSQL executes sql using grpc Client
-func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error) {
+func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -466,7 +446,7 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(tableName string, location string) (loadFolder string, err error) {
+func (dl *HandleT) getLoadFolder(tableName, location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == "S3" {
 		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
@@ -492,7 +472,7 @@ func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseuti
 }
 
 // loadTable Loads table with table name
-func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
@@ -526,8 +506,8 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
-	var tableSchemaDiff = getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
-	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
+	tableSchemaDiff := getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
+	sortedColumnNames := dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
@@ -548,8 +528,9 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	// Sanitising copy sql statement for logging
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
+		"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
+		"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("%s Running COPY command with SQL: %s\n", dl.GetLogIdentifier(tableName), sanitisedSQLStmt)
@@ -735,21 +716,40 @@ func (dl *HandleT) dropDanglingStagingTables() {
 }
 
 // connectToWarehouse returns the database connection configured with CredentialsT
-func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
+func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err error) {
 	credT := &databricks.CredentialsT{
-		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
-		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
-		Path:            warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
-		Token:           warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
-		Schema:          schema,
-		SparkServerType: sparkServerType,
-		AuthMech:        authMech,
-		UID:             uid,
-		ThriftTransport: thriftTransport,
-		SSL:             ssl,
-		UserAgentEntry:  userAgent,
+		Host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
+		Port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
+		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
+		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	}
-	return dl.connect(credT)
+	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"destination": dl.Warehouse.Destination.ID,
+		"destType":    dl.Warehouse.Type,
+		"source":      dl.Warehouse.Source.ID,
+		"namespace":   dl.Warehouse.Namespace,
+		"identifier":  dl.Warehouse.Identifier,
+		"queryType":   "Connect",
+	})
+	connStat.Start()
+	defer connStat.End()
+
+	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"destination": dl.Warehouse.Destination.ID,
+		"destType":    dl.Warehouse.Type,
+		"source":      dl.Warehouse.Source.ID,
+		"namespace":   dl.Warehouse.Namespace,
+		"identifier":  dl.Warehouse.Identifier,
+		"queryType":   "Close",
+	})
+
+	dbHandleT, err = Connect(credT, dl.ConnectTimeout)
+	if err != nil {
+		return
+	}
+
+	dbHandleT.CloseStats = closeConnStat
+	return
 }
 
 // CreateTable creates tables with table name and columns
@@ -792,7 +792,7 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 }
 
 // AddColumn adds column for column name and type
-func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
+func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s );`, tableName, columnName, getDeltaLakeDataType(columnType))
 	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
@@ -819,7 +819,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (dl *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -1006,7 +1006,6 @@ func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 		misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config),
 	)
 	dbHandleT, err := dl.connectToWarehouse()
-
 	if err != nil {
 		return client.Client{}, err
 	}
@@ -1051,7 +1050,7 @@ func checkHealth() (err error) {
 	ctx := context.Background()
 	defer func() {
 		if err != nil {
-			healthTimeouts := stats.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
+			healthTimeouts := stats.DefaultStats.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
 			healthTimeouts.Count(1)
 		}
 	}()
@@ -1079,7 +1078,7 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {

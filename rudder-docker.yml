@@ -14,7 +14,7 @@ services:
       - db
       - metrics-exporter
       - d-transformer
-    image: rudderlabs/rudder-server:1-alpine
+    image: rudderlabs/rudder-server:latest # latest version that matches 0.*.*
     entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
     ports:
       - "8080:8080"

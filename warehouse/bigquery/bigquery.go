@@ -165,7 +165,7 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
@@ -182,7 +182,7 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (bq *HandleT) schemaExists(schemaname string, location string) (exists bool, err error) {
+func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
 	if err != nil {
@@ -251,11 +251,11 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func partitionedTable(tableName string, partitionDate string) string {
+func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
+func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
@@ -593,9 +593,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			return
 		}
 	}
-	// set isDedupEnabled to true to enable dedup for all tables
-	// set isUsersTableDedupEnabled to true to enable dedup for only users table
-	if !isDedupEnabled && !isUsersTableDedupEnabled {
+
+	if !usersDedupEnabled() {
 		loadUserTableByAppend()
 		return
 	}
@@ -610,10 +609,15 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
-	if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
-		return nil, err
+	opts := []option.ClientOption{}
+	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
+		credBytes := []byte(cred.Credentials)
+		if err := googleutils.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithCredentialsJSON(credBytes))
 	}
-	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
+	client, err := bigquery.NewClient(context, cred.ProjectID, opts...)
 	return client, err
 }
 
@@ -629,6 +633,8 @@ func loadConfig() {
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
+	// set isDedupEnabled to true to enable dedup for all tables
+	// set isUsersTableDedupEnabled only to true to enable dedup for only users table
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 }
@@ -662,6 +668,10 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 	return
 }
 
+func usersDedupEnabled() bool {
+	return isDedupEnabled || isUsersTableDedupEnabled
+}
+
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	if !isDedupEnabled {
 		return
@@ -680,6 +690,7 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	bq.dropDanglingStagingTables()
 	return
 }
+
 func (bq *HandleT) dropDanglingStagingTables() bool {
 	sqlStatement := fmt.Sprintf(`SELECT table_name
 								 FROM %[1]s.INFORMATION_SCHEMA.TABLES
@@ -791,7 +802,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	err = bq.addColumn(tableName, columnName, columnType)
 	if err != nil {
 		if checkAndIgnoreAlreadyExistError(err) {
@@ -802,7 +813,7 @@ func (bq *HandleT) AddColumn(tableName string, columnName string, columnType str
 	return err
 }
 
-func (bq *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -896,7 +907,7 @@ func (bq *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return false, err
 }
 
-func (bq *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+func (bq *HandleT) columnExists(columnName, tableName string) (exists bool, err error) {
 	tableMetadata, err := bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
 	if err != nil {
 		return false, err
@@ -973,6 +984,9 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				return err
 			}
 			it, err := job.Read(ctx)
+			if err != nil {
+				return err
+			}
 			for {
 				var values []bigquery.Value
 
@@ -1058,7 +1072,7 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) LoadTestTable(location string, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -1085,5 +1099,4 @@ func (bq *HandleT) LoadTestTable(location string, tableName string, payloadMap m
 }
 
 func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
-
 }

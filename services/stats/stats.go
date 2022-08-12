@@ -3,6 +3,7 @@ package stats
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -63,21 +64,43 @@ func Init() {
 	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
 
 	pkgLogger = logger.NewLogger().Child("stats")
-
 }
 
 type Tags map[string]string
 
+// Strings returns all key value pairs as an ordered list of strings, sorted by increasing key order
+func (t Tags) Strings() []string {
+	if len(t) == 0 {
+		return nil
+	}
+	res := make([]string, 0, len(t)*2)
+	// sorted by tag name (!important for consistent map iteration order)
+	tagNames := make([]string, 0, len(t))
+	for n := range t {
+		tagNames = append(tagNames, n)
+	}
+	sort.Strings(tagNames)
+	for _, tagName := range tagNames {
+		tagVal := t[tagName]
+		res = append(res, strings.ReplaceAll(tagName, ":", "-"), strings.ReplaceAll(tagVal, ":", "-"))
+	}
+	return res
+}
+
+// String returns all key value pairs as a single string, separated by commas, sorted by increasing key order
+func (t Tags) String() string {
+	return strings.Join(t.Strings(), ",")
+}
+
 // Stats manages provisioning of RudderStats
 type Stats interface {
-	NewStat(Name string, StatType string) (rStats RudderStats)
-	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
-	NewSampledTaggedStat(Name string, StatType string, tags Tags) RudderStats
+	NewStat(Name, StatType string) (rStats RudderStats)
+	NewTaggedStat(Name, StatType string, tags Tags) RudderStats
+	NewSampledTaggedStat(Name, StatType string, tags Tags) RudderStats
 }
 
 // HandleT is the default implementation of Stats
-type HandleT struct {
-}
+type HandleT struct{}
 
 // RudderStats provides functions to interact with StatsD stats
 type RudderStats interface {
@@ -88,7 +111,6 @@ type RudderStats interface {
 
 	Start()
 	End()
-	DeferredTimer()
 	Observe(value float64)
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
@@ -126,7 +148,7 @@ func getNewStatsdClientWithExpoBackoff(opts ...statsd.Option) (*statsd.Client, e
 	return c, nil
 }
 
-//Setup creates a new statsd client
+// Setup creates a new statsd client
 func Setup() {
 	DefaultStats = &HandleT{}
 
@@ -136,7 +158,7 @@ func Setup() {
 	conn = statsd.Address(statsdServerURL)
 	// since, we don't want setup to be a blocking call, creating a separate `go routine`` for retry to get statsd client.
 	var err error
-	//NOTE: this is to get atleast a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
+	// NOTE: this is to get atleast a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 	if err == nil {
 		taggedClientsMapLock.Lock()
@@ -172,7 +194,7 @@ func Setup() {
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
-func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
+func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
@@ -180,22 +202,16 @@ func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
 	}
 }
 
-// NewStat creates a new RudderStats with provided Name and Type
-// Deprecated: Use DefaultStats for managing stats instead
-func NewStat(Name string, StatType string) (rStats RudderStats) {
-	return DefaultStats.NewStat(Name, StatType)
-}
-
-func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func (s *HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, 1)
 }
 
-func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 
-func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	//If stats is not enabled, returning a dummy struct
+func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	// If stats is not enabled, returning a dummy struct
 	if !statsEnabled {
 		return &RudderStatsT{
 			Name:        Name,
@@ -204,34 +220,27 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			dontProcess: true,
 		}
 	}
-
-	tagStr := StatType
-	for tagName, tagVal := range tags {
-		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
+	if tags == nil {
+		tags = make(Tags)
 	}
+	// key comprises of the measurement name plus all tag-value pairs
+	taggedClientKey := StatType + tags.String()
 
 	taggedClientsMapLock.RLock()
-	taggedClient, found := taggedClientsMap[tagStr]
+	taggedClient, found := taggedClientsMap[taggedClientKey]
 	taggedClientsMapLock.RUnlock()
 
 	if !found {
-
-		tagVals := make([]string, 0, len(tags)*2)
-		for tagName, tagVal := range tags {
-			tagName = strings.ReplaceAll(tagName, ":", "-")
-			tagVal = strings.ReplaceAll(tagVal, ":", "-")
-			tagVals = append(tagVals, tagName, tagVal)
-		}
-
 		taggedClientsMapLock.Lock()
-		if !connEstablished {
-			taggedClientPendingTags = append(taggedClientPendingTags, tagStr)
-			taggedClientPendingKeys = append(taggedClientPendingKeys, tagVals)
+		if taggedClient, found = taggedClientsMap[taggedClientKey]; !found { // double check for race
+			tagVals := tags.Strings()
+			if !connEstablished {
+				taggedClientPendingTags = append(taggedClientPendingTags, taggedClientKey)
+				taggedClientPendingKeys = append(taggedClientPendingKeys, tagVals)
+			}
+			taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+			taggedClientsMap[taggedClientKey] = taggedClient
 		}
-		taggedClient = client.Clone(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-
-		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 	}
 
@@ -243,7 +252,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 	}
 }
 
-func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
@@ -303,14 +312,6 @@ func (rStats *RudderStatsT) End() {
 	rStats.Timing.Send(rStats.Name)
 }
 
-// Deprecated: Use concurrent safe SendTiming() instead
-func (rStats *RudderStatsT) DeferredTimer() {
-	if !statsEnabled || rStats.dontProcess {
-		return
-	}
-	rStats.Client.NewTiming().Send(rStats.Name)
-}
-
 // Since sends the time elapsed since duration start. Only applies to TimerType stats
 func (rStats *RudderStatsT) Since(start time.Time) {
 	rStats.SendTiming(time.Since(start))
@@ -362,7 +363,6 @@ func collectPeriodicStats(client *statsd.Client) {
 		}()
 		wg.Wait()
 	}
-
 }
 
 // StopPeriodicStats stops periodic collection of stats.

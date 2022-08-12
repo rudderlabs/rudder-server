@@ -1,4 +1,4 @@
-//Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
+// Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
 
 /*
  *
@@ -26,6 +26,7 @@ Table: schema_versions
 package event_schema
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -35,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
 
@@ -47,6 +48,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
+
+func init() {
+	// Following data structures store events and schemas since last flush
+	updatedEventModels = make(map[string]*EventModelT)
+	updatedSchemaVersions = make(map[string]*SchemaVersionT)
+	offloadedEventModels = make(map[string]map[string]*OffloadedModelT)
+	offloadedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
+	archivedEventModels = make(map[string]map[string]*OffloadedModelT)
+	archivedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
+}
 
 // EventModelT is a struct that represents EVENT_MODELS_TABLE
 type EventModelT struct {
@@ -91,14 +102,16 @@ type PrivateDataT struct {
 	FrequencyCounters []*FrequencyCounter
 }
 
-type WriteKey string
-type EventType string
-type EventIdentifier string
+type (
+	WriteKey        string
+	EventType       string
+	EventIdentifier string
+)
 
-//EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
+// EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
 type EventModelMapT map[WriteKey]map[EventType]map[EventIdentifier]*EventModelT
 
-//SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
+// SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
 type SchemaVersionMapT map[string]map[string]*SchemaVersionT
 
 // EventSchemaManagerT handles all event-schemas related features
@@ -144,25 +157,28 @@ var (
 	noOfWorkers                     int
 	shouldCaptureNilAsUnknowns      bool
 	eventModelLimit                 int
+	frequencyCounterLimit           int
 	schemaVersionPerEventModelLimit int
 	offloadLoopInterval             time.Duration
 	offloadThreshold                time.Duration
 	areEventSchemasPopulated        bool
 )
 
-const EVENT_MODELS_TABLE = "event_models"
-const SCHEMA_VERSIONS_TABLE = "schema_versions"
+const (
+	EVENT_MODELS_TABLE    = "event_models"
+	SCHEMA_VERSIONS_TABLE = "schema_versions"
+)
 
-//GatewayEventBatchT : Type sent from gateway
+// GatewayEventBatchT : Type sent from gateway
 type GatewayEventBatchT struct {
 	writeKey   string
 	eventBatch string
 }
 
-//EventT : Generic type for singular event
+// EventT : Generic type for singular event
 type EventT map[string]interface{}
 
-//EventPayloadT : Generic type for gateway event payload
+// EventPayloadT : Generic type for gateway event payload
 type EventPayloadT struct {
 	WriteKey   string
 	ReceivedAt string
@@ -177,6 +193,7 @@ func loadConfig() {
 
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
 	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
+	config.RegisterIntConfigVariable(2000, &frequencyCounterLimit, true, 1, "EventSchemas.frequencyCounterLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
 	config.RegisterDurationConfigVariable(60, &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
@@ -192,8 +209,8 @@ func Init2() {
 	pkgLogger = logger.NewLogger().Child("event-schema")
 }
 
-//RecordEventSchema : Records event schema for every event in the batch
-func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatch string) bool {
+// RecordEventSchema : Records event schema for every event in the batch
+func (manager *EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
@@ -244,10 +261,6 @@ func (manager *EventSchemaManagerT) deleteFromSchemaVersionCache(schemaVersion *
 	delete(countersCache, schemaHash)
 }
 
-func (manager *EventSchemaManagerT) deleteModelFromSchemaVersionCache(eventModel *EventModelT) {
-	delete(manager.schemaVersionMap, eventModel.UUID)
-}
-
 func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *SchemaVersionT, toCreateOrUpdate bool) {
 	eventModelID := schemaVersion.EventModelID
 	schemaHash := schemaVersion.SchemaHash
@@ -282,7 +295,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 *    <identify> There will be only identify event_model per source. Schema versions can change with different traits.
 *
 * This function is goroutine-safe. We can scale multiple go-routines calling this function,
-* but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
+* but since this method does mostly in-memory operations and has locks, there might not be much performance improvement.
 */
 func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventType, ok := event["type"].(string)
@@ -303,7 +316,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	processingTimer.Start()
 	defer processingTimer.End()
 
-	//TODO: Create locks on every event_model to improve scaling this
+	// TODO: Create locks on every event_model to improve scaling this
 	manager.eventModelLock.Lock()
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
@@ -341,6 +354,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		}
 
 		if wasOffloaded {
+			// TODO: Handling of err needs to be done as this might cause a panic in statement below !
 			manager.reloadModel(offloadedModel)
 			eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 			if !ok {
@@ -349,12 +363,14 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			stats.NewTaggedStat("reload_offloaded_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else if wasArchived {
+			// If we saw event from an archived event model, reload the model into memory
+			// and archive the oldest model then. TODO: A test case for this ?
 			if totalEventModels >= eventModelLimit {
 				archiveOldestLastSeenModel()
 			}
 			err := manager.reloadModel(archivedModel)
 			if err != nil {
-				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 			} else {
 				eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 				if !ok {
@@ -364,15 +380,15 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
 		} else {
-			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
 		}
 	}
 	eventModel.LastSeen = timeutil.Now()
 
 	eventMap := map[string]interface{}(event)
-	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
+	flattenedEvent, err := flatten.Flatten(eventMap, "", flatten.DotStyle)
 	if err != nil {
-		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
+		pkgLogger.Debugf("[EventSchemas] Failed to flatten the event %+v with error: %v", eventMap, err)
 		return
 	}
 
@@ -380,6 +396,11 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	schemaHash := getSchemaHash(schema)
 	computeFrequencies(flattenedEvent, schemaHash)
 	computeFrequencies(flattenedEvent, eventModel.UUID)
+
+	// In case we have changed the limit of frequency counter
+	// mid process, we need to make sure the counters are pruned effectively.
+	pruneFrequencyCounters(schemaHash, frequencyCounterLimit)
+	pruneFrequencyCounters(eventModel.UUID, frequencyCounterLimit)
 
 	var schemaVersion *SchemaVersionT
 	var schemaFoundInCache bool
@@ -441,6 +462,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 		}
 	}
+
 	schemaVersion.LastSeen = timeutil.Now()
 	manager.updateSchemaVersionCache(schemaVersion, true)
 
@@ -449,24 +471,27 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
-func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
+func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
 	eventModelID := uuid.Must(uuid.NewV4()).String()
-	eventModel = &EventModelT{
+	em := &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
 		EventType:       eventType,
 		EventIdentifier: eventIdentifier,
 		Schema:          []byte("{}"),
+		reservoirSample: NewReservoirSampler(reservoirSampleSize, 0, 0),
 	}
-
-	eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 	if totalEventModels >= eventModelLimit {
 		archiveOldestLastSeenModel()
 	}
-	manager.updateEventModelCache(eventModel, true)
-	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
-	return eventModel
+	manager.updateEventModelCache(em, true)
+	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{
+		"module":          "event_schemas",
+		"writeKey":        em.WriteKey,
+		"eventIdentifier": em.EventIdentifier,
+	}).Increment()
+	return em
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
@@ -559,8 +584,8 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 	em.Schema = masterSchemaJSON
 }
 
-//NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
-func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash string, eventModelID string) *SchemaVersionT {
+// NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
+func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
 	schemaJSON, err := json.Marshal(schema)
 	assertError(err)
 
@@ -612,135 +637,186 @@ func getPrivateDataJSON(schemaHash string) []byte {
 	pkgLogger.Debugf("[EventSchemas] Private Data JSON: %s", string(privateDataJSON))
 	assertError(err)
 	return privateDataJSON
-
 }
 
-func (manager *EventSchemaManagerT) flushEventSchemas() {
-	var flushDBHandle *sql.DB
-	defer func() {
-		if r := recover(); r != nil {
-			// if the panic happens while flushing events, we need to close the connection
-			if flushDBHandle != nil {
-				_ = flushDBHandle.Close()
-			}
-		}
-	}()
-
+func (manager *EventSchemaManagerT) flushEventSchemas(ctx context.Context) {
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
-	ticker := time.Tick(flushInterval)
-	for range ticker {
-		if !areEventSchemasPopulated {
-			continue
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			pkgLogger.Infof("Received signal to stop flushing event schemas returning")
+			return
+
+		case <-ticker.C:
+			pkgLogger.Info("Starting with flushing event schemas")
+
+			if !areEventSchemasPopulated {
+				pkgLogger.Warn("Event schemas aren't populated, continuing")
+				continue
+			}
+			if err := manager.flushEventSchemasToDB(ctx); err != nil {
+				pkgLogger.Errorf("Unable to flush event schemas to DB: %v", err)
+			}
+
 		}
-
-		// If needed, copy the maps and release the lock immediately
-		manager.eventModelLock.Lock()
-		manager.schemaVersionLock.Lock()
-
-		schemaVersionsInCache := make([]*SchemaVersionT, 0)
-		for _, sv := range updatedSchemaVersions {
-			schemaVersionsInCache = append(schemaVersionsInCache, sv)
-		}
-
-		if len(updatedEventModels) == 0 && len(schemaVersionsInCache) == 0 {
-			manager.eventModelLock.Unlock()
-			manager.schemaVersionLock.Unlock()
-			continue
-		}
-
-		flushDBHandle = createDBConnection()
-
-		txn, err := flushDBHandle.Begin()
-		assertError(err)
-
-		// Handle Event Models
-		if len(updatedEventModels) > 0 {
-			eventModelIds := make([]string, 0, len(updatedEventModels))
-			for _, em := range updatedEventModels {
-				eventModelIds = append(eventModelIds, em.UUID)
-			}
-
-			deleteOldEventModelsSQL := fmt.Sprintf(`DELETE FROM %s WHERE uuid IN ('%s')`, EVENT_MODELS_TABLE, strings.Join(eventModelIds, "', '"))
-			_, err := txn.Exec(deleteOldEventModelsSQL)
-			assertTxnError(err, txn)
-
-			if len(toDeleteEventModelIDs) > 0 {
-				archiveOldEventModelsSQL := fmt.Sprintf(`UPDATE %s SET archived=%t WHERE uuid IN ('%s')`, EVENT_MODELS_TABLE, true, strings.Join(toDeleteEventModelIDs, "', '"))
-				_, err := txn.Exec(archiveOldEventModelsSQL)
-				assertTxnError(err, txn)
-
-				archiveVersionsForArchivedModelsSQL := fmt.Sprintf(`UPDATE %s SET archived=%t WHERE event_model_id IN ('%s')`, SCHEMA_VERSIONS_TABLE, true, strings.Join(toDeleteEventModelIDs, "', '"))
-				_, err = txn.Exec(archiveVersionsForArchivedModelsSQL)
-				assertTxnError(err, txn)
-			}
-
-			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata", "private_data", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
-			defer stmt.Close()
-			for eventModelID, eventModel := range updatedEventModels {
-				metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
-				privateDataJSON := getPrivateDataJSON(eventModel.UUID)
-				eventModel.TotalCount = eventModel.reservoirSample.totalCount
-
-				_, err = stmt.Exec(eventModelID, eventModel.WriteKey, eventModel.EventType, eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON), string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
-				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(eventModelIds))
-			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
-		}
-
-		//Handle Schema Versions
-		if len(schemaVersionsInCache) > 0 {
-			versionIDs := make([]string, 0, len(schemaVersionsInCache))
-			for uid := range updatedSchemaVersions {
-				versionIDs = append(versionIDs, uid)
-			}
-
-			deleteOldVersionsSQL := fmt.Sprintf(`DELETE FROM %s WHERE uuid IN ('%s')`, SCHEMA_VERSIONS_TABLE, strings.Join(versionIDs, "', '"))
-			_, err := txn.Exec(deleteOldVersionsSQL)
-			assertTxnError(err, txn)
-
-			if len(toDeleteSchemaVersionIDs) > 0 {
-				archiveVersionsSQL := fmt.Sprintf(`UPDATE %s SET archived=%t WHERE uuid IN ('%s')`, SCHEMA_VERSIONS_TABLE, true, strings.Join(toDeleteSchemaVersionIDs, "', '"))
-				_, err = txn.Exec(archiveVersionsSQL)
-				assertTxnError(err, txn)
-			}
-
-			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data", "first_seen", "last_seen", "total_count"))
-			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
-			defer stmt.Close()
-			for _, sv := range schemaVersionsInCache {
-				metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
-				privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
-				sv.TotalCount = sv.reservoirSample.totalCount
-
-				_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema), string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
-				assertTxnError(err, txn)
-			}
-			_, err = stmt.Exec()
-			assertTxnError(err, txn)
-			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
-			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
-		}
-
-		err = txn.Commit()
-		assertTxnError(err, txn)
-
-		flushDBHandle.Close()
-
-		updatedEventModels = make(map[string]*EventModelT)
-		updatedSchemaVersions = make(map[string]*SchemaVersionT)
-		toDeleteEventModelIDs = []string{}
-		toDeleteSchemaVersionIDs = []string{}
-
-		manager.schemaVersionLock.Unlock()
-		manager.eventModelLock.Unlock()
 	}
+}
+
+// flushEventSchemasToDB is the main function which is responsible
+// for pushing the deltas collected in-memory into the database.
+func (manager *EventSchemaManagerT) flushEventSchemasToDB(ctx context.Context) error {
+	// If needed, copy the maps and release the lock immediately
+	manager.eventModelLock.Lock()
+	manager.schemaVersionLock.Lock()
+
+	defer manager.eventModelLock.Unlock()
+	defer manager.schemaVersionLock.Unlock()
+
+	schemaVersionsInCache := make([]*SchemaVersionT, 0)
+	for _, sv := range updatedSchemaVersions {
+		schemaVersionsInCache = append(schemaVersionsInCache, sv)
+	}
+
+	if len(updatedEventModels) == 0 && len(schemaVersionsInCache) == 0 {
+		return nil
+	}
+
+	flushDBHandle := createDBConnection()
+	defer flushDBHandle.Close()
+
+	txn, err := flushDBHandle.Begin()
+	if err != nil {
+		return fmt.Errorf("unable to begin txn to flush event schemas, err: %w", err)
+	}
+
+	if len(updatedEventModels) > 0 {
+		if err := flushEventModels(ctx, txn, updatedEventModels); err != nil {
+			txn.Rollback()
+			return fmt.Errorf("unable to flush event models to db: err: %w", err)
+		}
+	}
+
+	if len(schemaVersionsInCache) > 0 {
+		if err := flushSchemaVersions(ctx, txn, schemaVersionsInCache); err != nil {
+			txn.Rollback()
+			return fmt.Errorf("unable to flush schema versions to db, err: %w", err)
+		}
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		return fmt.Errorf("unable to commit txn to update event models and schema versions, err: %w", err)
+	}
+
+	updatedEventModels = make(map[string]*EventModelT)
+	updatedSchemaVersions = make(map[string]*SchemaVersionT)
+	toDeleteEventModelIDs = []string{}
+	toDeleteSchemaVersionIDs = []string{}
+
+	return nil
+}
+
+func flushSchemaVersions(ctx context.Context, txn *sql.Tx, schemaVersionsInCache []*SchemaVersionT) error {
+	versionIDs := make([]string, 0, len(schemaVersionsInCache))
+	for uid := range updatedSchemaVersions {
+		versionIDs = append(versionIDs, uid)
+	}
+
+	deleteOldVersionsSQL := fmt.Sprintf(`DELETE FROM %s WHERE uuid IN ('%s')`, SCHEMA_VERSIONS_TABLE, strings.Join(versionIDs, "', '"))
+	_, err := txn.ExecContext(ctx, deleteOldVersionsSQL)
+	if err != nil {
+		return fmt.Errorf("unable to delete old schema versions, err: %w", err)
+	}
+
+	if len(toDeleteSchemaVersionIDs) > 0 {
+		archiveVersionsSQL := fmt.Sprintf(`UPDATE %s SET archived=%t WHERE uuid IN ('%s')`, SCHEMA_VERSIONS_TABLE, true, strings.Join(toDeleteSchemaVersionIDs, "', '"))
+		_, err = txn.Exec(archiveVersionsSQL)
+		if err != nil {
+			return fmt.Errorf("unable to archive schema versions, err: %w", err)
+		}
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE,
+		"uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data",
+		"first_seen", "last_seen", "total_count"))
+	if err != nil {
+		return fmt.Errorf("unable to create prepare statement for copying schema versions, err: %w ", err)
+	}
+
+	defer stmt.Close()
+
+	for _, sv := range schemaVersionsInCache {
+		metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
+		privateDataJSON := getPrivateDataJSON(sv.SchemaHash)
+		sv.TotalCount = sv.reservoirSample.totalCount
+
+		_, err = stmt.ExecContext(ctx, sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema),
+			string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
+		if err != nil {
+			return fmt.Errorf("unable to update schema version: %d in db, err: %w", sv.ID, err)
+		}
+	}
+	_, err = stmt.ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to execute schema version statement, err: %w", err)
+	}
+
+	stats.NewTaggedStat(
+		"update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+	).Gauge(len(versionIDs))
+	pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
+
+	return nil
+}
+
+func flushEventModels(ctx context.Context, txn *sql.Tx, updatedEventModels map[string]*EventModelT) error {
+	eventModelIds := make([]string, 0, len(updatedEventModels))
+	for _, em := range updatedEventModels {
+		eventModelIds = append(eventModelIds, em.UUID)
+	}
+
+	deleteOldEventModelsSQL := fmt.Sprintf(`DELETE FROM %s WHERE uuid IN ('%s')`, EVENT_MODELS_TABLE, strings.Join(eventModelIds, "', '"))
+	_, err := txn.ExecContext(ctx, deleteOldEventModelsSQL)
+	if err != nil {
+		return fmt.Errorf("unable to delete event modelIds, err: %w", err)
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE,
+		"uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata",
+		"private_data", "last_seen", "total_count"))
+	if err != nil {
+		return fmt.Errorf("unable to copy statement, err: %w", err)
+	}
+
+	defer stmt.Close()
+
+	for eventModelID, eventModel := range updatedEventModels {
+		metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
+		privateDataJSON := getPrivateDataJSON(eventModel.UUID)
+		eventModel.TotalCount = eventModel.reservoirSample.totalCount
+
+		_, err = stmt.ExecContext(ctx, eventModelID, eventModel.WriteKey, eventModel.EventType,
+			eventModel.EventIdentifier, string(eventModel.Schema), string(metadataJSON),
+			string(privateDataJSON), eventModel.LastSeen, eventModel.TotalCount)
+		if err != nil {
+			return fmt.Errorf("unable to execute statement to update event model, err: %w", err)
+		}
+	}
+	_, err = stmt.ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to execute the statement")
+	}
+
+	stats.NewTaggedStat(
+		"update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
+	).Gauge(len(eventModelIds))
+
+	pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
+	return nil
 }
 
 func eventTypeIdentifier(eventType, eventIdentifier string) string {
@@ -801,6 +877,7 @@ func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT)
 	return nil
 }
 
+// reloadSchemaVersion fetches the latest state of the schema version from db and add the information
 func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) error {
 	pkgLogger.Debugf("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
 	err := manager.populateSchemaVersion(offloadedVersion)
@@ -834,17 +911,7 @@ func assertError(err error) {
 	}
 }
 
-func assertTxnError(err error, txn *sql.Tx) {
-	if err != nil {
-		txn.Rollback()
-		pkgLogger.Info(fmt.Sprintf("%#v\n", err))
-		pkgLogger.Info(fmt.Sprintf("%#v\n", txn))
-		panic(err)
-	}
-}
-
 func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) error {
-
 	var uuidFilter string
 	if len(uuidFilters) > 0 {
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
@@ -858,8 +925,9 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 	} else {
 		assertError(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
+	// for each event model, we need to fetch the data from db.
 	for rows.Next() {
 		var eventModel EventModelT
 		var privateDataRaw json.RawMessage
@@ -891,7 +959,10 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 			eventModel.reservoirSample.add(sampledEvent, false)
 		}
 		manager.updateEventModelCache(&eventModel, false)
-		populateFrequencyCounters(eventModel.UUID, privateData.FrequencyCounters)
+		populateFrequencyCounters(
+			eventModel.UUID,
+			privateData.FrequencyCounters,
+			frequencyCounterLimit)
 	}
 	return nil
 }
@@ -901,7 +972,7 @@ func (manager *EventSchemaManagerT) populateEventModelsMinimal() {
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var eventModel EventModelT
@@ -935,7 +1006,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
@@ -993,8 +1064,11 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 	}
 
 	manager.updateSchemaVersionCache(&schemaVersion, false)
+	populateFrequencyCounters(
+		schemaVersion.SchemaHash,
+		privateData.FrequencyCounters,
+		frequencyCounterLimit)
 
-	populateFrequencyCounters(schemaVersion.SchemaHash, privateData.FrequencyCounters)
 	return nil
 }
 
@@ -1043,32 +1117,33 @@ func getSchemaHash(schema map[string]string) string {
 	return schemaHash
 }
 
+// computeFrequencies iterates over the keys of input event and augment the count
+// for values seen in that key.
 func computeFrequencies(flattenedEvent map[string]interface{}, schemaHash string) {
-	// Frequency Counting: Second pass, dependent on schemaHash
+	// Once the frequency counters are pruned, we can augment them.
 	for k, v := range flattenedEvent {
-		fc := getFrequencyCounter(schemaHash, k)
+		fc := getFrequencyCounter(schemaHash, k, frequencyCounterLimit)
+		if fc == nil {
+			continue
+		}
 		stringVal := fmt.Sprintf("%v", v)
 		fc.Observe(&stringVal)
 	}
 }
 
+// getEventSchemaManager returns the schema manager object which needs to be fully setup
+// by calling the Setup function on it.
+func getEventSchemaManager(dbHandle *sql.DB, disableInMemoryCache bool) *EventSchemaManagerT {
+	return &EventSchemaManagerT{
+		dbHandle:             dbHandle,
+		disableInMemoryCache: disableInMemoryCache,
+		eventModelMap:        make(EventModelMapT),
+		schemaVersionMap:     make(SchemaVersionMapT),
+	}
+}
+
 func (manager *EventSchemaManagerT) Setup() {
-	pkgLogger.Info("[EventSchemas] Setting up eventSchemas...")
-	// Clean this up
-	manager.dbHandle = createDBConnection()
-
-	// Following data structures store events and schemas since last flush
-	updatedEventModels = make(map[string]*EventModelT)
-	updatedSchemaVersions = make(map[string]*SchemaVersionT)
-
-	manager.eventModelMap = make(EventModelMapT)
-	manager.schemaVersionMap = make(SchemaVersionMapT)
-
-	offloadedEventModels = make(map[string]map[string]*OffloadedModelT)
-	offloadedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
-	archivedEventModels = make(map[string]map[string]*OffloadedModelT)
-	archivedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
-
+	pkgLogger.Info("[EventSchemas] Received a call to setup ")
 	if !manager.disableInMemoryCache {
 		rruntime.GoForWarehouse(func() {
 			defer setEventSchemasPopulated(true)
@@ -1089,7 +1164,7 @@ func (manager *EventSchemaManagerT) Setup() {
 	}
 
 	rruntime.GoForWarehouse(func() {
-		manager.flushEventSchemas()
+		manager.flushEventSchemas(context.TODO())
 	})
 
 	rruntime.GoForWarehouse(func() {

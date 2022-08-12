@@ -162,7 +162,7 @@ func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1, arg2 inte
 }
 
 // SetTimeout mocks base method.
-func (m *MockFileManager) SetTimeout(arg0 *time.Duration) {
+func (m *MockFileManager) SetTimeout(arg0 time.Duration) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetTimeout", arg0)
 }
