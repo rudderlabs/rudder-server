@@ -286,6 +286,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		return dCM.Mode() == servermode.NormalMode
 	}, time.Second, time.Millisecond)
 
+	time.Sleep(2 * time.Second)
+
 	provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
 		return nil
