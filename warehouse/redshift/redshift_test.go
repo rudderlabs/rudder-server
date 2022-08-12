@@ -1,13 +1,16 @@
+//go:build warehouse_integration
+
 package redshift_test
 
 import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/gofrs/uuid"
 

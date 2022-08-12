@@ -1,12 +1,15 @@
+//go:build warehouse_integration
+
 package deltalake_test
 
 import (
 	"encoding/json"
 	"fmt"
-	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"log"
 	"os"
 	"testing"
+
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"

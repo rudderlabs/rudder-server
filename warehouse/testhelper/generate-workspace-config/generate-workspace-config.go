@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
