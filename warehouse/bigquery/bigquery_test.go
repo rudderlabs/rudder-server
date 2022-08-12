@@ -59,7 +59,7 @@ func (*TestHandle) VerifyConnection() error {
 		return err
 	}
 
-	err = testhelper.WithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
@@ -77,7 +77,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	// Cleanup resources
 	// Dropping temporary dataset
 	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithBackoff(func() (err error) {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
 		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", handle.Schema))
 	})

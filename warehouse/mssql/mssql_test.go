@@ -25,7 +25,7 @@ var handle *TestHandle
 
 // VerifyConnection test connection for mssql
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithBackoff(func() (err error) {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",

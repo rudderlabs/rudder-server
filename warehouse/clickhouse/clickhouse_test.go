@@ -30,7 +30,7 @@ var handle *TestHandle
 
 // VerifyConnection test connection for clickhouse and clickhouse cluster
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithBackoff(func() (err error) {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := clickhouse.CredentialsT{
 			Host:          "wh-clickhouse",
 			User:          "rudder",
@@ -111,7 +111,7 @@ func (*TestHandle) VerifyConnection() error {
 	for i, chResource := range clusterCredentials {
 		var clickhouseDB *sql.DB
 
-		err = testhelper.WithBackoff(func() (err error) {
+		err = testhelper.WithConstantBackoff(func() (err error) {
 			if clickhouseDB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
 				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %w", i, err)
 				return

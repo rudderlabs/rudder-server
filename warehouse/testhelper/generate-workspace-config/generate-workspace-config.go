@@ -11,7 +11,6 @@ import (
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
@@ -105,22 +104,10 @@ func populateTemplateConfigurations() map[string]string {
 }
 
 func enhanceNamespace(values map[string]string) {
-	values["snowflakeNamespace"] = warehouseutils.ToSafeNamespace(
-		warehouseutils.SNOWFLAKE,
-		config.GetRequiredEnv(testhelper.SnowflakeIntegrationTestSchema),
-	)
-	values["redshiftNamespace"] = warehouseutils.ToSafeNamespace(
-		warehouseutils.RS,
-		config.GetRequiredEnv(testhelper.RedshiftIntegrationTestSchema),
-	)
-	values["bigqueryNamespace"] = warehouseutils.ToSafeNamespace(
-		warehouseutils.BQ,
-		config.GetRequiredEnv(testhelper.BigqueryIntegrationTestSchema),
-	)
-	values["deltalakeNamespace"] = warehouseutils.ToSafeNamespace(
-		warehouseutils.DELTALAKE,
-		config.GetRequiredEnv(testhelper.DeltalakeIntegrationTestSchema),
-	)
+	values["snowflakeNamespace"] = testhelper.GetSchema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema)
+	values["redshiftNamespace"] = testhelper.GetSchema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema)
+	values["bigqueryNamespace"] = testhelper.GetSchema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema)
+	values["deltalakeNamespace"] = testhelper.GetSchema(warehouseutils.DELTALAKE, testhelper.DeltalakeIntegrationTestSchema)
 }
 
 func enhanceBQCredentials(values map[string]string) {

@@ -25,7 +25,7 @@ var handle *TestHandle
 
 // VerifyConnection test connection for postgres
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithBackoff(func() (err error) {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",

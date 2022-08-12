@@ -58,7 +58,7 @@ func (*TestHandle) VerifyConnection() error {
 		return err
 	}
 
-	err = testhelper.WithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = deltalake.Connect(&credentials, 0)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
@@ -76,7 +76,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 	// Cleanup resources
 	// Dropping temporary schema
 	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithBackoff(func() (err error) {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			dropSchemaResponse, err := handle.DB.Client.Execute(handle.DB.Context, &proto.ExecuteRequest{
 				Config:       handle.DB.CredConfig,
 				Identifier:   handle.DB.CredIdentifier,

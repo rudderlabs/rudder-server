@@ -395,7 +395,7 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
 }
 
-func WithBackoff(operation func() error) error {
+func WithConstantBackoff(operation func() error) error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
 	return backoff.Retry(operation, backoffWithMaxRetry)
 }

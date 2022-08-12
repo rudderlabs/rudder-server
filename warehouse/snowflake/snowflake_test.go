@@ -57,7 +57,7 @@ func (t *TestHandle) VerifyConnection() (err error) {
 		return err
 	}
 
-	err = testhelper.WithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
@@ -75,7 +75,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	// Cleanup resources
 	// Dropping temporary schema
 	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithBackoff(func() (err error) {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
 			return
 		}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))

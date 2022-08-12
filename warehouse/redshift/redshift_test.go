@@ -56,7 +56,7 @@ func (*TestHandle) VerifyConnection() error {
 		return err
 	}
 
-	err = testhelper.WithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = redshift.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse redshift with error: %w", err)
@@ -74,7 +74,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	// Cleanup resources
 	// Dropping temporary schema
 	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithBackoff(func() (err error) {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
 			return
 		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
