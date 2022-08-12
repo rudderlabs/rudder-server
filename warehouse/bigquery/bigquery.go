@@ -111,11 +111,20 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 }
 
 func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+	clusteringColumns := strings.Split(strings.TrimSpace(primaryKey), ",")
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
+		Clustering: &bigquery.Clustering{
+			Fields: clusteringColumns,
+		},
 	}
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	err = tableRef.Create(bq.BQContext, metaData)
@@ -304,7 +313,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		return
 	}
 
-	loadTableByMerge := func() (err error) {
+	loadTableByUpdate := func() (err error) {
 		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 		stagingLoadTable.stagingTableName = stagingTableName
 		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
@@ -366,10 +375,6 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 
 		var partitionWhereClause, columnNames string
 
-		if !customPartitionsEnabled {
-			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
-			columnNames = fmt.Sprintf("_PARTITIONTIME,")
-		}
 		columnNames = fmt.Sprintf("%s %s", columnNames, strings.Join(tableColNames, ","))
 
 		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
@@ -381,24 +386,37 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 
 		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
-		DELETE FROM %[1]s as original
-		where %[6]s EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
-		INSERT INTO %[1]s
-		(_PARTITIONTIME,%[4]s)
-		SELECT TIMESTAMP(CURRENT_DATE),%[4]s FROM %[5]s
-		;
-		COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName), partitionWhereClause)
+			DELETE FROM %[1]s as original
+			where %[6]s EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
+			INSERT INTO %[1]s
+			(%[4]s)
+			SELECT %[4]s FROM %[5]s
+			;
+			COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName), partitionWhereClause)
+
+		if !customPartitionsEnabled {
+			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
+			sqlStatement = fmt.Sprintf(`BEGIN TRANSACTION;
+			DELETE FROM %[1]s as original
+			where %[6]s EXISTS(SELECT 1 from %[5]s as staging where %[3]s);
+			INSERT INTO %[1]s
+			(_PARTITIONTIME,%[4]s)
+			SELECT TIMESTAMP(CURRENT_DATE),%[4]s FROM %[5]s
+			;
+			COMMIT TRANSACTION; `, bqTable(tableName), partitionKey, primaryJoinClause, columnNames, bqTable(stagingTableName), partitionWhereClause)
+
+		}
 
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating merge  load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating update  load job: %v\n", err)
 			return
 		}
 		status, err = job.Wait(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running merge  load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running update  load job: %v\n", err)
 			return
 		}
 
@@ -413,7 +431,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		return
 	}
 
-	err = loadTableByMerge()
+	err = loadTableByUpdate()
 	return
 }
 
@@ -524,7 +542,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	loadUserTableByMerge := func() {
+	loadUserTableByUpsert := func() {
 		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
@@ -565,10 +583,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 
 		var partitionWhereClause, columnNamesStr string
-		if !customPartitionsEnabled {
-			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
-			columnNamesStr = fmt.Sprintf("_PARTITIONTIME,")
-		}
+
 		columnNamesStr = fmt.Sprintf("%s %s", columnNamesStr, strings.Join(columnNames, ","))
 
 		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
@@ -576,9 +591,23 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 			where %[5]s EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
 			INSERT INTO %[1]s
 			(%[3]s)
+			SELECT %[3]s FROM %[2]s
+			;
+			COMMIT TRANSACTION; `, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, partitionWhereClause)
+
+		if !customPartitionsEnabled {
+			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
+			columnNamesStr = fmt.Sprintf("_PARTITIONTIME,")
+			sqlStatement = fmt.Sprintf(`BEGIN TRANSACTION;
+			DELETE FROM %[1]s as original
+			where %[5]s EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
+			INSERT INTO %[1]s
+			(_PARTITIONTIME,%[3]s)
 			SELECT TIMESTAMP(CURRENT_DATE),%[3]s FROM %[2]s
 			;
 			COMMIT TRANSACTION; `, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, partitionWhereClause)
+
+		}
 
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 
@@ -587,13 +616,13 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating upsert load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
 			return
 		}
 		status, err = job.Wait(bq.BQContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running upsert load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`merge: %v`, err.Error()))
 			return
 		}
@@ -609,7 +638,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	loadUserTableByMerge()
+	loadUserTableByUpsert()
 	return errorMap
 }
 
