@@ -130,13 +130,13 @@ type HandleT struct {
 	backgroundCtx        context.Context
 	backgroundCancel     context.CancelFunc
 	backgroundWait       func() error
-	generatorLoopStarted chan struct{}
-
-	resultSetMeta    map[int64]*resultSetT
-	resultSetLock    sync.RWMutex
-	lastResultSet    *resultSetT
-	lastQueryRunTime time.Time
-	timeGained       float64
+	resultSetMeta        map[int64]*resultSetT
+	resultSetLock        sync.RWMutex
+	lastResultSet        *resultSetT
+	lastQueryRunTime     time.Time
+	timeGained           float64
+	generatorLoopStarted bool
+	generatorLoopMutex   sync.Mutex
 
 	payloadLimit     int64
 	transientSources transientsource.Service
@@ -2255,7 +2255,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.backgroundGroup = g
 	rt.backgroundCancel = cancel
 	rt.backgroundWait = g.Wait
-	rt.generatorLoopStarted = make(chan struct{})
 	rt.initWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
@@ -2297,16 +2296,22 @@ func (rt *HandleT) Start() {
 			}
 		}
 		rt.generatorLoop(ctx)
-		close(rt.generatorLoopStarted)
+		rt.generatorLoopMutex.Lock()
+		rt.generatorLoopStarted = true
+		rt.generatorLoopMutex.Unlock()
 		return nil
 	})
 }
 
 func (rt *HandleT) Shutdown() {
-	rt.logger.Infof("Shutting down router : %s", rt.destName)
 	rt.backgroundCancel()
-	<-rt.generatorLoopStarted
-	_ = rt.backgroundWait()
+	rt.generatorLoopMutex.Lock()
+	defer rt.generatorLoopMutex.Unlock()
+	if rt.generatorLoopStarted {
+		rt.logger.Infof("Shutting down router : %s", rt.destName)
+		_ = rt.backgroundWait()
+		rt.generatorLoopStarted = false
+	}
 }
 
 func (rt *HandleT) backendConfigSubscriber() {

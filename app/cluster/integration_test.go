@@ -284,7 +284,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	}))
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.NormalMode
-	}, time.Second, time.Millisecond)
+	}, 20*time.Second, time.Millisecond)
 
 	provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
@@ -293,7 +293,7 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.DegradedMode
-	}, 10*time.Second, time.Millisecond)
+	}, 20*time.Second, time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		<-chACK
