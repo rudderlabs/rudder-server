@@ -24,8 +24,9 @@ func loadConfig() {
 }
 
 func initFileManager() (filemanager.FileManager, string, error) {
-	bucket := strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET", ""))
+	bucket := strings.TrimSpace(config.GetEnv("JOBS_BACKUP_BUCKET", ""))
 	if bucket == "" {
+		pkgLogger.Error("[[ Replay ]] JOBS_BACKUP_BUCKET is not set")
 		panic("Bucket is not configured.")
 	}
 
@@ -35,6 +36,7 @@ func initFileManager() (filemanager.FileManager, string, error) {
 	startTimeStr := strings.TrimSpace(config.GetEnv("START_TIME", "2000-10-02T15:04:05.000Z"))
 	startTime, err := time.Parse(misc.RFC3339Milli, startTimeStr)
 	if err != nil {
+		pkgLogger.Errorf("[[ Replay ]] Error parsing START_TIME: %s", err.Error())
 		return nil, "", err
 	}
 
@@ -49,6 +51,7 @@ func initFileManager() (filemanager.FileManager, string, error) {
 		}),
 	})
 	if err != nil {
+		pkgLogger.Errorf("[[ Replay ]] Error creating file manager: %s", err.Error())
 		return nil, "", err
 	}
 
@@ -79,7 +82,7 @@ func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.
 	default:
 		toDB = routerDB
 	}
-	toDB.Start()
+	_ = toDB.Start()
 	replayer.Setup(ctx, &dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket)
 	return nil
 }
@@ -96,7 +99,6 @@ func (m *Factory) Setup(ctx context.Context, replayDB, gwDB, routerDB, batchRout
 
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay")
-
 	if replayEnabled {
 		pkgLogger.Info("[[ Replay ]] Setting up Replay")
 		err := setup(ctx, replayDB, gwDB, routerDB, batchRouterDB)
