@@ -2400,7 +2400,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
-					"destName":      refTokenParams.DestDefName,
+					"destType":      refTokenParams.DestDefName,
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
@@ -2420,6 +2420,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
 		"id":          destination.ID,
+		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
