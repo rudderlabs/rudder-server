@@ -594,15 +594,31 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
-func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) {
+type AsyncJobRunResult struct {
+	JobRunID  string
+	TableName string
+	Result    bool
+}
+
+func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
 	fmt.Printf("%v\n", asyncjob)
 	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
 
-	whManager, err := manager.New(asyncjob.DestType)
+	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
 	if err != nil {
 		panic(err)
 	}
-	whManager.Setup(warehouse, asyncjob)
+	whasyncjob := new(warehouse_jobs.WhAsyncJob)
+	whManager.Setup(warehouse, whasyncjob)
+	tableNames := []string{asyncjob.TableName}
+	success, err := whManager.DeleteByJobRunID(tableNames, asyncjob.JobRunID, asyncjob.SourceID)
+	var asyncJobRunResult = AsyncJobRunResult{
+		JobRunID:  asyncjob.JobRunID,
+		TableName: asyncjob.TableName,
+		Result:    success,
+	}
+	return asyncJobRunResult, err
+
 }
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
@@ -620,7 +636,16 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	if err != nil {
 		handleErr(err, claimedJob)
 	}
-	runAsyncJob(job, workerIndex)
+	result, err := runAsyncJob(job, workerIndex)
+	marshalled_result, err1 := json.Marshal(result)
+	if err1 != nil {
+		panic(err1)
+	}
+	response := pgnotifier.ClaimResponseT{
+		Err:     err,
+		Payload: marshalled_result,
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
 func setupSlave(ctx context.Context) error {
@@ -644,8 +669,6 @@ func setupSlave(ctx context.Context) error {
 				} else {
 					processClaimedUploadJob(claimedJob, idx)
 				}
-
-				// async job
 
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()

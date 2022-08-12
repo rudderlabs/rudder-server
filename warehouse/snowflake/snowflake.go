@@ -224,17 +224,17 @@ func (sf *HandleT) authString() string {
 
 func (sf *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
-	for _, tb := range tableNames {
-		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, sf.Namespace, tb, "context_sources_job_run_id", jobRunID)
-			pkgLogger.Infof("SF: Deleting rows in table in postgres for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
-			_, err = sf.Db.Exec(sqlStatement)
-			if err != nil {
-				pkgLogger.Errorf("Error %s", err)
-				return false, err
-			}
-		}
-	}
+	// for _, tb := range tableNames {
+	// 	if tb != "rudder_discards" {
+	// 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, sf.Namespace, tb, "context_sources_job_run_id", jobRunID)
+	// 		pkgLogger.Infof("SF: Deleting rows in table in postgres for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
+	// 		_, err = sf.Db.Exec(sqlStatement)
+	// 		if err != nil {
+	// 			pkgLogger.Errorf("Error %s", err)
+	// 			return false, err
+	// 		}
+	// 	}
+	// }
 	return true, nil
 }
 
