@@ -53,13 +53,14 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 	defer gatewayDB.Close()
-	gatewayDB.Start()
+	if err := gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gatewayDB: %w", err)
+	}
 	defer gatewayDB.Stop()
 
 	enableGateway := true
@@ -79,7 +80,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
+	case deployment.DedicatedType:
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
 			modeProvider = state.NewStaticProvider(servermode.NormalMode)
@@ -108,7 +109,13 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		if err != nil {
 			return err
 		}
-		gw.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, gatewayApp.VersionHandler, rsourcesService)
+		err = gw.Setup(
+			gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB,
+			&rateLimiter, gatewayApp.VersionHandler, rsourcesService,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to setup gateway: %w", err)
+		}
 		defer func() {
 			if err := gw.Shutdown(); err != nil {
 				pkgLogger.Warnf("Gateway shutdown error: %v", err)

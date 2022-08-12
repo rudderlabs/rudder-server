@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// BackendConfigAdmin is container object to expose admin functions
-type BackendConfigAdmin struct{}
+// admin is container object to expose admin functions
+type admin struct{}
 
 // RoutingConfig reports current backend config and process config after masking secret fields
-func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string) (err error) {
+func (bca *admin) RoutingConfig(filterProcessor bool, reply *string) (err error) { // skipcq: RVV-A0005
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -19,9 +19,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 		}
 	}()
 
-	curSourceJSONLock.RLock()
-	defer curSourceJSONLock.RUnlock()
-	outputJSON := curSourceJSON
+	outputJSON := getConfig()
 	if filterProcessor {
 		outputJSON = filterProcessorEnabledDestinations(outputJSON)
 	}
@@ -30,7 +28,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 
 	for _, source := range outputJSON.Sources {
 		destinations := make([]interface{}, 0)
-		for _, destination := range source.Destinations {
+		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			destinationConfigCopy := make(map[string]interface{})
 			for k, v := range destination.Config {
 				destinationConfigCopy[k] = v

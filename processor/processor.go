@@ -53,30 +53,32 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 
 // HandleT is a handle to this object used in main.go
 type HandleT struct {
-	backendConfig       backendconfig.BackendConfig
-	transformer         transformer.Transformer
-	lastJobID           int64
-	gatewayDB           jobsdb.JobsDB
-	routerDB            jobsdb.JobsDB
-	batchRouterDB       jobsdb.JobsDB
-	errorDB             jobsdb.JobsDB
-	logger              logger.LoggerI
-	eventSchemaHandler  types.EventSchemasI
-	dedupHandler        dedup.DedupI
-	reporting           types.ReportingI
-	reportingEnabled    bool
-	multitenantI        multitenant.MultiTenantI
-	backgroundWait      func() error
-	backgroundCancel    context.CancelFunc
-	transformerFeatures json.RawMessage
-	readLoopSleep       time.Duration
-	maxLoopSleep        time.Duration
-	storeTimeout        time.Duration
-	statsFactory        stats.Stats
-	stats               processorStats
-	payloadLimit        int64
-	transientSources    transientsource.Service
-	rsourcesService     rsources.JobService
+	backendConfig        backendconfig.BackendConfig
+	transformer          transformer.Transformer
+	lastJobID            int64
+	gatewayDB            jobsdb.JobsDB
+	routerDB             jobsdb.JobsDB
+	batchRouterDB        jobsdb.JobsDB
+	errorDB              jobsdb.JobsDB
+	logger               logger.LoggerI
+	eventSchemaHandler   types.EventSchemasI
+	dedupHandler         dedup.DedupI
+	reporting            types.ReportingI
+	reportingEnabled     bool
+	multitenantI         multitenant.MultiTenantI
+	backgroundWait       func() error
+	backgroundCancel     context.CancelFunc
+	transformerFeatures  json.RawMessage
+	readLoopSleep        time.Duration
+	maxLoopSleep         time.Duration
+	storeTimeout         time.Duration
+	statsFactory         stats.Stats
+	stats                processorStats
+	payloadLimit         int64
+	jobsDBCommandTimeout time.Duration
+	jobdDBMaxRetries     int
+	transientSources     transientsource.Service
+	rsourcesService      rsources.JobService
 }
 
 type processorStats struct {
@@ -204,7 +206,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":        destination.ID,
 		"destType":           destination.DestinationDefinition.Name,
 		"source":             sourceID,
-		"workspace":          workspaceID,
+		"workspaceId":        workspaceID,
 		"transformationType": transformationType,
 	}
 }
@@ -314,6 +316,8 @@ func (proc *HandleT) Setup(
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
+	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &proc.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 
@@ -429,13 +433,11 @@ func (proc *HandleT) Setup(
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start(ctx context.Context) {
+func (proc *HandleT) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
-			return err
-		}
+		proc.backendConfig.WaitForConfig(ctx)
 		if enablePipelining {
 			proc.mainPipeline(ctx)
 		} else {
@@ -451,7 +453,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	_ = g.Wait()
+	return g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {
@@ -1538,18 +1540,6 @@ type storeMessage struct {
 }
 
 func (proc *HandleT) Store(in storeMessage) {
-	// FIXME: This is a hack to get around the fact that,
-	// 	processor will stuck in case write query takes for ever.
-	// SHOULD BE REMOVED AFTER PROPER TIMEOUTS ARE IMPLEMENTED.
-	ctx, cancel := context.WithTimeout(context.TODO(), proc.storeTimeout)
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		if ctx.Err() == context.DeadlineExceeded {
-			panic(fmt.Sprintf("processor .Store() timed out after %s", proc.storeTimeout))
-		}
-	}()
-
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	beforeStoreStatus := time.Now()
@@ -1557,18 +1547,20 @@ func (proc *HandleT) Store(in storeMessage) {
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.batchRouterDB.StoreInTx(tx, batchDestJobs)
-			if err != nil {
-				return fmt.Errorf("storing batch router jobs: %w", err)
-			}
+		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+				if err != nil {
+					return fmt.Errorf("storing batch router jobs: %w", err)
+				}
 
-			// rsources stats
-			err = proc.updateRudderSourcesStats(context.TODO(), tx, batchDestJobs)
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats for batch router: %w", err)
-			}
-			return nil
+				// rsources stats
+				err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
+				if err != nil {
+					return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+				}
+				return nil
+			})
 		})
 		if err != nil {
 			panic(err)
@@ -1593,22 +1585,26 @@ func (proc *HandleT) Store(in storeMessage) {
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		err := proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
-			err := proc.routerDB.StoreInTx(tx, destJobs)
-			if err != nil {
-				return fmt.Errorf("storing router jobs: %w", err)
-			}
 
-			// rsources stats
-			err = proc.updateRudderSourcesStats(context.TODO(), tx, destJobs)
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats for router: %w", err)
-			}
-			return nil
+		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+				if err != nil {
+					return fmt.Errorf("storing router jobs: %w", err)
+				}
+
+				// rsources stats
+				err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+				if err != nil {
+					return fmt.Errorf("publishing rsources stats for router: %w", err)
+				}
+				return nil
+			})
 		})
 		if err != nil {
 			panic(err)
 		}
+
 		totalPayloadRouterBytes := 0
 		processorLoopStats["router"] = make(map[string]map[string]int)
 		for i := range destJobs {
@@ -1631,7 +1627,9 @@ func (proc *HandleT) Store(in storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := proc.errorDB.Store(in.procErrorJobs)
+		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+			return proc.errorDB.Store(ctx, in.procErrorJobs)
+		})
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
@@ -1642,37 +1640,39 @@ func (proc *HandleT) Store(in storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
-	err := proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
-		err := proc.gatewayDB.UpdateJobStatusInTx(tx, statusList, []string{GWCustomVal}, nil)
-		if err != nil {
-			return fmt.Errorf("updating gateway jobs statuses: %w", err)
-		}
+	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		return proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
+			if err != nil {
+				return fmt.Errorf("updating gateway jobs statuses: %w", err)
+			}
 
-		// rsources stats
-		in.rsourcesStats.JobStatusesUpdated(statusList)
-		err = in.rsourcesStats.Publish(context.TODO(), tx.Tx())
-		if err != nil {
-			return fmt.Errorf("publishing rsources stats: %w", err)
-		}
+			// rsources stats
+			in.rsourcesStats.JobStatusesUpdated(statusList)
+			err = in.rsourcesStats.Publish(ctx, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("publishing rsources stats: %w", err)
+			}
 
-		if proc.isReportingEnabled() {
-			proc.reporting.Report(in.reportMetrics, tx.Tx())
-		}
+			if proc.isReportingEnabled() {
+				proc.reporting.Report(in.reportMetrics, tx.Tx())
+			}
 
-		if enableDedup {
-			proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
-			if len(in.uniqueMessageIds) > 0 {
-				var dedupedMessageIdsAcrossJobs []string
-				for k := range in.uniqueMessageIds {
-					dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
-				}
-				err = proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
-				if err != nil {
-					return err
+			if enableDedup {
+				proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
+				if len(in.uniqueMessageIds) > 0 {
+					var dedupedMessageIdsAcrossJobs []string
+					for k := range in.uniqueMessageIds {
+						dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+					}
+					err = proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+					if err != nil {
+						return err
+					}
 				}
 			}
-		}
-		return nil
+			return nil
+		})
 	})
 	if err != nil {
 		panic(err)
@@ -2224,7 +2224,9 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	// Mark the jobs as executing
-	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
+	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{GWCustomVal}, nil)
+	})
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}
@@ -2268,7 +2270,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 	}
 
 	proc.logger.Info("Processor loop started")
-	currLoopSleep := time.Duration(0)
+	var currLoopSleep time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -2277,19 +2279,32 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			if isUnLocked {
 				found := proc.handlePendingGatewayJobs()
 				if found {
-					currLoopSleep = time.Duration(0)
+					currLoopSleep = 0
 				} else {
 					currLoopSleep = 2*currLoopSleep + loopSleep
 					if currLoopSleep > maxLoopSleep {
 						currLoopSleep = maxLoopSleep
 					}
-					time.Sleep(currLoopSleep)
+					if sleepTrueOnDone(ctx, currLoopSleep) {
+						return
+					}
 				}
-				time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-			} else {
-				time.Sleep(fixedLoopSleep)
+				if sleepTrueOnDone(ctx, fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
+					return
+				}
+			} else if sleepTrueOnDone(ctx, fixedLoopSleep) {
+				return
 			}
 		}
+	}
+}
+
+func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-time.After(duration):
+		return false
 	}
 }
 
@@ -2348,7 +2363,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		defer close(chProc)

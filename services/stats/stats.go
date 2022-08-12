@@ -111,7 +111,6 @@ type RudderStats interface {
 
 	Start()
 	End()
-	DeferredTimer()
 	Observe(value float64)
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
@@ -201,12 +200,6 @@ func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 		StatType: StatType,
 		Client:   client,
 	}
-}
-
-// NewStat creates a new RudderStats with provided Name and Type
-// Deprecated: Use DefaultStats for managing stats instead
-func NewStat(Name, StatType string) (rStats RudderStats) {
-	return DefaultStats.NewStat(Name, StatType)
 }
 
 func (s *HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
@@ -317,14 +310,6 @@ func (rStats *RudderStatsT) End() {
 		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
 	}
 	rStats.Timing.Send(rStats.Name)
-}
-
-// Deprecated: Use concurrent safe SendTiming() instead
-func (rStats *RudderStatsT) DeferredTimer() {
-	if !statsEnabled || rStats.dontProcess {
-		return
-	}
-	rStats.Client.NewTiming().Send(rStats.Name)
 }
 
 // Since sends the time elapsed since duration start. Only applies to TimerType stats

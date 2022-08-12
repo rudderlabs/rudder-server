@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -21,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestBackupTable(t *testing.T) {
@@ -157,7 +158,6 @@ func TestBackupTable(t *testing.T) {
 type backupTestCase struct{}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 	queryFilters := QueryFiltersT{
 		CustomVal: true,
@@ -169,16 +169,16 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	jobsDB.Setup(ReadWrite, false, "rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
-	// defer jobDB.TearDown()
+	err := jobsDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
-	err := jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *sql.Tx) error {
 		if err := jobsDB.copyJobsDS(tx, rtDS, jobs); err != nil {
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(tx, rtDS, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS, statusList, []string{}, nil)
 	})
 	require.NoError(t, err)
 
@@ -190,7 +190,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 		if err := jobsDB.copyJobsDS(tx, rtDS2, jobs); err != nil {
 			return err
 		}
-		return jobsDB.copyJobStatusDS(tx, rtDS2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{}, nil)
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
@@ -199,7 +199,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 }
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	dbRetention := time.Second
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time)
@@ -212,15 +211,16 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		CustomVal: true,
 	}
 
-	jobsDB.Setup(ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")
-	err := jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *sql.Tx) error {
 		if err := jobsDB.copyJobsDS(tx, ds, jobs); err != nil {
 			t.Log("error while copying jobs to ds: ", err)
 			return err
 		}
-		return jobsDB.copyJobStatusDS(tx, ds, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds, statusList, []string{}, nil)
 	})
 	require.NoError(t, err)
 
@@ -234,7 +234,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(tx, ds2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{}, nil)
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
