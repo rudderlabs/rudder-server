@@ -27,6 +27,7 @@ import (
 var (
 	// environment variables
 	configBackendURL                      string
+	cpRouterURL                           string
 	pollInterval, regulationsPollInterval time.Duration
 	configJSONPath                        string
 	configFromFile                        bool
@@ -38,8 +39,8 @@ var (
 
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
-	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	pkgLogger            = logger.NewLogger().Child("backend-config")
+	IoUtil               = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
 )
 
@@ -74,6 +75,7 @@ type backendConfigImpl struct {
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	cpRouterURL = config.GetEnv("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
@@ -100,7 +102,7 @@ func trackConfig(preConfig, curConfig ConfigT) {
 		noOfSources := len(curConfig.Sources)
 		noOfDestinations := 0
 		for _, source := range curConfig.Sources {
-			noOfDestinations = noOfDestinations + len(source.Destinations)
+			noOfDestinations += len(source.Destinations)
 		}
 		Diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
 			diagnostics.SourcesCount:      noOfSources,
@@ -137,7 +139,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackend
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
-	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
+	sort.Slice(sourceJSON.Sources, func(i, j int) bool {
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
@@ -215,12 +217,14 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			backendConfig.workspaceConfig = &namespaceConfig{
 				ConfigBackendURL: parsedConfigBackendURL,
 				configEnvHandler: configEnvHandler,
+				cpRouterURL:      cpRouterURL,
 			}
 		} else {
 			// DEPRECATED: This is the old way of configuring multi-tenant.
 			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
 				configBackendURL: parsedConfigBackendURL,
 				configEnvHandler: configEnvHandler,
+				cpRouterURL:      cpRouterURL,
 			}
 		}
 	default:

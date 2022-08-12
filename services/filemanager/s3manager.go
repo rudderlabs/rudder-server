@@ -170,7 +170,6 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 
 		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
-
 		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
@@ -214,6 +213,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 // then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
 func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
+		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
 		return
 	}
 	fileObjects = make([]*FileObject, 0)
@@ -234,7 +234,10 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	if manager.Config.StartAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
-	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+
+	if manager.Config.ContinuationToken != nil {
+		listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
@@ -242,6 +245,7 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	// Get the list of items
 	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
+		pkgLogger.Errorf("Error while listing S3 objects: %v", err)
 		return
 	}
 	if resp.IsTruncated != nil {
