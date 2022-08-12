@@ -18,6 +18,7 @@ import (
 var (
 	sampleMessage  = "sample payload"
 	sampleFunction = "sample function"
+	invocationType = "Event"
 )
 
 func TestNewProducer(t *testing.T) {
@@ -107,7 +108,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	var sampleInput lambda.InvokeInput
 	sampleInput.SetFunctionName(sampleFunction)
 	sampleInput.SetPayload([]byte(sampleMessage))
-	sampleInput.SetInvocationType("")
+	sampleInput.SetInvocationType(invocationType)
 
 	sampleDestConfig := map[string]interface{}{
 		"Lambda": sampleFunction,

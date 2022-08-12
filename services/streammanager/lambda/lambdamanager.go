@@ -16,9 +16,8 @@ import (
 
 // Config is the config that is required to send data to Lambda
 type Config struct {
-	InvocationType string
-	ClientContext  string
-	Lambda         string
+	ClientContext string
+	Lambda        string
 }
 
 type LambdaProducer struct {
@@ -67,7 +66,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	var invokeInput lambda.InvokeInput
 	invokeInput.SetFunctionName(config.Lambda)
 	invokeInput.SetPayload([]byte(data))
-	invokeInput.SetInvocationType(config.InvocationType)
+	invokeInput.SetInvocationType("Event") // Setting InvocationType as Event(Asynchronous Invocation)
 	if config.ClientContext != "" {
 		invokeInput.SetClientContext(config.ClientContext)
 	}
