@@ -64,7 +64,7 @@ type httpProxyResponse struct {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Setup(timeout time.Duration, srvTfTimeout time.Duration)
+	Setup(timeout, srvTfTimeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
 }
@@ -244,7 +244,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyReq
 	return respCode, string(respData), "application/json"
 }
 
-func (trans *HandleT) Setup(netClientTimeout time.Duration, serverTfTimeout time.Duration) {
+func (trans *HandleT) Setup(netClientTimeout, serverTfTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	// The timeout between server and transformer

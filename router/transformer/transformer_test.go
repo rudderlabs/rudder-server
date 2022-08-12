@@ -16,7 +16,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
+)
+
+// enum for expected Body Types
+type expectedBodyTypes string
+
+const (
+	JSON = "json"
+	STR  = "str"
 )
 
 type TcExpected struct {
@@ -25,6 +32,8 @@ type TcExpected struct {
 	// The expected status code from transformer.ProxyRequest
 	StCode      int
 	ContentType string
+	// The body type we'd get after ProxyRequest method
+	BodyType expectedBodyTypes
 }
 
 type TcProxy struct {
@@ -64,6 +73,7 @@ var (
 				StCode:      http.StatusOK,
 				Body:        `{"status": 200, "message": "", "destinationResponse":"good_dest"}`,
 				ContentType: "application/json",
+				BodyType:    JSON,
 			},
 			Proxy: TcProxy{
 				StCode:       http.StatusOK,
@@ -95,6 +105,7 @@ var (
 				StCode:      http.StatusGatewayTimeout,
 				Body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
 				ContentType: "text/plain; charset=utf-8",
+				BodyType:    STR,
 			},
 			Proxy: TcProxy{
 				StCode:       http.StatusOK,
@@ -126,6 +137,7 @@ var (
 				StCode:      http.StatusGatewayTimeout,
 				Body:        `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
 				ContentType: "text/plain; charset=utf-8",
+				BodyType:    STR,
 			},
 			Proxy: TcProxy{
 				StCode:       http.StatusOK,
@@ -159,6 +171,7 @@ var (
 				StCode:      http.StatusInternalServerError,
 				Body:        `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
 				ContentType: "text/plain; charset=utf-8",
+				BodyType:    STR,
 			},
 			Proxy: TcProxy{
 				StCode:   http.StatusOK,
@@ -191,6 +204,7 @@ var (
 				StCode:      http.StatusNotFound,
 				Body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
 				ContentType: "text/plain; charset=utf-8",
+				BodyType:    STR,
 			},
 			Proxy: TcProxy{
 				StCode:   http.StatusNotFound,
@@ -265,9 +279,11 @@ func TestProxyRequest(t *testing.T) {
 
 			assert.Equal(t, tc.Expected.StCode, stCd)
 			require.Equal(t, tc.Expected.ContentType, contentType)
-			if gjson.GetBytes([]byte(resp), "message").Raw != "" {
+
+			switch tc.Expected.BodyType {
+			case JSON:
 				require.JSONEq(t, tc.Expected.Body, resp)
-			} else if tc.Expected.StCode == http.StatusGatewayTimeout {
+			case STR:
 				expectedBodyStr := fmt.Sprintf(tc.Expected.Body, srv.URL)
 				require.Equal(t, expectedBodyStr, resp)
 			}
