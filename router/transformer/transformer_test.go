@@ -235,7 +235,7 @@ func TestProxyRequest(t *testing.T) {
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(mockProxyHandler(tc))
+			srv := httptest.NewServer(mockProxyHandler(&tc))
 			defer srv.Close()
 			tr := rtTf.NewTransformer()
 			// Logic for executing test-cases not manipulating test-cases
@@ -277,7 +277,7 @@ func TestProxyRequest(t *testing.T) {
 	// Not found case
 	tc := proxyResponseTcs[4]
 	t.Run(tc.name, func(t *testing.T) {
-		srv := httptest.NewServer(mockProxyHandler(tc))
+		srv := httptest.NewServer(mockProxyHandler(&tc))
 		defer srv.Close()
 
 		tr := rtTf.NewTransformer()
@@ -297,7 +297,7 @@ func TestProxyRequest(t *testing.T) {
 }
 
 // A kind of mock for transformer proxy endpoint in transformer
-func mockProxyHandler(tc ProxyResponseTc) *mux.Router {
+func mockProxyHandler(tc *ProxyResponseTc) *mux.Router {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v0/destinations/{destName}/proxy", func(w http.ResponseWriter, req *http.Request) {
 		vars := mux.Vars(req)

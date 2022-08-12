@@ -672,8 +672,6 @@ func (worker *workerT) processDestinationJobs() {
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-								var sendCtx context.Context
-								var cancel context.CancelFunc
 								// transformer proxy start
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
@@ -683,15 +681,9 @@ func (worker *workerT) processDestinationJobs() {
 										JobID:        jobID,
 										ResponseData: val,
 									}
-									// For http.client for proxy we are using
-									// backendProxyTimeout + netClientTimeout as the timeout value
-									// we are adding 20ms extra here to make sure the context timeout is at higher value
-									prxCtxTimeout := worker.rt.backendProxyTimeout + worker.rt.netClientTimeout + 20*time.Millisecond
-									sendCtx, cancel = context.WithTimeout(ctx, prxCtxTimeout)
 									rtlTime := time.Now()
-									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(sendCtx, proxyReqparams)
+									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
-									cancel()
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
 									authType := routerutils.GetAuthType(destinationJob.Destination)
 									if routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
@@ -707,7 +699,7 @@ func (worker *workerT) processDestinationJobs() {
 										})
 									}
 								} else {
-									sendCtx, cancel = context.WithTimeout(ctx, worker.rt.netClientTimeout)
+									sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 									rdlTime := time.Now()
 									resp := worker.rt.netHandle.SendPost(sendCtx, val)
 									cancel()
