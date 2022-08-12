@@ -1,19 +1,17 @@
-//go:build warehouse_integration
-
 package deltalake_test
 
 import (
 	"encoding/json"
 	"fmt"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"log"
 	"os"
 	"testing"
 
 	"github.com/gofrs/uuid"
-	"github.com/stretchr/testify/require"
-
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
@@ -31,6 +29,7 @@ var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.DeltalakeIntegrationTestCredentials
+	TestSchemaKey      = testhelper.DeltalakeIntegrationTestSchema
 )
 
 // databricksCredentials extracting deltalake credentials
@@ -49,14 +48,14 @@ func databricksCredentials() (databricksCredentials databricks.CredentialsT, err
 	return
 }
 
-// TestConnection test connection for deltalake
-func (*TestHandle) TestConnection() error {
+// VerifyConnection test connection for deltalake
+func (*TestHandle) VerifyConnection() error {
 	credentials, err := databricksCredentials()
 	if err != nil {
 		return err
 	}
 
-	err = testhelper.ConnectWithBackoff(func() (err error) {
+	err = testhelper.WithBackoff(func() (err error) {
 		handle.DB, err = deltalake.Connect(&credentials, 0)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
@@ -71,6 +70,25 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
+	// Cleanup resources
+	// Dropping temporary schema
+	t.Cleanup(func() {
+		require.NoError(t, testhelper.WithBackoff(func() (err error) {
+			dropSchemaResponse, err := handle.DB.Client.Execute(handle.DB.Context, &proto.ExecuteRequest{
+				Config:       handle.DB.CredConfig,
+				Identifier:   handle.DB.CredIdentifier,
+				SqlStatement: fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, handle.Schema),
+			})
+			if err != nil {
+				return fmt.Errorf("failed dropping schema %s for Deltalake, error: %s", handle.Schema, err.Error())
+			}
+			if dropSchemaResponse.GetErrorCode() != "" {
+				return fmt.Errorf("failed dropping schema %s for Deltalake, errorCode: %s, errorMessage: %s", handle.Schema, dropSchemaResponse.GetErrorCode(), dropSchemaResponse.GetErrorMessage())
+			}
+			return
+		}))
+	})
+
 	t.Run("Merge Mode", func(t *testing.T) {
 		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
@@ -246,7 +264,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		Schema:   "deltalake_wh_integration",
+		Schema:   testhelper.GetSchema(warehouseutils.DELTALAKE, TestSchemaKey),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package postgres_test
 
 import (
@@ -23,9 +21,9 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// TestConnection test connection for postgres
-func (*TestHandle) TestConnection() error {
-	err := testhelper.ConnectWithBackoff(func() (err error) {
+// VerifyConnection test connection for postgres
+func (*TestHandle) VerifyConnection() error {
+	err := testhelper.WithBackoff(func() (err error) {
 		credentials := postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",
