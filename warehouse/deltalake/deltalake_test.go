@@ -198,7 +198,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
-			Provider:             warehouseutils.DELTALAKE
+			Provider:             warehouseutils.DELTALAKE,
 		}
 
 		// Scenario 1
