@@ -2241,7 +2241,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.routerResponseTransformStat = stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
 
 	rt.transformer = transformer.NewTransformer()
-	rt.transformer.Setup(rt.netClientTimeout)
+	rt.transformer.Setup(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()

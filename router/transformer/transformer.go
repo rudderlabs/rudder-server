@@ -40,7 +40,9 @@ type HandleT struct {
 	// Mockable http.client for transformer proxy request
 	tfProxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
-	tfProxyTimeout                     time.Duration
+	tfProxyTimeout time.Duration
+	// http client timeout for server-transformer request
+	serverTfTimeout                    time.Duration
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
 	transformerProxyRequestTime        stats.RudderStats
@@ -62,7 +64,7 @@ type httpProxyResponse struct {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Setup(timeout time.Duration)
+	Setup(timeout time.Duration, srvTfTimeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
 }
@@ -73,16 +75,14 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry        int
-	retrySleep      time.Duration
-	timeoutDuration time.Duration
-	pkgLogger       logger.LoggerI
+	maxRetry   int
+	retrySleep time.Duration
+	pkgLogger  logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
 }
 
 func Init() {
@@ -244,13 +244,19 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyReq
 	return respCode, string(respData), "application/json"
 }
 
-// is it ok to use same client for network and transformer calls? need to understand timeout setup in router
-func (trans *HandleT) Setup(netClientTimeout time.Duration) {
+func (trans *HandleT) Setup(netClientTimeout time.Duration, serverTfTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
+	// The timeout between server and transformer
+	// Basically this timeout is more for communication between transformer and server
+	trans.serverTfTimeout = serverTfTimeout
+	// Destination API timeout
+	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.tfProxyTimeout = netClientTimeout
-	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout + timeoutDuration}
+	// This client is used for Router Transformation
+	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.serverTfTimeout}
+	// This client is used for Transformer Proxy(delivered from transformer to destination)
+	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout + trans.serverTfTimeout}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
@@ -278,7 +284,7 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 		}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.tfProxyTimeout+timeoutDuration).Milliseconds(), 10))
+	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.tfProxyTimeout+trans.serverTfTimeout).Milliseconds(), 10))
 	// Make use of this header to set timeout in the transfomer's http client
 	// The header name may be worked out ?
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyTimeout.Milliseconds(), 10))

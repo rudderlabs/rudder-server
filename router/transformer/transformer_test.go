@@ -226,7 +226,7 @@ func Initialization() {
 }
 
 func TestProxyRequest(t *testing.T) {
-	t.Setenv("RSERVER_HTTP_CLIENT_TIMEOUT", "1s")
+	httpClientTimeout := 1 * time.Second
 	Initialization()
 
 	for _, tc := range proxyResponseTcs {
@@ -240,10 +240,10 @@ func TestProxyRequest(t *testing.T) {
 			tr := rtTf.NewTransformer()
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr.Setup(tc.rtTimeout)
+				tr.Setup(tc.rtTimeout, httpClientTimeout)
 			} else {
 				// Just a default value
-				tr.Setup(2 * time.Millisecond)
+				tr.Setup(2*time.Millisecond, httpClientTimeout)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -281,7 +281,7 @@ func TestProxyRequest(t *testing.T) {
 		defer srv.Close()
 
 		tr := rtTf.NewTransformer()
-		tr.Setup(tc.rtTimeout)
+		tr.Setup(tc.rtTimeout, httpClientTimeout)
 		ctx := context.TODO()
 		reqParams := &rtTf.ProxyRequestParams{
 			ResponseData: tc.postParametersT,
