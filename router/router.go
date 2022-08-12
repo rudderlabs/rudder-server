@@ -320,7 +320,7 @@ func loadConfig() {
 func (worker *workerT) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if worker.rt.transformerProxy {
-		d = worker.rt.backendProxyTimeout * 2
+		d = (worker.rt.backendProxyTimeout + worker.rt.netClientTimeout) * 2
 	} else {
 		d = worker.rt.netClientTimeout * 2
 	}
@@ -672,14 +672,17 @@ func (worker *workerT) processDestinationJobs() {
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-								defer cancel()
 								// transformer proxy start
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
+									proxyReqparams := &transformer.ProxyRequestParams{
+										DestName:     worker.rt.destName,
+										JobID:        jobID,
+										ResponseData: val,
+									}
 									rtlTime := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobID)
+									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
 									authType := routerutils.GetAuthType(destinationJob.Destination)
@@ -696,8 +699,10 @@ func (worker *workerT) processDestinationJobs() {
 										})
 									}
 								} else {
+									sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 									rdlTime := time.Now()
 									resp := worker.rt.netHandle.SendPost(sendCtx, val)
+									cancel()
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 									// stat end
 									worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
@@ -2236,7 +2241,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.routerResponseTransformStat = stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
 
 	rt.transformer = transformer.NewTransformer()
-	rt.transformer.Setup()
+	rt.transformer.Setup(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()

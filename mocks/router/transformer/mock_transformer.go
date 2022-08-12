@@ -7,9 +7,10 @@ package mocks_transformer
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
+	transformer "github.com/rudderlabs/rudder-server/router/transformer"
 	types "github.com/rudderlabs/rudder-server/router/types"
 )
 
@@ -37,30 +38,31 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // ProxyRequest mocks base method.
-func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 integrations.PostParametersT, arg2 string, arg3 int64) (int, string) {
+func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) (int, string, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
-	return ret0, ret1
+	ret2, _ := ret[2].(string)
+	return ret0, ret1, ret2
 }
 
 // ProxyRequest indicates an expected call of ProxyRequest.
-func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1)
 }
 
 // Setup mocks base method.
-func (m *MockTransformer) Setup() {
+func (m *MockTransformer) Setup(arg0, arg1 time.Duration) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup")
+	m.ctrl.Call(m, "Setup", arg0, arg1)
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
+func (mr *MockTransformerMockRecorder) Setup(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup), arg0, arg1)
 }
 
 // Transform mocks base method.
