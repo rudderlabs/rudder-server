@@ -1798,7 +1798,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			Jobs:    messages,
 			JobType: "upload",
 		}
-		ch, err := job.pgNotifier.Publish(messagePayload, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messagePayload, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

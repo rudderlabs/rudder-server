@@ -1,3 +1,14 @@
+/*
+	Warehouse jobs package provides the capability to running arbitrary jobs on the warehouses using the query parameters provided.
+	Some of the jobs that can be run are
+	1) delete by task run id,
+	2) delete by job run id,
+	3) delete by update_at
+	4) any other update / clean up operations
+
+	The following handlers file is the entry point for the handlers.
+*/
+
 package warehouse_jobs
 
 import (
@@ -12,7 +23,8 @@ var (
 	pkgLogger = logger.NewLogger().Child("warehouse-asyncjob")
 )
 
-func StartWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+//The following handler gets called
+func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Info("Got Async Job Request")
 	pkgLogger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
@@ -44,18 +56,31 @@ func StartWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	//Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if th != "RUDDER_DISCARDS" {
+			destType := (*AsyncJobWH.connectionsMap)[startJobPayload.DestinationID][startJobPayload.SourceID].Destination.DestinationDefinition.Name
 			payload := AsyncJobPayloadT{
 				SourceID:      startJobPayload.SourceID,
 				DestinationID: startJobPayload.DestinationID,
 				TableName:     th,
-				DestType:      "abc",
+				DestType:      destType,
 				JobType:       "deleteByJobRunID",
 				JobRunID:      startJobPayload.JobRunID,
-				TaskRunID:     "adbabdakjwdkl",
+				TaskRunID:     startJobPayload.TaskRunID,
 				StartTime:     startJobPayload.StartTime,
 			}
 			AsyncJobWH.addJobstoDB(&payload)
 		}
 	}
+
+}
+
+func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func StopWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func GetWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 }

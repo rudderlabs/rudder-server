@@ -23,6 +23,7 @@ type StartJobReqPayload struct {
 	DestinationID string `json:"destinationid"`
 	StartTime     string `json:"starttime"`
 	JobRunID      string `json:"jobrunid"`
+	TaskRunID     string `json:"taskrunid"`
 }
 
 //For sending message payload to pgnotifier

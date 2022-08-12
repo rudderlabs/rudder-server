@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -127,7 +126,8 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 				Jobs:    notifierClaims,
 				JobType: "async_job",
 			}
-			ch, err := asyncWhJob.pgnotifier.Publish(messagePayload, 100)
+			schema := warehouseutils.SchemaT{}
+			ch, err := asyncWhJob.pgnotifier.Publish(messagePayload, &schema, 100)
 			if err != nil {
 				panic(err)
 			}
@@ -135,37 +135,35 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
-				defer wg.Done()
 				for {
 					select {
 					case <-ctx.Done():
-						return
+						wg.Done()
 					case responses := <-ch:
-						asyncWhJob.log.Info("Waiting for responses from the pgnotifier track batch %s", responses)
-						var successfulStagingFileIDs []int64
+						asyncWhJob.log.Info("Waiting for responses from the pgnotifier track batch")
+						var successfulAsyncJobs []AsyncJobPayloadT
 						for _, resp := range responses {
-							var jobID string
-							json.Unmarshal(resp.Output, &jobID)
-							jobRunID := strings.Split(jobID, "/")[0]
+							var jobID pgnotifier.AsyncOutput
+							err = json.Unmarshal(resp.Output, &jobID)
+							if err != nil {
+								asyncWhJob.log.Errorf("Unable unmarshal output %s", err)
+								panic(err)
+							}
+							fmt.Printf("Got Table Name as %s", jobID.TableName)
+							ind := getSinglePayloadFromBatchPayloadByTableName(&asyncjobpayloads, jobID.TableName)
+							if ind == -1 {
+								panic(fmt.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName))
+							}
 							if resp.Status == "aborted" {
 								pkgLogger.Errorf("[WH]: Error in running clean up task %v", resp.Error)
 								sampleError := fmt.Errorf(resp.Error)
-								asyncWhJob.updateAsyncJobs()
+								asyncWhJob.updateSingleAsyncJob(&asyncjobpayloads[ind], warehouseutils.StagingFileAbortedState, sampleError.Error())
 								continue
 							}
-							var output []loadFileUploadOutputT
-							err = json.Unmarshal(resp.Output, &output)
-							if err != nil {
-								panic(err)
-							}
-							if len(output) == 0 {
-								pkgLogger.Errorf("[WH]: No LoadFiles returned by wh worker")
-								continue
-							}
-							loadFiles = append(loadFiles, output...)
-							successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
+							successfulAsyncJobs = append(successfulAsyncJobs, asyncjobpayloads[ind])
+
 						}
-						job.setStagingFileSuccess(successfulStagingFileIDs)
+						asyncWhJob.updateAsyncJobs(&successfulAsyncJobs, warehouseutils.StagingFileSucceededState, "")
 						wg.Done()
 					}
 				}
@@ -228,9 +226,9 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 
 //Updates the warehouse async jobs with the status sent as a parameter
 func (asyncWhJob *AsyncJobWhT) updateAsyncJobs(payloads *[]AsyncJobPayloadT, status string, errMessage string) {
-	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Processing")
+	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Executing")
 	for _, payload := range *payloads {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s AND error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
+		sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
 		asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s", sqlStatement)
 		_, err := asyncWhJob.dbHandle.Query(sqlStatement)
 		if err != nil {
@@ -239,9 +237,9 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobs(payloads *[]AsyncJobPayloadT, sta
 	}
 }
 
-func (asyncWhJob *AsyncJobWhT) updateAsyncJobToError(payload *AsyncJobPayloadT, errMessage string) {
+func (asyncWhJob *AsyncJobWhT) updateSingleAsyncJob(payload *AsyncJobPayloadT, status string, errMessage string) {
 	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Aborted")
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s AND error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, , errMessage, payload.Id)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
 	asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s", sqlStatement)
 	_, err := asyncWhJob.dbHandle.Query(sqlStatement)
 	if err != nil {
@@ -278,4 +276,15 @@ func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgn
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func getSinglePayloadFromBatchPayloadByTableName(asyncJobs *[]AsyncJobPayloadT, tableName string) int {
+	fmt.Printf("$$$$$$$$ Table Name Parameter %s\n", tableName)
+	for ind, asyncjob := range *asyncJobs {
+		fmt.Printf("=========> %s\n", asyncjob.TableName)
+		if asyncjob.TableName == tableName {
+			return ind
+		}
+	}
+	return -1
 }

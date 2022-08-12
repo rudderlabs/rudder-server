@@ -1692,7 +1692,13 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
-			mux.HandleFunc("/v1/warehouse/wh-jobs/start", warehouse_jobs.StartWarehouseJobHandler)
+
+			//Warehouse Async Job end-points
+			mux.HandleFunc("/v1/warehouse/wh-jobs/add", warehouse_jobs.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/status", warehouse_jobs.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/stop", warehouse_jobs.StopWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/get", warehouse_jobs.GetWarehouseJobHandler)
+
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
 			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)

@@ -90,6 +90,12 @@ type MessagePayload struct {
 	JobType string
 }
 
+type AsyncOutput struct {
+	JobID     string
+	TableName string
+	Output    string
+}
+
 func loadPGNotifierConfig() {
 	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
 	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
@@ -245,22 +251,34 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 			}
 
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload->'JobRunID', payload->'Output', payload->'TableName', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
 				}
 				var responses []ResponseT
 				for rows.Next() {
-					var status, jobID, jobError, output, tablename sql.NullString
-					err = rows.Scan(&jobID, &output, &tablename, &status, &jobError)
+					var status, jobError sql.NullString
+					var payload json.RawMessage
+
+					err = rows.Scan(&payload, &status, &jobError)
 					if err != nil {
 						panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", stmt, err))
 					}
-					finalOutput := jobID.String + "/" + tablename.String + "/" + output.String
+
+					// finalOutput := AsyncOutput{
+					// 	JobID:     jobID,
+					// 	TableName: tablename,
+					// 	Output:    output.String,
+					// }
+
+					// Output, err := json.Marshal(finalOutput)
+					if err != nil {
+						panic(fmt.Errorf("failed to marshal async Output with Error : %w", err))
+					}
 					responses = append(responses, ResponseT{
 						JobID:  0,
-						Output: []byte(finalOutput),
+						Output: payload,
 						Status: status.String,
 						Error:  jobError.String,
 					})
@@ -383,7 +401,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(payload MessagePayload, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	jobs := payload.Jobs
 	defer func() {
