@@ -76,7 +76,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	// Dropping temporary dataset
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithBackoff(func() (err error) {
-			return handle.DB.Dataset(handle.Schema).Delete(context.TODO())
+			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
 		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", handle.Schema))
 	})
 
