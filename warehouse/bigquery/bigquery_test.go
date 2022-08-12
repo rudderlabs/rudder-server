@@ -33,6 +33,7 @@ var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
+	TestSchemaKey      = testhelper.BigqueryIntegrationTestSchema
 )
 
 // bigqueryCredentials extracting big query credentials
@@ -51,14 +52,14 @@ func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
 	return
 }
 
-// TestConnection test connection for big query
-func (*TestHandle) TestConnection() error {
+// VerifyConnection test connection for big query
+func (*TestHandle) VerifyConnection() error {
 	credentials, err := bigqueryCredentials()
 	if err != nil {
 		return err
 	}
 
-	err = testhelper.ConnectWithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
@@ -73,6 +74,14 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestBigQueryIntegration(t *testing.T) {
+	// Cleanup resources
+	// Dropping temporary dataset
+	t.Cleanup(func() {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
+		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", handle.Schema))
+	})
+
 	t.Run("Merge Mode", func(t *testing.T) {
 		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
@@ -233,7 +242,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   "bigquery_wh_integration",
+		Schema:   testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

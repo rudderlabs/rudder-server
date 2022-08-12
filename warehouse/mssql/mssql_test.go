@@ -23,9 +23,9 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// TestConnection test connection for mssql
-func (*TestHandle) TestConnection() error {
-	err := testhelper.ConnectWithBackoff(func() (err error) {
+// VerifyConnection test connection for mssql
+func (*TestHandle) VerifyConnection() error {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
