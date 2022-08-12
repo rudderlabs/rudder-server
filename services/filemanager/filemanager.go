@@ -94,6 +94,7 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
+		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")

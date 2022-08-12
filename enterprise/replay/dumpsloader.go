@@ -91,6 +91,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 
 		if len(s3Objects) == 0 {
+			pkgLogger.Infof("no files found in %s", gwHandle.handle.prefix)
 			break
 		}
 
@@ -238,7 +239,7 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
-	handle.prefix = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET_PREFIX", ""))
+	handle.prefix = strings.TrimSpace(config.GetEnv("JOBS_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
 	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}
