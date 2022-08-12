@@ -94,6 +94,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.SNOWFLAKE),
+		Provider:             warehouseutils.SNOWFLAKE,
 	}
 
 	// Scenario 1
@@ -102,7 +103,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -131,7 +132,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events

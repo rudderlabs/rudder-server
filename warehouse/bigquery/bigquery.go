@@ -353,7 +353,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		tableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
 		var tableColNames []string
 		for colName := range tableColMap {
-			tableColNames = append(tableColNames, colName)
+			tableColNames = append(tableColNames, fmt.Sprintf("`%s`", colName))
 		}
 
 		var stagingColumnNamesList, columnsWithValuesList []string
@@ -429,7 +429,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("BQ: Starting load for %s table", warehouseutils.UsersTable)
 
 	firstValueSQL := func(column string) string {
-		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
+		return fmt.Sprintf("FIRST_VALUE(`%[1]s` IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `%[1]s`", column)
 	}
 
 	loadedAtFilter := func() string {
@@ -456,7 +456,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
+		userColNames = append(userColNames, fmt.Sprintf("`%s`", colName))
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
@@ -546,8 +546,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
 		defer bq.dropStagingTable(stagingTableName)
 
-		primaryKey := `ID`
-		columnNames := append([]string{`ID`}, userColNames...)
+		primaryKey := "ID"
+		columnNames := append([]string{"ID"}, userColNames...)
 		columnNamesStr := strings.Join(columnNames, ",")
 		var columnsWithValues, stagingColumnValues string
 		for idx, colName := range columnNames {

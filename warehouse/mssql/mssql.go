@@ -172,7 +172,7 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
 	}
 	return strings.Join(arr, ",")
 }
@@ -240,7 +240,6 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	fileNames, err := ms.DownloadLoadFiles(tableName)
 	defer misc.RemoveFilePaths(fileNames...)
@@ -445,7 +444,13 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		txn.Rollback()
 		return
 	}
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, ms.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
+
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) 
+									SELECT %[3]s FROM ( 
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" 
+									) AS _ where _rudder_staging_row_number = 1
+									`, ms.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 
@@ -511,16 +516,16 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
+		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
-						  	select %[1]s from %[2]s
+						  	select "%[1]s" from %[2]s
 						  	where x.id = %[2]s.id
-							  and %[1]s is not null
+							  and "%[1]s" is not null
 							  order by received_at desc
 						  	OFFSET 0 ROWS
 							FETCH NEXT 1 ROWS ONLY)
-						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
+						  end as "%[1]s"`, colName, ms.Namespace+"."+unionStagingTableName)
 
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
@@ -635,7 +640,7 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 
 func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
-			ALTER TABLE %[1]s ADD %[2]s %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
+			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	return
