@@ -303,7 +303,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	var columnNames, stagingColumnNames, columnsWithValues string
 	// TODO: use strings.Join() instead
 	for idx, str := range strkeys {
-		columnNames += str
+		columnNames += fmt.Sprintf(`"%s"`, str)
 		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
 		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
 		if idx != len(strkeys)-1 {
