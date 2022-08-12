@@ -301,7 +301,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 			UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
-			Provider:             "CLICKHOUSE",
+			Provider:             warehouseutils.CLICKHOUSE,
 		}
 
 		// Scenario 1
@@ -381,7 +381,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 			UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
-			Provider:             "CLICKHOUSE",
+			Provider:             warehouseutils.CLICKHOUSE,
 		}
 
 		// Scenario 1

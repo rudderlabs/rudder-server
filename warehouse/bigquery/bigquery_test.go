@@ -95,7 +95,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             "BQ",
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1
@@ -182,7 +182,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             "BQ",
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1

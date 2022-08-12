@@ -82,7 +82,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.SNOWFLAKE),
-		Provider:             "SNOWFLAKE",
+		Provider:             warehouseutils.SNOWFLAKE,
 	}
 
 	// Scenario 1

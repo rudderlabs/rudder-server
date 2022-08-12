@@ -63,7 +63,7 @@ func TestPostgresIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
-		Provider:             "POSTGRES",
+		Provider:             warehouseutils.POSTGRES,
 	}
 
 	// Scenario 1

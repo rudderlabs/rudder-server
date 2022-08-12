@@ -81,7 +81,7 @@ func TestRedshiftIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.RS),
-		Provider:             "RS",
+		Provider:             warehouseutils.RS,
 	}
 
 	// Scenario 1

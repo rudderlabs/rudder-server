@@ -64,7 +64,7 @@ func TestMSSQLIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 		UserId:               testhelper.GetUserId(warehouseutils.MSSQL),
-		Provider:             "MSSQL",
+		Provider:             warehouseutils.MSSQL,
 	}
 
 	// Scenario 1
