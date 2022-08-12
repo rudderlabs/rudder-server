@@ -669,6 +669,7 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 }
 
 func usersDedupEnabled() bool {
+	// enable dedup on users table if any one of them is true
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
