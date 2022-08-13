@@ -186,7 +186,6 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		defer cancel()
 
 		region, err := awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
-
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
