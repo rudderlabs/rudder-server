@@ -166,7 +166,7 @@ func (pg *HandleT) getConnectionCredentials() CredentialsT {
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -268,7 +268,6 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	fileNames, err := pg.DownloadLoadFiles(tableName)
 	defer misc.RemoveFilePaths(fileNames...)
@@ -396,7 +395,13 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
 	}
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
+
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) 
+									SELECT %[3]s FROM ( 
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" 
+									) AS _ where _rudder_staging_row_number = 1
+									`, pg.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
@@ -459,15 +464,15 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
+		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
-						  	select %[1]s from "%[3]s"."%[2]s" as staging_table
+						  	select "%[1]s" from "%[3]s"."%[2]s" as staging_table
 						  	where x.id = staging_table.id
-							  and %[1]s is not null
+							  and "%[1]s" is not null
 							  order by received_at desc
 						  	limit 1)
-						  end as %[1]s`, colName, unionStagingTableName, pg.Namespace)
+						  end as "%[1]s"`, colName, unionStagingTableName, pg.Namespace)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
@@ -594,7 +599,7 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 }
 
 func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS "%s" %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return

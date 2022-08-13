@@ -11,32 +11,35 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/enterprise/replay/fileuploader"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/tidwall/gjson"
 )
 
 type SourceWorkerT struct {
-	channel     chan *jobsdb.JobT
-	workerID    int
-	replayer    *HandleT
-	tablePrefix string
-	transformer transformer.Transformer
+	channel       chan *jobsdb.JobT
+	workerID      int
+	replayHandler *Handler
+	tablePrefix   string
+	transformer   transformer.Transformer
+	uploader      filemanager.FileManager
 }
 
 var userTransformBatchSize int
 
-func (worker *SourceWorkerT) workerProcess() {
+func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 	pkgLogger.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
 		pkgLogger.Debugf("job received: %s", job.EventPayload)
 
-		worker.replayJobsInFile(gjson.GetBytes(job.EventPayload, "location").String())
+		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
 
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -47,11 +50,14 @@ func (worker *SourceWorkerT) workerProcess() {
 			ErrorResponse: []byte(`{}`), // check
 			Parameters:    []byte(`{}`), // check
 		}
-		worker.replayer.db.UpdateJobStatus(context.TODO(), []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		err := worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
-func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
+func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath string) {
 	filePathTokens := strings.Split(filePath, "/")
 
 	var err error
@@ -72,15 +78,15 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 
 	file, err := os.Create(path)
 	if err != nil {
-		panic(err) // Cant open file to write
+		panic(err) // Cannot open file to write
 	}
 
-	_, err = fileuploader.Download(file, filePath, worker.replayer.bucket)
+	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
 		panic(err) // failed to download
 	}
 	pkgLogger.Debugf("file downloaded at %s", path)
-	file.Close()
+	_ = file.Close()
 
 	rawf, err := os.Open(path)
 	if err != nil {
@@ -99,9 +105,9 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 	buf := make([]byte, maxCapacity)
 	sc.Buffer(buf, maxCapacity)
 
-	defer rawf.Close()
+	defer func() { _ = rawf.Close() }()
 
-	jobs := []*jobsdb.JobT{}
+	var jobs []*jobsdb.JobT
 
 	var transEvents []transformer.TransformerEventT
 	transformationVersionID := config.GetEnv("TRANSFORMATION_VERSION_ID", "")
@@ -112,18 +118,26 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 		copy(copyLineBytes, lineBytes)
 
 		if transformationVersionID == "" {
+			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String())
+			if err != nil {
+				pkgLogger.Errorf("failed to parse created at: %s", err)
+				continue
+			}
+			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+				continue
+			}
 			job := jobsdb.JobT{
 				UUID:         uuid.Must(uuid.NewV4()),
 				UserID:       gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(userID)).String(),
 				Parameters:   []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(parameters)).String()),
 				CustomVal:    gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(customVal)).String(),
 				EventPayload: []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()),
+				WorkspaceId:  gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(workspaceID)).String(),
 			}
 			jobs = append(jobs, &job)
 			continue
 		}
 
-		// message, ok := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).Value().(map[string]interface{})
 		message, ok := gjson.ParseBytes(copyLineBytes).Value().(map[string]interface{})
 		if !ok {
 			pkgLogger.Errorf("EventPayload not a json: %v", copyLineBytes)
@@ -157,6 +171,19 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 				pkgLogger.Errorf("Error unmarshalling transformer output: %v", err)
 				continue
 			}
+			createdAtString, ok := ev.Output[worker.getFieldIdentifier(createdAt)].(string)
+			if !ok {
+				pkgLogger.Errorf("Error getting created at from transformer output: %v", err)
+				continue
+			}
+			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, createdAtString)
+			if err != nil {
+				pkgLogger.Errorf("failed to parse created at: %s", err)
+				continue
+			}
+			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+				continue
+			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])
 			if err != nil {
 				pkgLogger.Errorf("Error unmarshalling transformer output: %v", err)
@@ -177,9 +204,9 @@ func (worker *SourceWorkerT) replayJobsInFile(filePath string) {
 		}
 
 	}
-	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayer.toDB.Identifier())
+	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
 
-	err = worker.replayer.toDB.Store(context.TODO(), jobs)
+	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
 		panic(err)
 	}
@@ -194,7 +221,9 @@ const (
 	userID       = "userID"
 	parameters   = "parameters"
 	customVal    = "customVal"
-	eventPayload = "eventPaylod"
+	eventPayload = "eventPayload"
+	workspaceID  = "workspaceID"
+	createdAt    = "createdAt"
 )
 
 func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
@@ -208,6 +237,10 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 			return "custom_val"
 		case eventPayload:
 			return "event_payload"
+		case workspaceID:
+			return "workspace_id"
+		case createdAt:
+			return "created_at"
 		default:
 			return ""
 		}
@@ -221,6 +254,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 		return "CustomVal"
 	case eventPayload:
 		return "EventPayload"
+	case createdAt:
+		return "CreatedAt"
 	default:
 		return ""
 	}

@@ -430,7 +430,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 			"location": "US",
 			"bucketName": "my-bucket",
 			"prefix": "rudder",
-			"namespace": "namespace", 
+			"namespace": "namespace",
 			"credentials":"{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 			"syncFrequency": "1440",
 			"syncStartAt": "09:00"
@@ -439,8 +439,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	manager := &filemanager.GCSManager{
-		Config:  filemanager.GetGCSConfig(config),
-		Timeout: nil,
+		Config: filemanager.GetGCSConfig(config),
 	}
 	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
 	assert.NotNil(t, err)
