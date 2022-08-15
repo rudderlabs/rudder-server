@@ -255,6 +255,9 @@ func (job *UploadJobT) generateExcludedSchema() {
 
 	if len(excludedSchema) > 0 {
 		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
+		for tName, columnMap := range excludedSchema {
+			job.counterStat(`warehouse_excluded_schema_columns`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(len(columnMap))
+		}
 	}
 	// set excluded schema
 	job.schemaHandle.excludedSchema = excludedSchema

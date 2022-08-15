@@ -430,14 +430,14 @@ func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, m
 		}
 
 		// Get distinct columns from schema in warehouse
-		sortedTableColumns := []string{}
+		newTableColumns := []string{}
 		var currTableColumnCount int
 
-		_, schemaExists := schemaInWarehouse[tableName]
-		if schemaExists {
+		_, tableExists := schemaInWarehouse[tableName]
+		if tableExists {
 			for k := range columnMap {
 				if _, ok := schemaInWarehouse[tableName][k]; !ok {
-					sortedTableColumns = append(sortedTableColumns, k)
+					newTableColumns = append(newTableColumns, k)
 				}
 			}
 			currTableColumnCount = len(schemaInWarehouse[tableName])
@@ -447,21 +447,22 @@ func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, m
 				if misc.ContainsString(warehouseutils.RudderReservedColumns, k) {
 					reservedColumnscount++
 				} else {
-					sortedTableColumns = append(sortedTableColumns, k)
+					newTableColumns = append(newTableColumns, k)
 				}
 			}
+			// considering mandatory rudder reserved columns to be already in warehouse for this calculation
 			currTableColumnCount = reservedColumnscount
 		}
 
 		// return if columns does not exceed max limit
-		if len(sortedTableColumns)+currTableColumnCount <= maxColumnCount {
+		if len(newTableColumns)+currTableColumnCount <= maxColumnCount {
 			continue
 		}
 
-		sort.Strings(sortedTableColumns)
+		sort.Strings(newTableColumns)
 		includedColumnCount := maxColumnCount - currTableColumnCount
 		// Add exceeded columns in excluded schema
-		for _, col := range sortedTableColumns[includedColumnCount:] {
+		for _, col := range newTableColumns[includedColumnCount:] {
 			// init map if not exists
 			if _, ok := excludedSchema[tableName]; !ok {
 				excludedSchema[tableName] = map[string]string{}
