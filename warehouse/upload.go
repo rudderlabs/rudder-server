@@ -243,6 +243,9 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 
 // excess columns are included in excluded schema
 func (job *UploadJobT) generateExcludedSchema() {
+	if !enableExcludedSchema {
+		return
+	}
 	uploadSchema := job.upload.UploadSchema
 	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		uploadSchema = job.upload.MergedSchema

@@ -88,6 +88,7 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	configBackendURL                    string
+	enableExcludedSchema                bool
 )
 
 var (
@@ -187,6 +188,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	config.RegisterBoolConfigVariable(true, &enableExcludedSchema, true, "Warehouse.enableExcludedSchema")
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
