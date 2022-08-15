@@ -51,6 +51,17 @@ func (*TestHandle) VerifyConnection() error {
 }
 
 func TestPostgresIntegration(t *testing.T) {
+	// Setting up the test configuration
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.enableExcludedSchema",
+			Value: true,
+		},
+		{
+			Key:   "Warehouse.postgres.maxColumnCount",
+			Value: 15,
+		},
+	}))
 	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
@@ -62,46 +73,129 @@ func TestPostgresIntegration(t *testing.T) {
 		Tables:               handle.Tables,
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
 		Provider:             warehouseutils.POSTGRES,
 	}
 
 	// Scenario 1
-	// Sending the first set of events.
-	// Since we are sending unique message Ids.
-	// These should result in events count will be equal to the number of events being sent
+	// Sending a new event to handle exceeded columns, set max limit to 15
+	// Since we are sending same message Id to all type of events
+	// All rows in rudder discards have same row_id
+	// Exceeded count: pages -> 1, groups -> 3, product_track -> 4
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"identifies":      1,
+		"users":           1,
+		"tracks":          1,
+		"product_track":   1,
+		"pages":           1,
+		"screens":         1,
+		"aliases":         1,
+		"groups":          1,
+		"rudder_discards": 7,
+		"gateway":         6,
+		"batchRT":         8,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
 	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.enableExcludedSchema",
+			Value: false,
+		},
+	}))
 	// Scenario 2
+	// Sending the first set of events.
+	// Since we are sending unique message Ids.
+	// These should result in events count will be equal to the number of events being sent
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
+
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":      4,
+		"users":           1,
+		"tracks":          4,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"rudder_discards": 0,
+		"gateway":         24,
+		"batchRT":         32,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.enableExcludedSchema",
+			Value: true,
+		},
+		{
+			Key:   "Warehouse.postgres.maxColumnCount",
+			Value: 20,
+		},
+	}))
+	// Scenario 3
+	// Sending a existing event to handle exceeded columns, set max limit to 20
+	// Since we are sending same message Id to all type of events
+	// All rows in rudder discards have same row_id
+	// Exceeded count: pages, groups -> 1, identifies -> 2, product_track -> 5
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
+	testhelper.SendModifiedEvents(t, warehouseTest)
+
+	// Setting up the events map
+	// Checking for Gateway and Batch router events
+	// Checking for the events count for each table
+	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+		"identifies":      1,
+		"users":           1,
+		"tracks":          1,
+		"product_track":   1,
+		"pages":           1,
+		"screens":         1,
+		"aliases":         1,
+		"groups":          1,
+		"rudder_discards": 9,
+		"gateway":         6,
+		"batchRT":         8,
+	}
+	testhelper.VerifyingGatewayEvents(t, warehouseTest)
+	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+	// Scenario 4
 	// Setting up events count map
 	// Setting up the UserID
 	// Sending the second set of modified events
 	// Since we are sending unique message Ids
 	// These should result in events count will be equal to the number of events being sent
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.enableExcludedSchema",
+			Value: false,
+		},
+	}))
 	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
@@ -111,16 +205,17 @@ func TestPostgresIntegration(t *testing.T) {
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"identifies":      4,
+		"users":           1,
+		"tracks":          4,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"rudder_discards": 0,
+		"gateway":         24,
+		"batchRT":         32,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -131,7 +226,7 @@ func TestMain(m *testing.M) {
 	handle = &TestHandle{
 		WriteKey: "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 		Schema:   "postgres_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups", "rudder_discards"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

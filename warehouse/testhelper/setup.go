@@ -348,10 +348,23 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Started verifying tables events")
 
 	primaryKey := func(tableName string) string {
-		if tableName == "users" {
+		switch tableName {
+		case "users":
 			return "id"
+		case "rudder_discards":
+			return "row_id"
+		default:
+			return "user_id"
 		}
-		return "user_id"
+	}
+
+	primaryValue := func(tableName string) string {
+		switch tableName {
+		case "rudder_discards":
+			return wareHouseTest.MessageId
+		default:
+			return wareHouseTest.UserId
+		}
 	}
 
 	var (
@@ -371,7 +384,7 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.Schema,
 			table,
 			primaryKey(table),
-			wareHouseTest.UserId,
+			primaryValue(table),
 		)
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
