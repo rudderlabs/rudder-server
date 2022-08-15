@@ -1,111 +1,113 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type MultiTenantWorkspacesConfig struct {
-	CommonBackendConfig
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// WorkspacesT holds sources of workspaces
+type WorkspacesT struct {
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
+}
+
+type multiTenantWorkspacesConfig struct {
 	Token                     string
+	configBackendURL          *url.URL
+	configEnvHandler          types.ConfigEnvI
+	cpRouterURL               string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) SetUp() {
-	workspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
-
-	if workspaceConfig.Token == "" {
-		workspaceConfig.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
+func (wc *multiTenantWorkspacesConfig) SetUp() error {
+	wc.writeKeyToWorkspaceIDMap = make(map[string]string)
+	if wc.Token == "" {
+		wc.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
 	}
+	if wc.Token == "" {
+		return fmt.Errorf("multi tenant workspace: empty workspace config token")
+	}
+	return nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) AccessToken() string {
-	return workspaceConfig.Token
+func (wc *multiTenantWorkspacesConfig) AccessToken() string {
+	return wc.Token
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+	if workspaceID, ok := wc.writeKeyToWorkspaceIDMap[writeKey]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceIDForSourceID(source string) string {
 	// TODO use another map later
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := workspaceConfig.sourceToWorkspaceIDMap[source]; ok {
+	if workspaceID, ok := wc.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-// GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
-func (workspaceConfig *MultiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	workspaceConfig.workspaceWriteKeysMapLock.RLock()
-	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
+func (wc *multiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceLibraries, ok := workspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
+	if workspaceLibraries, ok := wc.workspaceIDToLibrariesMap[workspaceID]; ok {
 		return workspaceLibraries
 	}
 	return LibrariesT{}
 }
 
 // Get returns sources from the workspace
-func (workspaceConfig *MultiTenantWorkspacesConfig) Get(workspaces string) (ConfigT, bool) {
-	return workspaceConfig.getFromAPI(workspaces)
+func (wc *multiTenantWorkspacesConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+	return wc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr string) (ConfigT, bool) {
-	// added this to avoid unnecessary calls to backend config and log better until workspace IDs are not present
-	if workspaceArr == workspaceConfig.Token {
-		pkgLogger.Infof("no workspace IDs provided, skipping backend config fetch")
-		return ConfigT{}, false
+func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+	if wc.configBackendURL == nil {
+		return ConfigT{}, fmt.Errorf("multi tenant workspace: config backend url is nil")
 	}
-	var url string
-	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
-	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
-		if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
-			url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", configBackendURL)
-		} else {
-			url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-		}
-	} else {
-		wIds := strings.Split(workspaceArr, ",")
-		for i := range wIds {
-			wIds[i] = strings.Trim(wIds[i], " ")
-		}
-		encodedWorkspaces, err := jsonfast.MarshalToString(wIds)
-		if err != nil {
-			pkgLogger.Errorf("Error fetching config: preparing request URL: %v", err)
-			return ConfigT{}, false
-		}
-		url = fmt.Sprintf("%s/multitenantWorkspaceConfig?workspaceIds=%s", configBackendURL, encodedWorkspaces)
-		url = url + "&fetchAll=true"
-	}
-	var respBody []byte
-	var statusCode int
 
+	var (
+		u        string
+		respBody []byte
+	)
+	if config.GetBool("BackendConfig.cachedHostedWorkspaceConfig", false) {
+		u = fmt.Sprintf("%s/cachedHostedWorkspaceConfig", wc.configBackendURL)
+	} else {
+		u = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", wc.configBackendURL)
+	}
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+		pkgLogger.Debugf("Fetching config from %s", u)
+		respBody, fetchError = wc.makeHTTPRequest(ctx, u)
 		return fetchError
 	}
 
@@ -114,19 +116,21 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 		pkgLogger.Errorf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Error("Error sending request to the server", err)
-		return ConfigT{}, false
+		pkgLogger.Errorf("Error sending request to the server: %v", err)
+		return ConfigT{}, err
 	}
-	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	configEnvHandler := wc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
+
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, statusCode)
-		return ConfigT{}, false
+		pkgLogger.Errorf("Error while parsing request: %v", err)
+		return ConfigT{}, fmt.Errorf("invalid response from backend config: %v", err)
 	}
+
 	writeKeyToWorkspaceIDMap := make(map[string]string)
 	sourceToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
@@ -140,26 +144,29 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) getFromAPI(workspaceArr stri
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
-	workspaceConfig.workspaceWriteKeysMapLock.Lock()
-	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
-	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	workspaceConfig.workspaceWriteKeysMapLock.Unlock()
+	sourcesJSON.ConnectionFlags.URL = wc.cpRouterURL
+	// always set connection flags to true for hosted and multi-tenant warehouse service
+	sourcesJSON.ConnectionFlags.Services = map[string]bool{"warehouse": true}
+	wc.workspaceWriteKeysMapLock.Lock()
+	wc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	wc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
+	wc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	wc.workspaceWriteKeysMapLock.Unlock()
 
-	return sourcesJSON, true
+	return sourcesJSON, nil
 }
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) ([]byte, int, error) {
-	req, err := Http.NewRequest("GET", url, nil)
+func (wc *multiTenantWorkspacesConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, err
 	}
-	// TODO: hacky way to get the backend config for multi tenant through older hosted backed config
+
+	// TODO: hacky way to get the backend config for multi tenant through older hosted backend config
 	if config.GetBool("BackendConfig.useHostedBackendConfig", false) {
 		req.SetBasicAuth(config.GetEnv("HOSTED_SERVICE_SECRET", ""), "")
 	} else {
-		req.SetBasicAuth(workspaceConfig.Token, "")
+		req.SetBasicAuth(wc.Token, "")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -167,18 +174,19 @@ func (workspaceConfig *MultiTenantWorkspacesConfig) makeHTTPRequest(url string) 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
-		return []byte{}, 400, err
+		return nil, err
 	}
 
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	return respBody, resp.StatusCode, nil
-}
+	defer func() { _ = resp.Body.Close() }()
 
-func (workspaceConfig *MultiTenantWorkspacesConfig) IsConfigured() bool {
-	return workspaceConfig.Token != ""
+	if resp.StatusCode >= 300 {
+		return nil, getNotOKError(respBody, resp.StatusCode)
+	}
+
+	return respBody, nil
 }

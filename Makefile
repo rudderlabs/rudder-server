@@ -1,17 +1,15 @@
-.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build enterprise-is-at-master
+.PHONY: help default build run run-dev test mocks prepare-build
 
 GO=go
 GINKGO=ginkgo
 LDFLAGS?=-s -w
-
-include .enterprise/env
 
 default: build
 
 mocks: install-tools ## Generate all mocks
 	$(GO) generate ./...
 
-test: enterprise-prepare-build mocks ## Run all unit tests
+test: ## Run all unit tests
 ifdef package
 	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
@@ -25,9 +23,11 @@ endif
 coverage:
 	go tool cover -html=coverage.txt -o coverage.html
 
+test-with-coverage: test coverage
+
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
 
-prepare-build: build-sql-migrations enterprise-prepare-build
+prepare-build: build-sql-migrations
 
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
 	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
@@ -51,29 +51,6 @@ help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 
-# Enterprise version
-
-enterprise-init: ## Initialise enterprise version
-	@.enterprise/scripts/init.sh
-
-enterprise-cleanup: ## Cleanup enterprise dependencies, revert to oss version
-	rm -rf ${ENTERPRISE_DIR}
-	rm -f ./imports/enterprise.go
-
-enterprise-update-commit: ## Updates linked enterprise commit to current commit in ENTERPRISE_DIR
-	@.enterprise/scripts/update-commit.sh
-
-
-enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise packages in binary
-	@if [ -d "./$(ENTERPRISE_DIR)" ]; then \
-		$(ENTERPRISE_DIR)/import.sh ./$(ENTERPRISE_DIR) | tee ./imports/enterprise.go; \
-	else \
-		rm -f ./imports/enterprise.go; \
-	fi
-
-enterprise-is-at-master: ## Checks if enterprise repo commit matches the origin master
-	@.enterprise/scripts/is-at-master.sh
-
 install-tools:
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
@@ -88,3 +65,28 @@ lint: fmt
 .PHONY: fmt
 fmt: install-tools
 	gofumpt -l -w -extra  .
+
+cleanup-warehouse-integration:
+	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
+
+setup-warehouse-integration: cleanup-warehouse-integration
+	BIGQUERY_INTEGRATION_TEST_SCHEMA=bwh-$(shell uuidgen)	\
+	REDSHIFT_INTEGRATION_TEST_SCHEMA=rwh-$(shell uuidgen)	\
+	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=swh-$(shell uuidgen) 	\
+	DATABRICKS_INTEGRATION_TEST_SCHEMA=dwh-$(shell uuidgen) 	\
+	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration
+
+logs-warehouse-integration:
+	docker logs wh-backend
+
+run-warehouse-integration: setup-warehouse-integration
+	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... -tags=warehouse_integration -p 8 -timeout 30m -count 1; then \
+      	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
+      	make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+    else \
+      	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
+      	make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+      	exit 1; \
+ 	fi

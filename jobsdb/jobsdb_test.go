@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -333,7 +333,8 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
@@ -353,7 +354,8 @@ var _ = Describe("jobsdb", func() {
 		BeforeEach(func() {
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
@@ -362,14 +364,14 @@ var _ = Describe("jobsdb", func() {
 
 		It("can call Stop before Start without side-effects", func() {
 			jd.Stop()
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			Expect(jd.lifecycle.started).To(Equal(true))
 		})
 
 		It("can call Start twice without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			group1 := jd.backgroundGroup
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			group2 := jd.backgroundGroup
 			Expect(group1).To(Equal(group2))
 			Expect(jd.lifecycle.started).To(Equal(true))
@@ -377,12 +379,13 @@ var _ = Describe("jobsdb", func() {
 
 		It("can call Start in parallel without side-effects", func() {
 			var wg sync.WaitGroup
-			var bgGroups []*errgroup.Group
+			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
+				idx := i
 				go func() {
-					jd.Start()
-					bgGroups = append(bgGroups, jd.backgroundGroup)
+					Expect(jd.Start()).To(BeNil())
+					bgGroups[idx] = jd.backgroundGroup
 					wg.Done()
 				}()
 			}
@@ -394,7 +397,7 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Stop twice without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 			Expect(jd.lifecycle.started).To(Equal(true))
 			Expect(jd.backgroundGroup).ToNot(BeNil())
 			jd.Stop()
@@ -408,7 +411,7 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Stop in parallel without side-effects", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
@@ -423,13 +426,13 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("can call Start & Stop in parallel without problems", func() {
-			jd.Start()
+			Expect(jd.Start()).To(BeNil())
 
 			var wg sync.WaitGroup
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				go func() {
-					jd.Start()
+					Expect(jd.Start()).To(BeNil())
 					jd.Stop()
 					wg.Done()
 				}()
@@ -460,7 +463,7 @@ func BenchmarkSanitizeJson(b *testing.B) {
 	nulls := 100
 
 	// string with nulls
-	inputWithoutNulls := randomString(size - nulls*len(`\u0000`))
+	inputWithoutNulls := rsRand.String(size - nulls*len(`\u0000`))
 	inputWithNulls := insertStringInString(inputWithoutNulls, `\u0000`, nulls)
 	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingStrings(json.RawMessage(inputWithNulls)))
 	require.Equal(b, json.RawMessage(inputWithoutNulls), sanitizedJsonUsingBytes(json.RawMessage(inputWithNulls)))
@@ -482,7 +485,7 @@ func BenchmarkSanitizeJson(b *testing.B) {
 	})
 
 	// string without null characters
-	input := randomString(size)
+	input := rsRand.String(size)
 	b.Run(fmt.Sprintf("SanitizeUsingStrings string of size %d without null characters", size), func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			sanitizedJsonUsingStrings(json.RawMessage(input))
@@ -498,15 +501,6 @@ func BenchmarkSanitizeJson(b *testing.B) {
 			sanitizedJsonUsingRegexp(json.RawMessage(input))
 		}
 	})
-}
-
-func randomString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
 }
 
 func insertStringInString(input, c string, times int) string {

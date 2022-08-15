@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/lib/pq"
@@ -1267,7 +1269,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 			return err
 		}
 
-		if application.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 		}
 		err = txn.Commit()
@@ -1544,7 +1546,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 			},
 		})
 	}
-	if application.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+	if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
 	}
 	err = txn.Commit()
@@ -1653,6 +1655,52 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 	return
 }
 
+func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]backendconfig.DestinationT, err error) {
+	revisionIDMap = make(map[string]backendconfig.DestinationT)
+	revisionRequest := struct {
+		sourceID           string
+		destinationID      string
+		startStagingFileID int64
+		endStagingFileID   int64
+	}{
+		sourceID:           job.warehouse.Source.ID,
+		destinationID:      job.warehouse.Destination.ID,
+		startStagingFileID: job.upload.StartStagingFileID,
+		endStagingFileID:   job.upload.EndStagingFileID,
+	}
+	revisionIDs, err := distinctDestinationRevisionIdsFromStagingFiles(context.TODO(), revisionRequest)
+	if err != nil {
+		return
+	}
+
+	var response []byte
+	var responseCode int
+
+	for _, revisionID := range revisionIDs {
+		// No need to make config backend api call for the current config
+		if revisionID == job.warehouse.Destination.RevisionID {
+			revisionIDMap[revisionID] = job.warehouse.Destination
+			continue
+		}
+
+		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
+		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
+		if err == nil {
+			var destination backendconfig.DestinationT
+			err = json.Unmarshal(response, &destination)
+			if err != nil {
+				err = fmt.Errorf("error occurred while unmarshalling response for Dest revisionID %s with error: %w", revisionID, err)
+				return
+			}
+			revisionIDMap[revisionID] = destination
+		} else {
+			err = fmt.Errorf("error occurred while getting destination history for revisionID %s, responseCode: %d, error: %w", revisionID, responseCode, err)
+			return
+		}
+	}
+	return
+}
+
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID, endLoadFileID int64, err error) {
 	stmt := fmt.Sprintf(`
 		SELECT
@@ -1704,6 +1752,13 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
+	// Getting distinct destination revision ID from staging files metadata
+	destinationRevisionIDMap, err := job.destinationRevisionIDMap()
+	if err != nil {
+		err = fmt.Errorf("error occurred while populating destination revision ID Map with error: %w", err)
+		return
+	}
+
 	var wg sync.WaitGroup
 
 	var toProcessStagingFiles []*StagingFileT
@@ -1729,73 +1784,34 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			j = len(toProcessStagingFiles)
 		}
 
-		// TODO: batch staging files
-		// td: batch staging files baased on time window for s3 dest
-		// td: should we remove publishBatchSize or make it 120 -> process staging files for 60 mins
-		// td: define some batch size for breaking staging files belonging to one window - right now max is 60 stagingFiles per time window
-		// batchedStagingFiles := job.BatchStagingFilesOnTimeWindow(toProcessStagingFiles[i:j])
-		// // td : add prefix to payload for s3 dest
-		// var messages []pgnotifier.MessageT
-		// for timeWindow, stagingFiles := range batchedStagingFiles {
-		// 	payload := PayloadT{
-		// 		UploadID:            job.upload.ID,
-		// 		StagingFiles:        stagingFiles,
-		// 		Schema:              job.upload.Schema,
-		// 		SourceID:            job.warehouse.Source.ID,
-		// 		SourceName:          job.warehouse.Source.Name,
-		// 		DestinationID:       destID,
-		// 		DestinationName:     job.warehouse.Destination.Name,
-		// 		DestinationType:     destType,
-		// 		DestinationConfig:   job.warehouse.Destination.Config,
-		// 		UniqueLoadGenID:     uniqueLoadGenID,
-		// 		UseRudderStorage:    job.upload.UseRudderStorage,
-		// 		RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
-		// 	}
-
-		// 	if job.warehouse.Type == "S3_DATALAKE" {
-		// 		// td: use prefix from config
-		// 		payload.LoadFilePrefix = timeWindow
-		// 	}
-
-		// 	payloadJSON, err := json.Marshal(payload)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	message := pgnotifier.MessageT{
-		// 		Payload: payloadJSON,
-		// 	}
-		// 	messages = append(messages, message)
-		// }
-
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
-				UploadID:             job.upload.ID,
-				StagingFileID:        stagingFile.ID,
-				StagingFileLocation:  stagingFile.Location,
-				UploadSchema:         job.upload.UploadSchema,
-				ExcludedSchema:       job.schemaHandle.excludedSchema,
-				LoadFileType:         job.upload.LoadFileType,
-				SourceID:             job.warehouse.Source.ID,
-				SourceName:           job.warehouse.Source.Name,
-				DestinationID:        destID,
-				DestinationName:      job.warehouse.Destination.Name,
-				DestinationType:      destType,
-				DestinationNamespace: job.warehouse.Namespace,
-				DestinationConfig:    job.warehouse.Destination.Config,
-				UniqueLoadGenID:      uniqueLoadGenID,
-				UseRudderStorage:     job.upload.UseRudderStorage,
-				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
+				UploadID:                     job.upload.ID,
+				StagingFileID:                stagingFile.ID,
+				StagingFileLocation:          stagingFile.Location,
+				ExcludedSchema:               job.schemaHandle.excludedSchema,
+				LoadFileType:                 job.upload.LoadFileType,
+				SourceID:                     job.warehouse.Source.ID,
+				SourceName:                   job.warehouse.Source.Name,
+				DestinationID:                destID,
+				DestinationName:              job.warehouse.Destination.Name,
+				DestinationType:              destType,
+				DestinationNamespace:         job.warehouse.Namespace,
+				DestinationConfig:            job.warehouse.Destination.Config,
+				UniqueLoadGenID:              uniqueLoadGenID,
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				UseRudderStorage:             job.upload.UseRudderStorage,
+				StagingUseRudderStorage:      stagingFile.UseRudderStorage,
+				DestinationRevisionID:        job.warehouse.Destination.RevisionID,
+				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 			}
-
+			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
+				payload.StagingDestinationConfig = revisionConfig.Config
+			}
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
-			}
-
-			// set merged schema as upload schema if the load file type is parquet
-			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-				payload.UploadSchema = job.upload.MergedSchema
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1805,8 +1821,13 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			messages = append(messages, payloadJSON)
 		}
 
+		schema := &job.upload.UploadSchema
+		if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			schema = &job.upload.MergedSchema
+		}
+
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
@@ -1920,7 +1941,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
+		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)

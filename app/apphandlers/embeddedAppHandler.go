@@ -30,12 +30,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-
-	// This is necessary for compatibility with enterprise features
-	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-// EmbeddedApp is the type for embedded type implemention
+// EmbeddedApp is the type for embedded type implementation
 type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -46,7 +43,7 @@ func (*EmbeddedApp) GetAppType() string {
 }
 
 func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
-	pkgLogger.Info("Main starting")
+	pkgLogger.Info("Embedded mode: Starting Rudder Core")
 
 	rudderCoreDBValidator()
 	rudderCoreWorkSpaceTableSetup()
@@ -61,15 +58,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
 
-	// Setting up reporting client
-	if embedded.App.Features().Reporting != nil {
-		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
-		g.Go(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
-			return nil
-		})
-	}
+	g.Go(func() error {
+		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		return nil
+	})
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
@@ -94,7 +88,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(gwDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
@@ -104,7 +97,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(router.QueryFilters),
@@ -114,7 +106,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
@@ -124,7 +115,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithRetention(routerDBRetention),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
@@ -154,11 +144,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 				clearDB := false
 				if enableProcessor {
 					g.Go(misc.WithBugsnag(func() error {
-						StartProcessor(
+						return StartProcessor(
 							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
 							reportingI, multitenant.NOOP, transientSources, rsourcesService,
 						)
-						return nil
 					}))
 				}
 			}
@@ -190,7 +179,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	case deployment.MultiTenantType:
 		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.HostedType, deployment.DedicatedType:
+	case deployment.DedicatedType:
 		// FIXME: hacky way to determine server mode
 		pkgLogger.Info("using Static Cluster Manager")
 		if enableProcessor && enableRouter {
@@ -244,17 +233,24 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		gatewayDB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
-			jobsdb.WithRetention(gwDBRetention),
 			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
 			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		)
 		defer gwDBForProcessor.Close()
-		gatewayDB.Start()
+		if err = gatewayDB.Start(); err != nil {
+			return fmt.Errorf("could not start gateway: %w", err)
+		}
 		defer gatewayDB.Stop()
 
 		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gw.Setup(embedded.App, backendconfig.DefaultBackendConfig, gatewayDB, &rateLimiter, embedded.VersionHandler, rsourcesService)
+		err = gw.Setup(
+			embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
+			&rateLimiter, embedded.VersionHandler, rsourcesService,
+		)
+		if err != nil {
+			return fmt.Errorf("could not setup gateway: %w", err)
+		}
 		defer func() {
 			if err := gw.Shutdown(); err != nil {
 				pkgLogger.Warnf("Gateway shutdown error: %v", err)
@@ -268,12 +264,17 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			return gw.StartWebHandler(ctx)
 		})
 	}
-
-	if enableReplay && embedded.App.Features().Replay != nil {
+	if enableReplay {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers)
+		err := replayDB.Setup(
+			jobsdb.ReadWrite, options.ClearDB, "replay",
+			migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers,
+		)
+		if err != nil {
+			return fmt.Errorf("could not setup replayDB: %w", err)
+		}
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(&replayDB, gatewayDB, routerDB, batchRouterDB)
+		embedded.App.Features().Replay.Setup(ctx, &replayDB, gatewayDB, routerDB, batchRouterDB)
 	}
 
 	g.Go(func() error {
@@ -281,6 +282,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		// because if this start before that then there might be a case when ReadDB will try to read the owner table
 		// which gets created after either Write or ReadWrite DB is created.
 		return dm.Run(ctx)
+	})
+
+	g.Go(func() error {
+		return rsourcesService.CleanupLoop(ctx)
 	})
 
 	return g.Wait()

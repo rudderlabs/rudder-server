@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -90,7 +91,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		return UploadOutput{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
@@ -99,19 +100,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		return UploadOutput{}, err
 	}
 
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
@@ -141,7 +130,7 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 		MaxResults: int32(maxItems),
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// List the blobs in the container
@@ -166,7 +155,7 @@ func (manager *AzureBlobStorageManager) Download(ctx context.Context, output *os
 
 	blobURL := containerURL.NewBlockBlobURL(key)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Here's how to download the blob
@@ -205,11 +194,19 @@ func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location 
 
 type AzureBlobStorageManager struct {
 	Config  *AzureBlobStorageConfig
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *AzureBlobStorageManager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *AzureBlobStorageManager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "AZURE_BLOB", 120, time.Second)
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
@@ -288,7 +285,7 @@ func (manager *AzureBlobStorageManager) DeleteObjects(ctx context.Context, keys 
 	for _, key := range keys {
 		blobURL := containerURL.NewBlockBlobURL(key)
 
-		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		_, err := blobURL.Delete(_ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 		if err != nil {
 			cancel()

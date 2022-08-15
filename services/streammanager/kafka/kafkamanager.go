@@ -4,21 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/linkedin/goavro"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-type Opts struct {
-	Timeout time.Duration
+// schema is the AVRO schema required to convert the data to AVRO
+type avroSchema struct {
+	SchemaId string
+	Schema   string
 }
 
 // configuration is the config that is required to send data to Kafka
@@ -32,6 +36,8 @@ type configuration struct {
 	SaslType      string
 	Username      string
 	Password      string
+	ConvertToAvro bool
+	AvroSchemas   []avroSchema
 }
 
 func (c *configuration) validate() error {
@@ -100,11 +106,13 @@ type producer interface {
 	Publish(context.Context, ...client.Message) error
 
 	getTimeout() time.Duration
+	getCodecs() map[string]*goavro.Codec
 }
 
 type producerImpl struct {
 	p       *client.Producer
 	timeout time.Duration
+	codecs  map[string]*goavro.Codec
 }
 
 func (p *producerImpl) getTimeout() time.Duration {
@@ -125,6 +133,10 @@ func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) erro
 	return p.p.Publish(ctx, msgs...)
 }
 
+func (p *producerImpl) getCodecs() map[string]*goavro.Codec {
+	return p.codecs
+}
+
 type logger interface {
 	Error(args ...interface{})
 	Errorf(format string, args ...interface{})
@@ -140,6 +152,8 @@ type managerStats struct {
 	produceTime                stats.RudderStats
 	prepareBatchTime           stats.RudderStats
 	closeProducerTime          stats.RudderStats
+	jsonSerializationMsgErr    stats.RudderStats
+	avroSerializationErr       stats.RudderStats
 }
 
 const (
@@ -168,11 +182,11 @@ func Init() {
 	clientKeyFile := config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 	if clientCertFile != "" && clientKeyFile != "" {
 		var err error
-		clientCert, err = ioutil.ReadFile(clientCertFile)
+		clientCert, err = os.ReadFile(clientCertFile)
 		if err != nil {
 			panic(fmt.Errorf("could not read certificate file: %w", err))
 		}
-		clientKey, err = ioutil.ReadFile(clientKeyFile)
+		clientKey, err = os.ReadFile(clientKeyFile)
 		if err != nil {
 			panic(fmt.Errorf("could not read key file: %w", err))
 		}
@@ -206,11 +220,17 @@ func Init() {
 		produceTime:                stats.DefaultStats.NewStat("router.kafka.produce_time", stats.TimerType),
 		prepareBatchTime:           stats.DefaultStats.NewStat("router.kafka.prepare_batch_time", stats.TimerType),
 		closeProducerTime:          stats.DefaultStats.NewStat("router.kafka.close_producer_time", stats.TimerType),
+		jsonSerializationMsgErr:    stats.DefaultStats.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
+		avroSerializationErr:       stats.DefaultStats.NewStat("router.kafka.avro_serialization_err", stats.CountType),
 	}
 }
 
+type KafkaProducer struct {
+	client producer
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducer(destConfigJSON interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
@@ -231,6 +251,23 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 
 	if err = destConfig.validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	convertToAvro := destConfig.ConvertToAvro
+	avroSchemas := destConfig.AvroSchemas
+	var codecs map[string]*goavro.Codec
+	if convertToAvro {
+		codecs = make(map[string]*goavro.Codec, len(avroSchemas))
+		for i, avroSchema := range avroSchemas {
+			if avroSchema.SchemaId == "" {
+				return nil, fmt.Errorf("length of a schemaId is 0, of index: %d", i)
+			}
+			newCodec, err := goavro.NewCodec(avroSchema.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("unable to create codec for schemaId:%+v, with error: %w", avroSchema.SchemaId, err)
+			}
+			codecs[avroSchema.SchemaId] = newCodec
+		}
 	}
 
 	clientConf := client.Config{
@@ -283,11 +320,11 @@ func NewProducer(destConfigJSON interface{}, o Opts) (*producerImpl, error) { //
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducerForAzureEventHubs(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
@@ -334,11 +371,11 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o Opts) (*produ
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*producerImpl, error) { // skipcq: RVV-B0011
+func NewProducerForConfluentCloud(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
@@ -386,7 +423,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (*produ
 	if err != nil {
 		return nil, err
 	}
-	return &producerImpl{p: p, timeout: o.Timeout}, nil
+	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
@@ -398,14 +435,30 @@ func prepareMessage(topic, key string, message []byte, timestamp time.Time) clie
 	}
 }
 
-func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time) (
+// This function is used to serialize the binary data according to the avroSchema.
+// It iterates over the schemas provided by the customer and tries to serialize the data.
+// If it's able to serialize the data then it returns the converted data otherwise it returns an error.
+// We are using the LinkedIn goavro library for data serialization. Ref: https://github.com/linkedin/goavro
+func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
+	native, _, err := codec.NativeFromTextual(value)
+	if err != nil {
+		return nil, fmt.Errorf("unable convert the event to native from textual, with error: %s", err)
+	}
+	binary, err := codec.BinaryFromNative(nil, native)
+	if err != nil {
+		return nil, fmt.Errorf("unable convert the event to binary from native, with error: %s", err)
+	}
+	return binary, nil
+}
+
+func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producer) (
 	[]client.Message, error,
 ) {
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
 
 	var messages []client.Message
-	for _, data := range batch {
+	for i, data := range batch {
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
@@ -418,28 +471,53 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 			pkgLogger.Errorf("batch from topic %s is missing the userId attribute", topic)
 			continue
 		}
-
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
-			return nil, err
+			kafkaStats.jsonSerializationMsgErr.Increment()
+			pkgLogger.Errorf("unable to marshal message of index:%d", i)
+			continue
+		}
+		codecs := p.getCodecs()
+		if len(codecs) > 0 {
+			schemaId, _ := data["schemaId"].(string)
+			if schemaId == "" {
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("schemaId is not available for the event with index:%d", i)
+				continue
+			}
+			codec, ok := codecs[schemaId]
+			if !ok {
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("unable to find schema with schemaId: %v", schemaId)
+				continue
+			}
+			marshalledMsg, err = serializeAvroMessage(marshalledMsg, *codec)
+			if err != nil {
+				kafkaStats.avroSerializationErr.Increment()
+				pkgLogger.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
+				continue
+			}
 		}
 		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("unable to process any of the event in the batch")
 	}
 	return messages, nil
 }
 
-// CloseProducer closes a given producer
-func CloseProducer(ctx context.Context, pi interface{}) error {
+// Close closes a given producer
+func (producer *KafkaProducer) Close() error {
 	start := now()
 	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
 
-	p, ok := pi.(producer)
-	if !ok {
+	client := producer.client
+	if client == nil {
 		return fmt.Errorf("error while closing producer")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err := p.Close(ctx)
+	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	err := client.Close(ctx)
 	cancel()
 	if err != nil {
 		pkgLogger.Errorf("error in closing Kafka producer: %v", err)
@@ -448,12 +526,12 @@ func CloseProducer(ctx context.Context, pi interface{}) error {
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string, string) {
+func (producer *KafkaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
-
-	p, ok := pi.(producer)
-	if !ok {
+	client := producer.client
+	if client == nil {
+		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
@@ -471,13 +549,12 @@ func Produce(jsonData json.RawMessage, pi, destConfig interface{}) (int, string,
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
+	ctx, cancel := context.WithTimeout(context.TODO(), client.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, client, conf.Topic)
 	}
-
-	return sendMessage(ctx, jsonData, p, conf.Topic)
+	return sendMessage(ctx, jsonData, client, conf.Topic)
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
@@ -488,7 +565,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp)
+	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp, p)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -516,6 +593,22 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 
 	timestamp := time.Now()
 	userID, _ := parsedJSON.Get("userId").Value().(string)
+	codecs := p.getCodecs()
+	if len(codecs) > 0 {
+		schemaId, _ := parsedJSON.Get("schemaId").Value().(string)
+		messageId, _ := parsedJSON.Get("message.messageId").Value().(string)
+		if schemaId == "" {
+			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
+		}
+		codec, ok := codecs[schemaId]
+		if !ok {
+			return makeErrorResponse(fmt.Errorf("unable to find schema with schemaId: %v", schemaId))
+		}
+		value, err = serializeAvroMessage(value, *codec)
+		if err != nil {
+			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
+		}
+	}
 	message := prepareMessage(topic, userID, value, timestamp)
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(err)

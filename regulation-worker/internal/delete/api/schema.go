@@ -15,5 +15,5 @@ type apiDeletionPayloadSchema struct {
 
 type JobRespSchema struct {
 	Status string `json:"status"`
-	Error  error  `json:"error"`
+	Error  string `json:"error"`
 }

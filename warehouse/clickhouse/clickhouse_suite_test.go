@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestPostgres(t *testing.T) {
+func TestClickhouse(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "ClickHouse Suite")
+	RunSpecs(t, "Clickhouse Suite")
 }
