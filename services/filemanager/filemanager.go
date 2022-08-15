@@ -88,7 +88,7 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 }
 
 // GetProviderConfigForBackupsFromEnv returns the provider config
-func GetProviderConfigForBackupsFromEnv() map[string]interface{} {
+func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
 	providerConfig := make(map[string]interface{})
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
@@ -101,6 +101,7 @@ func GetProviderConfigForBackupsFromEnv() map[string]interface{} {
 		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
 		}
 	case "GCS":
