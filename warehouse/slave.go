@@ -659,6 +659,17 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 		}
 	}
 	if hasID && hasReceivedAt {
+		// convert slice into string before writing to discards
+		var interfaceSliceSample []interface{}
+		if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+			marshalledVal, err := json.Marshal(columnVal)
+			if err != nil {
+				pkgLogger.Errorf("[WH]: Failed to write event to discards table: %v", err)
+				return err
+			}
+			columnVal = string(marshalledVal)
+		}
+
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
