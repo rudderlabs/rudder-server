@@ -24,6 +24,8 @@ RUN BUILD_DATE=$(date "+%F,%T") \
     make build
 
 FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
+
+RUN apk update && apk add tzdata
 RUN apk -U --no-cache upgrade && \
     apk add --no-cache ca-certificates postgresql-client curl bash
 
