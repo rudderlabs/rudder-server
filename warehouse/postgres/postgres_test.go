@@ -8,10 +8,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
 type TestHandle struct {
@@ -105,18 +107,19 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
 	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 
+	// Scenario 2
+	// Setting up test configuration
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.enableExcludedSchema",
 			Value: false,
 		},
 	}))
-	// Scenario 2
 	// Sending the first set of events.
 	// Since we are sending unique message Ids.
 	// These should result in events count will be equal to the number of events being sent
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
+	warehouseTest.MessageId = ""
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
@@ -142,6 +145,8 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
 	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 
+	// Scenario 3
+	// Setting up test configuration
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.enableExcludedSchema",
@@ -149,17 +154,23 @@ func TestPostgresIntegration(t *testing.T) {
 		},
 		{
 			Key:   "Warehouse.postgres.maxColumnCount",
-			Value: 20,
+			Value: 21,
 		},
 	}))
-	// Scenario 3
-	// Sending a existing event to handle exceeded columns, set max limit to 20
+	// Setting up events count map
+	// Sending the second set of modified events
+	// Sending a existing event to handle exceeded columns, set max limit to 21
 	// Since we are sending same message Id to all type of events
+	// Events will be deduped to single entry and
 	// All rows in rudder discards have same row_id
-	// Exceeded count: pages, groups -> 1, identifies -> 2, product_track -> 5
+	// Exceeded count: groups -> 1, product_track -> 3 for each modified event set
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
+	warehouseTest.MessageId = uuid.Must(uuid.NewV4()).String()
 	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -173,47 +184,7 @@ func TestPostgresIntegration(t *testing.T) {
 		"screens":         1,
 		"aliases":         1,
 		"groups":          1,
-		"rudder_discards": 9,
-		"gateway":         6,
-		"batchRT":         8,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
-
-	// Scenario 4
-	// Setting up events count map
-	// Setting up the UserID
-	// Sending the second set of modified events
-	// Since we are sending unique message Ids
-	// These should result in events count will be equal to the number of events being sent
-	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
-		{
-			Key:   "Warehouse.enableExcludedSchema",
-			Value: false,
-		},
-	}))
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-	warehouseTest.MessageID = uuid.Must(uuid.NewV4()).String()
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
-
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":      4,
-		"users":           1,
-		"tracks":          4,
-		"product_track":   4,
-		"pages":           4,
-		"screens":         4,
-		"aliases":         4,
-		"groups":          4,
-		"rudder_discards": 0,
+		"rudder_discards": 12,
 		"gateway":         24,
 		"batchRT":         32,
 	}

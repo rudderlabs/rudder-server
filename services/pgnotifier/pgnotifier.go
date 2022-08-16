@@ -319,7 +319,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, excludedSchema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -367,9 +367,11 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	}
 
 	uploadSchemaJSON, err := json.Marshal(struct {
-		UploadSchema whUtils.SchemaT
+		UploadSchema   whUtils.SchemaT
+		ExcludedSchema whUtils.SchemaT
 	}{
-		UploadSchema: *schema,
+		UploadSchema:   *schema,
+		ExcludedSchema: *excludedSchema,
 	})
 	if err != nil {
 		err = fmt.Errorf("PgNotifier: Failed unmarshalling uploadschema for publishing with error: %w", err)
