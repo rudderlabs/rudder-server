@@ -221,7 +221,7 @@ func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
 	if deploymentType == deployment.MultiTenantType {
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if !isNamespaced || (isNamespaced && strings.Contains(config.GetEnv("WORKSPACE_NAMESPACE", ""), "free")) {
-			delete(tags, "workspaceId")
+			delete(tags, key)
 		}
 	}
 
