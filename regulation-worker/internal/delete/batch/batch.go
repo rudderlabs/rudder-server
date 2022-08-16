@@ -63,7 +63,7 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 // NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
-	fileObjects, err := b.FM.ListFilesWithPrefix(context.TODO(), "", listMaxItem)
+	fileObjects, err := b.FM.ListFilesWithPrefix(context.TODO(), "", "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)

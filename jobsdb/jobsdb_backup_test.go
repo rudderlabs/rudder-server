@@ -111,7 +111,7 @@ func TestBackupTable(t *testing.T) {
 	// wait for the backup to finish
 	var file []*filemanager.FileObject
 	require.Eventually(t, func() bool {
-		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
+		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5)
 
 		if len(file) != 3 {
 			t.Log("file list: ", file, " err: ", err)

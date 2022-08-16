@@ -109,7 +109,7 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 	return tmp.Err
 }
 
-func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core
