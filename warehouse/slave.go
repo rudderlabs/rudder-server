@@ -627,7 +627,7 @@ func setupSlave(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (jobRun *JobRunT) writeToDiscards(discardsTable string, tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT) error {
+func (jobRun *JobRunT) writeToDiscards(discardsTable, tableName, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT) error {
 	discardWriter, err := jobRun.GetWriter(discardsTable)
 	if err != nil {
 		return err

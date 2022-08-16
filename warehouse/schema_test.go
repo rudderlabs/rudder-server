@@ -223,7 +223,7 @@ var _ = Describe("Schema", func() {
 	})
 
 	Describe("Excluded schema", func() {
-		var uploadSchema = warehouseutils.SchemaT{
+		uploadSchema := warehouseutils.SchemaT{
 			"demo_event": {
 				"anonymous_id":       "string",
 				"channel":            "string",
@@ -252,7 +252,7 @@ var _ = Describe("Schema", func() {
 			},
 		}
 
-		var schemaInWarehouse = warehouseutils.SchemaT{
+		schemaInWarehouse := warehouseutils.SchemaT{
 			"demo_event": {
 				"anonymous_id":       "string",
 				"channel":            "string",
@@ -277,7 +277,7 @@ var _ = Describe("Schema", func() {
 			},
 		}
 		// With max col limit: 20
-		var ExcludedSchema = warehouseutils.SchemaT{
+		ExcludedSchema := warehouseutils.SchemaT{
 			"demo_event": {
 				"date_start":   "datatime",
 				"sample_event": "json",
@@ -303,7 +303,7 @@ var _ = Describe("Schema", func() {
 
 	Describe("Table schema diff", func() {
 		tableName := "demo_event"
-		var uploadSchema = warehouseutils.SchemaT{
+		uploadSchema := warehouseutils.SchemaT{
 			tableName: {
 				"id":        "int",
 				"record_id": "string",
@@ -316,7 +316,7 @@ var _ = Describe("Schema", func() {
 		Context("Without Excluded schema", func() {
 			It("Should contain upload schema as diff for a new event", func() {
 				var excludedSchema, currentSchema warehouseutils.SchemaT
-				var diff = warehouseutils.TableSchemaDiffT{
+				diff := warehouseutils.TableSchemaDiffT{
 					Exists:           true,
 					TableToBeCreated: true,
 					ColumnMap:        uploadSchema[tableName],
@@ -329,7 +329,7 @@ var _ = Describe("Schema", func() {
 			It("Should compute diff schema for an existing event", func() {
 				var excludedSchema warehouseutils.SchemaT
 				currentSchema := uploadSchema
-				var diff = warehouseutils.TableSchemaDiffT{
+				diff := warehouseutils.TableSchemaDiffT{
 					ColumnMap:     map[string]string{},
 					UpdatedSchema: currentSchema[tableName],
 				}
@@ -364,7 +364,7 @@ var _ = Describe("Schema", func() {
 
 			It("Should contain string to text change in diff schema", func() {
 				var excludedSchema warehouseutils.SchemaT
-				var currentSchema = warehouseutils.SchemaT{
+				currentSchema := warehouseutils.SchemaT{
 					tableName: {
 						"id":        "int",
 						"record_id": "string",
@@ -374,7 +374,7 @@ var _ = Describe("Schema", func() {
 					},
 				}
 
-				var diff = warehouseutils.TableSchemaDiffT{
+				diff := warehouseutils.TableSchemaDiffT{
 					Exists:    true,
 					ColumnMap: map[string]string{},
 					UpdatedSchema: map[string]string{
@@ -392,7 +392,7 @@ var _ = Describe("Schema", func() {
 		})
 
 		Context("With Excluded schema", func() {
-			var excludedSchema = warehouseutils.SchemaT{
+			excludedSchema := warehouseutils.SchemaT{
 				tableName: {
 					"name":      "text",
 					"timestamp": "datetime",
@@ -420,13 +420,13 @@ var _ = Describe("Schema", func() {
 
 			It("Should exclude excluded schema in diff for an existing event", func() {
 				var excludedSchema warehouseutils.SchemaT
-				var currentSchema = warehouseutils.SchemaT{
+				currentSchema := warehouseutils.SchemaT{
 					tableName: {
 						"id":        "int",
 						"record_id": "string",
 					},
 				}
-				var diff = warehouseutils.TableSchemaDiffT{
+				diff := warehouseutils.TableSchemaDiffT{
 					Exists: true,
 					ColumnMap: map[string]string{
 						"sent_at": "datetime",

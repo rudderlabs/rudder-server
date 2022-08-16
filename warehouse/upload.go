@@ -2072,7 +2072,7 @@ func (job *UploadJobT) GetTableSchemaInWarehouse(tableName string) warehouseutil
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
 	uploadTableSchema := job.schemaHandle.uploadSchema[tableName]
 	excludedSchema := job.schemaHandle.excludedSchema
-	for k, _ := range excludedSchema[tableName] {
+	for k := range excludedSchema[tableName] {
 		delete(uploadTableSchema, k)
 	}
 	return uploadTableSchema

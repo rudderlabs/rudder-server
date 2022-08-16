@@ -345,7 +345,7 @@ func GetTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedS
 		diff.TableToBeCreated = true
 		diff.ColumnMap = uploadSchema[tableName]
 		diff.UpdatedSchema = uploadSchema[tableName]
-		for k, _ := range excludedSchema[tableName] {
+		for k := range excludedSchema[tableName] {
 			delete(diff.ColumnMap, k)
 			delete(diff.UpdatedSchema, k)
 		}
@@ -367,7 +367,7 @@ func GetTableSchemaDiff(tableName string, currentSchema, uploadSchema, excludedS
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		}
-		for k, _ := range excludedSchema[tableName] {
+		for k := range excludedSchema[tableName] {
 			delete(diff.ColumnMap, k)
 			delete(diff.UpdatedSchema, k)
 		}

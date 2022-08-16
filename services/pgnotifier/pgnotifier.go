@@ -319,7 +319,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, excludedSchema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema, excludedSchema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
