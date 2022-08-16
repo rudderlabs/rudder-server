@@ -113,7 +113,7 @@ loop:
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
 							rt := routerFactory.New(destination.DestinationDefinition)
-							rt.Start()
+							rt.Start(ctx)
 							cleanup = append(cleanup, rt.Shutdown)
 							dstToRouter[destination.DestinationDefinition.Name] = rt
 						}

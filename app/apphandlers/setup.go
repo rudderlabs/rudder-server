@@ -203,7 +203,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						router := routerFactory.New(destination.DestinationDefinition)
-						router.Start()
+						router.Start(ctx)
 						cleanup = append(cleanup, router.Shutdown)
 						dstToRouter[destination.DestinationDefinition.Name] = router
 					}

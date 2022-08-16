@@ -2208,16 +2208,25 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	adminInstance.registerRouter(destName, rt)
 }
 
-func (rt *HandleT) Start() {
+func (rt *HandleT) Start(ctx context.Context) {
 	rt.logger.Infof("Starting router : %s", rt.destName)
-	ctx := rt.backgroundCtx
-	rt.backgroundGroup.Go(func() error {
-		<-rt.backendConfigInitialized
-		if rt.customDestinationManager != nil {
-			<-rt.customDestinationManager.BackendConfigInitialized()
-			// no-op, just wait
+
+	select {
+	case <-rt.backendConfigInitialized:
+	case <-ctx.Done():
+		return
+	}
+
+	if rt.customDestinationManager != nil {
+		select {
+		case <-rt.customDestinationManager.BackendConfigInitialized():
+		case <-ctx.Done():
 		}
-		rt.generatorLoop(ctx)
+		// no-op, just wait
+	}
+
+	rt.backgroundGroup.Go(func() error {
+		rt.generatorLoop(rt.backgroundCtx)
 		return nil
 	})
 }
