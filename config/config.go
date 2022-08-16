@@ -757,6 +757,14 @@ func GetRequiredEnv(key string) string {
 	panic(fmt.Errorf("fatal error, no required environment variable: %s", key))
 }
 
+// GetEnvErr returns the value of environment variable, error if not exists
+func GetEnvErr(key string) (string, error) {
+	if value, exists := os.LookupEnv(key); exists {
+		return value, nil
+	}
+	return "", fmt.Errorf("missing required environment variable: %s", key)
+}
+
 // Override Config by application or command line
 
 // SetBool override existing config
@@ -766,6 +774,13 @@ func SetBool(key string, value bool) {
 
 func SetString(key, value string) {
 	viper.Set(key, value)
+}
+
+func SetHotReloadablesForcefully(key string, value interface{}) {
+	viper.Set(key, value)
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
+	_ = checkAndHotReloadConfig(hotReloadableConfig)
 }
 
 // GetWorkspaceToken returns the workspace token provided in the environment variables

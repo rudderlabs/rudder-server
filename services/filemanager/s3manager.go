@@ -35,11 +35,11 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 
 	uploadSession, err := manager.getSession(ctx)
 	if err != nil {
-		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
+		return UploadOutput{}, fmt.Errorf("error starting S3 session: %w", err)
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	output, err := s3manager.UploadWithContext(ctx, uploadInput)
@@ -56,12 +56,12 @@ func (manager *S3Manager) Upload(ctx context.Context, file *os.File, prefixes ..
 func (manager *S3Manager) Download(ctx context.Context, output *os.File, key string) error {
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return fmt.Errorf(`error starting S3 session: %v`, err)
+		return fmt.Errorf("error starting S3 session: %w", err)
 	}
 
 	downloader := awsS3Manager.NewDownloader(sess)
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	_, err = downloader.DownloadWithContext(ctx, output,
@@ -109,7 +109,7 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return fmt.Errorf(`error starting S3 session: %v`, err)
+		return fmt.Errorf("error starting S3 session: %w", err)
 	}
 
 	var objects []*s3.ObjectIdentifier
@@ -132,7 +132,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 			},
 		}
 
-		_ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		_ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
 
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
@@ -162,13 +162,14 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		return nil, errors.New("no storage bucket configured to downloader")
 	}
 	var region string
-	var err error
 	if !manager.Config.UseGlue || manager.Config.Region == nil {
-		getRegionSession := session.Must(session.NewSession())
+		getRegionSession, err := session.NewSession()
+		if err != nil {
+			return nil, err
+		}
 
-		ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
-
 		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
@@ -178,25 +179,32 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		region = *manager.Config.Region
 	}
 	var sess *session.Session
+	var err error
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
 		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess = session.Must(session.NewSession(&aws.Config{
+		sess, err = session.NewSession(&aws.Config{
 			Region:                        aws.String(region),
 			CredentialsChainVerboseErrors: aws.Bool(true),
 			Endpoint:                      manager.Config.Endpoint,
 			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
 			DisableSSL:                    manager.Config.DisableSSL,
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess = session.Must(session.NewSession(&aws.Config{
+		sess, err = session.NewSession(&aws.Config{
 			Region:                        aws.String(region),
 			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 			CredentialsChainVerboseErrors: aws.Bool(true),
 			Endpoint:                      manager.Config.Endpoint,
 			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
 			DisableSSL:                    manager.Config.DisableSSL,
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return sess, nil
 }
@@ -205,13 +213,14 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 // then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
 func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
+		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
 		return
 	}
 	fileObjects = make([]*FileObject, 0)
 
 	sess, err := manager.getSession(ctx)
 	if err != nil {
-		return []*FileObject{}, fmt.Errorf(`error starting S3 session: %v`, err)
+		return []*FileObject{}, fmt.Errorf("error starting S3 session: %w", err)
 	}
 	// Create S3 service client
 	svc := s3.New(sess)
@@ -225,14 +234,18 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 	if manager.Config.StartAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
-	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	if manager.Config.ContinuationToken != nil {
+		listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
+		pkgLogger.Errorf("Error while listing S3 objects: %v", err)
 		return
 	}
 	if resp.IsTruncated != nil {
@@ -252,11 +265,19 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 type S3Manager struct {
 	Config  *S3Config
 	session *session.Session
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *S3Manager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *S3Manager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *S3Manager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "S3", 120, time.Second)
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

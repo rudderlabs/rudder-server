@@ -266,11 +266,11 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			manager.logger.Infof("Workspace ID Change Acknowledgement (error: %b) Key: %s", ackErr != nil, req.AckKey)
+			manager.logger.Infof("Workspace ID Change Acknowledgement (error: %v) Key: %s", ackErr != nil, req.AckKey)
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			if err != nil {
 				manager.logger.Errorf(
-					"Failed to acknowledge workspace ID change (error: %b) for key: %s", ackErr != nil, req.AckKey,
+					"Failed to acknowledge workspace ID change (error: %v) for key: %s", ackErr != nil, req.AckKey,
 				)
 			}
 			return err

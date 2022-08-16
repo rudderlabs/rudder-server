@@ -59,7 +59,8 @@ var (
 
 const (
 	// RFC3339Milli with milli sec precision
-	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
+	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05"
 )
 
 const (
@@ -1247,8 +1248,7 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
 			notifyOnce.Do(func() {
-				RecordAppError(fmt.Errorf("%v", r))
-				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
 						"Number": runtime.NumGoroutine(),
 					},
@@ -1256,10 +1256,10 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 						"Name": team,
 					},
 				})
+				RecordAppError(fmt.Errorf("%v", r))
+				pkgLogger.Fatal(r)
+				panic(r)
 			})
-
-			pkgLogger.Fatal(r)
-			panic(r)
 		}
 	}
 }

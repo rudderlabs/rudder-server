@@ -138,8 +138,8 @@ type ValidationErrorT struct {
 // Setup initializes this class
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
-	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
+	trans.sentStat = stats.DefaultStats.NewStat("processor.transformer_sent", stats.CountType)
+	trans.receivedStat = stats.DefaultStats.NewStat("processor.transformer_received", stats.CountType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
