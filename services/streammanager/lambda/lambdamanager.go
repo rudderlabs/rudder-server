@@ -43,7 +43,11 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Lamb
 	if sessionConfig.Region == "" {
 		return nil, errors.New("could not find region configuration")
 	}
-	return &LambdaProducer{client: lambda.New(awsutils.CreateSession(sessionConfig))}, nil
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &LambdaProducer{client: lambda.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
