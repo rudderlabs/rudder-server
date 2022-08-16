@@ -64,6 +64,8 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		nc.Logger = logger.NewLogger().Child("backend-config")
 	}
 
+	nc.Logger.Infof("Fetching config for namespace %s", nc.Namespace)
+
 	return nil
 }
 
