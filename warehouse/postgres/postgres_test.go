@@ -130,6 +130,7 @@ func TestPostgresIntegration(t *testing.T) {
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
+	// TODO: move handling exceeded columns test to separate file
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
 		"identifies":      1,
 		"users":           1,

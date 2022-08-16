@@ -400,7 +400,7 @@ var _ = Describe("Schema", func() {
 			}
 			It("Should exclude excluded schema in diff for a new event", func() {
 				var currentSchema warehouseutils.SchemaT
-				var diff = warehouseutils.TableSchemaDiffT{
+				diff := warehouseutils.TableSchemaDiffT{
 					Exists:           true,
 					TableToBeCreated: true,
 					ColumnMap: map[string]string{
