@@ -7,7 +7,6 @@ package mocks_transformer
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	transformer "github.com/rudderlabs/rudder-server/router/transformer"
@@ -51,18 +50,6 @@ func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.P
 func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1)
-}
-
-// Setup mocks base method.
-func (m *MockTransformer) Setup(arg0, arg1 time.Duration) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup", arg0, arg1)
-}
-
-// Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup), arg0, arg1)
 }
 
 // Transform mocks base method.
