@@ -34,7 +34,11 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Pers
 	if err != nil {
 		return nil, err
 	}
-	return &PersonalizeProducer{client: personalizeevents.New(awsutils.CreateSession(sessionConfig))}, nil
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &PersonalizeProducer{client: personalizeevents.New(awsSession)}, nil
 }
 
 func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessag string) {

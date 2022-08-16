@@ -12,11 +12,12 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/mitchellh/mapstructure"
 	appConfig "github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
 // Upload passed in file to s3
@@ -80,6 +81,7 @@ func (manager *S3Manager) Download(ctx context.Context, output *os.File, key str
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
@@ -153,6 +155,19 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 	return nil
 }
 
+func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
+	return &awsutils.SessionConfig{
+		Region:           *manager.Config.Region,
+		Endpoint:         manager.Config.Endpoint,
+		S3ForcePathStyle: manager.Config.S3ForcePathStyle,
+		DisableSSL:       manager.Config.DisableSSL,
+		AccessKeyID:      manager.Config.AccessKeyID,
+		AccessKey:        manager.Config.AccessKey,
+		IAMRoleARN:       manager.Config.IAMRoleARN,
+		ExternalID:       manager.Config.ExternalID,
+	}
+}
+
 func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
 	if manager.session != nil {
 		return manager.session, nil
@@ -161,7 +176,6 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 	if manager.Config.Bucket == "" {
 		return nil, errors.New("no storage bucket configured to downloader")
 	}
-	var region string
 	if !manager.Config.UseGlue || manager.Config.Region == nil {
 		getRegionSession, err := session.NewSession()
 		if err != nil {
@@ -170,43 +184,18 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 
 		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 		defer cancel()
-		region, err = awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+
+		region, err := awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 		}
-	} else {
-		region = *manager.Config.Region
+		manager.Config.Region = aws.String(region)
 	}
-	var sess *session.Session
-	var err error
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess, err = session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess, err = session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-			Endpoint:                      manager.Config.Endpoint,
-			S3ForcePathStyle:              manager.Config.S3ForcePathStyle,
-			DisableSSL:                    manager.Config.DisableSSL,
-		})
-		if err != nil {
-			return nil, err
-		}
+	if manager.Config.Region == nil {
+		return nil, errors.New("no storage bucket region configured")
 	}
-	return sess, nil
+	return awsutils.CreateSession(manager.getSessionConfig())
 }
 
 // IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
@@ -281,107 +270,33 @@ func (manager *S3Manager) getTimeout() time.Duration {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	var bucketName, prefix, accessKeyID, accessKey, startAfter string
-	var continuationToken, endPoint, region *string
-	var enableSSE, ok, useGlue bool
-	var s3ForcePathStyle, disableSSL *bool
-	if config["bucketName"] != nil {
-		tmp, ok := config["bucketName"].(string)
-		if ok {
-			bucketName = tmp
-		}
-	}
-	if config["prefix"] != nil {
-		tmp, ok := config["prefix"].(string)
-		if ok {
-			prefix = tmp
-		}
-	}
-	if config["accessKeyID"] != nil {
-		tmp, ok := config["accessKeyID"].(string)
-		if ok {
-			accessKeyID = tmp
-		}
-	}
-	if config["accessKey"] != nil {
-		tmp, ok := config["accessKey"].(string)
-		if ok {
-			accessKey = tmp
-		}
-	}
-	if config["enableSSE"] != nil {
-		if enableSSE, ok = config["enableSSE"].(bool); !ok {
-			enableSSE = false
-		}
-	}
-	if config["useGlue"] != nil {
-		tmp, ok := config["useGlue"].(bool)
-		if ok {
-			useGlue = tmp
-		}
-	}
-	if config["startAfter"] != nil {
-		tmp, ok := config["startAfter"].(string)
-		if ok {
-			startAfter = tmp
-		}
-	}
-	if config["endPoint"] != nil {
-		tmp, ok := config["endPoint"].(string)
-		if ok {
-			endPoint = &tmp
-		}
-	}
-	if config["s3ForcePathStyle"] != nil {
-		tmp, ok := config["s3ForcePathStyle"].(bool)
-		if ok {
-			s3ForcePathStyle = &tmp
-		}
-	}
-	if config["disableSSL"] != nil {
-		tmp, ok := config["disableSSL"].(bool)
-		if ok {
-			disableSSL = &tmp
-		}
-	}
-	if config["region"] != nil {
-		tmp, ok := config["region"].(string)
-		if ok {
-			region = &tmp
-		}
+	var s3Config S3Config
+	if err := mapstructure.Decode(config, &s3Config); err != nil {
+		pkgLogger.Errorf("unable to code config into S3Config: %w", err)
+		s3Config = S3Config{}
 	}
 	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
-	return &S3Config{
-		Endpoint:          endPoint,
-		Bucket:            bucketName,
-		Prefix:            prefix,
-		AccessKeyID:       accessKeyID,
-		AccessKey:         accessKey,
-		EnableSSE:         enableSSE,
-		Region:            region,
-		RegionHint:        regionHint,
-		ContinuationToken: continuationToken,
-		StartAfter:        startAfter,
-		IsTruncated:       true,
-		S3ForcePathStyle:  s3ForcePathStyle,
-		DisableSSL:        disableSSL,
-		UseGlue:           useGlue,
-	}
+	s3Config.RegionHint = regionHint
+	s3Config.IsTruncated = true
+
+	return &s3Config
 }
 
 type S3Config struct {
-	Bucket            string
-	Prefix            string
-	AccessKeyID       string
-	AccessKey         string
-	EnableSSE         bool
-	Region            *string
-	RegionHint        string
-	ContinuationToken *string
-	StartAfter        string
-	IsTruncated       bool
-	Endpoint          *string
-	S3ForcePathStyle  *bool
-	DisableSSL        *bool
-	UseGlue           bool
+	Bucket            string  `mapstructure:"bucketName"`
+	Prefix            string  `mapstructure:"Prefix"`
+	Region            *string `mapstructure:"region"`
+	AccessKeyID       string  `mapstructure:"accessKeyID"`
+	AccessKey         string  `mapstructure:"accessKey"`
+	IAMRoleARN        string  `mapstructure:"iamRoleARN"`
+	ExternalID        string  `mapstructure:"externalID"`
+	Endpoint          *string `mapstructure:"endpoint"`
+	S3ForcePathStyle  *bool   `mapstructure:"s3ForcePathStyle"`
+	DisableSSL        *bool   `mapstructure:"disableSSL"`
+	EnableSSE         bool    `mapstructure:"enableSSE"`
+	RegionHint        string  `mapstructure:"regionHint"`
+	ContinuationToken *string `mapstructure:"continuationToken"`
+	StartAfter        string  `mapstructure:"startAfter"`
+	IsTruncated       bool    `mapstructure:"isTruncated"`
+	UseGlue           bool    `mapstructure:"useGlue"`
 }
