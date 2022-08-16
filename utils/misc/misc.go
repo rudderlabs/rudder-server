@@ -1214,7 +1214,14 @@ func GetWarehouseURL() (url string) {
 
 func GetDatabricksVersion() (version string) {
 	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return
+	}
+	client := &http.Client{
+		Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second),
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
 		return

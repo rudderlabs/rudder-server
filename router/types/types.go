@@ -54,7 +54,7 @@ type JobMetadataT struct {
 	WorkspaceID        string          `json:"workspaceId"`
 	Secret             json.RawMessage `json:"secret"`
 	JobT               *jobsdb.JobT    `json:"jobsT"`
-	WorkerAssignedTime time.Time       `json:"-"`
+	WorkerAssignedTime time.Time       `json:"workerAssignedTime"`
 }
 
 // TransformMessageT is used to pass message to the transformer workers
