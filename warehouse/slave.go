@@ -458,6 +458,13 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		}
 
 		hasExcludedColumns := len(job.ExcludedSchema[tableName]) != 0
+		isExcludedColumn := func(colName string) bool {
+			if !hasExcludedColumns {
+				return false
+			}
+			_, ok := job.ExcludedSchema[tableName][colName]
+			return ok
+		}
 
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
@@ -466,9 +473,13 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
+
+			excludedColumn := isExcludedColumn(columnName)
 			columnInfo, ok := batchRouterEvent.GetColumnInfo(columnName)
 			if !ok {
-				eventLoader.AddEmptyColumn(columnName)
+				if !excludedColumn {
+					eventLoader.AddEmptyColumn(columnName)
+				}
 				continue
 			}
 			columnType := columnInfo.ColumnType
@@ -477,23 +488,23 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			if columnType == "int" || columnType == "bigint" {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
-					eventLoader.AddEmptyColumn(columnName)
+					if !excludedColumn {
+						eventLoader.AddEmptyColumn(columnName)
+					}
 					continue
 				}
 				columnVal = int(floatVal)
 			}
 
-			if hasExcludedColumns {
-				if _, ok := job.ExcludedSchema[tableName][columnName]; ok {
-					cv := &ConstraintsViolationT{
-						isViolated: false,
-					}
-					err := jobRun.writeToDiscards(discardsTable, tableName, columnName, columnVal, columnData, cv)
-					if err != nil {
-						return nil, err
-					}
-					continue
+			if excludedColumn {
+				cv := &ConstraintsViolationT{
+					isViolated: false,
 				}
+				err := jobRun.writeToDiscards(discardsTable, tableName, columnName, columnVal, columnData, cv)
+				if err != nil {
+					return nil, err
+				}
+				continue
 			}
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]

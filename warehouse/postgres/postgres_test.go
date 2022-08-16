@@ -57,11 +57,7 @@ func TestPostgresIntegration(t *testing.T) {
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.enableExcludedSchema",
-			Value: true,
-		},
-		{
-			Key:   "Warehouse.postgres.maxColumnCount",
-			Value: 15,
+			Value: false,
 		},
 	}))
 	// Setting up the warehouseTest
@@ -75,51 +71,14 @@ func TestPostgresIntegration(t *testing.T) {
 		Tables:               handle.Tables,
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
 		Provider:             warehouseutils.POSTGRES,
 	}
 
 	// Scenario 1
-	// Sending a new event to handle exceeded columns, set max limit to 15
-	// Since we are sending same message Id to all type of events
-	// All rows in rudder discards have same row_id
-	// Exceeded count: pages -> 1, groups -> 3, product_track -> 4
-	testhelper.SendEvents(t, warehouseTest)
-
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":      1,
-		"users":           1,
-		"tracks":          1,
-		"product_track":   1,
-		"pages":           1,
-		"screens":         1,
-		"aliases":         1,
-		"groups":          1,
-		"rudder_discards": 7,
-		"gateway":         6,
-		"batchRT":         8,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
-
-	// Scenario 2
-	// Setting up test configuration
-	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
-		{
-			Key:   "Warehouse.enableExcludedSchema",
-			Value: false,
-		},
-	}))
 	// Sending the first set of events.
 	// Since we are sending unique message Ids.
 	// These should result in events count will be equal to the number of events being sent
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-	warehouseTest.MessageId = ""
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
@@ -145,21 +104,17 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
 	testhelper.VerifyingTablesEventCount(t, warehouseTest)
 
-	// Scenario 3
+	// Scenario 2
 	// Setting up test configuration
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.enableExcludedSchema",
 			Value: true,
 		},
-		{
-			Key:   "Warehouse.postgres.maxColumnCount",
-			Value: 21,
-		},
 	}))
 	// Setting up events count map
 	// Sending the second set of modified events
-	// Sending a existing event to handle exceeded columns, set max limit to 21
+	// Sending a existing event to handle exceeded columns, max limit already set to 21
 	// Since we are sending same message Id to all type of events
 	// Events will be deduped to single entry and
 	// All rows in rudder discards have same row_id
@@ -184,7 +139,7 @@ func TestPostgresIntegration(t *testing.T) {
 		"screens":         1,
 		"aliases":         1,
 		"groups":          1,
-		"rudder_discards": 12,
+		"rudder_discards": 4,
 		"gateway":         24,
 		"batchRT":         32,
 	}
