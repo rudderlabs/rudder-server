@@ -7,10 +7,10 @@ import (
 	"errors"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/gjson"
 )
 
 // Config is the config that is required to send data to Lambda
@@ -18,6 +18,11 @@ type destinationConfig struct {
 	InvocationType string
 	ClientContext  string
 	Lambda         string
+}
+
+type inputConfig struct {
+	Payload           string             `json:"payload"`
+	DestinationConfig *destinationConfig `json:"destConfig"`
 }
 
 type LambdaProducer struct {
@@ -29,6 +34,7 @@ type LambdaClient interface {
 }
 
 var pkgLogger logger.LoggerI
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
@@ -56,25 +62,24 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	if client == nil {
 		return 400, "Failure", "[Lambda] error :: Could not create client"
 	}
-	data := gjson.GetBytes(jsonData, "payload").String()
-	if data == "" {
+
+	var input inputConfig
+	err := jsonfast.Unmarshal(jsonData, &input)
+	if err != nil {
+		returnMessage := "[Lambda] error while unmarshalling jsonData :: " + err.Error()
+		return 400, "Failure", returnMessage
+	}
+	if input.Payload == "" {
 		return 400, "Failure", "[Lambda] error :: Invalid payload"
 	}
-	destConfig := gjson.GetBytes(jsonData, "destConfig").String()
-	if destConfig == "" {
-		return 400, "Failure", "[Lambda] error :: Invalid Destination Config"
-	}
-
-	var config destinationConfig
-	err := json.Unmarshal([]byte(destConfig), &config)
-	if err != nil {
-		returnMessage := "[Lambda] error while unmarshalling destination config :: " + err.Error()
-		return 400, "Failure", returnMessage
+	config := input.DestinationConfig
+	if config == nil {
+		return 400, "Failure", "[Lambda] error :: Invalid destination config"
 	}
 
 	var invokeInput lambda.InvokeInput
 	invokeInput.SetFunctionName(config.Lambda)
-	invokeInput.SetPayload([]byte(data))
+	invokeInput.SetPayload([]byte(input.Payload))
 	invokeInput.SetInvocationType(config.InvocationType)
 	if config.ClientContext != "" {
 		invokeInput.SetClientContext(config.ClientContext)

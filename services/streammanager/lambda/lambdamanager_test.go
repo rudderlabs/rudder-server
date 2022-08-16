@@ -60,19 +60,21 @@ func TestProduceWithInvalidData(t *testing.T) {
 	mockLogger := mock_logger.NewMockLoggerI(ctrl)
 	pkgLogger = mockLogger
 
-	// Invalid Payload
+	// Invalid input
 	sampleEventJson := []byte("invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Equal(t, "[Lambda] error :: Invalid payload", respMsg)
+	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling jsonData")
 
-	// Empty Payload
-	sampleEventJson = []byte("invalid json")
+	// Empty payload
+	sampleEventJson, _ = json.Marshal(map[string]interface{}{
+		"payload": "",
+	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Equal(t, "[Lambda] error :: Invalid payload", respMsg)
+	assert.Contains(t, respMsg, "[Lambda] error :: Invalid payload")
 
 	// Destination Config not present
 	sampleEventJson, _ = json.Marshal(map[string]interface{}{
@@ -81,7 +83,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Contains(t, respMsg, "[Lambda] error :: Invalid Destination Config")
+	assert.Contains(t, respMsg, "[Lambda] error :: Invalid destination config")
 
 	// Invalid Destination Config
 	sampleDestConfig := map[string]interface{}{}
@@ -92,7 +94,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, sampleDestConfig)
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling destination config")
+	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling jsonData")
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
@@ -106,11 +108,10 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		"Lambda":         sampleFunction,
 		"InvocationType": invocationType,
 	}
-	destConfig, _ := json.Marshal(sampleDestConfig)
 
-	sampleEventJson, _ := json.Marshal(map[string]string{
+	sampleEventJson, _ := json.Marshal(map[string]interface{}{
 		"payload":    sampleMessage,
-		"destConfig": string(destConfig),
+		"destConfig": sampleDestConfig,
 	})
 
 	var sampleInput lambda.InvokeInput
