@@ -359,24 +359,6 @@ func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	return
 }
 
-// ExecuteSQL1 executes sql using grpc Client
-func (dl *HandleT) ExecuteSQL1(sqlStatement, queryType, tableName string) (err error) {
-	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   queryType,
-		"tableName":   tableName,
-	})
-	execSqlStatTime.Start()
-	defer execSqlStatTime.End()
-
-	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
-	return
-}
-
 // ExecuteSQLClient executes sql client using grpc Client
 func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
 	executeResponse, err := dbClient.Client.Execute(dbClient.Context, &proto.ExecuteRequest{
@@ -515,7 +497,7 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(tableName, location string) (loadFolder string, err error) {
+func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == "S3" {
 		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
@@ -569,7 +551,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(tableName, objectsLocation)
+	loadFolder, err := dl.getLoadFolder(objectsLocation)
 	if err != nil {
 		return
 	}
@@ -631,7 +613,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
 	// Executing load table sql statement
-	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)), tableName)
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -736,7 +718,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
 	// Executing the load users table sql statement
-	err = dl.ExecuteSQL1(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)), warehouseutils.UsersTable)
+	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(loadTableStrategy)))
 	if err != nil {
 		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
@@ -890,7 +872,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (dl *HandleT) AlterColumn(string, string, string) (err error) {
 	return
 }
 
@@ -1008,7 +990,7 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (dl *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (dl *HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -1151,14 +1133,14 @@ func checkHealth() (err error) {
 	return
 }
 
-func (dl *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (dl *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
 	// Get the credentials string to copy from the staging location to table
 	auth, err := dl.credentialsStr()
 	if err != nil {
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(tableName, location)
+	loadFolder, err := dl.getLoadFolder(location)
 	if err != nil {
 		return
 	}
