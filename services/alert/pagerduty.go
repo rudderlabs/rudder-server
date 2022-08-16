@@ -30,7 +30,7 @@ func (ops *PagerDuty) Alert(message string) {
 	}
 
 	eventJSON, _ := json.Marshal(event)
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.pagerduty.timeout", "HttpClient.timeout")}
 	resp, err := client.Post(pagerDutyEndPoint, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops
 	if err != nil {
