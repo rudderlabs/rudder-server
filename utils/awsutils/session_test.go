@@ -63,7 +63,8 @@ func TestCreateSessionWithRole(t *testing.T) {
 		ExternalID: destinationConfigWithRole["externalID"].(string),
 		Timeout:    10 * time.Second,
 	}
-	awsSession := CreateSession(&sessionConfig)
+	awsSession, err := CreateSession(&sessionConfig)
+	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)
 	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
@@ -77,7 +78,8 @@ func TestCreateSessionWithAccessKeys(t *testing.T) {
 		AccessKey:   destinationConfigWithAccessKey["accessKey"].(string),
 		Timeout:     10 * time.Second,
 	}
-	awsSession := CreateSession(&sessionConfig)
+	awsSession, err := CreateSession(&sessionConfig)
+	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)
 	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
@@ -89,7 +91,8 @@ func TestCreateSessionWithoutAccessKeysOrRole(t *testing.T) {
 		Region:  destinationConfigWithAccessKey["region"].(string),
 		Timeout: 10 * time.Second,
 	}
-	awsSession := CreateSession(&sessionConfig)
+	awsSession, err := CreateSession(&sessionConfig)
+	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)
 	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
