@@ -8,17 +8,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
@@ -32,19 +34,39 @@ const (
 
 // HandleT is the handle for this class
 type HandleT struct {
-	tr                                 *http.Transport
-	client                             *http.Client
+	tr *http.Transport
+	// http client for router transformation request
+	client *http.Client
+	// Mockable http.client for transformer proxy request
+	tfProxyClient sysUtils.HTTPClientI
+	// http client timeout for transformer proxy request
+	tfProxyTimeout time.Duration
+	// http client timeout for server-transformer request
+	serverTfTimeout                    time.Duration
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
 	transformerProxyRequestTime        stats.RudderStats
 	logger                             logger.LoggerI
 }
 
+type ProxyRequestParams struct {
+	ResponseData integrations.PostParametersT
+	DestName     string
+	JobID        int64
+	BaseUrl      string
+}
+
+type httpProxyResponse struct {
+	respData   []byte
+	statusCode int
+	err        error
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
-	Setup()
+	Setup(timeout, srvTfTimeout time.Duration)
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
 }
 
 // NewTransformer creates a new transformer
@@ -53,18 +75,14 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry              int
-	retrySleep            time.Duration
-	timeoutDuration       time.Duration
-	retryWithBackoffCount int64
-	pkgLogger             logger.LoggerI
+	maxRetry   int
+	retrySleep time.Duration
+	pkgLogger  logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
-	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
 }
 
 func Init() {
@@ -183,52 +201,19 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string, jobId int64) (int, string) {
-	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": destName}).Increment()
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, destName, jobId)
-	rawJSON, err := jsonfast.Marshal(responseData)
-	if err != nil {
-		panic(err)
-	}
+func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
+	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": proxyReqParams.DestName}).Increment()
+	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
-	var respData []byte
-	var respCode int
+	rdlTime := time.Now()
+	httpPrxResp := trans.makeTfProxyRequest(ctx, proxyReqParams)
+	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
+	reqSuccessStr := strconv.FormatBool(requestError == nil)
+	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
+	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).Increment()
 
-	url := getProxyURL(destName)
-	payload := rawJSON
-
-	operation := func() error {
-		var requestError error
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request operation method - %[1]v`, destName, jobId)
-		// start
-		rdl_time := time.Now()
-		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload, destName, jobId)
-		reqSuccessStr := strconv.FormatBool(requestError == nil)
-		stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).SendTiming(time.Since(rdl_time))
-		stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": destName}).Increment()
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} RespData - %[3]v, RespCode - %[4]v `, destName, jobId, string(respData), respCode)
-		trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request operation ended - %[1]v`, destName, jobId)
-		// end
-		return requestError
-	}
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
-	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request for proxy to URL:: %[3]v, Error:: %+[4]v retrying after:: %[5]v,", destName, jobId, url, err, t)
-		stats.NewTaggedStat("transformer_proxy.retries", stats.CountType, stats.Tags{"destination": destName}).Increment()
-	})
-
-	if err != nil {
-		panic(fmt.Errorf("[TransformerProxy] Proxy request failed after max retries Error:: %+v", err))
-	}
-
-	// Detecting content type of the respBody
-	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
-	// If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(contentTypeHeader, "text") ||
-		strings.Contains(contentTypeHeader, "application/json") ||
-		strings.Contains(contentTypeHeader, "application/xml")) {
-		respData = []byte("")
+	if requestError != nil {
+		return respCode, requestError.Error(), "text/plain; charset=utf-8"
 	}
 
 	/**
@@ -247,46 +232,65 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
-	err = jsonfast.Unmarshal(respData, &transformerResponse)
+	err := jsonfast.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
-		respData = []byte(errStr)
-		respCode = http.StatusBadRequest
-		return respCode, string(respData)
-	}
-	// unmarshal success
-	respData, err = jsonfast.Marshal(transformerResponse)
-	if err != nil {
-		panic(fmt.Errorf("[TransformerProxy]:: failed to Marshal proxy response : %+v", err))
+		respCode = http.StatusInternalServerError
+		return respCode, errStr, "text/plain; charset=utf-8"
 	}
 
-	return respCode, string(respData)
+	return respCode, string(respData), "application/json"
 }
 
-// is it ok to use same client for network and transformer calls? need to understand timeout setup in router
-func (trans *HandleT) Setup() {
+func (trans *HandleT) Setup(netClientTimeout, serverTfTimeout time.Duration) {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
+	// The timeout between server and transformer
+	// Basically this timeout is more for communication between transformer and server
+	trans.serverTfTimeout = serverTfTimeout
+	// Destination API timeout
+	// Basically this timeout we will configure when we make final call to destination to send event
+	trans.tfProxyTimeout = netClientTimeout
+	// This client is used for Router Transformation
+	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.serverTfTimeout}
+	// This client is used for Transformer Proxy(delivered from transformer to destination)
+	trans.tfProxyClient = &http.Client{Transport: trans.tr, Timeout: trans.tfProxyTimeout + trans.serverTfTimeout}
 	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerProxyRequestTime = stats.DefaultStats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte, destName string, jobId int64) ([]byte, int, error) {
+func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) httpProxyResponse {
 	var respData []byte
-	var respCode int
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+
+	baseUrl := proxyReqParams.BaseUrl
+	destName := proxyReqParams.DestName
+	jobID := proxyReqParams.JobID
+
+	payload, err := jsonfast.Marshal(proxyReqParams.ResponseData)
 	if err != nil {
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusBadRequest, err
+		panic(err)
+	}
+	proxyUrl := getProxyURL(destName, baseUrl)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
+	if err != nil {
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, jobID, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
+	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.tfProxyTimeout+trans.serverTfTimeout).Milliseconds(), 10))
+	// Make use of this header to set timeout in the transfomer's http client
+	// The header name may be worked out ?
+	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.tfProxyTimeout.Milliseconds(), 10))
 
 	httpReqStTime := time.Now()
-	resp, err := trans.client.Do(req)
+	resp, err := trans.tfProxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
@@ -294,30 +298,63 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 		"destination": destName,
 	}).SendTiming(reqRoundTripTime)
 
-	if err != nil {
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobId, err.Error())
-		return []byte{}, http.StatusBadRequest, err
+	if os.IsTimeout(err) {
+		// A timeout error occurred
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusGatewayTimeout,
+			err:        err,
+		}
+	} else if err != nil {
+		// This was an error, but not a timeout
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
+	} else if resp.StatusCode == http.StatusNotFound {
+		// Actually Router wouldn't send any destination to proxy unless it already exists
+		// But if accidentally such a request is sent, we'd probably need to handle for better
+		// understanding of the response
+		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, notFoundErr)
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: resp.StatusCode,
+			err:        notFoundErr,
+		}
 	}
 
 	// error handling if body is missing
 	if resp.Body == nil {
-		respData = []byte("[TransformerProxy] :: transformer returned empty response body")
-		respCode = http.StatusBadRequest
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, respCode, string(respData))
-		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
+		errStr := "empty response body"
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobID, http.StatusBadRequest, string(respData))
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        fmt.Errorf(errStr),
+		}
 	}
 
 	respData, err = io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`[TransformerProxy] :: failed to read response body, Error:: %+v`, err))
-		respCode = http.StatusBadRequest
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobId, respCode, respCode, string(respData))
-		return respData, respCode, err
+		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Failed with statusCode: %[3]v, message: %[4]v`, destName, jobID, http.StatusBadRequest, string(respData))
+		return httpProxyResponse{
+			respData:   []byte{}, // sending this as it is not getting sent at all
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
 	}
-	respCode = resp.StatusCode
-	return respData, respCode, nil
+
+	return httpProxyResponse{
+		respData:   respData,
+		statusCode: resp.StatusCode,
+	}
 }
 
 func getBatchURL() string {
@@ -328,6 +365,9 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getProxyURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+func getProxyURL(destName, baseUrl string) string {
+	if !router_utils.IsNotEmptyString(baseUrl) { // empty string check
+		baseUrl = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
+	}
+	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }

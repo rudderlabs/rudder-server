@@ -10,6 +10,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gofrs/uuid"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -29,6 +31,7 @@ var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.RedshiftIntegrationTestCredentials
+	TestSchemaKey      = testhelper.RedshiftIntegrationTestSchema
 )
 
 // redshiftCredentials extracting redshift test credentials
@@ -46,14 +49,14 @@ func redshiftCredentials() (rsCredentials redshift.RedshiftCredentialsT, err err
 	return
 }
 
-// TestConnection test connection for redshift
-func (*TestHandle) TestConnection() error {
+// VerifyConnection test connection for redshift
+func (*TestHandle) VerifyConnection() error {
 	credentials, err := redshiftCredentials()
 	if err != nil {
 		return err
 	}
 
-	err = testhelper.ConnectWithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = redshift.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse redshift with error: %w", err)
@@ -68,6 +71,15 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestRedshiftIntegration(t *testing.T) {
+	// Cleanup resources
+	// Dropping temporary schema
+	t.Cleanup(func() {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
+			return
+		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
+	})
+
 	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
@@ -81,6 +93,7 @@ func TestRedshiftIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.RS),
+		Provider:             warehouseutils.RS,
 	}
 
 	// Scenario 1
@@ -89,7 +102,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -118,7 +131,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -150,7 +163,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		Schema:   "redshift_wh_integration",
+		Schema:   testhelper.GetSchema(warehouseutils.RS, TestSchemaKey),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

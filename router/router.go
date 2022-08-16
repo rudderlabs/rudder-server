@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -131,12 +130,8 @@ type HandleT struct {
 	backgroundCancel     context.CancelFunc
 	backgroundWait       func() error
 	generatorLoopStarted chan struct{}
-
-	resultSetMeta    map[int64]*resultSetT
-	resultSetLock    sync.RWMutex
-	lastResultSet    *resultSetT
-	lastQueryRunTime time.Time
-	timeGained       float64
+	lastQueryRunTime     time.Time
+	timeGained           float64
 
 	payloadLimit     int64
 	transientSources transientsource.Service
@@ -174,7 +169,6 @@ type workerMessageT struct {
 	job                *jobsdb.JobT
 	throttledAtTime    time.Time
 	workerAssignedTime time.Time
-	resultSetID        int64
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -198,9 +192,9 @@ type workerT struct {
 	abortedUserMutex           sync.RWMutex
 	jobCountsByDestAndUser     map[string]*destJobCountsT
 	throttledAtTime            time.Time
+	latestAssignedTime         time.Time
+	processingStartTime        time.Time
 	encounteredRouterTransform bool
-
-	localResultSet *resultSetT
 }
 
 type destJobCountsT struct {
@@ -228,60 +222,6 @@ type requestMetric struct {
 	RequestAborted       int
 	RequestSuccess       int
 	RequestCompletedTime time.Duration
-}
-
-type resultSetT struct {
-	id                 int64
-	resultSetBeginTime time.Time
-	timeAllotted       time.Duration
-}
-
-func (rt *HandleT) initResultSet(timeAllotted time.Duration) {
-	rt.lastResultSet.id++
-	rt.lastResultSet.timeAllotted = timeAllotted
-	rt.addResultSetMeta(rt.lastResultSet)
-}
-
-func (rt *HandleT) getLastResultSetID() int64 {
-	return rt.lastResultSet.id
-}
-
-func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
-	rt.resultSetLock.Lock()
-	defer rt.resultSetLock.Unlock()
-
-	newResultSet := resultSetT{}
-	newResultSet.id = resultSet.id
-	newResultSet.timeAllotted = resultSet.timeAllotted
-
-	rt.resultSetMeta[resultSet.id] = &newResultSet
-
-	// Cleanup the resultSetMeta
-
-	minResultSetID := int64(math.MaxInt64)
-	for i := 0; i < rt.noOfWorkers; i++ {
-		tmpID := rt.workers[i].localResultSet.id
-		if minResultSetID > tmpID {
-			minResultSetID = tmpID
-		}
-	}
-
-	keys := make([]int64, 0, len(rt.resultSetMeta))
-	for key := range rt.resultSetMeta {
-		keys = append(keys, key)
-	}
-
-	for _, key := range keys {
-		if key < minResultSetID {
-			delete(rt.resultSetMeta, key)
-		}
-	}
-}
-
-func (rt *HandleT) getResultSet(id int64) *resultSetT {
-	rt.resultSetLock.Lock()
-	defer rt.resultSetLock.Unlock()
-	return rt.resultSetMeta[id]
 }
 
 func isSuccessStatus(status int) bool {
@@ -320,7 +260,7 @@ func loadConfig() {
 func (worker *workerT) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if worker.rt.transformerProxy {
-		d = worker.rt.backendProxyTimeout * 2
+		d = (worker.rt.backendProxyTimeout + worker.rt.netClientTimeout) * 2
 	} else {
 		d = worker.rt.netClientTimeout * 2
 	}
@@ -450,19 +390,18 @@ func (worker *workerT) workerProcess() {
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 
 			jobMetadata := types.JobMetadataT{
-				UserID:           userID,
-				JobID:            job.JobID,
-				SourceID:         parameters.SourceID,
-				DestinationID:    parameters.DestinationID,
-				AttemptNum:       job.LastJobStatus.AttemptNum,
-				ReceivedAt:       parameters.ReceivedAt,
-				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
-				FirstAttemptedAt: firstAttemptedAt,
-				TransformAt:      parameters.TransformAt,
-				JobT:             job,
-				PickedAtTime:     message.workerAssignedTime,
-				ResultSetID:      message.resultSetID,
-				WorkspaceId:      parameters.WorkspaceID,
+				UserID:             userID,
+				JobID:              job.JobID,
+				SourceID:           parameters.SourceID,
+				DestinationID:      parameters.DestinationID,
+				AttemptNum:         job.LastJobStatus.AttemptNum,
+				ReceivedAt:         parameters.ReceivedAt,
+				CreatedAt:          job.CreatedAt.Format(misc.RFC3339Milli),
+				FirstAttemptedAt:   firstAttemptedAt,
+				TransformAt:        parameters.TransformAt,
+				JobT:               job,
+				WorkspaceID:        parameters.WorkspaceID,
+				WorkerAssignedTime: message.workerAssignedTime,
 			}
 
 			worker.rt.configSubscriberLock.RLock()
@@ -491,7 +430,7 @@ func (worker *workerT) workerProcess() {
 					// Get Access Token Information to send it as part of the event
 					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
 						AccountId:       rudderAccountID,
-						WorkspaceId:     jobMetadata.WorkspaceId,
+						WorkspaceId:     jobMetadata.WorkspaceID,
 						DestDefName:     destination.DestinationDefinition.Name,
 						EventNamePrefix: "fetch_token",
 					})
@@ -627,24 +566,19 @@ func (worker *workerT) processDestinationJobs() {
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
 
+				if worker.latestAssignedTime != destinationJob.JobMetadataArray[0].WorkerAssignedTime {
+					worker.latestAssignedTime = destinationJob.JobMetadataArray[0].WorkerAssignedTime
+					worker.processingStartTime = time.Now()
+				}
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 
-				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
-
-				if worker.localResultSet.id < resultSetID {
-					resultSet := worker.rt.getResultSet(resultSetID)
-					worker.localResultSet.id = resultSetID
-					worker.localResultSet.resultSetBeginTime = time.Now()
-					worker.localResultSet.timeAllotted = resultSet.timeAllotted
-				}
-
 				// Assuming twice the overhead - defensive: 30% was just fine though
 				// In fact, the timeout should be more than the maximum latency allowed by these workers.
 				// Assuming 10s maximum latency
-				elapsed := time.Since(worker.localResultSet.resultSetBeginTime)
-				threshold := time.Duration(2.0 * math.Max(float64(worker.localResultSet.timeAllotted), float64(10*time.Second)))
+				elapsed := time.Since(worker.processingStartTime)
+				threshold := worker.rt.routerTimeout
 				if elapsed > threshold {
 					respStatusCode = types.RouterTimedOutStatusCode
 					respBody = fmt.Sprintf("Failed with status code %d as the jobs took more time than expected. Will be retried", types.RouterTimedOutStatusCode)
@@ -672,14 +606,17 @@ func (worker *workerT) processDestinationJobs() {
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-								defer cancel()
 								// transformer proxy start
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
+									proxyReqparams := &transformer.ProxyRequestParams{
+										DestName:     worker.rt.destName,
+										JobID:        jobID,
+										ResponseData: val,
+									}
 									rtlTime := time.Now()
-									respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName, jobID)
+									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
 									authType := routerutils.GetAuthType(destinationJob.Destination)
@@ -696,8 +633,10 @@ func (worker *workerT) processDestinationJobs() {
 										})
 									}
 								} else {
+									sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 									rdlTime := time.Now()
 									resp := worker.rt.netHandle.SendPost(sendCtx, val)
+									cancel()
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 									// stat end
 									worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
@@ -846,7 +785,7 @@ func (worker *workerT) processDestinationJobs() {
 			ExecTime:    time.Now(),
 			RetryTime:   time.Now(),
 			Parameters:  routerutils.EmptyPayload,
-			WorkspaceId: destinationJobMetadata.WorkspaceId,
+			WorkspaceId: destinationJobMetadata.WorkspaceID,
 		}
 
 		routerJobResponse.status = &status
@@ -1332,7 +1271,6 @@ func (rt *HandleT) initWorkers() {
 			routerProxyStat:           stats.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap:          make(map[string]int),
 			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
-			localResultSet:            &resultSetT{resultSetBeginTime: time.Now()},
 		}
 		rt.workers[i] = worker
 
@@ -2105,7 +2043,6 @@ func (rt *HandleT) readAndProcess() int {
 				drainWorker.failedJobIDMutex.Unlock()
 			}
 		}
-
 	}
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
 
@@ -2115,12 +2052,10 @@ func (rt *HandleT) readAndProcess() int {
 		return 0
 	}
 
-	// TODO is int64 good enough?
-	rt.initResultSet(timeOut)
-
+	workerAssignedTime := time.Now()
 	// Send the jobs to the jobQ
 	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now(), resultSetID: rt.getLastResultSetID()}
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: workerAssignedTime}
 	}
 
 	return len(toProcess)
@@ -2143,9 +2078,6 @@ func Init() {
 
 // Setup initializes this module
 func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
-	rt.resultSetMeta = make(map[int64]*resultSetT)
-	rt.lastResultSet = &resultSetT{}
-
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 
@@ -2236,7 +2168,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.routerResponseTransformStat = stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
 
 	rt.transformer = transformer.NewTransformer()
-	rt.transformer.Setup()
+	rt.transformer.Setup(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
@@ -2364,7 +2296,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 				(trRespStCd, trRespBody): (%v, %v),
 			}`, destError, trRespStatusCode, trRespBody)
 		}
-		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceId
+		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
 		var errCatStatusCode int
 		// destErrDetailed := destErrOutput.Output
 		// Check the category

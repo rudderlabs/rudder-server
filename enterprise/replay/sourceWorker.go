@@ -11,14 +11,15 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/tidwall/gjson"
 )
 
@@ -77,7 +78,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	file, err := os.Create(path)
 	if err != nil {
-		panic(err) // Cant open file to write
+		panic(err) // Cannot open file to write
 	}
 
 	err = worker.uploader.Download(ctx, file, filePath)
@@ -85,7 +86,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		panic(err) // failed to download
 	}
 	pkgLogger.Debugf("file downloaded at %s", path)
-	file.Close()
+	_ = file.Close()
 
 	rawf, err := os.Open(path)
 	if err != nil {
@@ -104,7 +105,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	buf := make([]byte, maxCapacity)
 	sc.Buffer(buf, maxCapacity)
 
-	defer rawf.Close()
+	defer func() { _ = rawf.Close() }()
 
 	var jobs []*jobsdb.JobT
 
@@ -117,6 +118,14 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		copy(copyLineBytes, lineBytes)
 
 		if transformationVersionID == "" {
+			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String())
+			if err != nil {
+				pkgLogger.Errorf("failed to parse created at: %s", err)
+				continue
+			}
+			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
+				continue
+			}
 			job := jobsdb.JobT{
 				UUID:         uuid.Must(uuid.NewV4()),
 				UserID:       gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(userID)).String(),
@@ -129,7 +138,6 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			continue
 		}
 
-		// message, ok := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).Value().(map[string]interface{})
 		message, ok := gjson.ParseBytes(copyLineBytes).Value().(map[string]interface{})
 		if !ok {
 			pkgLogger.Errorf("EventPayload not a json: %v", copyLineBytes)
@@ -161,6 +169,19 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])
 			if err != nil {
 				pkgLogger.Errorf("Error unmarshalling transformer output: %v", err)
+				continue
+			}
+			createdAtString, ok := ev.Output[worker.getFieldIdentifier(createdAt)].(string)
+			if !ok {
+				pkgLogger.Errorf("Error getting created at from transformer output: %v", err)
+				continue
+			}
+			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, createdAtString)
+			if err != nil {
+				pkgLogger.Errorf("failed to parse created at: %s", err)
+				continue
+			}
+			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
 				continue
 			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])
@@ -200,8 +221,9 @@ const (
 	userID       = "userID"
 	parameters   = "parameters"
 	customVal    = "customVal"
-	eventPayload = "eventPaylod"
+	eventPayload = "eventPayload"
 	workspaceID  = "workspaceID"
+	createdAt    = "createdAt"
 )
 
 func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
@@ -217,6 +239,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 			return "event_payload"
 		case workspaceID:
 			return "workspace_id"
+		case createdAt:
+			return "created_at"
 		default:
 			return ""
 		}
@@ -230,6 +254,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 		return "CustomVal"
 	case eventPayload:
 		return "EventPayload"
+	case createdAt:
+		return "CreatedAt"
 	default:
 		return ""
 	}
