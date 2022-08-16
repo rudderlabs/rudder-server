@@ -202,15 +202,15 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
-	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destination": proxyReqParams.DestName}).Increment()
+	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": proxyReqParams.DestName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
 	rdlTime := time.Now()
 	httpPrxResp := trans.makeTfProxyRequest(ctx, proxyReqParams)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
-	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
-	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destination": proxyReqParams.DestName}).Increment()
+	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
+	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {
 		return respCode, requestError.Error(), "text/plain; charset=utf-8"
@@ -295,7 +295,7 @@ func (trans *HandleT) makeTfProxyRequest(ctx context.Context, proxyReqParams *Pr
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
 	stats.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
-		"destination": destName,
+		"destType": destName,
 	}).SendTiming(reqRoundTripTime)
 
 	if os.IsTimeout(err) {
