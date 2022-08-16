@@ -41,7 +41,11 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Kine
 	if err != nil {
 		return nil, err
 	}
-	return &KinesisProducer{client: kinesis.New(awsutils.CreateSession(sessionConfig))}, err
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &KinesisProducer{client: kinesis.New(awsSession)}, err
 }
 
 // Produce creates a producer and send data to Kinesis.

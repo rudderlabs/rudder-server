@@ -114,6 +114,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
+			Provider:             warehouseutils.DELTALAKE,
 		}
 
 		// Scenario 1
@@ -122,7 +123,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -152,7 +153,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -197,6 +198,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
+			Provider:             warehouseutils.DELTALAKE,
 		}
 
 		// Scenario 1
@@ -205,7 +207,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -234,7 +236,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
