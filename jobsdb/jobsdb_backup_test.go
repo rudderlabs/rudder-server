@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -288,7 +287,7 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 }
 
 func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fileToDownload string, cleanup *testhelper.Cleanup) *os.File {
-	file, err := ioutil.TempFile("", "backedupfile")
+	file, err := os.CreateTemp("", "backedupfile")
 	require.NoError(t, err, "expected no error while creating temporary file")
 
 	err = fm.Download(context.Background(), file, fileToDownload)
