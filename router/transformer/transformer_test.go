@@ -1,87 +1,100 @@
-package transformer_test
+package transformer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/config"
+	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	rtTf "github.com/rudderlabs/rudder-server/router/transformer"
+	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// enum for expected Body Types
-type expectedBodyTypes string
+func TestProxyRequest(t *testing.T) {
+	initMocks(t)
 
-const (
-	JSON = "json"
-	STR  = "str"
-)
+	httpClientTimeout := time.Second
 
-type TcExpected struct {
-	// The response body expected from transformer.ProxyRequest
-	Body string
-	// The expected status code from transformer.ProxyRequest
-	StCode      int
-	ContentType string
-	// The body type we'd get after ProxyRequest method
-	BodyType expectedBodyTypes
-}
+	// enum for expected Body Types
+	type expectedBodyType string
 
-type TcProxy struct {
-	// The expected response body from proxy endpoint in transformer
-	Response string
-	// The response status code from proxy endpoint in transformer
-	StCode int
-	// The delay in response from proxy endpoint in transformer
-	TimeoutValue time.Duration
-}
-type ProxyContextTc struct {
-	Timeout time.Duration
-	Cancel  bool
-}
-type ProxyResponseTc struct {
-	// The test-case name for better understanding of what we're trying to do!
-	name     string
-	destName string
-	Expected TcExpected
-	Proxy    TcProxy
-	// The timeout we have set from router
-	// Router will have the timeout of rtTimeout + <timeout_at_router_transform>
-	// For http client timeout scenarios, we need to have a proxyTimeout which is > rtTimeout + <timeout_at_router_transform>
-	rtTimeout time.Duration
-	// Transformed response that needs to be sent to destination
-	postParametersT integrations.PostParametersT
-	context         ProxyContextTc
-}
+	const (
+		JSON expectedBodyType = "json"
+		STR  expectedBodyType = "str"
+	)
 
-// error response from destination in transformer proxy
-var (
-	proxyResponseTcs = []ProxyResponseTc{
+	type expectedResponse struct {
+		// The response body expected from transformer.ProxyRequest
+		body string
+		// The expected status code from transformer.ProxyRequest
+		code        int
+		contentType string
+		// The body type we'd get after ProxyRequest method
+		bodyType expectedBodyType
+	}
+
+	type proxyConfig struct {
+		// The delay in response from proxy endpoint in transformer
+		timeout time.Duration
+		// The expected response body from proxy endpoint in transformer
+		response string
+		// The response status code from proxy endpoint in transformer
+		code int
+	}
+
+	type proxyContext struct {
+		timeout time.Duration
+		cancel  bool
+	}
+
+	type testCase struct {
+		// The test-case name for better understanding of what we're trying to do!
+		name     string
+		destName string
+		expected expectedResponse
+		proxy    proxyConfig
+		// The timeout we have set from router
+		// Router will have the timeout of rtTimeout + <timeout_at_router_transform>
+		// For http client timeout scenarios, we need to have a proxyTimeout which is > rtTimeout + <timeout_at_router_transform>
+		rtTimeout time.Duration
+		// Transformed response that needs to be sent to destination
+		postParameters integrations.PostParametersT
+		context        proxyContext
+	}
+
+	// error response from destination in transformer proxy
+
+	testCases := []testCase{
 		{
 			name:     "should pass for good_dest",
 			destName: "good_dest",
-			Expected: TcExpected{
-				StCode:      http.StatusOK,
-				Body:        `{"status": 200, "message": "", "destinationResponse":"good_dest"}`,
-				ContentType: "application/json",
-				BodyType:    JSON,
+			expected: expectedResponse{
+				code:        http.StatusOK,
+				body:        `{"status": 200, "message": "", "destinationResponse":"good_dest"}`,
+				contentType: "application/json",
+				bodyType:    JSON,
 			},
-			Proxy: TcProxy{
-				StCode:       http.StatusOK,
-				Response:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest"}}`,
-				TimeoutValue: 0,
+			proxy: proxyConfig{
+				code:     http.StatusOK,
+				response: `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest"}}`,
+				timeout:  0,
 			},
 			rtTimeout: 10 * time.Millisecond,
-			postParametersT: integrations.PostParametersT{
+			postParameters: integrations.PostParametersT{
 				Type:          "REST",
 				URL:           "http://www.good_dest.domain.com",
 				RequestMethod: http.MethodPost,
@@ -101,19 +114,19 @@ var (
 		{
 			name:     "should throw timeout exception as the timeout in http.client is lower than proxy",
 			destName: "good_dest_1",
-			Expected: TcExpected{
-				StCode:      http.StatusGatewayTimeout,
-				Body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
-				ContentType: "text/plain; charset=utf-8",
-				BodyType:    STR,
+			expected: expectedResponse{
+				code:        http.StatusGatewayTimeout,
+				body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
+				contentType: "text/plain; charset=utf-8",
+				bodyType:    STR,
 			},
-			Proxy: TcProxy{
-				StCode:       http.StatusOK,
-				Response:     `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
-				TimeoutValue: time.Duration(1.2 * 1e9),
+			proxy: proxyConfig{
+				code:     http.StatusOK,
+				response: `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
+				timeout:  time.Duration(1.2 * 1e9),
 			},
 			rtTimeout: 8 * time.Millisecond,
-			postParametersT: integrations.PostParametersT{
+			postParameters: integrations.PostParametersT{
 				Type:          "REST",
 				URL:           "http://www.good_dest_1.domain.com",
 				RequestMethod: http.MethodPost,
@@ -133,21 +146,21 @@ var (
 		{
 			name:     "should throw timeout exception due to context getting timedout",
 			destName: "ctx_timeout_dest",
-			Expected: TcExpected{
-				StCode:      http.StatusGatewayTimeout,
-				Body:        `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
-				ContentType: "text/plain; charset=utf-8",
-				BodyType:    STR,
+			expected: expectedResponse{
+				code:        http.StatusGatewayTimeout,
+				body:        `Post "%s/v0/destinations/ctx_timeout_dest/proxy": context deadline exceeded`,
+				contentType: "text/plain; charset=utf-8",
+				bodyType:    STR,
 			},
-			Proxy: TcProxy{
-				StCode:       http.StatusOK,
-				Response:     `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
-				TimeoutValue: 4 * time.Millisecond,
+			proxy: proxyConfig{
+				code:     http.StatusOK,
+				response: `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_timeout_dest"}}`,
+				timeout:  4 * time.Millisecond,
 			},
-			context: ProxyContextTc{
-				Timeout: 2 * time.Millisecond,
+			context: proxyContext{
+				timeout: 2 * time.Millisecond,
 			},
-			postParametersT: integrations.PostParametersT{
+			postParameters: integrations.PostParametersT{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
@@ -167,20 +180,20 @@ var (
 		{
 			name:     "should throw timeout exception due to context getting cancelled immediately",
 			destName: "ctx_cancel_dest",
-			Expected: TcExpected{
-				StCode:      http.StatusInternalServerError,
-				Body:        `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
-				ContentType: "text/plain; charset=utf-8",
-				BodyType:    STR,
+			expected: expectedResponse{
+				code:        http.StatusInternalServerError,
+				body:        `Post "%s/v0/destinations/ctx_cancel_dest/proxy": context canceled`,
+				contentType: "text/plain; charset=utf-8",
+				bodyType:    STR,
 			},
-			Proxy: TcProxy{
-				StCode:   http.StatusOK,
-				Response: `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_cancel_dest"}}`,
+			proxy: proxyConfig{
+				code:     http.StatusOK,
+				response: `{"output": {"status": 200, "message": "", "destinationResponse":"ctx_cancel_dest"}}`,
 			},
-			context: ProxyContextTc{
-				Cancel: true,
+			context: proxyContext{
+				cancel: true,
 			},
-			postParametersT: integrations.PostParametersT{
+			postParameters: integrations.PostParametersT{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
@@ -200,18 +213,18 @@ var (
 		{
 			name:     "should fail with not found error for not_found_dest",
 			destName: "not_found_dest",
-			Expected: TcExpected{
-				StCode:      http.StatusNotFound,
-				Body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
-				ContentType: "text/plain; charset=utf-8",
-				BodyType:    STR,
+			expected: expectedResponse{
+				code:        http.StatusNotFound,
+				body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
+				contentType: "text/plain; charset=utf-8",
+				bodyType:    STR,
 			},
-			Proxy: TcProxy{
-				StCode:   http.StatusNotFound,
-				Response: `Not Found`,
+			proxy: proxyConfig{
+				code:     http.StatusNotFound,
+				response: `Not Found`,
 			},
 			rtTimeout: 10 * time.Millisecond,
-			postParametersT: integrations.PostParametersT{
+			postParameters: integrations.PostParametersT{
 				Type:          "REST",
 				URL:           "http://www.not_found_dest.domain.com",
 				RequestMethod: http.MethodPost,
@@ -229,91 +242,74 @@ var (
 			},
 		},
 	}
-)
 
-func Initialization() {
-	config.Load()
-	stats.Init()
-	stats.Setup()
-	rtTf.Init()
-	logger.Init()
-}
-
-func TestProxyRequest(t *testing.T) {
-	httpClientTimeout := 1 * time.Second
-	Initialization()
-
-	for _, tc := range proxyResponseTcs {
+	for _, tc := range testCases {
 		// skip tests for the mentioned destinations
 		if tc.destName == "not_found_dest" {
+			t.Run(tc.name, func(t *testing.T) {
+				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
+				defer srv.Close()
+
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout)
+				ctx := context.TODO()
+				reqParams := &ProxyRequestParams{
+					ResponseData: tc.postParameters,
+					DestName:     "not_found_dest",
+					BaseUrl:      srv.URL,
+				}
+				stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
+				assert.Equal(t, tc.expected.code, stCd)
+				require.Equal(t, tc.expected.contentType, contentType)
+				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
+				require.Equal(t, expectedBodyStr, resp)
+			})
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(mockProxyHandler(&tc))
+			srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 			defer srv.Close()
-			tr := rtTf.NewTransformer()
+			var tr Transformer
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr.Setup(tc.rtTimeout, httpClientTimeout)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout)
 			} else {
 				// Just a default value
-				tr.Setup(2*time.Millisecond, httpClientTimeout)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
 			var cancelFunc context.CancelFunc
-			if tc.context.Timeout.Milliseconds() > 0 {
-				ctx, cancelFunc = context.WithTimeout(context.TODO(), tc.context.Timeout)
+			if tc.context.timeout.Milliseconds() > 0 {
+				ctx, cancelFunc = context.WithTimeout(context.TODO(), tc.context.timeout)
 				defer cancelFunc()
-			} else if tc.context.Cancel {
+			} else if tc.context.cancel {
 				ctx, cancelFunc = context.WithCancel(context.TODO())
 				cancelFunc()
 			}
 
-			reqParams := &rtTf.ProxyRequestParams{
-				ResponseData: tc.postParametersT,
+			reqParams := &ProxyRequestParams{
+				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
 				BaseUrl:      srv.URL,
 			}
 			stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
 
-			assert.Equal(t, tc.Expected.StCode, stCd)
-			require.Equal(t, tc.Expected.ContentType, contentType)
+			assert.Equal(t, tc.expected.code, stCd)
+			require.Equal(t, tc.expected.contentType, contentType)
 
-			switch tc.Expected.BodyType {
+			switch tc.expected.bodyType {
 			case JSON:
-				require.JSONEq(t, tc.Expected.Body, resp)
+				require.JSONEq(t, tc.expected.body, resp)
 			case STR:
-				expectedBodyStr := fmt.Sprintf(tc.Expected.Body, srv.URL)
+				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
 				require.Equal(t, expectedBodyStr, resp)
 			}
 		})
 	}
-
-	// Not found case
-	tc := proxyResponseTcs[4]
-	t.Run(tc.name, func(t *testing.T) {
-		srv := httptest.NewServer(mockProxyHandler(&tc))
-		defer srv.Close()
-
-		tr := rtTf.NewTransformer()
-		tr.Setup(tc.rtTimeout, httpClientTimeout)
-		ctx := context.TODO()
-		reqParams := &rtTf.ProxyRequestParams{
-			ResponseData: tc.postParametersT,
-			DestName:     "not_found_dest",
-			BaseUrl:      srv.URL,
-		}
-		stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
-		assert.Equal(t, tc.Expected.StCode, stCd)
-		require.Equal(t, tc.Expected.ContentType, contentType)
-		expectedBodyStr := fmt.Sprintf(tc.Expected.Body, srv.URL)
-		require.Equal(t, expectedBodyStr, resp)
-	})
 }
 
 // A kind of mock for transformer proxy endpoint in transformer
-func mockProxyHandler(tc *ProxyResponseTc) *mux.Router {
+func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Router {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v0/destinations/{destName}/proxy", func(w http.ResponseWriter, req *http.Request) {
 		vars := mux.Vars(req)
@@ -325,20 +321,184 @@ func mockProxyHandler(tc *ProxyResponseTc) *mux.Router {
 		}
 
 		// sleep is being used to mimic the waiting in actual transformer response
-		if tc.Proxy.TimeoutValue.Milliseconds() > 0 {
-			time.Sleep(tc.Proxy.TimeoutValue)
+		if timeout > 0 {
+			time.Sleep(timeout)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(tc.Proxy.StCode)
+		w.WriteHeader(code)
 		// Lint error fix
-		checkAndSendResponse(&w, []byte(tc.Proxy.Response))
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+		}
 	})
 	return srvMux
 }
 
-func checkAndSendResponse(w *http.ResponseWriter, resp []byte) {
-	_, err := (*w).Write(resp)
-	if err != nil {
-		http.Error(*w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+func TestTransformNoValidationErrors(t *testing.T) {
+	initMocks(t)
+	config.Load()
+	pkgLogger = logger.NOP{}
+	expectedTransformerResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusOK},
+	}
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		b, err := json.Marshal(expectedTransformerResponse)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	defer svr.Close()
+	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+	tr := NewTransformer(time.Minute, time.Minute)
+
+	transformMessage := types.TransformMessageT{
+		Data: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1}},
+			{JobMetadata: types.JobMetadataT{JobID: 2}},
+			{JobMetadata: types.JobMetadataT{JobID: 3}},
+		},
+	}
+	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	require.NotNil(t, transformerResponse)
+	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func TestTransformValidationUnmarshallingError(t *testing.T) {
+	initMocks(t)
+	config.Load()
+	pkgLogger = logger.NOP{}
+	expectedErrorTxt := "Transformer returned invalid response: invalid json for input:"
+	expectedTransformerResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+	}
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		_, err := w.Write([]byte("invalid json"))
+		require.NoError(t, err)
+	}))
+	defer svr.Close()
+	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+	tr := NewTransformer(time.Minute, time.Minute)
+
+	transformMessage := types.TransformMessageT{
+		Data: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1}},
+			{JobMetadata: types.JobMetadataT{JobID: 2}},
+			{JobMetadata: types.JobMetadataT{JobID: 3}},
+		},
+	}
+	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	normalizeErrors(transformerResponse, expectedErrorTxt)
+	require.NotNil(t, transformerResponse)
+	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func TestTransformValidationInOutMismatchError(t *testing.T) {
+	initMocks(t)
+	config.Load()
+	pkgLogger = logger.NOP{}
+	expectedErrorTxt := "Transformer returned invalid output size: 4 for input size: 3"
+	expectedTransformerResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+	}
+	serverResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 4}}},
+	}
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		b, err := json.Marshal(serverResponse)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	defer svr.Close()
+	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+	tr := NewTransformer(time.Minute, time.Minute)
+
+	transformMessage := types.TransformMessageT{
+		Data: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1}},
+			{JobMetadata: types.JobMetadataT{JobID: 2}},
+			{JobMetadata: types.JobMetadataT{JobID: 3}},
+		},
+	}
+	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	normalizeErrors(transformerResponse, expectedErrorTxt)
+	require.NotNil(t, transformerResponse)
+	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func TestTransformValidationJobIDMismatchError(t *testing.T) {
+	initMocks(t)
+	config.Load()
+	pkgLogger = logger.NOP{}
+	expectedErrorTxt := "Transformer returned invalid jobIDs: [4]"
+	expectedTransformerResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+	}
+	serverResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 4}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
+	}
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		b, err := json.Marshal(serverResponse)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	defer svr.Close()
+	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+	tr := NewTransformer(time.Minute, time.Minute)
+
+	transformMessage := types.TransformMessageT{
+		Data: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1}},
+			{JobMetadata: types.JobMetadataT{JobID: 2}},
+			{JobMetadata: types.JobMetadataT{JobID: 3}},
+		},
+	}
+	transformerResponse := tr.Transform(BATCH, &transformMessage)
+	normalizeErrors(transformerResponse, expectedErrorTxt)
+	require.NotNil(t, transformerResponse)
+	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func initMocks(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	mockStats := mock_stats.NewMockStats(ctrl)
+	mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
+
+	mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockRudderStats)
+	mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).AnyTimes().Return(mockRudderStats)
+	mockRudderStats.EXPECT().SendTiming(gomock.Any()).AnyTimes()
+	mockRudderStats.EXPECT().Increment().AnyTimes()
+
+	stats.DefaultStats = mockStats
+
+	pkgLogger = logger.NOP{}
+}
+
+func normalizeErrors(transformerResponse []types.DestinationJobT, prefix string) {
+	for i := range transformerResponse {
+		job := &transformerResponse[i]
+		if strings.HasPrefix(job.Error, prefix) {
+			job.Error = prefix
+		}
 	}
 }

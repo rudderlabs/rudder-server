@@ -18,6 +18,11 @@ var (
 		"accessKeyID": "AccessKeyID",
 		"accessKey":   "AccessKey",
 	}
+	destinationConfigWithSecretAccessKey map[string]interface{} = map[string]interface{}{
+		"region":          "us-east-1",
+		"accessKeyID":     "AccessKeyID",
+		"secretAccessKey": "AccessKey",
+	}
 	timeOut time.Duration = 10 * time.Second
 )
 
@@ -32,6 +37,21 @@ func TestNewSessionConfigWithAccessKey(t *testing.T) {
 		AccessKey:   destinationConfigWithAccessKey["accessKey"].(string),
 		Timeout:     timeOut,
 		Service:     serviceName,
+	})
+}
+
+func TestNewSessionConfigWithSecretAccessKey(t *testing.T) {
+	serviceName := "kinesis"
+	sessionConfig, err := NewSessionConfig(destinationConfigWithSecretAccessKey, timeOut, serviceName)
+	assert.Nil(t, err)
+	assert.NotNil(t, sessionConfig)
+	assert.Equal(t, *sessionConfig, SessionConfig{
+		Region:          destinationConfigWithSecretAccessKey["region"].(string),
+		AccessKeyID:     destinationConfigWithSecretAccessKey["accessKeyID"].(string),
+		AccessKey:       destinationConfigWithSecretAccessKey["secretAccessKey"].(string),
+		SecretAccessKey: destinationConfigWithSecretAccessKey["secretAccessKey"].(string),
+		Timeout:         timeOut,
+		Service:         serviceName,
 	})
 }
 

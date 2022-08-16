@@ -316,22 +316,6 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 	worker.recordStatsForFailedTransforms("batch", destinationJobs)
 
-	var totalJobMetadataCount int
-	for _, destinationJob := range destinationJobs {
-		totalJobMetadataCount += len(destinationJob.JobMetadataArray)
-	}
-
-	if inputJobsLength != totalJobMetadataCount {
-		worker.rt.batchInputOutputDiffCountStat.Count(inputJobsLength - totalJobMetadataCount)
-
-		worker.rt.logger.Errorf("[%v Router] :: Total input jobs count:%d did not match total job metadata count:%d returned from batch transformer", worker.rt.destName, inputJobsLength, totalJobMetadataCount)
-		jobIDs := make([]string, len(routerJobs))
-		for idx, routerJob := range routerJobs {
-			jobIDs[idx] = fmt.Sprintf("%v", routerJob.JobMetadata.JobID)
-		}
-		worker.rt.logger.Errorf("[%v Router] :: Job ids : %s", worker.rt.destName, strings.Join(jobIDs, ", "))
-	}
-
 	return destinationJobs
 }
 
@@ -491,7 +475,6 @@ func (worker *workerT) processDestinationJobs() {
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
 	var respBodyTemp string
-	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
@@ -729,7 +712,6 @@ func (worker *workerT) processDestinationJobs() {
 
 		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
 			_destinationJobMetadata := destinationJobMetadata
-			handledJobMetadatas[destinationJobMetadata.JobID] = &_destinationJobMetadata
 			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
 
@@ -740,28 +722,6 @@ func (worker *workerT) processDestinationJobs() {
 				respStatusCode:         respStatusCode,
 				respBody:               respBody,
 				attemptedToSendTheJob:  attemptedToSendTheJob,
-			})
-		}
-	}
-
-	// if batching/routerTransform is enabled, we need to make sure that all the routerJobs status are written to DB.
-	// if in any case transformer doesn't send all the job ids back, setting their statuses as failed
-	for _, routerJob := range worker.routerJobs {
-		// assigning the routerJob to a local variable (_routerJob), so that
-		// elements in routerJobResponses have pointer to the right job.
-		_routerJob := routerJob
-		if _, ok := handledJobMetadatas[_routerJob.JobMetadata.JobID]; !ok {
-			routerJobResponses = append(routerJobResponses, &JobResponse{
-				jobID: _routerJob.JobMetadata.JobID,
-				destinationJob: &types.DestinationJobT{
-					Destination:      _routerJob.Destination,
-					Message:          _routerJob.Message,
-					JobMetadataArray: []types.JobMetadataT{_routerJob.JobMetadata},
-				},
-				destinationJobMetadata: &_routerJob.JobMetadata,
-				respStatusCode:         500,
-				respBody:               "transformer failed to handle this job",
-				attemptedToSendTheJob:  false,
 			})
 		}
 	}
@@ -2167,8 +2127,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 	rt.routerResponseTransformStat = stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
 
-	rt.transformer = transformer.NewTransformer()
-	rt.transformer.Setup(rt.netClientTimeout, rt.backendProxyTimeout)
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
@@ -2327,7 +2286,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
-					"destName":      refTokenParams.DestDefName,
+					"destType":      refTokenParams.DestDefName,
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
@@ -2347,6 +2306,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
 		"id":          destination.ID,
+		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
