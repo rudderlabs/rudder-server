@@ -611,7 +611,7 @@ func (worker *workerT) processDestinationJobs() {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
 									proxyReqparams := &transformer.ProxyRequestParams{
-										DestName:     strings.ToLower(worker.rt.destName),
+										DestName:     worker.rt.destName,
 										JobID:        jobID,
 										ResponseData: val,
 									}
@@ -653,7 +653,7 @@ func (worker *workerT) processDestinationJobs() {
 						respBody = strings.Join(respBodyArr, " ")
 						if worker.rt.transformerProxy {
 							stats.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
-								"destType":      strings.ToLower(worker.rt.destName),
+								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
 								"workspaceId":   workspaceID,
@@ -666,7 +666,7 @@ func (worker *workerT) processDestinationJobs() {
 							)
 
 							stats.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
-								"destType":      strings.ToLower(worker.rt.destName),
+								"destType":      worker.rt.destName,
 								"destinationId": destinationJob.Destination.ID,
 								"workspace":     workspaceID,
 								"workspaceId":   workspaceID,
@@ -2311,7 +2311,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 				Secret:          params.secret,
 				WorkspaceId:     workspaceID,
 				AccountId:       rudderAccountID,
-				DestDefName:     strings.ToLower(destinationJob.Destination.DestinationDefinition.Name),
+				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
 				EventNamePrefix: "refresh_token",
 				WorkerId:        params.workerID,
 			}
@@ -2327,7 +2327,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 					"destinationId": destinationJob.Destination.ID,
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
-					"destType":      strings.ToLower(refTokenParams.DestDefName),
+					"destType":      refTokenParams.DestDefName,
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
@@ -2347,7 +2347,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
 		"id":          destination.ID,
-		"destType":    strings.ToLower(destination.DestinationDefinition.Name),
+		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
