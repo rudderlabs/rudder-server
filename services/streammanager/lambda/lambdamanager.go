@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
-	"github.com/mitchellh/mapstructure"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -16,8 +15,9 @@ import (
 
 // Config is the config that is required to send data to Lambda
 type Config struct {
-	ClientContext string
-	Lambda        string
+	InvocationType string
+	ClientContext  string
+	Lambda         string
 }
 
 type LambdaProducer struct {
@@ -47,7 +47,7 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Lamb
 }
 
 // Produce creates a producer and send data to Lambda.
-func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return simpleErrorResponse("Could not create client")
@@ -56,17 +56,21 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	if data == "" {
 		return simpleErrorResponse("Invalid payload")
 	}
+	destConfig := gjson.GetBytes(jsonData, "destConfig").String()
+	if destConfig == "" {
+		return simpleErrorResponse("Invalid Destination Config")
+	}
 
 	var config Config
-	err := mapstructure.Decode(destConfig, &config)
+	err := json.Unmarshal([]byte(destConfig), &config)
 	if err != nil {
-		return simpleErrorResponse("error while decoding destination config :: " + err.Error())
+		return simpleErrorResponse("error while unmarshalling destination config :: " + err.Error())
 	}
 
 	var invokeInput lambda.InvokeInput
 	invokeInput.SetFunctionName(config.Lambda)
 	invokeInput.SetPayload([]byte(data))
-	invokeInput.SetInvocationType("Event") // Setting InvocationType as Event(Asynchronous Invocation)
+	invokeInput.SetInvocationType(config.InvocationType)
 	if config.ClientContext != "" {
 		invokeInput.SetClientContext(config.ClientContext)
 	}

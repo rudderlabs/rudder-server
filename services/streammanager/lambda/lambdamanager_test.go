@@ -74,24 +74,25 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[Lambda] error :: Invalid payload", respMsg)
 
-	// Invalid Destination Config
+	// Destination Config not present
 	sampleEventJson, _ = json.Marshal(map[string]interface{}{
 		"payload": sampleMessage,
 	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, "invalid config")
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Contains(t, respMsg, "[Lambda] error :: error while decoding destination config")
+	assert.Contains(t, respMsg, "[Lambda] error :: Invalid Destination Config")
 
-	// Empty Destination Config
+	// Invalid Destination Config
 	sampleDestConfig := map[string]interface{}{}
 	sampleEventJson, _ = json.Marshal(map[string]interface{}{
-		"payload": sampleMessage,
+		"payload":    sampleMessage,
+		"destConfig": "invalid dest config",
 	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, sampleDestConfig)
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Contains(t, respMsg, "[Lambda] error :: Invalid invokeInput")
+	assert.Contains(t, respMsg, "[Lambda] error :: error while unmarshalling destination config")
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
@@ -101,8 +102,15 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLoggerI(ctrl)
 	pkgLogger = mockLogger
 
+	sampleDestConfig := map[string]interface{}{
+		"Lambda":         sampleFunction,
+		"InvocationType": invocationType,
+	}
+	destConfig, _ := json.Marshal(sampleDestConfig)
+
 	sampleEventJson, _ := json.Marshal(map[string]string{
-		"payload": sampleMessage,
+		"payload":    sampleMessage,
+		"destConfig": string(destConfig),
 	})
 
 	var sampleInput lambda.InvokeInput
@@ -110,15 +118,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	sampleInput.SetPayload([]byte(sampleMessage))
 	sampleInput.SetInvocationType(invocationType)
 
-	sampleDestConfig := map[string]interface{}{
-		"Lambda": sampleFunction,
-	}
-
 	mockClient.
 		EXPECT().
 		Invoke(&sampleInput).
 		Return(&lambda.InvokeOutput{}, nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, sampleDestConfig)
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -130,7 +134,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		Invoke(&sampleInput).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, sampleDestConfig)
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 500, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -143,7 +147,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, sampleDestConfig)
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)
