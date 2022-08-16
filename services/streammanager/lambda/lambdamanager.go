@@ -14,7 +14,7 @@ import (
 )
 
 // Config is the config that is required to send data to Lambda
-type Config struct {
+type destinationConfig struct {
 	InvocationType string
 	ClientContext  string
 	Lambda         string
@@ -54,21 +54,22 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Lamb
 func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
-		return simpleErrorResponse("Could not create client")
+		return 400, "Failure", "[Lambda] error :: Could not create client"
 	}
 	data := gjson.GetBytes(jsonData, "payload").String()
 	if data == "" {
-		return simpleErrorResponse("Invalid payload")
+		return 400, "Failure", "[Lambda] error :: Invalid payload"
 	}
 	destConfig := gjson.GetBytes(jsonData, "destConfig").String()
 	if destConfig == "" {
-		return simpleErrorResponse("Invalid Destination Config")
+		return 400, "Failure", "[Lambda] error :: Invalid Destination Config"
 	}
 
-	var config Config
+	var config destinationConfig
 	err := json.Unmarshal([]byte(destConfig), &config)
 	if err != nil {
-		return simpleErrorResponse("error while unmarshalling destination config :: " + err.Error())
+		returnMessage := "[Lambda] error while unmarshalling destination config :: " + err.Error()
+		return 400, "Failure", returnMessage
 	}
 
 	var invokeInput lambda.InvokeInput
@@ -80,7 +81,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	}
 
 	if err = invokeInput.Validate(); err != nil {
-		return simpleErrorResponse("Invalid invokeInput :: " + err.Error())
+		return 400, "Failure", "[Lambda] error :: Invalid invokeInput :: " + err.Error()
 	}
 
 	_, err = client.Invoke(&invokeInput)
@@ -91,10 +92,4 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	}
 
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
-}
-
-func simpleErrorResponse(message string) (int, string, string) {
-	respStatus := "Failure"
-	returnMessage := "[Lambda] error :: " + message
-	return 400, respStatus, returnMessage
 }

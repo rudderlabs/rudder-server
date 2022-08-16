@@ -92,7 +92,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, sampleDestConfig)
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
-	assert.Contains(t, respMsg, "[Lambda] error :: error while unmarshalling destination config")
+	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling destination config")
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
