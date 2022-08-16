@@ -33,8 +33,10 @@ type LambdaClient interface {
 	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
-var pkgLogger logger.LoggerI
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	pkgLogger logger.LoggerI
+	jsonfast  = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
