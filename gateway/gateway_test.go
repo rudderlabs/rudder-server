@@ -138,13 +138,13 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 	_ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
 			testValidBody := `{"batch":[
-				{"anonymousId":"anon_id_1","event":"event_1_1"},
-				{"anonymousId":"anon_id_2","event":"event_2_1"},
-				{"anonymousId":"anon_id_3","event":"event_3_1"},
-				{"anonymousId":"anon_id_1","event":"event_1_2"},
-				{"anonymousId":"anon_id_2","event":"event_2_2"},
-				{"anonymousId":"anon_id_1","event":"event_1_3"}
-			]}`
+                {"anonymousId":"anon_id_1","event":"event_1_1"},
+                {"anonymousId":"anon_id_2","event":"event_2_1"},
+                {"anonymousId":"anon_id_3","event":"event_3_1"},
+                {"anonymousId":"anon_id_1","event":"event_1_2"},
+                {"anonymousId":"anon_id_2","event":"event_2_2"},
+                {"anonymousId":"anon_id_1","event":"event_1_3"}
+            ]}`
 			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
 			key, err := misc.GetMD5UUID(inputKey)
 			Expect(string(response[key.String()])).To(Equal(value))
@@ -420,6 +420,13 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
+		createJSONBody := func(customProperty, customValue string) []byte {
+			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
+			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
+
+			return validDataWithProperty
+		}
+
 		// common tests for all web handlers
 		assertHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should reject requests without Authorization header", func() {
@@ -463,8 +470,8 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := `{
-					"anonymousId": "anon_id"
-				  }`
+                    "anonymousId": "anon_id"
+                  }`
 				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
@@ -494,6 +501,32 @@ var _ = Describe("Gateway", func() {
 		for handlerType, handler := range allHandlers(gateway) {
 			Context(handlerType, func() {
 				assertHandler(handlerType, handler)
+			})
+		}
+
+		assertHandler = func(handlerType string, handler http.HandlerFunc) {
+			It("should reject requests with 500 if jobsdb store returns an error", func() {
+				validBody := createJSONBody("custom-property", "custom-value")
+
+				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+					_ = f(jobsdb.EmptyStoreSafeTx())
+				}).Return(nil)
+				c.mockJobsDB.
+					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
+						return jobsToJobsdbErrors(ctx, tx, jobs)
+					}).
+					Times(1)
+
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
+			})
+		}
+
+		for handlerType, handler := range allHandlers(gateway) {
+			Context(handlerType, func() {
+				if handlerType != "import" {
+					assertHandler(handlerType, handler)
+				}
 			})
 		}
 	})
@@ -563,4 +596,14 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
 func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) map[uuid.UUID]string {
 	return make(map[uuid.UUID]string)
+}
+
+// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
+func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
+	errorsMap := make(map[uuid.UUID]string, len(jobs))
+	for _, job := range jobs {
+		errorsMap[job.UUID] = "tx error"
+	}
+
+	return errorsMap
 }
