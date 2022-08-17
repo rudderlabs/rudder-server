@@ -10,6 +10,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gofrs/uuid"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -29,6 +31,7 @@ var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.SnowflakeIntegrationTestCredentials
+	TestSchemaKey      = testhelper.SnowflakeIntegrationTestSchema
 )
 
 // snowflakeCredentials extracting snowflake credentials
@@ -47,14 +50,14 @@ func snowflakeCredentials() (snowflakeCredentials snowflake.SnowflakeCredentials
 	return
 }
 
-// TestConnection test connection for snowflake
-func (*TestHandle) TestConnection() error {
+// VerifyConnection test connection for snowflake
+func (t *TestHandle) VerifyConnection() (err error) {
 	credentials, err := snowflakeCredentials()
 	if err != nil {
 		return err
 	}
 
-	err = testhelper.ConnectWithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
@@ -69,6 +72,15 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
+	// Cleanup resources
+	// Dropping temporary schema
+	t.Cleanup(func() {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
+			return
+		}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))
+	})
+
 	// Setting up the test configuration
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
@@ -82,6 +94,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		MessageId:            uuid.Must(uuid.NewV4()).String(),
 		UserId:               testhelper.GetUserId(warehouseutils.SNOWFLAKE),
+		Provider:             warehouseutils.SNOWFLAKE,
 	}
 
 	// Scenario 1
@@ -90,7 +103,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -119,7 +132,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -151,7 +164,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		Schema:   "SNOWFLAKE_WH_INTEGRATION",
+		Schema:   testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

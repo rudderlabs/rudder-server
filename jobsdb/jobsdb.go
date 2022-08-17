@@ -943,7 +943,7 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 
 func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 	var err error
-	jd.jobsFileUploader, err = jd.getFileUploader()
+	jd.jobsFileUploader, err = jd.getFileUploader(ctx)
 	if err != nil {
 		jd.logger.Errorf("failed to get a file uploader for %s", jd.tablePrefix)
 		return
@@ -3421,12 +3421,12 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 }
 
 // getFileUploader get a file uploader
-func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
+func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager, error) {
 	var err error
 	if jd.jobsFileUploader == nil {
 		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfigFromEnv(),
+			Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 		})
 	}
 	return jd.jobsFileUploader, err
@@ -3586,7 +3586,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
 	// get a file uploader
-	fileUploader, err := jd.getFileUploader()
+	fileUploader, err := jd.getFileUploader(ctx)
 	if err != nil {
 		return filemanager.UploadOutput{}, err
 	}

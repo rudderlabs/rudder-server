@@ -332,7 +332,8 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName, jobsD
 	return err
 }
 
-/*JobCountByConnections
+/*
+JobCountByConnections
 ================================================================================
 │───────│───────────────────────────────│───────────────────────────────│
 │ COUNT │ SOURCEID                      │ DESTINATIONID                 │

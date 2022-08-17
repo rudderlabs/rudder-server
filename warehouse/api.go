@@ -95,34 +95,10 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
-	deploymentType, err := deployment.GetFromEnv()
+	connectionIdentifier, isMultiWorkspace, err := deployment.GetConnectionIdentifier()
 	if err != nil {
-		pkgLogger.Errorf("error getting deployment type: %s", err.Error())
 		return err
 	}
-	var connectionIdentifier string
-	var isMultiWorkspace bool
-	switch deploymentType {
-	case deployment.DedicatedType:
-		connectionIdentifier = config.GetWorkspaceToken()
-	case deployment.MultiTenantType:
-		isMultiWorkspace = true
-		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
-		if isNamespaced {
-			connectionIdentifier, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
-			if err != nil {
-				pkgLogger.Errorf("error getting workspace namespace: %s", err.Error())
-				return err
-			}
-		} else {
-			connectionIdentifier, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
-			if err != nil {
-				pkgLogger.Errorf("error getting hosted service secret: %s", err.Error())
-				return err
-			}
-		}
-	}
-
 	UploadAPI = UploadAPIT{
 		enabled:          true,
 		dbHandle:         dbHandle,

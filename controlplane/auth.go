@@ -17,10 +17,18 @@ type authService struct {
 	proto.UnimplementedDPAuthServiceServer
 }
 
-func (a *authService) GetWorkspaceToken(ctx context.Context, request *proto.GetConnectionIdentifierRequest) (*proto.GetConnectionIdentifierResponse, error) {
+func (a *authService) GetConnectionIdentifier(ctx context.Context, request *proto.GetConnectionIdentifierRequest) (*proto.GetConnectionIdentifierResponse, error) {
 	return &proto.GetConnectionIdentifierResponse{
 		ConnectionIdentifier: a.authInfo.ConnectionIdentifier,
 		Service:              a.authInfo.Service,
 		InstanceID:           a.authInfo.InstanceID,
+	}, nil
+}
+
+func (a *authService) GetWorkspaceToken(ctx context.Context, request *proto.GetWorkspaceTokenRequest) (*proto.GetWorkspaceTokenResponse, error) {
+	return &proto.GetWorkspaceTokenResponse{
+		WorkspaceToken: a.authInfo.ConnectionIdentifier,
+		Service:        a.authInfo.Service,
+		InstanceID:     a.authInfo.InstanceID,
 	}, nil
 }

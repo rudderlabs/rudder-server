@@ -3,6 +3,8 @@ package deployment
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -14,6 +16,8 @@ const (
 )
 
 const defaultClusterType = DedicatedType
+
+var pkgLogger = logger.NewLogger().Child("deployment")
 
 func GetFromEnv() (Type, error) {
 	t := Type(config.GetEnv("DEPLOYMENT_TYPE", ""))
@@ -32,4 +36,35 @@ func (t Type) Valid() bool {
 		return true
 	}
 	return false
+}
+
+func GetConnectionIdentifier() (string, bool, error) {
+	deploymentType, err := GetFromEnv()
+	if err != nil {
+		pkgLogger.Errorf("error getting deployment type: %s", err.Error())
+		return "", false, err
+	}
+	var connectionIdentifier string
+	var isMultiWorkspace bool
+	switch deploymentType {
+	case DedicatedType:
+		connectionIdentifier = config.GetWorkspaceToken()
+	case MultiTenantType:
+		isMultiWorkspace = true
+		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
+		if isNamespaced {
+			connectionIdentifier, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
+			if err != nil {
+				pkgLogger.Errorf("error getting workspace namespace: %s", err.Error())
+				return "", false, err
+			}
+		} else {
+			connectionIdentifier, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
+			if err != nil {
+				pkgLogger.Errorf("error getting hosted service secret: %s", err.Error())
+				return "", false, err
+			}
+		}
+	}
+	return connectionIdentifier, isMultiWorkspace, nil
 }

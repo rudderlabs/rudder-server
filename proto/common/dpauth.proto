@@ -6,14 +6,23 @@ option go_package = ".;proto";
 
 service DPAuthService{
   rpc GetConnectionIdentifier( GetConnectionIdentifierRequest ) returns ( GetConnectionIdentifierResponse );
+  rpc GetWorkspaceToken( GetWorkspaceTokenRequest ) returns ( GetWorkspaceTokenResponse );
 }
 
 message GetConnectionIdentifierRequest {
 }
 
+message GetWorkspaceTokenRequest {
+}
 
 message GetConnectionIdentifierResponse {
   string connectionIdentifier = 1;
+  string service = 2;
+  string instanceID = 3;
+}
+
+message GetWorkspaceTokenResponse {
+  string workspaceToken = 1;
   string service = 2;
   string instanceID = 3;
 }

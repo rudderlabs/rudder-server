@@ -33,6 +33,7 @@ var handle *TestHandle
 
 const (
 	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
+	TestSchemaKey      = testhelper.BigqueryIntegrationTestSchema
 )
 
 // bigqueryCredentials extracting big query credentials
@@ -51,14 +52,14 @@ func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
 	return
 }
 
-// TestConnection test connection for big query
-func (*TestHandle) TestConnection() error {
+// VerifyConnection test connection for big query
+func (*TestHandle) VerifyConnection() error {
 	credentials, err := bigqueryCredentials()
 	if err != nil {
 		return err
 	}
 
-	err = testhelper.ConnectWithBackoff(func() (err error) {
+	err = testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
@@ -73,6 +74,14 @@ func (*TestHandle) TestConnection() error {
 }
 
 func TestBigQueryIntegration(t *testing.T) {
+	// Cleanup resources
+	// Dropping temporary dataset
+	t.Cleanup(func() {
+		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
+		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", handle.Schema))
+	})
+
 	t.Run("Merge Mode", func(t *testing.T) {
 		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
@@ -95,6 +104,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1
@@ -103,7 +113,9 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		// Integrated events has events set to skipReservedKeywordsEscaping to True
+		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -133,7 +145,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -179,14 +191,18 @@ func TestBigQueryIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1
 		// Sending the first set of events.
 		// Since we don't handle dedupe on the staging table, we can just send the events.
 		// And then verify the count on the warehouse.
+		// Sending 1 event to groups and 3 to _groups
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		// Integrated events has events set to skipReservedKeywordsEscaping to True
+		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
@@ -202,8 +218,8 @@ func TestBigQueryIntegration(t *testing.T) {
 			"pages":         4,
 			"screens":       4,
 			"aliases":       4,
-			"groups":        4,
-			"_groups":       4,
+			"groups":        1,
+			"_groups":       3,
 			"gateway":       24,
 			"batchRT":       32,
 		}
@@ -233,8 +249,8 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   "bigquery_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+		Schema:   testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

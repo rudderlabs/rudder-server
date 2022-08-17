@@ -1760,7 +1760,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
-				UploadSchema:                 job.upload.UploadSchema,
 				LoadFileType:                 job.upload.LoadFileType,
 				SourceID:                     job.warehouse.Source.ID,
 				SourceName:                   job.warehouse.Source.Name,
@@ -1776,18 +1775,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				DestinationRevisionID:        job.warehouse.Destination.RevisionID,
 				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 			}
-
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
-
 			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
-			}
-
-			// set merged schema as upload schema if the load file type is parquet
-			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-				payload.UploadSchema = job.upload.MergedSchema
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1797,8 +1789,13 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			messages = append(messages, payloadJSON)
 		}
 
+		schema := &job.upload.UploadSchema
+		if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			schema = &job.upload.MergedSchema
+		}
+
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

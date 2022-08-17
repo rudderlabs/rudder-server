@@ -264,7 +264,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			return gw.StartWebHandler(ctx)
 		})
 	}
-
 	if enableReplay {
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
