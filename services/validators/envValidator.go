@@ -1,6 +1,7 @@
 package validators
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -191,9 +192,9 @@ func killDanglingDBConnections(db *sql.DB) {
 }
 
 // IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(db *sql.DB) (bool, error) {
+func IsPostgresCompatible(ctx context.Context, db *sql.DB) (bool, error) {
 	var versionNum int
-	err := db.QueryRow("SHOW server_version_num;").Scan(&versionNum)
+	err := db.QueryRowContext(ctx, "SHOW server_version_num;").Scan(&versionNum)
 	if err != nil {
 		return false, err
 	}
@@ -205,7 +206,7 @@ func ValidateEnv() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
 
-	isDBCompatible, err := IsPostgresCompatible(dbHandle)
+	isDBCompatible, err := IsPostgresCompatible(context.TODO(), dbHandle)
 	if err != nil {
 		panic(err)
 	}
