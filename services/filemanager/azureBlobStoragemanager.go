@@ -108,7 +108,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err

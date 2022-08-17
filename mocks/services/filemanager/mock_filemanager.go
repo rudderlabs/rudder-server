@@ -147,18 +147,18 @@ func (mr *MockFileManagerMockRecorder) GetObjectNameFromLocation(arg0 interface{
 }
 
 // ListFilesWithPrefix mocks base method.
-func (m *MockFileManager) ListFilesWithPrefix(arg0 context.Context, arg1 string, arg2 int64) ([]*filemanager.FileObject, error) {
+func (m *MockFileManager) ListFilesWithPrefix(arg0 context.Context, arg1, arg2 string, arg3 int64) ([]*filemanager.FileObject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListFilesWithPrefix", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "ListFilesWithPrefix", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].([]*filemanager.FileObject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListFilesWithPrefix indicates an expected call of ListFilesWithPrefix.
-func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1, arg2, arg3)
 }
 
 // SetTimeout mocks base method.
