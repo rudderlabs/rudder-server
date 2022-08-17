@@ -12,17 +12,18 @@ import (
 
 // AsyncTestHelper provides synchronization methods to test goroutines.
 // Example:
-//		var (
-// 			asyncHelper testutils.AsyncTestHelper
-// 		)
 //
-//		BeforeEach(func() {
-//			mockMyInterface.EXPECT().MyMethodInGoroutine().Do(asyncHelper.ExpectAndNotifyCallback())
-//		})
+//	var (
+//		asyncHelper testutils.AsyncTestHelper
+//	)
 //
-// 		AfterEach(func() {
-//			asyncHelper.WaitWithTimeout(time.Second)
-//		})
+//	BeforeEach(func() {
+//		mockMyInterface.EXPECT().MyMethodInGoroutine().Do(asyncHelper.ExpectAndNotifyCallback())
+//	})
+//
+//	AfterEach(func() {
+//		asyncHelper.WaitWithTimeout(time.Second)
+//	})
 type AsyncTestHelper struct {
 	wg             sync.WaitGroup
 	waitingMap     map[string]int

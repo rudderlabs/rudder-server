@@ -102,6 +102,7 @@ func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) 
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {

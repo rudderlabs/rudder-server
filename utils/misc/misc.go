@@ -551,8 +551,8 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 	}
 }
 
-// Returns chronological timestamp of the event using the formula
-// timestamp = receivedAt - (sentAt - originalTimestamp)
+//  Returns chronological timestamp of the event using the formula
+//  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
@@ -1314,7 +1314,6 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-//
 func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
 	var ok bool
 

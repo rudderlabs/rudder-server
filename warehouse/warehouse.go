@@ -319,9 +319,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 }
 
 // getNamespace sets namespace name in the following order
-// 	1. user set name from destinationConfig
-// 	2. from existing record in wh_schemas with same source + dest combo
-// 	3. convert source name
+//  1. user set name from destinationConfig
+//  2. from existing record in wh_schemas with same source + dest combo
+//  3. convert source name
 func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := configI.(map[string]interface{})
 	var namespace string

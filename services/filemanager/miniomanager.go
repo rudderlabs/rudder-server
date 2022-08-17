@@ -66,6 +66,7 @@ func (manager *MinioManager) Download(ctx context.Context, file *os.File, key st
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://minio-endpoint/bucket-name/key1 - >> key1
 	http://minio-endpoint/bucket-name/key2 - >> key2
 */
