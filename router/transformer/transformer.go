@@ -169,11 +169,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		// Validate the response received from the transformer
 		in := transformMessage.JobIDs()
-		out := make(map[int64]struct{})
+		var out []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
 			for k, v := range destinationJobs[i].JobIDs() {
-				out[k] = v
+				out = append(out, k)
 				if _, ok := in[k]; !ok {
 					invalid[k] = v
 				}
