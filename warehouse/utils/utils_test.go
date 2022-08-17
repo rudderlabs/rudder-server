@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -1183,56 +1186,23 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 	}
 }
 
-func TestJSONSchemaToMap(t *testing.T) {
-	inputs := []struct {
-		rawMsg   json.RawMessage
-		expected map[string]map[string]string
-	}{
-		{
-			rawMsg: json.RawMessage(`{"k1": { "k2": "v2" }}`),
-			expected: map[string]map[string]string{
-				"k1": {
-					"k2": "v2",
-				},
-			},
-		},
-	}
-	for _, input := range inputs {
-		got := JSONSchemaToMap(input.rawMsg)
-		require.Equal(t, got, input.expected)
-	}
-}
+var _ = Describe("Utils", func() {
+	DescribeTable("JSOM schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
+		got := JSONSchemaToMap(rawMsg)
+		Expect(got).To(Equal(expected))
+	},
+		Entry(, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
+	)
 
-func TestGetDateRangeList(t *testing.T) {
-	inputs := []struct {
-		start     time.Time
-		end       time.Time
-		format    string
-		dateRange []string
-	}{
-		{
-			start:     time.Now(),
-			end:       time.Now(),
-			format:    "2006-01-02",
-			dateRange: []string{time.Now().Format("2006-01-02")},
-		},
-		{
-			start:     time.Now(),
-			end:       time.Now().AddDate(0, 0, 1),
-			format:    "2006-01-02",
-			dateRange: []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")},
-		},
-		{
-			format: "2006-01-02",
-		},
-	}
-	for _, ip := range inputs {
-		dateRange := GetDateRangeList(ip.start, ip.end, ip.format)
-		if !reflect.DeepEqual(dateRange, ip.dateRange) {
-			t.Errorf("got %#v want %#v input %#v", dateRange, ip.dateRange, ip)
-		}
-	}
-}
+	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
+		got := GetDateRangeList(start, end, format)
+		Expect(got).To(Equal(expected))
+	},
+		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
+		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
+		Entry("No days", nil, nil, "2006-01-02", nil),
+	)
+})
 
 func TestMain(m *testing.M) {
 	config.Load()
