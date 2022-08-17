@@ -93,7 +93,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 	multiTenantSvcSecret := "so-secret"
 	backedConfigHandler := func(w http.ResponseWriter, r *http.Request) {
-
 		u, _, ok := r.BasicAuth()
 		require.True(t, ok, "Auth should be present")
 		require.Equalf(t, hostedServiceSecret, u,
