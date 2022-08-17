@@ -192,9 +192,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		}
 		manager.Config.Region = aws.String(region)
 	}
-	if manager.Config.Region == nil {
-		return nil, errors.New("no storage bucket region configured")
-	}
+
 	return awsutils.CreateSession(manager.getSessionConfig())
 }
 

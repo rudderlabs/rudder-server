@@ -12,14 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
-
-var pkgLogger logger.LoggerI
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("filemanager").Child("azureBlobStorage")
-}
 
 func supressMinorErrors(err error) error {
 	if err != nil {
