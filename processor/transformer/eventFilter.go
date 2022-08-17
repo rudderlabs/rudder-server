@@ -17,7 +17,7 @@ func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, error) {
 				var skip bool
 				switch supportedType {
 				case "identify":
-					skip = event.serverSideIdentifyDisabled()
+					skip = event.identifyDisabled()
 				}
 				if !skip {
 					supportedMessageTypes = append(supportedMessageTypes, supportedType)
@@ -30,7 +30,7 @@ func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, error) {
 	return supportedMessageTypes, errors.New("no supportedMessageTypes found")
 }
 
-func (event TransformerEventT) serverSideIdentifyDisabled() bool {
+func (event TransformerEventT) identifyDisabled() bool {
 	if serverSideIdentify, flag := event.Destination.Config["enableServerSideIdentify"]; flag {
 		if v, ok := serverSideIdentify.(bool); ok {
 			return !v
