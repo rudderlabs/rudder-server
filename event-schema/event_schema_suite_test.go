@@ -1,4 +1,4 @@
-package stats_test
+package event_schema
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestStats(t *testing.T) {
+func TestEventSchemas(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Stats Suite")
+	RunSpecs(t, "Event Schemas Suite")
 }

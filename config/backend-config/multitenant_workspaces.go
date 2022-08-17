@@ -28,6 +28,7 @@ type multiTenantWorkspacesConfig struct {
 	Token                     string
 	configBackendURL          *url.URL
 	configEnvHandler          types.ConfigEnvI
+	cpRouterURL               string
 	writeKeyToWorkspaceIDMap  map[string]string
 	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
@@ -143,6 +144,9 @@ func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string)
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
+	sourcesJSON.ConnectionFlags.URL = wc.cpRouterURL
+	// always set connection flags to true for hosted and multi-tenant warehouse service
+	sourcesJSON.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 	wc.workspaceWriteKeysMapLock.Lock()
 	wc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	wc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap

@@ -23,9 +23,9 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// TestConnection test connection for mssql
-func (*TestHandle) TestConnection() error {
-	err := testhelper.ConnectWithBackoff(func() (err error) {
+// VerifyConnection test connection for mssql
+func (*TestHandle) VerifyConnection() error {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
@@ -64,6 +64,7 @@ func TestMSSQLIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 		UserId:               testhelper.GetUserId(warehouseutils.MSSQL),
+		Provider:             warehouseutils.MSSQL,
 	}
 
 	// Scenario 1
@@ -73,7 +74,7 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -105,7 +106,7 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events

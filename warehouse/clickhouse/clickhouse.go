@@ -290,7 +290,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
-		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
+		arr = append(arr, fmt.Sprintf(`"%s" %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -595,7 +595,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
+	sortedColumnString := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
 	pkgLogger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
@@ -849,7 +849,7 @@ func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" %s ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" %s ADD COLUMN IF NOT EXISTS "%s" %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -946,6 +946,8 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		}
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
+		} else {
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 	return

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
@@ -97,7 +99,15 @@ func populateTemplateConfigurations() map[string]string {
 		values[fmt.Sprintf("bigquery%s", k)] = v
 	}
 	enhanceBQCredentials(values)
+	enhanceNamespace(values)
 	return values
+}
+
+func enhanceNamespace(values map[string]string) {
+	values["snowflakeNamespace"] = testhelper.GetSchema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema)
+	values["redshiftNamespace"] = testhelper.GetSchema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema)
+	values["bigqueryNamespace"] = testhelper.GetSchema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema)
+	values["deltalakeNamespace"] = testhelper.GetSchema(warehouseutils.DELTALAKE, testhelper.DeltalakeIntegrationTestSchema)
 }
 
 func enhanceBQCredentials(values map[string]string) {

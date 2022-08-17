@@ -22,6 +22,7 @@ type namespaceConfig struct {
 	writeKeyToWorkspaceIDMap  map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	sourceToWorkspaceIDMap    map[string]string
+	cpRouterURL               string
 
 	Logger logger.LoggerI
 	Client *http.Client
@@ -53,7 +54,6 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		if err != nil {
 			return err
 		}
-
 	}
 	if nc.Client == nil {
 		nc.Client = &http.Client{
@@ -154,7 +154,9 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, nc.Sources...)
 	}
-
+	sourcesJSON.ConnectionFlags.URL = nc.cpRouterURL
+	// always set connection flags to true for hosted and multi-tenant warehouse service
+	sourcesJSON.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 	nc.mapsMutex.Lock()
 	nc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	nc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap

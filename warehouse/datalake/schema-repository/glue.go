@@ -83,7 +83,11 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT)
 				}
 
 				for _, col := range table.StorageDescriptor.Columns {
-					schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
+					if _, ok := dataTypesMapToRudder[*col.Type]; ok {
+						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
+					} else {
+						warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
+					}
 				}
 			}
 		}

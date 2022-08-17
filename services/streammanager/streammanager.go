@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
+	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
@@ -39,6 +40,8 @@ func NewProducer(destinationConfig map[string]interface{}, destType string, opts
 		return personalize.NewProducer(destinationConfig, opts)
 	case "BQSTREAM":
 		return bqstream.NewProducer(destinationConfig, opts)
+	case "LAMBDA":
+		return lambda.NewProducer(destinationConfig, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
@@ -48,7 +51,7 @@ func NewProducer(destinationConfig map[string]interface{}, destType string, opts
 // TODO check if it's possible to pass a context
 func Close(producer interface{}, destType string) error {
 	switch destType {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
+	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS", "LAMBDA":
 		return nil
 	case "BQSTREAM", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "GOOGLEPUBSUB":
 		streamProducer, ok := producer.(common.ClosableStreamProducer)
@@ -65,7 +68,7 @@ func Close(producer interface{}, destType string) error {
 func Produce(jsonData json.RawMessage, destType string, producer, config interface{}) (int, string, string) {
 	switch destType {
 	case "KINESIS", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "PERSONALIZE",
-		"FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "GOOGLESHEETS", "BQSTREAM":
+		"FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "GOOGLESHEETS", "BQSTREAM", "LAMBDA":
 		streamProducer, ok := producer.(common.StreamProducer)
 		if !ok {
 			return 400, "Could not create stream producer", "Could not create stream producer"

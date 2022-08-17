@@ -54,10 +54,11 @@ type WareHouseTest struct {
 	UserId               string
 	MessageId            string
 	Tables               []string
+	Provider             string
 }
 
 type WarehouseTestSetup interface {
-	TestConnection() error
+	VerifyConnection() error
 }
 
 const (
@@ -68,8 +69,8 @@ const (
 )
 
 const (
-	ConnectBackoffDuration = 1 * time.Second
-	ConnectBackoffRetryMax = 5
+	BackoffDuration = 1 * time.Second
+	BackoffRetryMax = 5
 )
 
 var jobsDB *JobsDBResource
@@ -79,6 +80,10 @@ const (
 	RedshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 	DeltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
 	BigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
+	SnowflakeIntegrationTestSchema      = "SNOWFLAKE_INTEGRATION_TEST_SCHEMA"
+	RedshiftIntegrationTestSchema       = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
+	DeltalakeIntegrationTestSchema      = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
+	BigqueryIntegrationTestSchema       = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
 	WorkspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
 )
 
@@ -96,7 +101,7 @@ func (w *WareHouseTest) SetUserId(destType string) {
 func Run(m *testing.M, setup WarehouseTestSetup) int {
 	initialize()
 	initJobsDB()
-	if err := setup.TestConnection(); err != nil {
+	if err := setup.VerifyConnection(); err != nil {
 		log.Fatalf("Could not complete test connection with err: %s", err.Error())
 	}
 	return m.Run()
@@ -391,8 +396,8 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
 }
 
-func ConnectWithBackoff(operation func() error) error {
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(ConnectBackoffDuration), uint64(ConnectBackoffRetryMax))
+func WithConstantBackoff(operation func() error) error {
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
 	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
@@ -485,4 +490,14 @@ func SetConfig(kvs []warehouseutils.KeyValue) error {
 		return fmt.Errorf("error while making post request to set config with err: %s", err.Error())
 	}
 	return nil
+}
+
+func GetSchema(provider, schemaKey string) string {
+	return warehouseutils.ToProviderCase(
+		provider,
+		warehouseutils.ToSafeNamespace(
+			provider,
+			config.GetRequiredEnv(schemaKey),
+		),
+	)
 }
