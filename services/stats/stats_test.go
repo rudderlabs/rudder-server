@@ -1,9 +1,11 @@
 package stats_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,5 +37,63 @@ func TestTags(t *testing.T) {
 		emptyTags := stats.Tags{}
 		require.Nil(t, emptyTags.Strings())
 		require.Equal(t, "", emptyTags.String())
+	})
+}
+
+func TestCleanupTagsBasedOnDeploymentType(t *testing.T) {
+	t.Run("dedicated deployment type, dont remove workspaceId tag", func(t *testing.T) {
+		os.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+		tags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		expectedTags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
+		require.Equal(t, expectedTags, cleanedTags)
+	})
+
+	t.Run("multitenant deployment type & not namespaced, remove workspaceId tag", func(t *testing.T) {
+		os.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+		tags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		expectedTags := stats.Tags{
+			"b": "value1",
+		}
+		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
+		require.Equal(t, expectedTags, cleanedTags)
+	})
+
+	t.Run("multitenant deployment type & pro namespaced, dont remove workspaceId tag", func(t *testing.T) {
+		os.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+		os.Setenv("WORKSPACE_NAMESPACE", "pro")
+		tags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		expectedTags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
+		require.Equal(t, expectedTags, cleanedTags)
+	})
+
+	t.Run("multitenant deployment type & free-tier-us namespaced, remove workspaceId tag", func(t *testing.T) {
+		os.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+		os.Setenv("WORKSPACE_NAMESPACE", "free-tier-us")
+		tags := stats.Tags{
+			"b":           "value1",
+			"workspaceId": "value2",
+		}
+		expectedTags := stats.Tags{
+			"b": "value1",
+		}
+		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
+		require.Equal(t, expectedTags, cleanedTags)
 	})
 }

@@ -40,7 +40,7 @@ func initFileManager() (filemanager.FileManager, string, error) {
 		return nil, "", err
 	}
 
-	configFromEnv := filemanager.GetProviderConfigFromEnv()
+	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())
 	configFromEnv["startAfter"] = startTime.UnixNano() / int64(time.Millisecond)
 	uploader, err := fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,

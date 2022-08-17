@@ -744,7 +744,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 			r.Header.Get("Content-Length"),
 			string(payload),
 		)
-		return payload, fmt.Errorf("read all request body: %w", err)
+		return payload, errors.New(response.RequestBodyReadFailed)
 	}
 	return payload, nil
 }
@@ -1101,8 +1101,8 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatusCode(errorMessage), errorMessage)
-			http.Error(w, errorMessage, response.GetStatusCode(errorMessage))
+			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
+			http.Error(w, errorMessage, response.GetErrorStatusCode(errorMessage))
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)

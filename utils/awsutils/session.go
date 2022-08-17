@@ -16,10 +16,12 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+// Some AWS destinations are using SecretAccessKey instead of accessKey
 type SessionConfig struct {
 	Region           string        `mapstructure:"region"`
 	AccessKeyID      string        `mapstructure:"accessKeyID"`
 	AccessKey        string        `mapstructure:"accessKey"`
+	SecretAccessKey  string        `mapstructure:"secretAccessKey"`
 	IAMRoleARN       string        `mapstructure:"iamRoleARN"`
 	ExternalID       string        `mapstructure:"externalID"`
 	Endpoint         *string       `mapstructure:"endpoint"`
@@ -101,6 +103,10 @@ func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Dur
 	sessionConfig := SessionConfig{}
 	if err := mapstructure.Decode(destinationConfig, &sessionConfig); err != nil {
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
+	}
+	// Some AWS destinations are using SecretAccessKey instead of accessKey
+	if sessionConfig.SecretAccessKey != "" {
+		sessionConfig.AccessKey = sessionConfig.SecretAccessKey
 	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
