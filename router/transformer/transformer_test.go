@@ -413,7 +413,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 4}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
