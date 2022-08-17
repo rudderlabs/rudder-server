@@ -2098,28 +2098,19 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	var resp transformer.TransformerResponseT
 	var errMessage string
 	for _, event := range events {
-		destinationDef := event.Destination.DestinationDefinition
-		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
-		if ok {
-			supportedTypeInterface, ok := supportedTypes.([]interface{})
-			if ok && filterUnsupportedMessageTypes {
-				messageType, typOk := event.Message["type"].(string)
-				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !typOk || !event.DestinationEventTypeRulesFilter(messageType) {
-					// add to FailedEvents
-					errMessage = fmt.Sprintf("Invalid/unsupported message type: %q - %s. Type assertion failed", messageType, destinationDef.Name)
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
-					continue
-				}
-
-				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
-				if misc.ContainsString(supportedTypesArr, messageType) {
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-					responses = append(responses, resp)
-				}
-			} else {
-				// allow event
+		supportedTypes, err := event.GetSupportedMessageTypes()
+		// if no relevant configuration is found, skip message type filtering
+		if err == nil && filterUnsupportedMessageTypes {
+			messageType, typOk := event.Message["type"].(string)
+			if !typOk {
+				// add to FailedEvents
+				errMessage = "Invalid message type. Type assertion failed"
+				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+				failedEvents = append(failedEvents, resp)
+				continue
+			}
+			messageType = strings.TrimSpace(strings.ToLower(messageType))
+			if misc.ContainsString(supportedTypes, messageType) {
 				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 				responses = append(responses, resp)
 			}

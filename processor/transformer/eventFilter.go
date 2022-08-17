@@ -1,22 +1,40 @@
 package transformer
 
-func (event TransformerEventT) serverSideIdentify() bool {
-	serverSideIdentify, flag := event.Destination.Config["enableServerSideIdentify"]
-	if flag {
-		flagVal, ok := serverSideIdentify.(bool)
-		if !ok {
-			return true
-		} else {
-			return flagVal
+import (
+	"errors"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+)
+
+// GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
+// If no relevant configuration is found, returns an error
+func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, error) {
+	var supportedMessageTypes []string
+	if supportedTypes, ok := event.Destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
+		if supportedTypeInterface, ok := supportedTypes.([]interface{}); ok {
+			supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
+			for _, supportedType := range supportedTypesArr {
+				var skip bool
+				switch supportedType {
+				case "identify":
+					skip = event.serverSideIdentifyDisabled()
+				}
+				if !skip {
+					supportedMessageTypes = append(supportedMessageTypes, supportedType)
+				}
+			}
+			return supportedMessageTypes, nil
 		}
+		return supportedMessageTypes, errors.New("supportedMessageTypes not an array")
 	}
-	return true
+	return supportedMessageTypes, errors.New("no supportedMessageTypes found")
 }
 
-func (event TransformerEventT) DestinationEventTypeRulesFilter(eventType string) bool {
-	switch eventType {
-	case "identify":
-		return event.serverSideIdentify()
+func (event TransformerEventT) serverSideIdentifyDisabled() bool {
+	if serverSideIdentify, flag := event.Destination.Config["enableServerSideIdentify"]; flag {
+		if v, ok := serverSideIdentify.(bool); ok {
+			return !v
+		}
 	}
-	return true
+	return false
 }
