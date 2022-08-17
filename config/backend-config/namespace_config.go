@@ -43,7 +43,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		}
 	}
 	if nc.HostedServiceSecret == "" {
-		nc.HostedServiceSecret, err = config.GetEnvErr("HOSTED_MULTITENANT_SERVICE_SECRET")
+		nc.HostedServiceSecret, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
 		if err != nil {
 			return err
 		}
@@ -63,6 +63,8 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	if nc.Logger == nil {
 		nc.Logger = logger.NewLogger().Child("backend-config")
 	}
+
+	nc.Logger.Infof("Fetching config for namespace %s", nc.Namespace)
 
 	return nil
 }
@@ -113,7 +115,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 
 	var respBody []byte
 	u := *nc.ConfigBackendURL
-	u.Path = fmt.Sprintf("/data-plane/v1/namespace/%s/config", nc.Namespace)
+	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.Namespace)
 	operation := func() (fetchError error) {
 		nc.Logger.Debugf("Fetching config from %s", u.String())
 		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
@@ -172,7 +174,7 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", nc.HostedServiceSecret))
+	req.SetBasicAuth(nc.HostedServiceSecret, "")
 	resp, err := nc.Client.Do(req)
 	if err != nil {
 		return nil, err
