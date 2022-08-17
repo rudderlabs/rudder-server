@@ -32,7 +32,7 @@ func initFileManager() (filemanager.FileManager, string, error) {
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	fileManagerFactory := filemanager.DefaultFileManagerFactory
 
-	configFromEnv := filemanager.GetProviderConfigFromEnv()
+	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())
 	uploader, err := fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{

@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/router/rterror"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
+	pkgLogger                 logger.LoggerI
 	DefaultFileManagerFactory FileManagerFactory
 	ErrKeyNotFound            = errors.New("NoSuchKey")
 )
@@ -54,6 +57,7 @@ type SettingsT struct {
 
 func init() {
 	DefaultFileManagerFactory = &FileManagerFactoryT{}
+	pkgLogger = logger.NewLogger().Child("filemanager")
 }
 
 // New returns FileManager backed by configured provider
@@ -83,8 +87,8 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
 }
 
-// GetProviderConfigFromEnv returns the provider config
-func GetProviderConfigFromEnv() map[string]interface{} {
+// GetProviderConfigForBackupsFromEnv returns the provider config
+func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
 	providerConfig := make(map[string]interface{})
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
@@ -95,6 +99,11 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
 		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
+		if providerConfig["iamRoleArn"] != "" {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
+		}
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")

@@ -81,7 +81,7 @@ func (st *HandleT) crashRecover() {
 }
 
 func (st *HandleT) Start(ctx context.Context) {
-	st.setupFileUploader()
+	st.setupFileUploader(ctx)
 	st.errProcessQ = make(chan []*jobsdb.JobT)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -98,9 +98,9 @@ func (st *HandleT) Start(ctx context.Context) {
 	_ = g.Wait()
 }
 
-func (st *HandleT) getFileUploader() filemanager.FileManager {
+func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
 	if st.errFileUploader == nil && backupEnabled() {
-		st.setupFileUploader()
+		st.setupFileUploader(ctx)
 	}
 	return st.errFileUploader
 }
@@ -109,7 +109,7 @@ func backupEnabled() bool {
 	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
 }
 
-func (st *HandleT) setupFileUploader() {
+func (st *HandleT) setupFileUploader(ctx context.Context) {
 	if backupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
@@ -117,7 +117,7 @@ func (st *HandleT) setupFileUploader() {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
-				Config:   filemanager.GetProviderConfigFromEnv(),
+				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 			})
 			if err != nil {
 				panic(err)
@@ -273,7 +273,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			canUpload := backupEnabled() && st.getFileUploader() != nil
+			canUpload := backupEnabled() && st.getFileUploader(ctx) != nil
 
 			jobState := jobsdb.Executing.State
 
