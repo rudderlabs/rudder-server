@@ -20,10 +20,12 @@ type (
 //
 // E.g.
 // assuming that you already have created a new registry
-//    registry :=  NewRegistry()
+//
+//	registry :=  NewRegistry()
 //
 // the following is guaranteed to be executed atomically:
-//   registry.MustGetCounter("key").Inc()
+//
+//	registry.MustGetCounter("key").Inc()
 type Registry interface {
 	// GetCounter gets a counter by key. If a value for this key
 	// already exists but corresponds to another measurement type,

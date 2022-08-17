@@ -107,8 +107,7 @@ func (r *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 // transientSourceIds scans a backend configuration and extracts
 // source ids which have the following configuration option
 //
-//    transient : true
-//
+//	transient : true
 func transientSourceIds(c *backendconfig.ConfigT) []string {
 	r := make([]string, 0)
 	for i := range c.Sources {

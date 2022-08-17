@@ -133,6 +133,7 @@ func (manager *GCSManager) Download(ctx context.Context, output *os.File, key st
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://storage.googleapis.com/bucket-name/key - >> key
 */
 func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, error) {

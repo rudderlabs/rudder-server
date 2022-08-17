@@ -84,9 +84,7 @@ type QueryConditions struct {
 	StateFilters                  []string
 }
 
-//
 // GetQueryParamsT is a struct to hold jobsdb query params.
-//
 type GetQueryParamsT struct {
 	// query conditions
 
@@ -1032,6 +1030,7 @@ func (jd *HandleT) Stop() {
 }
 
 // TearDown stops the background goroutines,
+//
 //	waits until they finish and closes the database.
 func (jd *HandleT) TearDown() {
 	jd.Stop()
@@ -1039,7 +1038,8 @@ func (jd *HandleT) TearDown() {
 }
 
 // Close closes the database connection.
-// 	Stop should be called before Close.
+//
+//	Stop should be called before Close.
 func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
@@ -2443,11 +2443,12 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 }
 
 // isEmptyResult will return true if:
-// 	For all the combinations of stateFilters, customValFilters, parameterFilters.
-//  All of the condition above apply:
-// 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
-//  * The entry is noJobs
-//  * The entry is not expired (entry time + cache expiration > now)
+//
+//		For all the combinations of stateFilters, customValFilters, parameterFilters.
+//	 All of the condition above apply:
+//		* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
+//	 * The entry is noJobs
+//	 * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
