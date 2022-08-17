@@ -161,11 +161,11 @@ func killDanglingDBConnections(db *sql.DB) {
 	if err != nil {
 		panic(fmt.Errorf("error occurred when querying pg_stat_activity table for terminating dangling connections: %v", err.Error()))
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type danglingConnRow struct {
 		pid           int
-		queryStart    string
+		queryStart    *string
 		waitEventType string
 		waitEvent     string
 		state         string
@@ -175,7 +175,7 @@ func killDanglingDBConnections(db *sql.DB) {
 
 	dangling := make([]*danglingConnRow, 0)
 	for rows.Next() {
-		var row danglingConnRow = danglingConnRow{}
+		var row danglingConnRow
 		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query, &row.terminated)
 		if err != nil {
 			panic(err)
