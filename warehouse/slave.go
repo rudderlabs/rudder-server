@@ -441,6 +441,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
+		if lineBytesCounter > 10*maxStagingFileReadBufferCapacityInK*1024 {
+			err = fmt.Errorf("WH: Staging file read buffer capacity exceeded")
+			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s", lineBytesCounter, job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			return nil, err
+		}
+
 		var batchRouterEvent BatchRouterEventT
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
