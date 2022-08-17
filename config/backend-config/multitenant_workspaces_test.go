@@ -97,10 +97,11 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		var (
 			secretToken            = "multitenantWorkspaceSecret"
-			workspaceId            = "testWorkspaceId"
+			workspaceID            = "testWorkspaceId"
 			sampleWorkspaceSources = map[string]ConfigT{
-				workspaceId: sampleBackendConfig,
+				workspaceID: sampleBackendConfig,
 			}
+			cpRouterURL = "mockCPRouterURL"
 		)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			username, password, ok := r.BasicAuth()
@@ -123,12 +124,15 @@ func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 		wc := &multiTenantWorkspacesConfig{
 			Token:            secretToken,
 			configBackendURL: parsedSrvURL,
+			cpRouterURL:      cpRouterURL,
 		}
 		conf, err := wc.Get(context.Background(), "")
 		require.NoError(t, err)
-		require.Equal(t, sampleBackendConfig, conf)
-		require.Equal(t, workspaceId, wc.GetWorkspaceIDForWriteKey("d2"))
-		require.Equal(t, workspaceId, wc.GetWorkspaceIDForWriteKey("d"))
+		multiTenantWorkspacesConfig := sampleBackendConfig
+		multiTenantWorkspacesConfig.ConnectionFlags = ConnectionFlags{URL: cpRouterURL, Services: map[string]bool{"warehouse": true}}
+		require.Equal(t, multiTenantWorkspacesConfig, conf)
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForWriteKey("d2"))
+		require.Equal(t, workspaceID, wc.GetWorkspaceIDForWriteKey("d"))
 	})
 
 	t.Run("ok with empty response", func(t *testing.T) {

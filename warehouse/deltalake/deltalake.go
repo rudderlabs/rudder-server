@@ -889,6 +889,8 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			}
 			if datatype, ok := dataTypesMapToRudder[item.GetDataType()]; ok {
 				schema[tableName][item.GetColName()] = datatype
+			} else {
+				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &dl.Warehouse, warehouseutils.Tag{Name: "datatype", Value: item.GetDataType()}).Count(1)
 			}
 		}
 	}

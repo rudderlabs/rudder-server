@@ -152,7 +152,7 @@ func TestNewForDeployment(t *testing.T) {
 	})
 
 	t.Run("multi-tenant", func(t *testing.T) {
-		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
+		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 
@@ -164,9 +164,7 @@ func TestNewForDeployment(t *testing.T) {
 
 	t.Run("multi-tenant-with-namespace", func(t *testing.T) {
 		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
-		t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "foobar")
-		t.Setenv("CONTROL_PLANE_BASIC_AUTH_USERNAME", "Clark")
-		t.Setenv("CONTROL_PLANE_BASIC_AUTH_PASSWORD", "Kent")
+		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)
 		require.NoError(t, err)
 

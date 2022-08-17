@@ -30,6 +30,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 	var breakLoop bool
 	select {
 	case <-ctx.Done():
+		pkgLogger.Infof("generator reading from replay_jobs_* stopped:Context cancelled")
 		return
 	case <-handle.initSourceWorkersChannel:
 	}
@@ -46,7 +47,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 			unprocessed := handle.db.GetUnprocessed(queryParams)
 			combinedList = append(combinedList, unprocessed.Jobs...)
 		}
-		pkgLogger.Debugf("length of combinedList : %d", len(combinedList))
+		pkgLogger.Infof("length of combinedList : %d", len(combinedList))
 
 		if len(combinedList) == 0 {
 			if breakLoop {
@@ -108,6 +109,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 
 	// Since generator read is done, closing worker channels
 	for _, worker := range handle.workers {
+		pkgLogger.Infof("Closing worker channels")
 		close(worker.channel)
 	}
 }
@@ -139,6 +141,7 @@ func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandle
 	handle.dumpsLoader = dumpsLoader
 	handle.dbReadSize = config.GetEnvAsInt("DB_READ_SIZE", 10)
 	handle.tablePrefix = tablePrefix
+	handle.initSourceWorkersChannel = make(chan bool)
 
 	go handle.initSourceWorkers(ctx)
 	go handle.generatorLoop(ctx)

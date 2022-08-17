@@ -23,7 +23,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Setenv("WORKSPACE_NAMESPACE", "a-testing-namespace")
-	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", "service-secret")
+	t.Setenv("HOSTED_SERVICE_SECRET", "service-secret")
 	t.Setenv("CONFIG_BACKEND_URL", parsedConfigBackendURL.String())
 
 	require.NoError(t, client.SetUp())
@@ -41,10 +41,11 @@ func Test_Namespace_Get(t *testing.T) {
 		namespace    = "free-us-1"
 		workspaceID1 = "2CCgbmvBSa8Mv81YaIgtR36M7aW"
 		workspaceID2 = "2CChLejq5aIWi3qsKVm1PjHkyTj"
+		cpRouterURL  = "mockCpRouterURL"
 	)
 
 	be := &backendConfigServer{
-		bearerAuth: "service-secret",
+		token: "service-secret",
 	}
 	be.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
 
@@ -62,6 +63,7 @@ func Test_Namespace_Get(t *testing.T) {
 		Namespace: namespace,
 
 		HostedServiceSecret: "service-secret",
+		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
 
@@ -79,6 +81,9 @@ func Test_Namespace_Get(t *testing.T) {
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
 	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
+
+	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
+	require.True(t, c.ConnectionFlags.Services["warehouse"])
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,
@@ -128,12 +133,12 @@ func Test_Namespace_Get(t *testing.T) {
 type backendConfigServer struct {
 	responses map[string]string
 
-	bearerAuth string
+	token string
 }
 
 func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	auth := req.Header.Get("Authorization")
-	if auth != "Bearer "+server.bearerAuth {
+	user, _, ok := req.BasicAuth()
+	if !ok || user != server.token {
 		resp.WriteHeader(http.StatusUnauthorized)
 		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
 		return
@@ -159,5 +164,5 @@ func (server *backendConfigServer) AddNamespace(t *testing.T, namespace, path st
 	payload, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	server.responses["/data-plane/v1/namespace/"+namespace+"/config"] = string(payload)
+	server.responses["/data-plane/v1/namespaces/"+namespace+"/config"] = string(payload)
 }

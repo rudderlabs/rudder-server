@@ -4,13 +4,15 @@ package misc
 // in otherwise multi-line scenarios.
 //
 // E.g. this
-//   v := misc.DefaultString("unknown").OnError(os.Hostname())
+//
+//	v := misc.DefaultString("unknown").OnError(os.Hostname())
 //
 // is the equivalent of
-//   v, err := os.Hostname()
-//   if err != nil {
-//     v = 	"unknown"
-//   }
+//
+//	v, err := os.Hostname()
+//	if err != nil {
+//	  v = 	"unknown"
+//	}
 type DefaultString string
 
 // OnError returns the default value if the err argument is not nil, otherwise the value
