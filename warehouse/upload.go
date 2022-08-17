@@ -1007,7 +1007,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 					name: "tableName", value: strings.ToLower(tName),
 				},
 				{
-					name: "columnCountLimit", value: string(columnCountLimit),
+					name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
 				},
 			}
 			job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
