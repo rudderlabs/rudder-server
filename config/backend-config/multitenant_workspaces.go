@@ -38,7 +38,7 @@ type multiTenantWorkspacesConfig struct {
 func (wc *multiTenantWorkspacesConfig) SetUp() error {
 	wc.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if wc.Token == "" {
-		wc.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
+		wc.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
 	if wc.Token == "" {
 		return fmt.Errorf("multi tenant workspace: empty workspace config token")
