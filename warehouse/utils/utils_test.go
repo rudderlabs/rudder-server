@@ -1191,7 +1191,7 @@ var _ = Describe("Utils", func() {
 		got := JSONSchemaToMap(rawMsg)
 		Expect(got).To(Equal(expected))
 	},
-		Entry(, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
