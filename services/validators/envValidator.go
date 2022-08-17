@@ -89,7 +89,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 
 	if !parameters.Valid {
 		// insert current version
-		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
+		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":%q}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
 		_, err := dbHandle.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
