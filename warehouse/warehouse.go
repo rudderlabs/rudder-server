@@ -620,13 +620,17 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(&warehouse)
+
+	priority := 0
+	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
 			wh.deleteWaitingUploadJob(uploadID)
+			priority = uploadPriority // copy the priority from the latest upload job.
 		}
 	}
+
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesFetchStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
