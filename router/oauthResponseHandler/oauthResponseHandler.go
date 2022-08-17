@@ -326,7 +326,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"rudderCategory":  authStats.rudderCategory,
 		"isCallToCpApi":   strconv.FormatBool(authStats.isCallToCpApi),
 		"authErrCategory": authStats.authErrCategory,
-		"destDefName":     authStats.destDefName,
+		"destType":        authStats.destDefName,
 	}).SendTiming(time.Since(startTime))
 }
 
@@ -339,7 +339,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"errorMessage":    refStats.errorMessage,
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
-		"destDefName":     refStats.destDefName,
+		"destType":        refStats.destDefName,
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 	}).Increment()
 }

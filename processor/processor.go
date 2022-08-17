@@ -525,7 +525,9 @@ func loadConfig() {
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
+//
 //	updates the transformer feature map.
+//
 // It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
 func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 	for {
@@ -2308,10 +2310,10 @@ func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
 	}
 }
 
-//`jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
-//`subJobMerger` func merges the split jobs into a single batch before writing to DB.
-//So, to keep track of sub-batch we have `hasMore` variable.
-//each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
+// `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
+// `subJobMerger` func merges the split jobs into a single batch before writing to DB.
+// So, to keep track of sub-batch we have `hasMore` variable.
+// each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
 	subJobs       []*jobsdb.JobT
 	hasMore       bool

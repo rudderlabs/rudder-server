@@ -33,7 +33,11 @@ func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*Even
 	if err != nil {
 		return nil, err
 	}
-	return &EventBridgeProducer{client: eventbridge.New(awsutils.CreateSession(sessionConfig))}, nil
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &EventBridgeProducer{client: eventbridge.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to EventBridge.

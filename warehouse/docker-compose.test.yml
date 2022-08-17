@@ -191,6 +191,10 @@ services:
       - REDSHIFT_INTEGRATION_TEST_CREDENTIALS
       - SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS
       - DATABRICKS_INTEGRATION_TEST_CREDENTIALS
+      - BIGQUERY_INTEGRATION_TEST_SCHEMA
+      - REDSHIFT_INTEGRATION_TEST_SCHEMA
+      - SNOWFLAKE_INTEGRATION_TEST_SCHEMA
+      - DATABRICKS_INTEGRATION_TEST_SCHEMA
     entrypoint: sh -c 'go run warehouse/testhelper/generate-workspace-config/generate-workspace-config.go && go run main.go'
     volumes:
       - ..:/app

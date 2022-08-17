@@ -166,6 +166,107 @@ const (
 		}
 	  }
 	}`
+
+	ReservedKeywordsIdentifyPayload = `{
+	  "userId": "%s",
+	  "messageId": "%s",
+	  "type": "identify",
+    "integrations": {
+      "%s": {
+        "options": {
+          "skipReservedKeywordsEscaping": true
+        }
+      }
+    },
+	  "eventOrderNo": "1",
+	  "context": {
+		  "traits": {
+		    "trait1": "new-val",
+        "as": "non escaped column",
+        "between": "non escaped column"
+		  }
+	  },
+	  "timestamp": "2020-02-02T00:23:09.544Z"
+	}`
+	ReservedKeywordsTrackPayload = `{
+	  "userId": "%s",
+	  "messageId": "%s",
+	  "type": "track",
+    "integrations": {
+      "%s": {
+        "options": {
+          "skipReservedKeywordsEscaping": true
+        }
+      }
+    },
+	  "event": "Product Track",
+	  "properties": {
+      "as": "non escaped column",
+      "between": "non escaped column",
+		  "review_id": "12345",
+		  "product_id": "123",
+		  "rating": 3,
+		  "review_body": "Average product, expected much more."
+	  }
+	}`
+	ReservedKeywordsPagePayload = `{
+	  "userId": "%s",
+	  "messageId": "%s",
+	  "type": "page",
+    "integrations": {
+      "%s": {
+        "options": {
+          "skipReservedKeywordsEscaping": true
+        }
+      }
+    },
+	  "name": "Home",
+	  "properties": {
+      "as": "non escaped column",
+      "between": "non escaped column",
+		  "title": "Home | RudderStack",
+		  "url": "https://www.rudderstack.com"
+	  }
+	}`
+	ReservedKeywordsScreenPayload = `{
+	  "userId": "%s",
+	  "messageId": "%s",
+	  "type": "screen",
+    "integrations": {
+      "%s": {
+        "options": {
+          "skipReservedKeywordsEscaping": true
+        }
+      }
+    },
+	  "name": "Main",
+	  "properties": {
+      "as": "non escaped column",
+      "between": "non escaped column",
+		  "prop_key": "prop_value"
+	  }
+	}`
+	ReservedKeywordsGroupPayload = `{
+	  "userId": "%s",
+	  "messageId": "%s",
+	  "type": "group",
+    "integrations": {
+      "%s": {
+        "options": {
+          "skipReservedKeywordsEscaping": true
+        }
+      }
+    },
+	  "groupId": "groupId",
+	  "traits": {
+      "as": "non escaped column",
+      "between": "non escaped column",
+		  "name": "MyGroup",
+		  "industry": "IT",
+		  "employees": 450,
+		  "plan": "basic"
+	  }
+	}`
 )
 
 func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
@@ -267,6 +368,58 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		t.Logf("Sending modified groups events")
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
+		}
+	}
+}
+
+func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+
+	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
+		t.Logf("Sending modified identifies events")
+		for i := 0; i < count; i++ {
+			payloadIdentify := strings.NewReader(fmt.Sprintf(ReservedKeywordsIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
+		}
+	}
+
+	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
+		t.Logf("Sending modified tracks events")
+		for i := 0; i < count; i++ {
+			payloadTrack := strings.NewReader(fmt.Sprintf(ReservedKeywordsTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
+		}
+	}
+
+	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
+		t.Logf("Sending modified pages events")
+		for i := 0; i < count; i++ {
+			payloadPage := strings.NewReader(fmt.Sprintf(ReservedKeywordsPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			send(t, payloadPage, "page", wareHouseTest.WriteKey)
+		}
+	}
+
+	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
+		t.Logf("Sending modified screens events")
+		for i := 0; i < count; i++ {
+			payloadScreen := strings.NewReader(fmt.Sprintf(ReservedKeywordsScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
+		}
+	}
+
+	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
+		t.Logf("Sending modified aliases events")
+		for i := 0; i < count; i++ {
+			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
+		}
+	}
+
+	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
+		t.Logf("Sending modified groups events")
+		for i := 0; i < count; i++ {
+			payloadGroup := strings.NewReader(fmt.Sprintf(ReservedKeywordsGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
 		}
 	}

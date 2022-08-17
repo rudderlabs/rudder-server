@@ -64,7 +64,7 @@ var statusMap = map[string]status{
 	TooManyRequests:         {message: TooManyRequests, code: http.StatusTooManyRequests},
 	NoWriteKeyInBasicAuth:   {message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized},
 	NoWriteKeyInQueryParams: {message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized},
-	RequestBodyReadFailed:   {message: RequestBodyReadFailed, code: http.StatusBadRequest},
+	RequestBodyReadFailed:   {message: RequestBodyReadFailed, code: http.StatusInternalServerError},
 	RequestBodyTooLarge:     {message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge},
 	InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
 	SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
@@ -72,11 +72,11 @@ var statusMap = map[string]status{
 	// webhook specific status
 	InvalidWebhookSource:                           {message: InvalidWebhookSource, code: http.StatusNotFound},
 	SourceTransformerFailed:                        {message: SourceTransformerFailed, code: http.StatusBadRequest},
-	SourceTransformerResponseErrorReadFailed:       {message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest},
-	SourceTransformerFailedToReadOutput:            {message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest},
-	SourceTransformerInvalidResponseFormat:         {message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest},
-	SourceTransformerInvalidOutputFormatInResponse: {message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest},
-	SourceTransformerInvalidOutputJSON:             {message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest},
+	SourceTransformerResponseErrorReadFailed:       {message: SourceTransformerResponseErrorReadFailed, code: http.StatusInternalServerError},
+	SourceTransformerFailedToReadOutput:            {message: SourceTransformerFailedToReadOutput, code: http.StatusInternalServerError},
+	SourceTransformerInvalidResponseFormat:         {message: SourceTransformerInvalidResponseFormat, code: http.StatusInternalServerError},
+	SourceTransformerInvalidOutputFormatInResponse: {message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusInternalServerError},
+	SourceTransformerInvalidOutputJSON:             {message: SourceTransformerInvalidOutputJSON, code: http.StatusInternalServerError},
 	NonIdentifiableRequest:                         {message: NonIdentifiableRequest, code: http.StatusBadRequest},
 	ErrorInMarshal:                                 {message: ErrorInMarshal, code: http.StatusBadRequest},
 	ErrorInParseForm:                               {message: ErrorInParseForm, code: http.StatusBadRequest},
@@ -101,13 +101,13 @@ func GetPixelResponse() string {
 	return transPixelResponse
 }
 
-func GetStatusCode(key string) int {
+func GetErrorStatusCode(key string) int {
 	if status, ok := statusMap[key]; ok {
 		return status.code
 	}
-	return http.StatusOK
+	return http.StatusInternalServerError
 }
 
 func MakeResponse(msg string) string {
-	return fmt.Sprintf(`{"msg": "%s"}`, msg)
+	return fmt.Sprintf(`{"msg": %q}`, msg)
 }

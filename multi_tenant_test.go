@@ -92,17 +92,19 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	}
 
 	multiTenantSvcSecret := "so-secret"
-	expectedAuthorizationHeader := fmt.Sprintf("Bearer %s", hostedServiceSecret)
 	backedConfigHandler := func(w http.ResponseWriter, r *http.Request) {
-		require.Equalf(t, expectedAuthorizationHeader, r.Header.Get("Authorization"),
+		u, _, ok := r.BasicAuth()
+		require.True(t, ok, "Auth should be present")
+		require.Equalf(t, hostedServiceSecret, u,
 			"Expected HTTP basic authentication to be %q, got %q instead",
-			expectedAuthorizationHeader, r.Header.Get("Authorization"))
+			hostedServiceSecret, u)
+
 		n, err := w.Write(marshalledWorkspaces.Bytes())
 		require.NoError(t, err)
 		require.Equal(t, marshalledWorkspaces.Len(), n)
 	}
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespace/"+workspaceNamespace+"/config", backedConfigHandler).
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", backedConfigHandler).
 		Methods("GET")
 	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
@@ -140,10 +142,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG", "false")
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", multiTenantSvcSecret)
+	t.Setenv("HOSTED_SERVICE_SECRET", multiTenantSvcSecret)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
 
-	t.Setenv("HOSTED_MULTITENANT_SERVICE_SECRET", hostedServiceSecret)
+	t.Setenv("HOSTED_SERVICE_SECRET", hostedServiceSecret)
 
 	t.Setenv("WORKSPACE_NAMESPACE", workspaceNamespace)
 	if testing.Verbose() {

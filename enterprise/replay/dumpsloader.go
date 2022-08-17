@@ -85,12 +85,13 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	for {
 		pkgLogger.Info("fetching files list")
 		objects := make([]dbObjectT, 0)
-		s3Objects, err := gwHandle.handle.uploader.ListFilesWithPrefix(ctx, gwHandle.handle.prefix, 1000)
+		s3Objects, err := gwHandle.handle.uploader.ListFilesWithPrefix(ctx, gwHandle.handle.startAfterKey, gwHandle.handle.prefix, 1000)
 		if err != nil {
 			panic(fmt.Errorf("failed to fetch File names with error:%w", err))
 		}
 
 		if len(s3Objects) == 0 {
+			pkgLogger.Infof("no files found in %s", gwHandle.handle.prefix)
 			break
 		}
 
@@ -157,7 +158,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	for {
 		objects := make([]dbObjectT, 0)
 		pkgLogger.Info("fetching files list")
-		s3Objects, err := procHandle.handle.uploader.ListFilesWithPrefix(ctx, procHandle.handle.prefix, 1000)
+		s3Objects, err := procHandle.handle.uploader.ListFilesWithPrefix(ctx, procHandle.handle.startAfterKey, procHandle.handle.prefix, 1000)
 		if err != nil {
 			panic(fmt.Errorf("failed to fetch File names with error: %w", err))
 		}
@@ -238,7 +239,7 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
-	handle.prefix = strings.TrimSpace(config.GetEnv("S3_DUMPS_BUCKET_PREFIX", ""))
+	handle.prefix = strings.TrimSpace(config.GetEnv("JOBS_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
 	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -27,9 +28,9 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// TestConnection test connection for clickhouse and clickhouse cluster
-func (*TestHandle) TestConnection() error {
-	err := testhelper.ConnectWithBackoff(func() (err error) {
+// VerifyConnection test connection for clickhouse and clickhouse cluster
+func (*TestHandle) VerifyConnection() error {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := clickhouse.CredentialsT{
 			Host:          "wh-clickhouse",
 			User:          "rudder",
@@ -110,7 +111,7 @@ func (*TestHandle) TestConnection() error {
 	for i, chResource := range clusterCredentials {
 		var clickhouseDB *sql.DB
 
-		err = testhelper.ConnectWithBackoff(func() (err error) {
+		err = testhelper.WithConstantBackoff(func() (err error) {
 			if clickhouseDB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
 				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %w", i, err)
 				return
@@ -264,22 +265,22 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	// Alter columns to all the cluster tables
 	for _, clusterDB := range handle.ClusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
+			sqlStatement := fmt.Sprintf(`
+				ALTER TABLE rudderdb.%[1]s_shard`,
+				tableName,
+			)
 			for _, columnInfo := range columnInfos {
-				sqlStatement := fmt.Sprintf(`
-					ALTER TABLE
-					  rudderdb.% [1]s_shard
-					ADD
-					  COLUMN IF NOT EXISTS % [2]s % [3]s;
-				`,
-					tableName,
+				sqlStatement += fmt.Sprintf(`
+					ADD COLUMN IF NOT EXISTS %[1]s %[2]s,`,
 					columnInfo.ColumnName,
 					columnInfo.ColumnType,
 				)
-				log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
-
-				_, err := clusterDB.Exec(sqlStatement)
-				require.NoError(t, err)
 			}
+			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
+			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
+
+			_, err := clusterDB.Exec(sqlStatement)
+			require.NoError(t, err)
 		}
 	}
 }
@@ -300,6 +301,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 			UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
+			Provider:             warehouseutils.CLICKHOUSE,
 		}
 
 		// Scenario 1
@@ -309,7 +311,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -339,7 +341,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -379,6 +381,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			EventsCountMap:       testhelper.DefaultEventMap(),
 			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 			UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
+			Provider:             warehouseutils.CLICKHOUSE,
 		}
 
 		// Scenario 1
@@ -388,7 +391,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
@@ -422,7 +425,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
