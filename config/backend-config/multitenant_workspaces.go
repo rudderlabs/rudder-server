@@ -171,7 +171,7 @@ func (wc *multiTenantWorkspacesConfig) makeHTTPRequest(ctx context.Context, url 
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.backendConfig.timeout", "HttpClient.timeout")}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

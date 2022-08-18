@@ -297,15 +297,6 @@ func checkAndHotReloadConfig(configMap map[string][]*ConfigVar) (hasConfigChange
 	return hasConfigChanged
 }
 
-func GetFirstBool(defaultValue bool, keys ...string) (value bool) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetBool(key, defaultValue)
-		}
-	}
-	return defaultValue
-}
-
 // GetBool is a wrapper for viper's GetBool
 func GetBool(key string, defaultValue bool) (value bool) {
 	envVal := GetEnv(TransformKey(key), "")
@@ -317,15 +308,6 @@ func GetBool(key string, defaultValue bool) (value bool) {
 		return defaultValue
 	}
 	return viper.GetBool(key)
-}
-
-func GetFirstInt(defaultValue int, keys ...string) (value int) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetInt(key, defaultValue)
-		}
-	}
-	return defaultValue
 }
 
 // GetInt is wrapper for viper's GetInt
@@ -605,15 +587,6 @@ func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isH
 	}
 }
 
-func GetFirstInt64(defaultValue int64, keys ...string) (value int64) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetInt64(key, defaultValue)
-		}
-	}
-	return defaultValue
-}
-
 // GetInt64 is wrapper for viper's GetInt
 func GetInt64(key string, defaultValue int64) (value int64) {
 	envVal := GetEnv(TransformKey(key), "")
@@ -625,15 +598,6 @@ func GetInt64(key string, defaultValue int64) (value int64) {
 		return defaultValue
 	}
 	return viper.GetInt64(key)
-}
-
-func GetFirstFloat64(defaultValue float64, keys ...string) (value float64) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetFloat64(key, defaultValue)
-		}
-	}
-	return defaultValue
 }
 
 // GetFloat64 is wrapper for viper's GetFloat64
@@ -649,15 +613,6 @@ func GetFloat64(key string, defaultValue float64) (value float64) {
 	return viper.GetFloat64(key)
 }
 
-func GetFirstString(defaultValue string, keys ...string) (value string) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetString(key, defaultValue)
-		}
-	}
-	return defaultValue
-}
-
 // GetString is wrapper for viper's GetString
 func GetString(key, defaultValue string) (value string) {
 	envVal := GetEnv(TransformKey(key), "")
@@ -669,15 +624,6 @@ func GetString(key, defaultValue string) (value string) {
 		return defaultValue
 	}
 	return viper.GetString(key)
-}
-
-func GetFirstStringSlice(defaultValue []string, keys ...string) (value []string) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetStringSlice(key, defaultValue)
-		}
-	}
-	return defaultValue
 }
 
 // GetStringSlice is wrapper for viper's GetStringSlice
@@ -697,15 +643,6 @@ func GetStringSlice(key string, defaultValue []string) (value []string) {
 		return defaultValue
 	}
 	return viper.GetStringSlice(key)
-}
-
-func GetFirstDuration(defaultValueInTimescaleUnits int64, timeScale time.Duration, keys ...string) (value time.Duration) {
-	for _, key := range keys {
-		if IsSet(key) {
-			return GetDuration(key, defaultValueInTimescaleUnits, timeScale)
-		}
-	}
-	return time.Duration(defaultValueInTimescaleUnits) * timeScale
 }
 
 // GetDuration is wrapper for viper's GetDuration

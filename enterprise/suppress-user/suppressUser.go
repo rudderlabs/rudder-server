@@ -242,7 +242,7 @@ func (suppressUser *SuppressRegulationHandler) init() {
 			suppressUser.userSpecificSuppressedSourceMap = map[string]sourceFilter{}
 		}
 		if suppressUser.Client == nil {
-			suppressUser.Client = &http.Client{Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.suppressUser.timeout", "HttpClient.timeout")}
+			suppressUser.Client = &http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}
 		}
 	})
 }

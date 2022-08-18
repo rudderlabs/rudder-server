@@ -57,7 +57,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 	if nc.Client == nil {
 		nc.Client = &http.Client{
-			Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.backendConfig.timeout", "HttpClient.timeout"),
+			Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
 		}
 	}
 	if nc.Logger == nil {

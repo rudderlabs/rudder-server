@@ -60,7 +60,7 @@ func Run(ctx context.Context) {
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.regulationWorker.timeout", "HttpClient.timeout")},
+			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
 			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
@@ -72,7 +72,7 @@ func Run(ctx context.Context) {
 				FMFactory: &filemanager.FileManagerFactoryT{},
 			},
 			&api.APIManager{
-				Client:           &http.Client{Timeout: config.GetFirstDuration(30, time.Second, "HttpClient.regulationWorker.timeout", "HttpClient.timeout")},
+				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
 				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
 			}),
 	}
