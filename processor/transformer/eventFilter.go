@@ -1,14 +1,12 @@
 package transformer
 
 import (
-	"errors"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
-// If no relevant configuration is found, returns an error
-func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, error) {
+// If no relevant configuration is found, returns false
+func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, bool) {
 	var supportedMessageTypes []string
 	if supportedTypes, ok := event.Destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
 		if supportedTypeInterface, ok := supportedTypes.([]interface{}); ok {
@@ -24,11 +22,10 @@ func (event *TransformerEventT) GetSupportedMessageTypes() ([]string, error) {
 					supportedMessageTypes = append(supportedMessageTypes, supportedType)
 				}
 			}
-			return supportedMessageTypes, nil
+			return supportedMessageTypes, true
 		}
-		return supportedMessageTypes, errors.New("supportedMessageTypes not an array")
 	}
-	return supportedMessageTypes, errors.New("no supportedMessageTypes found")
+	return nil, false
 }
 
 func (event *TransformerEventT) identifyDisabled() bool {
@@ -38,4 +35,37 @@ func (event *TransformerEventT) identifyDisabled() bool {
 		}
 	}
 	return false
+}
+
+// GetSupportedEvents returns the supported message events for the given event, based on configuration.
+// If no relevant configuration is found, returns false
+func (event *TransformerEventT) GetSupportedMessageEvents() ([]string, bool) {
+
+	// "listOfConversions": [
+	//  	{
+	//  		"conversions": "Credit Card Added"
+	//  	},
+	//  	{
+	//  		"conversions": "Credit Card Removed"
+	//	    }
+	// ]
+	if supportedEventsI, ok := event.Destination.DestinationDefinition.Config["listOfConversions"]; ok {
+		if supportedEvents, ok := supportedEventsI.([]interface{}); ok {
+			var supportedMessageEvents []string
+			for _, supportedEvent := range supportedEvents {
+				if supportedEventMap, ok := supportedEvent.(map[string]interface{}); ok {
+					if conversions, ok := supportedEventMap["conversions"]; ok {
+						if supportedMessageEvent, ok := conversions.(string); ok {
+							supportedMessageEvents = append(supportedMessageEvents, supportedMessageEvent)
+						}
+					}
+				}
+			}
+			if len(supportedMessageEvents) != len(supportedEvents) {
+				return nil, false
+			}
+			return supportedMessageEvents, true
+		}
+	}
+	return nil, false
 }

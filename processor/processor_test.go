@@ -1675,6 +1675,145 @@ var _ = Describe("Static Function Tests", func() {
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
 		})
+
+		It("Should filter out messages containing unsupported events", func() {
+			destinationConfig := backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"listOfConversions": []interface{}{
+							map[string]interface{}{"conversions": "Credit Card Added"},
+							map[string]interface{}{"conversions": "Credit Card Removed"},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: []transformer.TransformerResponseT{
+					{
+						Output:     events[2].Message,
+						StatusCode: 400,
+						Metadata:   events[2].Metadata,
+						Error:      "Invalid message event. Type assertion failed",
+					},
+				},
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("Shouldn;t filter out messages if listOfConversions config is corrupted", func() {
+			destinationConfig := backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"listOfConversions": []interface{}{
+							map[string]interface{}{"conversions": "Credit Card Added"},
+							map[string]interface{}{"conversions": 1},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+					{
+						Output:     events[2].Message,
+						StatusCode: 200,
+						Metadata:   events[2].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
 	})
 })
 

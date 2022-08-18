@@ -2099,7 +2099,7 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	}
 }
 
-func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {
+func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filter bool) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
 	var failedEvents []transformer.TransformerResponseT
 
@@ -2108,27 +2108,45 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	var errMessage string
 	for i := range events {
 		event := &events[i]
-		supportedTypes, err := event.GetSupportedMessageTypes()
-		// if no relevant configuration is found, skip message type filtering
-		if err == nil && filterUnsupportedMessageTypes {
-			messageType, typOk := event.Message["type"].(string)
-			if !typOk {
-				// add to FailedEvents
-				errMessage = "Invalid message type. Type assertion failed"
-				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-				failedEvents = append(failedEvents, resp)
-				continue
+
+		if filter {
+			// filter unsupported message types
+			supportedTypes, ok := event.GetSupportedMessageTypes()
+			if ok {
+				messageType, typOk := event.Message["type"].(string)
+				if !typOk {
+					// add to FailedEvents
+					errMessage = "Invalid message type. Type assertion failed"
+					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+					failedEvents = append(failedEvents, resp)
+					continue
+				}
+				messageType = strings.TrimSpace(strings.ToLower(messageType))
+				if !misc.ContainsString(supportedTypes, messageType) {
+					continue
+				}
 			}
-			messageType = strings.TrimSpace(strings.ToLower(messageType))
-			if misc.ContainsString(supportedTypes, messageType) {
-				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-				responses = append(responses, resp)
+
+			// filter unsupported message events
+			supportedEvents, ok := event.GetSupportedMessageEvents()
+			if ok {
+				messageEvent, typOk := event.Message["event"].(string)
+				if !typOk {
+					// add to FailedEvents
+					errMessage = "Invalid message event. Type assertion failed"
+					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+					failedEvents = append(failedEvents, resp)
+					continue
+				}
+				if !misc.ContainsString(supportedEvents, messageEvent) {
+					continue
+				}
 			}
-		} else {
-			// allow event
-			resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-			responses = append(responses, resp)
+
 		}
+		// allow event
+		resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+		responses = append(responses, resp)
 	}
 
 	return transformer.ResponseT{Events: responses, FailedEvents: failedEvents}
