@@ -74,7 +74,7 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
 			Prefix:      prefix,
 			Delimiter:   "",
-			StartOffset: manager.Config.StartAfter,
+			StartOffset: startAfter,
 		})
 	}
 	var attrs *storage.ObjectAttrs
@@ -172,7 +172,7 @@ func (manager *GCSManager) getTimeout() time.Duration {
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
-	var bucketName, prefix, credentials, startAfter string
+	var bucketName, prefix, credentials string
 	var endPoint *string
 	var forcePathStyle, disableSSL *bool
 
@@ -192,12 +192,6 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 		tmp, ok := config["credentials"].(string)
 		if ok {
 			credentials = tmp
-		}
-	}
-	if config["startAfter"] != nil {
-		tmp, ok := config["startAfter"].(string)
-		if ok {
-			startAfter = tmp
 		}
 	}
 	if config["endPoint"] != nil {
@@ -225,7 +219,6 @@ func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
-		StartAfter:     startAfter,
 	}
 }
 
@@ -236,7 +229,6 @@ type GCSConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
-	StartAfter     string
 	Iterator       *storage.ObjectIterator
 }
 

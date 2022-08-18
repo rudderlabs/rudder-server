@@ -220,8 +220,6 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, startAfter, p
 	// startAfter is to resume a paused task.
 	if startAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(startAfter)
-	} else if manager.Config.StartAfter != "" {
-		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
 
 	if manager.Config.ContinuationToken != nil {
@@ -296,7 +294,6 @@ type S3Config struct {
 	EnableSSE         bool    `mapstructure:"enableSSE"`
 	RegionHint        string  `mapstructure:"regionHint"`
 	ContinuationToken *string `mapstructure:"continuationToken"`
-	StartAfter        string  `mapstructure:"startAfter"`
 	IsTruncated       bool    `mapstructure:"isTruncated"`
 	UseGlue           bool    `mapstructure:"useGlue"`
 }

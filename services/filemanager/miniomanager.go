@@ -124,7 +124,7 @@ func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter
 	}
 
 	// List the Objects in the bucket
-	result, err := core.ListObjectsV2(manager.Config.Bucket, prefix, manager.Config.StartAfter, manager.Config.ContinuationToken, "", int(maxItems))
+	result, err := core.ListObjectsV2(manager.Config.Bucket, prefix, startAfter, manager.Config.ContinuationToken, "", int(maxItems))
 	if err != nil {
 		return
 	}
@@ -155,7 +155,7 @@ func (manager *MinioManager) GetConfiguredPrefix() string {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey, startAfter, continuationToken string
+	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey, continuationToken string
 	var useSSL, ok bool
 	if config["bucketName"] != nil {
 		tmp, ok := config["bucketName"].(string)
@@ -173,12 +173,6 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		tmp, ok := config["endPoint"].(string)
 		if ok {
 			endPoint = tmp
-		}
-	}
-	if config["startAfter"] != nil {
-		tmp, ok := config["startAfter"].(string)
-		if ok {
-			startAfter = tmp
 		}
 	}
 	if config["accessKeyID"] != nil {
@@ -206,7 +200,6 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		AccessKeyID:       accessKeyID,
 		SecretAccessKey:   secretAccessKey,
 		UseSSL:            useSSL,
-		StartAfter:        startAfter,
 		ContinuationToken: continuationToken,
 	}
 }
@@ -236,6 +229,5 @@ type MinioConfig struct {
 	AccessKeyID       string
 	SecretAccessKey   string
 	UseSSL            bool
-	StartAfter        string
 	ContinuationToken string
 }

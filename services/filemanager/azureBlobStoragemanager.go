@@ -128,14 +128,8 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 
 	// List the blobs in the container
 	var response *azblob.ListBlobsFlatSegmentResponse
-	var startAfterTime time.Time
-	if manager.Config.StartAfter != "" {
-		startAfterTime, err = time.Parse(time.RFC3339, manager.Config.StartAfter)
-		if err != nil {
-			return
-		}
-	}
 
+	// Checking if maxItems > 0 to avoid function calls which expect only maxItems to be returned and not more in the code
 	for maxItems > 0 && manager.Config.Marker.NotDone() {
 		response, err = containerURL.ListBlobsFlatSegment(ctx, manager.Config.Marker, segmentOptions)
 		if err != nil {
@@ -145,7 +139,7 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 
 		fileObjects = make([]*FileObject, 0)
 		for idx := range response.Segment.BlobItems {
-			if startAfterTime.IsZero() || response.Segment.BlobItems[idx].Properties.LastModified.After(startAfterTime) {
+			if strings.Compare(response.Segment.BlobItems[idx].Name, startAfter) > 0 {
 				fileObjects = append(fileObjects, &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified})
 				maxItems--
 			}
@@ -218,7 +212,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	var containerName, accountName, accountKey, prefix, startAfter string
+	var containerName, accountName, accountKey, prefix string
 	var endPoint *string
 	var marker azblob.Marker
 	var forcePathStyle, disableSSL *bool
@@ -232,12 +226,6 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		tmp, ok := config["prefix"].(string)
 		if ok {
 			prefix = tmp
-		}
-	}
-	if config["startAfter"] != nil {
-		tmp, ok := config["startAfter"].(string)
-		if ok {
-			startAfter = tmp
 		}
 	}
 	if config["accountName"] != nil {
@@ -278,7 +266,6 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
-		StartAfter:     startAfter,
 		Marker:         marker,
 	}
 }
@@ -291,7 +278,6 @@ type AzureBlobStorageConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
-	StartAfter     string
 	Marker         azblob.Marker
 }
 

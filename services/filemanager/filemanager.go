@@ -141,3 +141,50 @@ func getBatchRouterDurationConfig(key, destType string, defaultValueInTimescaleU
 		return config.GetDuration("BatchRouter."+key, defaultValueInTimescaleUnits, timeScale)
 	}
 }
+
+func IterateFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64, manager *FileManager) *ObjectIterator {
+	it := &ObjectIterator{
+		ctx:        ctx,
+		startAfter: startAfter,
+		maxItems:   maxItems,
+		prefix:     prefix,
+		manager:    manager,
+	}
+	return it
+}
+
+type ObjectIterator struct {
+	ctx        context.Context
+	err        error
+	items      []*FileObject
+	manager    *FileManager
+	maxItems   int64
+	startAfter string
+	prefix     string
+}
+
+func (it *ObjectIterator) Next() bool {
+	var err error
+	if len(it.items) == 0 {
+		mn := *it.manager
+		it.items, err = mn.ListFilesWithPrefix(it.ctx, it.startAfter, it.prefix, it.maxItems)
+		if err != nil {
+			it.err = err
+			return false
+		}
+	}
+	if len(it.items) > 0 {
+		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, it.items[0].Key, it.items[0].LastModified, it.items[len(it.items)-1].Key, it.items[len(it.items)-1].LastModified)
+	}
+	return len(it.items) > 0
+}
+
+func (it *ObjectIterator) Get() *FileObject {
+	item := it.items[0]
+	it.items = it.items[1:]
+	return item
+}
+
+func (it *ObjectIterator) Err() error {
+	return it.err
+}

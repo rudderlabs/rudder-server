@@ -119,6 +119,7 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 
 func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
+		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
 		return
 	}
 	fileObjects = make([]*FileObject, 0)
@@ -141,14 +142,17 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, startAf
 		// Delimiter: aws.String("/"),
 	}
 	// startAfter is to resume a paused task.
-	if manager.Config.StartAfter != "" {
-		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
+	if startAfter != "" {
+		listObjectsV2Input.StartAfter = aws.String(startAfter)
 	}
-	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+	if manager.Config.ContinuationToken != nil {
+		listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+	}
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
 	if err != nil {
+		pkgLogger.Errorf("Error while listing Digital Ocean Spaces objects: %v", err)
 		return
 	}
 	if resp.IsTruncated != nil {
@@ -223,7 +227,7 @@ func (manager *DOSpacesManager) getTimeout() time.Duration {
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
-	var bucketName, prefix, endPoint, accessKeyID, accessKey, startAfter string
+	var bucketName, prefix, endPoint, accessKeyID, accessKey string
 	var continuationToken *string
 	var region *string
 	var forcePathStyle, disableSSL *bool
@@ -257,12 +261,6 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 			accessKey = tmp
 		}
 	}
-	if config["startAfter"] != nil {
-		tmp, ok := config["startAfter"].(string)
-		if ok {
-			startAfter = tmp
-		}
-	}
 	if config["region"] != nil {
 		tmp, ok := config["region"].(string)
 		if ok {
@@ -290,7 +288,6 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 		Region:            region,
 		ForcePathStyle:    forcePathStyle,
 		DisableSSL:        disableSSL,
-		StartAfter:        startAfter,
 		ContinuationToken: continuationToken,
 		IsTruncated:       true,
 	}
@@ -305,7 +302,6 @@ type DOSpacesConfig struct {
 	Region            *string
 	ForcePathStyle    *bool
 	DisableSSL        *bool
-	StartAfter        string
 	ContinuationToken *string
 	IsTruncated       bool
 }
