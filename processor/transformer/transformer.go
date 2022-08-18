@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime/trace"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -325,6 +326,9 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		if err != nil {
 			trans.requestTime(statsTags(data[0]), time.Since(s))
 			reqFailed = true
+			if strings.Contains(url, "customTransform") {
+				trans.logger.Infof("Request Failed for payload %s with error %+v", string(rawJSON), err)
+			}
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
 				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
