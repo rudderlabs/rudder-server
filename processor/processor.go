@@ -26,6 +26,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -2103,6 +2104,13 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	var responses []transformer.TransformerResponseT
 	var failedEvents []transformer.TransformerResponseT
 
+	type cacheValue struct {
+		values []string
+		ok     bool
+	}
+	supportedMessageTypesCache := make(map[string]*cacheValue)
+	supportedMessageEventsCache := make(map[string]*cacheValue)
+
 	// filter unsupported message types
 	var resp transformer.TransformerResponseT
 	var errMessage string
@@ -2111,8 +2119,13 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 
 		if filter {
 			// filter unsupported message types
-			supportedTypes, ok := event.GetSupportedMessageTypes()
-			if ok {
+			supportedTypes, ok := supportedMessageTypesCache[event.Destination.ID]
+			if !ok {
+				v, o := eventfilter.GetSupportedMessageTypes(&event.Destination)
+				supportedTypes = &cacheValue{values: v, ok: o}
+				supportedMessageTypesCache[event.Destination.ID] = supportedTypes
+			}
+			if supportedTypes.ok {
 				messageType, typOk := event.Message["type"].(string)
 				if !typOk {
 					// add to FailedEvents
@@ -2122,14 +2135,19 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.ContainsString(supportedTypes, messageType) {
+				if !misc.ContainsString(supportedTypes.values, messageType) {
 					continue
 				}
 			}
 
 			// filter unsupported message events
-			supportedEvents, ok := event.GetSupportedMessageEvents()
-			if ok {
+			supportedEvents, ok := supportedMessageEventsCache[event.Destination.ID]
+			if !ok {
+				v, o := eventfilter.GetSupportedMessageEvents(&event.Destination)
+				supportedEvents = &cacheValue{values: v, ok: o}
+				supportedMessageEventsCache[event.Destination.ID] = supportedEvents
+			}
+			if supportedEvents.ok {
 				messageEvent, typOk := event.Message["event"].(string)
 				if !typOk {
 					// add to FailedEvents
@@ -2138,7 +2156,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.ContainsString(supportedEvents, messageEvent) {
+				if !misc.ContainsString(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}

@@ -1486,6 +1486,7 @@ var _ = Describe("Static Function Tests", func() {
 
 		It("Should filter out identify events when it is supported but serverSideIdentify is disabled", func() {
 			destinationConfig := backendconfig.DestinationT{
+				ID: "some-destination-id",
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
 				},
