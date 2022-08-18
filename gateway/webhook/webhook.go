@@ -84,11 +84,6 @@ type batchWebhookTransformerT struct {
 	stats   *webhookStatsT
 }
 
-type webhookErrorRespT struct {
-	err        string
-	statusCode int
-}
-
 func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	queryParams := req.URL.Query()
 	writeKeys, found := queryParams["writeKey"]
