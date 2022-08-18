@@ -9,6 +9,7 @@ import (
 
 /*
 	loadCacheConfig sets the properties of the cache after reading it from the config file.
+
 This gives a feature of hot readability as well.
 */
 func (cache *Cache) loadCacheConfig() {
@@ -30,6 +31,7 @@ type cacheItem struct {
 
 /*
 	Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL and one goroutine removes the
+
 key-value pair form the cache which is older than TTL time.
 */
 type Cache struct {
@@ -68,7 +70,7 @@ func (cache *Cache) init() {
 }
 
 /*
-	Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
+Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
 */
 func (cache *Cache) Update(key string, value []byte) {
 	cache.init()
@@ -89,6 +91,7 @@ func (cache *Cache) Update(key string, value []byte) {
 
 /*
 	ReadAndPopData reads the data by taking a string key,
+
 if there is any data available corresponding to the given key then it removes the data from the cache and returns it
 in the form of []byte
 */

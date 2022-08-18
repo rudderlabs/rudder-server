@@ -57,11 +57,11 @@ import (
  */
 
 /*
- Basic WebRequest unit.
+Basic WebRequest unit.
 
- Contains some payload, could be of several types(batch, identify, track etc.)
+Contains some payload, could be of several types(batch, identify, track etc.)
 
- has a `done` channel that receives a response(error if any)
+has a `done` channel that receives a response(error if any)
 */
 type webRequestT struct {
 	done           chan<- string
@@ -128,11 +128,11 @@ type batchUserWorkerBatchRequestT struct {
 	batchUserWorkerBatchRequest []*userWorkerBatchRequestT
 }
 
-//Basic worker unit that works on incoming webRequests.
+// Basic worker unit that works on incoming webRequests.
 //
-//Has three channels used to communicate between the two goroutines each worker runs.
+// Has three channels used to communicate between the two goroutines each worker runs.
 //
-//One to receive new webRequests, one to send batches of said webRequests and the third to receive errors if any in response to sending the said batches to dbWriterWorker.
+// One to receive new webRequests, one to send batches of said webRequests and the third to receive errors if any in response to sending the said batches to dbWriterWorker.
 type userWebRequestWorkerT struct {
 	webRequestQ                 chan *webRequestT
 	batchRequestQ               chan *batchWebRequestT
@@ -200,7 +200,8 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 }
 
 // Part of the gateway module Setup call.
-// 	Initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
+//
+//	Initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
 func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
@@ -222,8 +223,8 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 }
 
 // runUserWebRequestWorkers starts two goroutines for each worker:
-// 	1. `userWebRequestBatcher` batches the webRequests that a worker gets
-// 	2. `userWebRequestWorkerProcess` processes the requests in the batches and sends them as part of a `jobsList` to `dbWriterWorker`s.
+//  1. `userWebRequestBatcher` batches the webRequests that a worker gets
+//  2. `userWebRequestWorkerProcess` processes the requests in the batches and sends them as part of a `jobsList` to `dbWriterWorker`s.
 func (gateway *HandleT) runUserWebRequestWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
@@ -257,8 +258,8 @@ func (gateway *HandleT) initDBWriterWorkers(ctx context.Context) {
 	_ = g.Wait()
 }
 
-// 	Batches together jobLists received on the `userWorkerBatchRequestQ` channel of the gateway
-// 	and queues the batch at the `batchUserWorkerBatchRequestQ` channel of the gateway.
+//	Batches together jobLists received on the `userWorkerBatchRequestQ` channel of the gateway
+//	and queues the batch at the `batchUserWorkerBatchRequestQ` channel of the gateway.
 //
 // Initiated during the gateway Setup and keeps batching jobLists received from webRequestWorkers
 func (gateway *HandleT) userWorkerRequestBatcher() {
@@ -337,9 +338,9 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 	}
 }
 
-//Out of all the workers, this finds and returns the worker that works on a particular `userID`.
+// Out of all the workers, this finds and returns the worker that works on a particular `userID`.
 //
-//This is done so that requests with a userID keep going to the same worker, which would maintain the consistency in event ordering.
+// This is done so that requests with a userID keep going to the same worker, which would maintain the consistency in event ordering.
 func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestWorkerT {
 	index := int(math.Abs(float64(misc.GetHash(userID) % maxUserWebRequestWorkerProcess)))
 
@@ -351,9 +352,10 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 	return userWebRequestWorker
 }
 
-// 	This function listens on the `webRequestQ` channel of a worker.
-// 	Based on `userWebRequestBatchTimeout` and `maxUserWebRequestBatchSize` parameters,
-// 	batches them together and queues the batch of webreqs in the `batchRequestQ` channel of the worker
+//	This function listens on the `webRequestQ` channel of a worker.
+//	Based on `userWebRequestBatchTimeout` and `maxUserWebRequestBatchSize` parameters,
+//	batches them together and queues the batch of webreqs in the `batchRequestQ` channel of the worker
+//
 // Every webRequestWorker keeps doing this concurrently.
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	reqBuffer := make([]*webRequestT, 0)
@@ -404,8 +406,9 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 
 //	Listens on the `batchRequestQ` channel of the webRequestWorker for new batches of webRequests
 //	Goes over the webRequests in the batch and filters them out(`rateLimit`, `maxReqSize`).
-// 	And creates a `jobList` which is then sent to `userWorkerBatchRequestQ` of the gateway and waits for a response
-// 	from the `dbwriterWorker`s that batch them and write to the db.
+//	And creates a `jobList` which is then sent to `userWorkerBatchRequestQ` of the gateway and waits for a response
+//	from the `dbwriterWorker`s that batch them and write to the db.
+//
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {

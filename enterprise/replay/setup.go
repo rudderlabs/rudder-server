@@ -3,7 +3,6 @@ package replay
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -33,15 +32,7 @@ func initFileManager() (filemanager.FileManager, string, error) {
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	fileManagerFactory := filemanager.DefaultFileManagerFactory
 
-	startTimeStr := strings.TrimSpace(config.GetEnv("START_TIME", "2000-10-02T15:04:05.000Z"))
-	startTime, err := time.Parse(misc.RFC3339Milli, startTimeStr)
-	if err != nil {
-		pkgLogger.Errorf("[[ Replay ]] Error parsing START_TIME: %s", err.Error())
-		return nil, "", err
-	}
-
 	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())
-	configFromEnv["startAfter"] = startTime.UnixNano() / int64(time.Millisecond)
 	uploader, err := fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
