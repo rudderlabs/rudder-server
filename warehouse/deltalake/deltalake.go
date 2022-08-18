@@ -610,9 +610,10 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		)
 	} else {
 		// Partition query
-		partitionQuery, err := dl.partitionQuery(tableName)
+		var partitionQuery string
+		partitionQuery, err = dl.partitionQuery(tableName)
 		if err != nil {
-			err = fmt.Errorf("failed getting partition query, error: %w", err)
+			err = fmt.Errorf("failed getting partition query during load table, error: %w", err)
 			return
 		}
 
@@ -722,9 +723,11 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		)
 	} else {
 		// Partition query
-		partitionQuery, err := dl.partitionQuery(warehouseutils.UsersTable)
+		// Partition query
+		var partitionQuery string
+		partitionQuery, err = dl.partitionQuery(warehouseutils.UsersTable)
 		if err != nil {
-			err = fmt.Errorf("failed getting partition query, error: %w", err)
+			err = fmt.Errorf("failed getting partition query during load users table, error: %w", err)
 			return
 		}
 
