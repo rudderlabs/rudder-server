@@ -567,7 +567,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second)}
 	res, err := client.Do(req)
 	if err != nil {
 		proc.logger.Error("error sending request - %s", err)

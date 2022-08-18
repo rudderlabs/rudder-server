@@ -31,7 +31,7 @@ func Setup(gwHandle GatewayI) *HandleT {
 	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.timeout", 30, time.Second)
+	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
 	webhook.netClient.Logger = nil // to avoid debug logs
 	webhook.netClient.RetryWaitMin = webhookRetryWaitMin
 	webhook.netClient.RetryWaitMax = webhookRetryWaitMax

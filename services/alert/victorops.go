@@ -18,7 +18,7 @@ func (ops *VictorOps) Alert(message string) {
 		"state_message": message,
 	}
 	eventJSON, _ := json.Marshal(event)
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.victorops.timeout", 30, time.Second)}
 	victorOpsUrl := fmt.Sprintf("https://alert.victorops.com/integrations/generic/20131114/alert/%s/rudderRecovery", ops.routingKey)
 	resp, err := client.Post(victorOpsUrl, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops

@@ -72,7 +72,7 @@ func makePostRequest(url string, payload interface{}) error {
 		pkgLogger.Errorf("[Destination Connection Tester] Failed to marshal payload. Err: %v", err)
 		return err
 	}
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.dct.timeout", 30, time.Second)}
 	retryCount := 0
 	var resp *http.Response
 	// Sending destination connection test response to Config Backend
