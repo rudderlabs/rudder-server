@@ -40,7 +40,6 @@ func (event *TransformerEventT) identifyDisabled() bool {
 // GetSupportedEvents returns the supported message events for the given event, based on configuration.
 // If no relevant configuration is found, returns false
 func (event *TransformerEventT) GetSupportedMessageEvents() ([]string, bool) {
-
 	// "listOfConversions": [
 	//  	{
 	//  		"conversions": "Credit Card Added"
