@@ -294,52 +294,59 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableN
 	return
 }
 
-// fetchPartitionColumns fetch tables with tableNames
-func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName string) (partitionedColumns []string, err error) {
+// fetchPartitionColumns return the partition columns for the corresponding tables
+func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName string) ([]string, error) {
 	sqlStatement := fmt.Sprintf(`SHOW PARTITIONS %s.%s`, dl.Warehouse.Namespace, tableName)
+
 	columnsResponse, err := dbT.Client.FetchPartitionColumns(dbT.Context, &proto.FetchPartitionColumnsRequest{
 		Config:       dbT.CredConfig,
 		Identifier:   dbT.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
-		return partitionedColumns, fmt.Errorf("error while fetching partition columns with error: %w", err)
+		return nil, fmt.Errorf("failed to fetch partition columns, error: %w", err)
 	}
 	if !checkAndIgnoreAlreadyExistError(columnsResponse.GetErrorCode(), partitionNotFound) {
-		err = fmt.Errorf("error while fetching partition with response: %v", columnsResponse.GetErrorMessage())
-		return
+		return nil, fmt.Errorf("failed to fetch partition for response, error: %v", columnsResponse.GetErrorMessage())
 	}
-	partitionedColumns = append(partitionedColumns, columnsResponse.GetColumns()...)
-	return
+
+	return columnsResponse.GetColumns(), nil
 }
 
 func isPartitionedByEventDate(partitionedColumns []string) bool {
 	return misc.ContainsString(partitionedColumns, "event_date")
 }
 
-// partitionedQuery partition query
-func (dl *HandleT) partitionedQuery(tableName string) (partitionedQuery string) {
+// partitionQuery
+// Checks whether the table is partition with event_date column
+// If specified, then calculates the date range from first and last event at and add it IN predicate query for event_date
+// If not specified, them returns empty string
+func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 	if !enablePartitionPruning {
-		return
+		return "", nil
 	}
 
-	partitionedColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
+	partitionColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
 	if err != nil {
-		pkgLogger.Errorf("error while fetching partitioned query with %s", err.Error())
-		return
+		return "", fmt.Errorf("failed to prepare partition query, error: %w", err)
 	}
-	if isPartitionedByEventDate(partitionedColumns) {
-		firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
-		dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
-		if len(dateRange) == 0 {
-			return
-		}
-		dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(idx int, str string) string {
-			return fmt.Sprintf(`'%s'`, str)
-		}, ",")
-		partitionedQuery = fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s)`, dateRangeString)
+
+	if !isPartitionedByEventDate(partitionColumns) {
+		return "", nil
 	}
-	return
+
+	firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
+
+	dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
+	if len(dateRange) == 0 {
+		return "", nil
+	}
+
+	dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(idx int, str string) string {
+		return fmt.Sprintf(`'%s'`, str)
+	}, ",")
+	query := fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s)`, dateRangeString)
+	return query, nil
 }
 
 // ExecuteSQL executes sql using grpc Client
@@ -602,12 +609,19 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
 		)
 	} else {
+		// Partition query
+		partitionQuery, err := dl.partitionQuery(tableName)
+		if err != nil {
+			err = fmt.Errorf("failed getting partition query, error: %w", err)
+			return
+		}
+
 		sqlStatement = mergeableLTSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
 			sortedColumnKeys,
-			dl.partitionedQuery(tableName),
+			partitionQuery,
 		)
 	}
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
@@ -707,12 +721,19 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			columnKeys,
 		)
 	} else {
+		// Partition query
+		partitionQuery, err := dl.partitionQuery(warehouseutils.UsersTable)
+		if err != nil {
+			err = fmt.Errorf("failed getting partition query, error: %w", err)
+			return
+		}
+
 		sqlStatement = mergeableLTSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
 			columnKeys,
-			dl.partitionedQuery(warehouseutils.UsersTable),
+			partitionQuery,
 		)
 	}
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
@@ -872,7 +893,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(string, string, string) (err error) {
+func (dl *HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 

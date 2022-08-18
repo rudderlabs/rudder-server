@@ -1187,7 +1187,7 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
-	DescribeTable("JSOM schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
 		got := JSONSchemaToMap(rawMsg)
 		Expect(got).To(Equal(expected))
 	},
