@@ -31,6 +31,7 @@ var (
 	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
+	isClusteringEnabled                   bool
 )
 
 type HandleT struct {
@@ -102,6 +103,7 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
 	}
 	return schema
+
 }
 
 func (bq *HandleT) DeleteTable(tableName string) (err error) {
@@ -116,15 +118,21 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-	clusteringColumns := strings.Split(strings.TrimSpace(primaryKey), ",")
+	clusteringColumns := strings.Split(strings.ReplaceAll(primaryKey, " ", ""), ",")
+
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+
 	sampleSchema := getTableSchema(columnMap)
+
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
-		Clustering: &bigquery.Clustering{
+	}
+
+	if isClusteringEnabled {
+		metaData.Clustering = &bigquery.Clustering{
 			Fields: clusteringColumns,
-		},
+		}
 	}
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	err = tableRef.Create(bq.BQContext, metaData)
@@ -381,7 +389,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 
 		var primaryKeyList []string
 		for _, str := range strings.Split(primaryKey, ",") {
-			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s)`, strings.Trim(str, " ")))
+			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " ")))
 		}
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 
@@ -407,7 +415,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 
 		}
 
-		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, stagingTableName)
 		q := bq.Db.Query(sqlStatement)
 		job, err = q.Run(bq.BQContext)
 		if err != nil {
@@ -674,6 +682,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	config.RegisterBoolConfigVariable(false, &isClusteringEnabled, false, "Warehouse.bigquery.isClusteringEnabled")
+
 }
 
 func Init() {
