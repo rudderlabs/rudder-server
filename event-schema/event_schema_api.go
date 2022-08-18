@@ -382,7 +382,7 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 	vars := mux.Vars(r)
 	eventID, ok := vars["EventID"]
 	if !ok {
-		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
+		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
 

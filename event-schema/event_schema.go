@@ -277,7 +277,8 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 }
 
 /*
- *
+	*
+
 | Event Type | event_type | event_model_identfier |
 | ---------- | ---------- | --------------------- |
 | track      | track      | event["event"]        |

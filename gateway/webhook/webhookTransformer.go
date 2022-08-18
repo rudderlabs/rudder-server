@@ -29,7 +29,7 @@ type transformerBatchResponseT struct {
 func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponseT {
 	resp := transformerResponseT{
 		Err:        response.GetStatus(reason),
-		StatusCode: response.GetStatusCode(reason),
+		StatusCode: response.GetErrorStatusCode(reason),
 	}
 	bt.stats.failedStat.Count(1)
 	return resp
@@ -54,13 +54,13 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: err}
+		return transformerBatchResponseT{batchError: errors.New(response.GetStatus(response.RequestBodyReadFailed)), statusCode: response.GetErrorStatusCode(response.RequestBodyReadFailed)}
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		pkgLogger.Errorf("Source Transformer returned status code: %v", resp.StatusCode)
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: fmt.Errorf("source Transformer returned non-success status code: %v, Error: %v", resp.StatusCode, string(respBody))}
+		return transformerBatchResponseT{batchError: fmt.Errorf("source Transformer returned non-success status code: %v, Error: %v", resp.StatusCode, resp.Status)}
 	}
 
 	/*
@@ -90,14 +90,14 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	if err != nil {
 		return transformerBatchResponseT{
 			batchError: errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat)),
-			statusCode: response.GetStatusCode(response.SourceTransformerInvalidResponseFormat),
+			statusCode: response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat),
 		}
 	}
 	if len(responses) != len(events) {
 		pkgLogger.Errorf("source rudder-transformer response size does not equal sent events size")
 		return transformerBatchResponseT{
 			batchError: errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat)),
-			statusCode: response.GetStatusCode(response.SourceTransformerInvalidResponseFormat),
+			statusCode: response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat),
 		}
 	}
 
