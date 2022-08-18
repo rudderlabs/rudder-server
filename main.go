@@ -252,7 +252,7 @@ func Run(ctx context.Context) int {
 	g.Go(func() (err error) {
 		if err = admin.StartServer(ctx); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				pkgLogger.Errorf("Error starting admin server: %v", err)
+				pkgLogger.Errorf("Error in Admin server routine: %v", err)
 			}
 		}
 		return err
@@ -261,7 +261,7 @@ func Run(ctx context.Context) int {
 	g.Go(func() (err error) {
 		p := &profiler.Profiler{}
 		if err = p.StartServer(ctx); err != nil {
-			pkgLogger.Errorf("Error starting profiler server: %v", err)
+			pkgLogger.Errorf("Error in Profiler server routine: %v", err)
 		}
 		return err
 	})
@@ -271,7 +271,7 @@ func Run(ctx context.Context) int {
 		appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() (err error) {
 			if err = appHandler.StartRudderCore(ctx, options); err != nil {
-				pkgLogger.Errorf("Error starting Rudder Core: %v", err)
+				pkgLogger.Errorf("Error in Rudder Core routine: %v", err)
 			}
 			return err
 		}))
@@ -281,7 +281,7 @@ func Run(ctx context.Context) int {
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		g.Go(misc.WithBugsnagForWarehouse(func() (err error) {
 			if err = startWarehouseService(ctx, application); err != nil {
-				pkgLogger.Errorf("Error starting Warehouse Service: %v", err)
+				pkgLogger.Errorf("Error in Warehouse Service routine: %v", err)
 			}
 			return err
 		}))
