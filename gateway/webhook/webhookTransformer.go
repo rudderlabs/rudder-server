@@ -13,6 +13,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+// transformerResponseT will be populated using JSON unmarshall
+// so we need to make fields public
 type transformerResponseT struct {
 	Output         map[string]interface{} `json:"output"`
 	Err            string                 `json:"error"`
