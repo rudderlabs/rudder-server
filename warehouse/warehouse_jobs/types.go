@@ -63,4 +63,5 @@ type WhStatusResponse struct {
 
 type WhAsyncJobRunnerI interface {
 	startAsyncJobRunner(context.Context)
+	getTableNamesByJobRunIDTaskRunID(jobrunid string, taskrunid string)
 }

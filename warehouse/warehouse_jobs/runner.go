@@ -32,7 +32,11 @@ func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, lo
 
 const AsyncTableName string = "wh_async_jobs"
 
-//Gets Table names from the jobrunid. Should not belong here but need to create separate package for deletebyjobs
+/*
+Gets Table names from the jobrunid.
+Should not belong here but need to create separate package for deletebyjobs or
+refactor to a more generic getTableName with jobrundid and taskrunid as params
+*/
 func (asyncWhJob *AsyncJobWhT) getTableNamesByJobRunIDTaskRunID(jobrunid string, taskrunid string) ([]string, error) {
 	asyncWhJob.log.Infof("Extracting tablenames for the job run id %s", jobrunid)
 	var tableNames []string
@@ -62,7 +66,10 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesByJobRunIDTaskRunID(jobrunid string,
 	return tableNames, nil
 }
 
-//Add data to the tables
+/*
+Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
+
+*/
 func (asyncWhJob *AsyncJobWhT) addJobstoDB(payload *AsyncJobPayloadT) {
 	asyncWhJob.log.Infof("Adding job to the wh_asnc_jobs jobrunid:%s, taskrunid: %s and tablename: %s", payload.JobRunID, payload.TaskRunID, payload.TableName)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (sourceid, namespace, destinationid, destination_type, jobrunid, taskrunid, tablename,  status, created_at, updated_at,jobtype,async_job_type)
@@ -79,7 +86,6 @@ func (asyncWhJob *AsyncJobWhT) addJobstoDB(payload *AsyncJobPayloadT) {
 	row := stmt.QueryRow(payload.SourceID, payload.Namespace, payload.DestinationID, payload.DestType, payload.JobRunID, payload.TaskRunID, payload.TableName, asyncJobWaiting, now, now, payload.JobType, payload.AsyncJobType)
 	var asynJobID int64
 	err = row.Scan(&asynJobID)
-	fmt.Println(asynJobID)
 	if err != nil {
 		asyncWhJob.log.Errorf("Error processing the %s ", sqlStatement)
 		panic(err)

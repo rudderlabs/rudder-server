@@ -989,7 +989,7 @@ func (gateway *HandleT) addWarehouseAsyncJob(payload []byte) error {
 //Warehouse Async Job Handlers
 func (gateway *HandleT) warehouseJobStatusHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.logger.LogRequest(r)
-	gateway.logger.Info("[GW] Warehouse Job Add Handler")
+	gateway.logger.Info("[GW] Warehouse Job Status Handler")
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		gateway.logger.Error("[GW] Error in reading payload in warehouseJobStatusHandler")
