@@ -24,7 +24,7 @@ func RetryWith(parentContext context.Context, timeout time.Duration, maxAttempts
 			return nil
 		}
 		// only retry if the child context's deadline was exceeded
-		if !errors.Is(err, context.DeadlineExceeded) || parentContext.Err() != nil {
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || parentContext.Err() != nil {
 			return err
 		}
 		attempt++

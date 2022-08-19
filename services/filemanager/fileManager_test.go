@@ -294,7 +294,7 @@ func TestFileManager(t *testing.T) {
 				filePtr.Close()
 			}
 			// list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", 1000)
+			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", "", 1000)
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 			require.NoError(t, err, "expected no error while listing files")
 
@@ -379,7 +379,7 @@ func TestFileManager(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", 1000)
+			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", "", 1000)
 			if err != nil {
 				fmt.Println("error while getting new file object: ", err)
 			}
@@ -414,7 +414,7 @@ func TestFileManager(t *testing.T) {
 				// fail to fetch file list
 				ctx1, cancel := context.WithTimeout(context.TODO(), time.Second*5)
 				cancel()
-				_, err = fm.ListFilesWithPrefix(ctx1, "", 1000)
+				_, err = fm.ListFilesWithPrefix(ctx1, "", "", 1000)
 				require.Error(t, err, "expected error while listing files")
 			}
 		})
@@ -441,7 +441,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 	manager := &filemanager.GCSManager{
 		Config: filemanager.GetGCSConfig(config),
 	}
-	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
+	_, err = manager.ListFilesWithPrefix(context.TODO(), "", "/tests", 100)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }

@@ -1,6 +1,7 @@
 package validators
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -88,7 +89,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 
 	if !parameters.Valid {
 		// insert current version
-		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
+		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":%q}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
 		_, err := dbHandle.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
@@ -160,11 +161,11 @@ func killDanglingDBConnections(db *sql.DB) {
 	if err != nil {
 		panic(fmt.Errorf("error occurred when querying pg_stat_activity table for terminating dangling connections: %v", err.Error()))
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type danglingConnRow struct {
 		pid           int
-		queryStart    string
+		queryStart    *string
 		waitEventType string
 		waitEvent     string
 		state         string
@@ -174,7 +175,7 @@ func killDanglingDBConnections(db *sql.DB) {
 
 	dangling := make([]*danglingConnRow, 0)
 	for rows.Next() {
-		var row danglingConnRow = danglingConnRow{}
+		var row danglingConnRow
 		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query, &row.terminated)
 		if err != nil {
 			panic(err)
@@ -191,9 +192,9 @@ func killDanglingDBConnections(db *sql.DB) {
 }
 
 // IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(db *sql.DB) (bool, error) {
+func IsPostgresCompatible(ctx context.Context, db *sql.DB) (bool, error) {
 	var versionNum int
-	err := db.QueryRow("SHOW server_version_num;").Scan(&versionNum)
+	err := db.QueryRowContext(ctx, "SHOW server_version_num;").Scan(&versionNum)
 	if err != nil {
 		return false, err
 	}
@@ -205,7 +206,7 @@ func ValidateEnv() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
 
-	isDBCompatible, err := IsPostgresCompatible(dbHandle)
+	isDBCompatible, err := IsPostgresCompatible(context.TODO(), dbHandle)
 	if err != nil {
 		panic(err)
 	}

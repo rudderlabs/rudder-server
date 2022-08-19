@@ -23,9 +23,9 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// TestConnection test connection for postgres
-func (*TestHandle) TestConnection() error {
-	err := testhelper.ConnectWithBackoff(func() (err error) {
+// VerifyConnection test connection for postgres
+func (*TestHandle) VerifyConnection() error {
+	err := testhelper.WithConstantBackoff(func() (err error) {
 		credentials := postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",
@@ -63,6 +63,7 @@ func TestPostgresIntegration(t *testing.T) {
 		EventsCountMap:       testhelper.DefaultEventMap(),
 		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
 		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
+		Provider:             warehouseutils.POSTGRES,
 	}
 
 	// Scenario 1
@@ -72,7 +73,7 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
@@ -104,7 +105,7 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
+	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events

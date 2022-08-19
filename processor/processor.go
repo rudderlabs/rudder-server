@@ -525,7 +525,9 @@ func loadConfig() {
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
+//
 //	updates the transformer feature map.
+//
 // It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
 func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 	for {
@@ -565,7 +567,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second)}
 	res, err := client.Do(req)
 	if err != nil {
 		proc.logger.Error("error sending request - %s", err)
@@ -2308,10 +2310,10 @@ func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
 	}
 }
 
-//`jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
-//`subJobMerger` func merges the split jobs into a single batch before writing to DB.
-//So, to keep track of sub-batch we have `hasMore` variable.
-//each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
+// `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
+// `subJobMerger` func merges the split jobs into a single batch before writing to DB.
+// So, to keep track of sub-batch we have `hasMore` variable.
+// each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
 	subJobs       []*jobsdb.JobT
 	hasMore       bool

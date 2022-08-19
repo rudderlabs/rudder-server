@@ -122,7 +122,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
 	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)}
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.lockMapWMutex = &sync.RWMutex{}
@@ -326,7 +326,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"rudderCategory":  authStats.rudderCategory,
 		"isCallToCpApi":   strconv.FormatBool(authStats.isCallToCpApi),
 		"authErrCategory": authStats.authErrCategory,
-		"destDefName":     authStats.destDefName,
+		"destType":        authStats.destDefName,
 	}).SendTiming(time.Since(startTime))
 }
 
@@ -339,7 +339,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"errorMessage":    refStats.errorMessage,
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
-		"destDefName":     refStats.destDefName,
+		"destType":        refStats.destDefName,
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 	}).Increment()
 }
