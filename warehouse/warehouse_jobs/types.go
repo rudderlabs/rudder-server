@@ -63,5 +63,8 @@ type WhStatusResponse struct {
 
 type WhAsyncJobRunnerI interface {
 	startAsyncJobRunner(context.Context)
-	getTableNamesByJobRunIDTaskRunID(jobrunid string, taskrunid string)
+	getTableNamesBy(jobrunid string, taskrunid string)
+	getPendingAsyncJobs(context.Context) ([]AsyncJobPayloadT, error)
+	getStatusAsyncJob(*StartJobReqPayload) (string, error)
+	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
 }

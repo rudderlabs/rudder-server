@@ -46,7 +46,7 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	tableNames, err := AsyncJobWH.getTableNamesByJobRunIDTaskRunID(startJobPayload.JobRunID, startJobPayload.TaskRunID)
+	tableNames, err := AsyncJobWH.getTableNamesBy(startJobPayload.JobRunID, startJobPayload.TaskRunID)
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)

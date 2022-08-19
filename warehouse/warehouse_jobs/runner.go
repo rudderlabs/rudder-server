@@ -27,7 +27,6 @@ func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, lo
 		pgnotifier:     notifier,
 		connectionsMap: connectionsMap,
 	}
-	// warehousejob_deletebyjobruntaskrunid.AsyncWh = &AsyncJobWH
 }
 
 const AsyncTableName string = "wh_async_jobs"
@@ -37,7 +36,7 @@ Gets Table names from the jobrunid.
 Should not belong here but need to create separate package for deletebyjobs or
 refactor to a more generic getTableName with jobrundid and taskrunid as params
 */
-func (asyncWhJob *AsyncJobWhT) getTableNamesByJobRunIDTaskRunID(jobrunid string, taskrunid string) ([]string, error) {
+func (asyncWhJob *AsyncJobWhT) getTableNamesBy(jobrunid string, taskrunid string) ([]string, error) {
 	asyncWhJob.log.Infof("Extracting tablenames for the job run id %s", jobrunid)
 	var tableNames []string
 	query := fmt.Sprintf(`select id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s'`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid)
@@ -253,6 +252,7 @@ func (asyncWhJob *AsyncJobWhT) updateMultipleAsyncJobs(payloads *[]AsyncJobPaylo
 	}
 }
 
+//The above function and the following function can be merged into one. This can be part of future work
 func (asyncWhJob *AsyncJobWhT) updateSingleAsyncJob(payload *AsyncJobPayloadT, status string, errMessage string) {
 	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Aborted")
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
