@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -17,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"gotest.tools/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -28,12 +29,12 @@ const (
 )
 
 var (
-	testInitDone = false
-	whStats      *webhookStatsT
+	whStats *webhookStatsT
+	once    sync.Once
 )
 
 func initWebhook() {
-	if !testInitDone {
+	once.Do(func() {
 		config.Load()
 		logger.Init()
 		misc.Init()
@@ -42,8 +43,7 @@ func initWebhook() {
 		whStats = newWebhookStats()
 		srv := httptest.NewServer(http.HandlerFunc(transformMockHandler))
 		sourceTransformerURL = srv.URL
-		testInitDone = true
-	}
+	})
 }
 
 func createWebhookHandler(gwHandle GatewayI) *HandleT {
@@ -179,7 +179,7 @@ func TestBatchTransformLoopWithError(t *testing.T) {
 	}()
 
 	bt.batchTransformLoop()
-	assert.DeepEqual(t, whInputResp, whResp)
+	assert.Equal(t, whInputResp, whResp)
 }
 
 func TestBatchTransformLoopWithOutput(t *testing.T) {
@@ -224,5 +224,5 @@ func TestBatchTransformLoopWithOutput(t *testing.T) {
 	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	bt.batchTransformLoop()
-	assert.DeepEqual(t, whInputResp, whResp)
+	assert.Equal(t, whInputResp, whResp)
 }
