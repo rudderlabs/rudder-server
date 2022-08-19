@@ -40,8 +40,8 @@ func Init() {
 
 type webhookT struct {
 	request    *http.Request
-	writer     *http.ResponseWriter
-	done       chan<- transformerResponseT
+	writer     http.ResponseWriter
+	done       chan<- transformerResponse
 	sourceType string
 	writeKey   string
 }
@@ -174,8 +174,8 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 	}
 
-	done := make(chan transformerResponseT)
-	req := webhookT{request: r, writer: &w, done: done, sourceType: sourceDefName, writeKey: writeKey}
+	done := make(chan transformerResponse)
+	req := webhookT{request: r, writer: w, done: done, sourceType: sourceDefName, writeKey: writeKey}
 	webhook.requestQ[sourceDefName] <- &req
 
 	// Wait for batcher process to be done
@@ -192,15 +192,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
 	} else {
-		payload := []byte(response.GetStatus(response.Ok))
+		payload := []byte(response.Ok)
 		if resp.OutputToSource != nil {
-			payload, err = json.Marshal(resp.OutputToSource)
-			if err != nil {
-				pkgLogger.Errorf("failed to marshal output to source: %w", err)
-				http.Error(w, response.GetStatus(response.SourceTransformerInvalidOutputFormatInResponse),
-					response.GetErrorStatusCode(response.SourceTransformerInvalidOutputFormatInResponse))
-				return
-			}
+			payload = resp.OutputToSource.Body
+			w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
 		}
 		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 		_, _ = w.Write(payload)
@@ -250,7 +245,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			req.request.Body.Close()
 
 			if err != nil {
-				req.done <- transformerResponseT{Err: response.GetStatus(response.RequestBodyReadFailed)}
+				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
 				continue
 			}
 
@@ -258,7 +253,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {
-					req.done <- transformerResponseT{Err: response.GetStatus(response.ErrorInMarshal)}
+					req.done <- transformerResponse{Err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
 
@@ -270,7 +265,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 
 			if !json.Valid(body) {
-				req.done <- transformerResponseT{Err: response.GetStatus(response.InvalidJSON)}
+				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
 				continue
 			}
 
@@ -305,7 +300,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				statusCode = batchResponse.statusCode
 			}
 			for _, req := range breq.batchRequest {
-				req.done <- transformerResponseT{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
+				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
 			}
 			continue
 		}
@@ -322,7 +317,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				errorMessage := bt.webhook.enqueueInGateway(webRequest, outputPayload)
 				if errorMessage != "" {
-					webRequest.done <- transformerResponseT{Err: errorMessage}
+					webRequest.done <- transformerResponse{Err: errorMessage}
 					continue
 				}
 			}
@@ -341,7 +336,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 	if err != nil {
 		return err.Error()
 	}
-	return webhook.gwHandle.ProcessWebRequest(req.writer, req.request, "batch", payload, req.writeKey)
+	return webhook.gwHandle.ProcessWebRequest(&req.writer, req.request, "batch", payload, req.writeKey)
 }
 
 func (webhook *HandleT) Register(name string) {

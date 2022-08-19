@@ -13,23 +13,28 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// transformerResponseT will be populated using JSON unmarshall
+type outputToSource struct {
+	Body        []byte `json:"body"`
+	ContentType string `json:"contentType"`
+}
+
+// transformerResponse will be populated using JSON unmarshall
 // so we need to make fields public
-type transformerResponseT struct {
+type transformerResponse struct {
 	Output         map[string]interface{} `json:"output"`
 	Err            string                 `json:"error"`
 	StatusCode     int                    `json:"statusCode"`
-	OutputToSource map[string]interface{} `json:"outputToSource"`
+	OutputToSource *outputToSource        `json:"outputToSource"`
 }
 
 type transformerBatchResponseT struct {
 	batchError error
-	responses  []transformerResponseT
+	responses  []transformerResponse
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponseT {
-	resp := transformerResponseT{
+func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponse {
+	resp := transformerResponse{
 		Err:        response.GetStatus(reason),
 		StatusCode: response.GetErrorStatusCode(reason),
 	}
@@ -77,16 +82,17 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 							userId: "U123"
 						}
 					]
+				},
+				outputToSource: {
+					"body": "eyJhIjoxfQ==", // base64 encode string
+					"contentType": "application/json"
 				}
-			},
-			// for event that give an error from source transformer
-			{
-				statusCode: 400,
-				error: "event type is not supported"
+				statusCode: 400, // this will be 200 in case of success
+				error: "event type is not supported" // this will beempty in case of success
 			}
 		]
 	*/
-	var responses []transformerResponseT
+	var responses []transformerResponse
 	err = json.Unmarshal(respBody, &responses)
 
 	if err != nil {
@@ -103,7 +109,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 		}
 	}
 
-	batchResponse := transformerBatchResponseT{responses: make([]transformerResponseT, len(events))}
+	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
 
 	for idx, resp := range responses {
 		if resp.Err != "" {

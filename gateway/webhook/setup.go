@@ -1,3 +1,5 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/gateway/webhook/mock_webhook.go -package mock_webhook github.com/rudderlabs/rudder-server/gateway/webhook GatewayI
+
 package webhook
 
 import (
@@ -26,6 +28,16 @@ type WebHookI interface {
 	Register(name string)
 }
 
+func newWebhookStats() *webhookStatsT {
+	wStats := webhookStatsT{}
+	wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
+	wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
+	wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
+	wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
+	wStats.sourceStats = make(map[string]*webhookSourceStatT)
+	return &wStats
+}
+
 func Setup(gwHandle GatewayI) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle}
 	webhook.requestQ = make(map[string](chan *webhookT))
@@ -43,15 +55,9 @@ func Setup(gwHandle GatewayI) *HandleT {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(misc.WithBugsnag(func() error {
-			wStats := webhookStatsT{}
-			wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
-			wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
-			wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
-			wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
-			wStats.sourceStats = make(map[string]*webhookSourceStatT)
 			bt := batchWebhookTransformerT{
 				webhook: webhook,
-				stats:   &wStats,
+				stats:   newWebhookStats(),
 			}
 			bt.batchTransformLoop()
 			return nil
