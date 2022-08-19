@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	mock_webhook "github.com/rudderlabs/rudder-server/mocks/gateway/webhook"
@@ -25,13 +24,17 @@ const (
 	sampleWriteKey = "SampleWriteKey"
 	sourceDefName  = "webhook"
 	sampleError    = "someError"
-	sampleOutput   = "{\"output\":true}"
+	sampleJson     = "{\"hello\":\"world\"}"
 )
 
 var (
-	whStats           *webhookStatsT
-	once              sync.Once
-	transformerServer = httptest.NewServer(http.HandlerFunc(transformMockHandler))
+	whStats         *webhookStatsT
+	once            sync.Once
+	outputToGateway = map[string]interface{}{"hello": "world"}
+	outputToWebhook = &outputToSource{
+		Body:        []byte(sampleJson),
+		ContentType: "application/json",
+	}
 )
 
 func initWebhook() {
@@ -40,189 +43,194 @@ func initWebhook() {
 		logger.Init()
 		misc.Init()
 		Init()
+		maxTransformerProcess = 1
 		stats.DefaultStats = &stats.HandleT{}
 		whStats = newWebhookStats()
-		sourceTransformerURL = transformerServer.URL
 	})
 }
 
-func createWebhookHandler(gwHandle GatewayI) *HandleT {
-	return &HandleT{
-		requestQ:      map[string]chan *webhookT{},
-		batchRequestQ: make(chan *batchWebhookT),
-		netClient:     retryablehttp.NewClient(),
-		gwHandle:      gwHandle,
-	}
-}
-
-func transformMockHandler(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	reqBody, _ := io.ReadAll(r.Body)
-	_, err := w.Write(reqBody)
-	if err != nil {
-		pkgLogger.Error(err)
-	}
-}
-
-func TestWebhookRequestHandlerErrorCase(t *testing.T) {
+func TestWebhookRequestHandlerWithTransformerBatchError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
-	webhookHandler := createWebhookHandler(mockGW)
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, nil)
-	w := httptest.NewRecorder()
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, sampleError, http.StatusBadRequest)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
+
 	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
-	webhookHandler.requestQ[sourceDefName] = make(chan *webhookT)
+	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 
-	// Error case
-	go func() {
-		whReq := <-webhookHandler.requestQ[sourceDefName]
-		whReq.done <- transformerResponse{
-			Err:        sampleError,
-			StatusCode: http.StatusBadRequest,
-		}
-	}()
-	mockGW.EXPECT().TrackRequestMetrics(sampleError).Times(1)
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
 	webhookHandler.RequestHandler(w, req)
 
-	assert.Equal(t, w.Result().StatusCode, http.StatusBadRequest)
-	assert.Equal(t, strings.TrimSpace(w.Body.String()), sampleError)
+	assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
+	assert.Contains(t, strings.TrimSpace(w.Body.String()), "source Transformer returned non-success status")
+	_ = webhookHandler.Shutdown()
 }
 
-func TestWebhookRequestHandlerNonEmptyOutputCase(t *testing.T) {
+func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
-	webhookHandler := createWebhookHandler(mockGW)
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, nil)
-	w := httptest.NewRecorder()
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			responses := []transformerResponse{}
+			for i := 0; i < len(requests); i++ {
+				responses = append(responses, transformerResponse{
+					Err:        sampleError,
+					StatusCode: http.StatusBadRequest,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
+
 	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
-	webhookHandler.requestQ[sourceDefName] = make(chan *webhookT)
+	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 
-	go func() {
-		whReq := <-webhookHandler.requestQ[sourceDefName]
-		whReq.done <- transformerResponse{
-			OutputToSource: &outputToSource{
-				Body:        []byte(sampleOutput),
-				ContentType: "application/json",
-			},
-		}
-	}()
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
+	webhookHandler.RequestHandler(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
+	assert.Contains(t, sampleError, strings.TrimSpace(w.Body.String()))
+	_ = webhookHandler.Shutdown()
+}
+
+func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mock_webhook.NewMockGatewayI(ctrl)
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			responses := []transformerResponse{}
+			for i := 0; i < len(requests); i++ {
+				responses = append(responses, transformerResponse{
+					OutputToSource: outputToWebhook,
+					StatusCode:     http.StatusOK,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
+	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
+
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
 	webhookHandler.RequestHandler(w, req)
 
-	assert.Equal(t, w.Result().StatusCode, http.StatusOK)
-	assert.Equal(t, strings.TrimSpace(w.Body.String()), sampleOutput)
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	assert.Equal(t, sampleJson, strings.TrimSpace(w.Body.String()))
+	_ = webhookHandler.Shutdown()
 }
 
-func TestWebhookRequestHandlerEmptyOutputCase(t *testing.T) {
+func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
-	webhookHandler := createWebhookHandler(mockGW)
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, nil)
-	w := httptest.NewRecorder()
+	outputToGateway := map[string]interface{}{"text": "hello world"}
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			responses := []transformerResponse{}
+			for i := 0; i < len(requests); i++ {
+				responses = append(responses, transformerResponse{
+					Output:     outputToGateway,
+					StatusCode: http.StatusOK,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
 	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
-	webhookHandler.requestQ[sourceDefName] = make(chan *webhookT)
-
-	go func() {
-		whReq := <-webhookHandler.requestQ[sourceDefName]
-		whReq.done <- transformerResponse{}
-	}()
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
+	gwPayload, _ := json.Marshal(outputToGateway)
+	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, sampleWriteKey).Times(1)
+
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
 	webhookHandler.RequestHandler(w, req)
 
-	assert.Equal(t, w.Result().StatusCode, http.StatusOK)
-	assert.Equal(t, strings.TrimSpace(w.Body.String()), response.Ok)
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	assert.Equal(t, response.Ok, strings.TrimSpace(w.Body.String()))
+	_ = webhookHandler.Shutdown()
 }
 
-func TestBatchTransformLoopWithError(t *testing.T) {
+func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
-	webhookHandler := createWebhookHandler(mockGW)
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			responses := []transformerResponse{}
+			for i := 0; i < len(requests); i++ {
+				responses = append(responses, transformerResponse{
+					Output:         outputToGateway,
+					OutputToSource: outputToWebhook,
+					StatusCode:     http.StatusOK,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
+	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
+	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
+	gwPayload, _ := json.Marshal(outputToGateway)
+	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, sampleWriteKey).Times(1)
+
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
 	w := httptest.NewRecorder()
-	bt := batchWebhookTransformerT{
-		webhook: webhookHandler,
-		stats:   whStats,
-	}
+	webhookHandler.RequestHandler(w, req)
 
-	var whResp transformerResponse
-	whInputResp := transformerResponse{
-		Err:        sampleError,
-		StatusCode: http.StatusBadRequest,
-	}
-
-	go func() {
-		done := make(chan transformerResponse)
-		sampleInput, _ := json.Marshal(whInputResp)
-		req := httptest.NewRequest(http.MethodPost, "/transform", bytes.NewBuffer(sampleInput))
-		whReq := &webhookT{
-			request:    req,
-			writer:     w,
-			done:       done,
-			sourceType: sourceDefName,
-			writeKey:   sampleWriteKey,
-		}
-		bt.webhook.batchRequestQ <- &batchWebhookT{
-			batchRequest: []*webhookT{whReq},
-			sourceType:   sourceDefName,
-		}
-		defer close(bt.webhook.batchRequestQ)
-		whResp = <-done
-	}()
-
-	bt.batchTransformLoop()
-	assert.Equal(t, whInputResp, whResp)
-}
-
-func TestBatchTransformLoopWithOutput(t *testing.T) {
-	initWebhook()
-	ctrl := gomock.NewController(t)
-	mockGW := mock_webhook.NewMockGatewayI(ctrl)
-	webhookHandler := createWebhookHandler(mockGW)
-
-	w := httptest.NewRecorder()
-
-	bt := batchWebhookTransformerT{
-		webhook: webhookHandler,
-		stats:   whStats,
-	}
-
-	var whResp transformerResponse
-	whInputResp := transformerResponse{
-		Output: map[string]interface{}{"messgage": "hello world"},
-		OutputToSource: &outputToSource{
-			Body:        []byte(sampleOutput),
-			ContentType: "application/json",
-		},
-	}
-	go func() {
-		done := make(chan transformerResponse)
-		sampleInput, _ := json.Marshal(whInputResp)
-		req := httptest.NewRequest(http.MethodPost, "/transform", bytes.NewBuffer(sampleInput))
-		whReq := &webhookT{
-			request:    req,
-			writer:     w,
-			done:       done,
-			sourceType: sourceDefName,
-			writeKey:   sampleWriteKey,
-		}
-		bt.webhook.batchRequestQ <- &batchWebhookT{
-			batchRequest: []*webhookT{whReq},
-			sourceType:   sourceDefName,
-		}
-		defer close(bt.webhook.batchRequestQ)
-		whResp = <-done
-	}()
-	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-
-	bt.batchTransformLoop()
-	assert.Equal(t, whInputResp, whResp)
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	assert.Equal(t, sampleJson, strings.TrimSpace(w.Body.String()))
+	_ = webhookHandler.Shutdown()
 }

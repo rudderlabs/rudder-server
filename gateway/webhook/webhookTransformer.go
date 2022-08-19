@@ -47,7 +47,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	bt.stats.transformTimerStat.Start()
 
 	payload := misc.MakeJSONArray(events)
-	url := fmt.Sprintf(`%s/%s`, sourceTransformerURL, strings.ToLower(sourceType))
+	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
 	bt.stats.transformTimerStat.End()

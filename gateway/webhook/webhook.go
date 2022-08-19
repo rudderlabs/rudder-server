@@ -80,9 +80,12 @@ type webhookStatsT struct {
 }
 
 type batchWebhookTransformerT struct {
-	webhook *HandleT
-	stats   *webhookStatsT
+	webhook              *HandleT
+	stats                *webhookStatsT
+	sourceTransformerURL string
 }
+
+type batchTransformerOption func(bt *batchWebhookTransformerT)
 
 func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	queryParams := req.URL.Query()
@@ -290,7 +293,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
-		if len(batchResponse.responses) != len(payloadArr) {
+		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
 			batchResponse.batchError = errors.New("webhook batchtransform response events size does not equal sent events size")
 			pkgLogger.Errorf("%w", batchResponse.batchError)
 		}
@@ -312,7 +315,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if resp.Err == "" && resp.Output != nil {
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
-					webRequests[idx].done <- bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
+					webRequest.done <- bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
 					continue
 				}
 				errorMessage := bt.webhook.enqueueInGateway(webRequest, outputPayload)

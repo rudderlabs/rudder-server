@@ -38,7 +38,7 @@ func newWebhookStats() *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle GatewayI) *HandleT {
+func Setup(gwHandle GatewayI, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle}
 	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
@@ -56,8 +56,12 @@ func Setup(gwHandle GatewayI) *HandleT {
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			bt := batchWebhookTransformerT{
-				webhook: webhook,
-				stats:   newWebhookStats(),
+				webhook:              webhook,
+				stats:                newWebhookStats(),
+				sourceTransformerURL: sourceTransformerURL,
+			}
+			for _, opt := range opts {
+				opt(&bt)
 			}
 			bt.batchTransformLoop()
 			return nil
