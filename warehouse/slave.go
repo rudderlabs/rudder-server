@@ -350,10 +350,6 @@ func (jobRun *JobRunT) cleanup() {
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.Close()
-			if err != nil {
-				pkgLogger.Errorf("Error while closing load file %s : %v", writer.GetLoadFile().Name(), err)
-			}
 			misc.RemoveFilePaths(writer.GetLoadFile().Name())
 		}
 	}
@@ -557,6 +553,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
+	for _, loadFile := range jobRun.outputFileWritersMap {
+		err = loadFile.Close()
+		if err != nil {
+			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
+		}
+	}
 	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
 	return loadFileUploadOutputs, err
 }
