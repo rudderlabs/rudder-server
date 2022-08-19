@@ -89,7 +89,7 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 	return
 }
 
-func (w *warehousegrpc) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.CountWHUploadsToRetryResponse, err error) {
+func (w *warehousegrpc) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	retryReq := &RetryRequest{
 		WorkspaceID:     req.WorkspaceId,
 		SourceID:        req.SourceId,
@@ -101,7 +101,7 @@ func (w *warehousegrpc) CountWHUploadsToRetry(ctx context.Context, req *proto.Re
 		API:             UploadAPI,
 	}
 	r, err := retryReq.UploadsToRetry(ctx)
-	response = &proto.CountWHUploadsToRetryResponse{
+	response = &proto.RetryWHUploadsResponse{
 		Count:      r.Count,
 		Message:    r.Message,
 		StatusCode: r.StatusCode,

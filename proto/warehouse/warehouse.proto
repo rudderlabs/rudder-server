@@ -14,7 +14,7 @@ service Warehouse {
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
-  rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (CountWHUploadsToRetryResponse);
+  rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
 }
 
 message Pagination {
@@ -102,11 +102,6 @@ message RetryWHUploadsRequest{
 
 message RetryWHUploadsResponse {
   string message = 1;
-  int32 status_code = 2;
-}
-
-message CountWHUploadsToRetryResponse {
-  int64 count = 1;
-  string message = 2;
+  int64 count = 2;
   int32 status_code = 3;
 }

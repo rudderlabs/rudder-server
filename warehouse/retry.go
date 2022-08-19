@@ -24,11 +24,6 @@ type RetryRequest struct {
 }
 
 type RetryResponse struct {
-	Message    string
-	StatusCode int32
-}
-
-type CountRetryResponse struct {
 	Count      int64
 	Message    string
 	StatusCode int32
@@ -79,13 +74,13 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 	}
 
 	response = RetryResponse{
-		Message:    successMessage(uploadsRetried),
+		Count:      uploadsRetried,
 		StatusCode: 200,
 	}
 	return
 }
 
-func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response CountRetryResponse, err error) {
+func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response RetryResponse, err error) {
 	// Request validation
 	err = retryReq.validateReq()
 	defer func() {
@@ -96,7 +91,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Coun
 				retryReq.DestinationID,
 				err.Error(),
 			)
-			response = CountRetryResponse{
+			response = RetryResponse{
 				Message:    err.Error(),
 				StatusCode: 400,
 			}
@@ -129,7 +124,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Coun
 		return
 	}
 
-	response = CountRetryResponse{
+	response = RetryResponse{
 		Count:      count,
 		StatusCode: 200,
 	}
@@ -248,13 +243,6 @@ func (retryReq *RetryRequest) whereClauses(sourceIDs []string) (clauses []string
 		clausesArgs = append(clausesArgs, retryReq.IntervalInHours)
 	}
 	return
-}
-
-func successMessage(uploadsRetried int64) string {
-	if uploadsRetried == 0 {
-		return "No retried uploads to sync for this destination"
-	}
-	return fmt.Sprintf("Retried successfully %d syncs", uploadsRetried)
 }
 
 func (retryReq *RetryRequest) validateReq() (err error) {

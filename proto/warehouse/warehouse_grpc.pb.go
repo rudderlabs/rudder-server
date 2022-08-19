@@ -27,7 +27,7 @@ type WarehouseClient interface {
 	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 	Validate(ctx context.Context, in *WHValidationRequest, opts ...grpc.CallOption) (*WHValidationResponse, error)
 	RetryWHUploads(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error)
-	CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*CountWHUploadsToRetryResponse, error)
+	CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error)
 }
 
 type warehouseClient struct {
@@ -101,8 +101,8 @@ func (c *warehouseClient) RetryWHUploads(ctx context.Context, in *RetryWHUploads
 	return out, nil
 }
 
-func (c *warehouseClient) CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*CountWHUploadsToRetryResponse, error) {
-	out := new(CountWHUploadsToRetryResponse)
+func (c *warehouseClient) CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error) {
+	out := new(RetryWHUploadsResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/CountWHUploadsToRetry", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ type WarehouseServer interface {
 	TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error)
 	Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error)
 	RetryWHUploads(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
-	CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*CountWHUploadsToRetryResponse, error)
+	CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -150,7 +150,7 @@ func (UnimplementedWarehouseServer) Validate(context.Context, *WHValidationReque
 func (UnimplementedWarehouseServer) RetryWHUploads(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RetryWHUploads not implemented")
 }
-func (UnimplementedWarehouseServer) CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*CountWHUploadsToRetryResponse, error) {
+func (UnimplementedWarehouseServer) CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CountWHUploadsToRetry not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
