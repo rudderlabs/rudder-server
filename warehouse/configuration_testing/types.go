@@ -139,3 +139,7 @@ func (job *CTUploadJob) GetLoadFileGenStartTIme() time.Time {
 func (job *CTUploadJob) GetLoadFileType() string {
 	return warehouseutils.GetLoadFileType(job.infoRequest.Destination.DestinationDefinition.Name)
 }
+
+func (job *CTUploadJob) GetFirstLastEvent() (time.Time, time.Time) {
+	return time.Time{}, time.Time{}
+}

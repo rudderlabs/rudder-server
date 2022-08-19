@@ -234,8 +234,10 @@ func initializeClickhouseClusterMode(t *testing.T) {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		_, err := clusterDB.Exec(sqlStatement)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantBackoff(func() error {
+			_, err := clusterDB.Exec(sqlStatement)
+			return err
+		}))
 	}
 
 	// Create distribution views for tables
@@ -258,8 +260,10 @@ func initializeClickhouseClusterMode(t *testing.T) {
 		)
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		_, err := clusterDB.Exec(sqlStatement)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantBackoff(func() error {
+			_, err := clusterDB.Exec(sqlStatement)
+			return err
+		}))
 	}
 
 	// Alter columns to all the cluster tables
@@ -279,8 +283,10 @@ func initializeClickhouseClusterMode(t *testing.T) {
 			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-			_, err := clusterDB.Exec(sqlStatement)
-			require.NoError(t, err)
+			require.NoError(t, testhelper.WithConstantBackoff(func() error {
+				_, err := clusterDB.Exec(sqlStatement)
+				return err
+			}))
 		}
 	}
 }
