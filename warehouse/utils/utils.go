@@ -62,6 +62,7 @@ const (
 	WarehouseUploadsTable      = "wh_uploads"
 	WarehouseTableUploadsTable = "wh_table_uploads"
 	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseAsyncJobTable     = "wh_async_jobs"
 )
 
 const (

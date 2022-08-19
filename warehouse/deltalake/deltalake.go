@@ -265,6 +265,10 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	return
 }
 
+func (dl *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	return false, fmt.Errorf("delta lake err :not implemented")
+}
+
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
 	fetchTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{

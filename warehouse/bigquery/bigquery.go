@@ -251,6 +251,32 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
+func (bq *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		if tb != "rudder_discards" {
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = %[6]s`, bq.Namespace, tb, "context_sources_job_run_id", jobRunID, "context_source_id", sourceID)
+			pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
+			job, err1 := bq.Db.Query(sqlStatement).Run(bq.BQContext)
+			if err1 != nil {
+				pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+				return false, err1
+			}
+			status, err1 := job.Wait(bq.BQContext)
+			if err1 != nil {
+				pkgLogger.Errorf("BQ: Error running job: %v\n", err)
+				return false, err1
+			}
+			if status.Err() != nil {
+				return false, status.Err()
+			}
+
+		}
+
+	}
+	return true, nil
+}
+
 func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }

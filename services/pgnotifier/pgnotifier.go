@@ -76,11 +76,17 @@ type ClaimT struct {
 	Workspace string
 	Payload   json.RawMessage
 	Attempt   int
+	JobType   string
 }
 
 type ClaimResponseT struct {
 	Payload json.RawMessage
 	Err     error
+}
+
+type MessagePayload struct {
+	Jobs    []JobPayload
+	JobType string
 }
 
 func loadPGNotifierConfig() {
@@ -168,12 +174,14 @@ func GetPGNotifierConnectionString() string {
 		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
 }
 
+//trackBatch tracks the batches until they complete
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
+			pkgLogger.Info("Tracking the batch that's uploaded")
 			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND status!='%s' AND status!='%s'`, queueName, batchID, SucceededState, AbortedState)
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
@@ -266,8 +274,9 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	}()
 	var claimedID int64
 	var attempt int
-	var batchID, status, workspace string
+	var batchID, status, workspace, job_type string
 	var payload json.RawMessage
+
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
 						last_exec_time = '%[3]s',
@@ -280,13 +289,13 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id, batch_id, status, payload, workspace, attempt;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
+						RETURNING id, batch_id, status, payload, workspace, attempt,job_type;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
 
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
 		return
 	}
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt)
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt, &job_type)
 	defer func() {
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
@@ -315,12 +324,15 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		Payload:   payload,
 		Attempt:   attempt,
 		Workspace: workspace,
+		JobType:   job_type,
 	}
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+
+func (notifier *PgNotifierT) Publish(payload MessagePayload, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
+	jobs := payload.Jobs
 	defer func() {
 		if err == nil {
 			pgNotifierPublishTime.Since(publishStartTime)
@@ -344,7 +356,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		}
 	}()
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority", "job_type"))
 	if err != nil {
 		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
@@ -354,7 +366,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
-		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
+		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority, payload.JobType)
 		if err != nil {
 			err = fmt.Errorf("PgNotifier: Failed executing prepared statement for publishing with error: %w", err)
 			return

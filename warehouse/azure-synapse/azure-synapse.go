@@ -611,6 +611,21 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+func (as *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+	pkgLogger.Infof("AS: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		if tb != "rudder_discards" {
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, as.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+			_, err = as.Db.Exec(sqlStatement)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
 func (as *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');

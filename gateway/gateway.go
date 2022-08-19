@@ -929,6 +929,30 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
 }
 
+//Warehouse Async Job Handlers
+func (gateway *HandleT) warehouseJobStartHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.logger.LogRequest(r)
+	gateway.logger.Info("Warehouse Job Start Handler")
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		gateway.logger.Error("Error in reading payload in warehouseJobStartHandler")
+		return
+	}
+	gateway.startWarehouseAsyncJob(payload)
+}
+
+func (gateway *HandleT) startWarehouseAsyncJob(payload []byte) bool {
+	uri := fmt.Sprintf(`%s/v1/warehouse/wh-jobs/start`, misc.GetWarehouseURL())
+	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
+		bytes.NewBuffer(payload))
+	if err != nil {
+		return false
+	}
+
+	defer resp.Body.Close()
+	return true
+}
+
 func getIntResponseFromBool(resp bool) int {
 	if resp {
 		return 1
@@ -1378,6 +1402,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
+
+	//Warehouse Async Jobs API
+	srvMux.HandleFunc("/v1/wh-jobs/start", gateway.warehouseJobStartHandler).Methods("POST")
 
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")

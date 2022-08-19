@@ -68,6 +68,10 @@ func (wh *HandleT) LoadTable(tableName string) error {
 	return nil
 }
 
+func (wh *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+	return false, fmt.Errorf("datalake err :not implemented")
+}
+
 func (wh *HandleT) LoadUserTables() map[string]error {
 	pkgLogger.Infof("Skipping load for user tables : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables

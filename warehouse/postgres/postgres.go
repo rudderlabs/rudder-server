@@ -423,6 +423,22 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
+func (pq *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		if tb != "rudder_discards" {
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, pq.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s : %v", pq.Warehouse.Destination.ID, sqlStatement)
+			_, err = pq.Db.Exec(sqlStatement)
+			if err != nil {
+				fmt.Printf("Error %s", err)
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
 func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)

@@ -20,7 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -551,7 +553,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -592,6 +594,32 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
+func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) {
+	fmt.Printf("%v\n", asyncjob)
+	whManager, err := manager.New(asyncjob.DestType)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID", claimedJob.BatchID)
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
+		response := pgnotifier.ClaimResponseT{
+			Err: err,
+		}
+		// warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
+	}
+	var job warehouse_jobs.AsyncJobPayloadT
+	err := json.Unmarshal(claimedJob.Payload, &job)
+	if err != nil {
+		handleErr(err, claimedJob)
+	}
+	runAsyncJob(job, workerIndex)
+}
+
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -605,10 +633,17 @@ func setupSlave(ctx context.Context) error {
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)
-				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				// process job
-				processClaimedJob(claimedJob, idx)
+				//Thread goes to process async wh jobs or else it goes to the upload job
+				if claimedJob.JobType == "async_job" {
+					processClaimedAsyncJob(claimedJob, idx)
+				} else {
+					processClaimedUploadJob(claimedJob, idx)
+				}
+
+				// async job
+
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()
 			}

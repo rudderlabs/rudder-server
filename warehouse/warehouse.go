@@ -17,6 +17,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
+
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
@@ -245,6 +250,7 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	return
 }
 
+//Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for config := range ch {
@@ -279,6 +285,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 
 				workerName := wh.workerIdentifier(warehouse)
 				wh.workerChannelMapLock.Lock()
+
+				// Whats a worker?
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
 				// to avoid creating goroutine for disabled sources/destiantions
@@ -1125,6 +1133,7 @@ func (wh *HandleT) Setup(whType string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
+	warehouse_jobs.AsyncJobWH.Cancel()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
@@ -1683,6 +1692,7 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/start", warehouse_jobs.StartWarehouseJobHandler)
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
 			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
@@ -1841,7 +1851,14 @@ func Start(ctx context.Context, app app.Interface) error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))
+
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		warehouse_jobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("warehouse_jobs"), &connectionsMap)
+
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			warehouse_jobs.AsyncJobWH.InitAsyncJobRunner()
+			return nil
+		}))
 	}
 
 	g.Go(func() error {

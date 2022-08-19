@@ -175,6 +175,22 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	return
 }
 
+func (rs *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		if tb != "rudder_discards" {
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, rs.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+			_, err = rs.Db.Exec(sqlStatement)
+			if err != nil {
+				pkgLogger.Errorf("Error in executing the query %s", err.Error)
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
