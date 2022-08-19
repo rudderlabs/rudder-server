@@ -17,11 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
 	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
@@ -43,6 +40,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -1240,17 +1239,25 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 	}
 }
 
-func setupTables(dbHandle *sql.DB) {
+func setupTables(dbHandle *sql.DB) error {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "wh_schema_migrations",
 		ShouldForceSetLowerVersion: ShouldForceSetLowerVersion,
 	}
 
-	err := m.Migrate("warehouse")
-	if err != nil {
-		panic(fmt.Errorf("Could not run warehouse database migrations: %w", err))
+	operation := func() error {
+		return m.Migrate("warehouse")
 	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Warnf("Failed to setup WH db tables: %v, retrying after %v", err, t)
+	})
+	if err != nil {
+		return fmt.Errorf("could not run warehouse database migrations: %w", err)
+	}
+	return nil
 }
 
 func CheckPGHealth(dbHandle *sql.DB) bool {
@@ -1724,33 +1731,38 @@ func isStandAloneSlave() bool {
 	return warehouseMode == config.SlaveMode
 }
 
-func setupDB(connInfo string) {
+func setupDB(ctx context.Context, connInfo string) error {
 	if isStandAloneSlave() {
-		return
+		return nil
 	}
 
 	var err error
 	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+	isDBCompatible, err := validators.IsPostgresCompatible(ctx, dbHandle)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if !isDBCompatible {
 		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
 		pkgLogger.Error(err)
-		panic(err)
+		return err
 	}
-	setupTables(dbHandle)
+
+	if err = dbHandle.PingContext(ctx); err != nil {
+		return fmt.Errorf("could not ping WH db: %w", err)
+	}
+
+	return setupTables(dbHandle)
 }
 
 func Start(ctx context.Context, app app.Interface) error {
 	application = app
-	time.Sleep(1 * time.Second)
+
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
@@ -1760,7 +1772,9 @@ func Start(ctx context.Context, app app.Interface) error {
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
 
-	setupDB(psqlInfo)
+	if err := setupDB(ctx, psqlInfo); err != nil {
+		return fmt.Errorf("cannot setup warehouse db: %w", err)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Fatal(r)
