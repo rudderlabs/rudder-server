@@ -1,0 +1,76 @@
+[
+  {
+    "SuitePath": "/Users/aristzoumas/work/rudder-server/processor/integrations",
+    "SuiteDescription": "Integrations Suite",
+    "SuiteLabels": [],
+    "SuiteSucceeded": true,
+    "SuiteHasProgrammaticFocus": false,
+    "SpecialSuiteFailureReasons": null,
+    "PreRunStats": {
+      "TotalSpecs": 0,
+      "SpecsThatWillRun": 0
+    },
+    "StartTime": "2022-08-19T11:14:55.79769+03:00",
+    "EndTime": "2022-08-19T11:14:55.797826+03:00",
+    "RunTime": 136000,
+    "SuiteConfig": {
+      "RandomSeed": 1660896888,
+      "RandomizeAllSpecs": false,
+      "FocusStrings": [
+        "Processor"
+      ],
+      "SkipStrings": null,
+      "FocusFiles": null,
+      "SkipFiles": null,
+      "LabelFilter": "",
+      "FailOnPending": false,
+      "FailFast": false,
+      "FlakeAttempts": 0,
+      "EmitSpecProgress": false,
+      "DryRun": false,
+      "Timeout": 3592713086667,
+      "OutputInterceptorMode": "",
+      "ParallelProcess": 1,
+      "ParallelTotal": 1,
+      "ParallelHost": ""
+    },
+    "SpecReports": null
+  },
+  {
+    "SuitePath": "/Users/aristzoumas/work/rudder-server/processor/transformer",
+    "SuiteDescription": "Transformer Suite",
+    "SuiteLabels": [],
+    "SuiteSucceeded": true,
+    "SuiteHasProgrammaticFocus": false,
+    "SpecialSuiteFailureReasons": null,
+    "PreRunStats": {
+      "TotalSpecs": 0,
+      "SpecsThatWillRun": 0
+    },
+    "StartTime": "2022-08-19T11:14:56.06178+03:00",
+    "EndTime": "2022-08-19T11:14:56.061869+03:00",
+    "RunTime": 89333,
+    "SuiteConfig": {
+      "RandomSeed": 1660896888,
+      "RandomizeAllSpecs": false,
+      "FocusStrings": [
+        "Processor"
+      ],
+      "SkipStrings": null,
+      "FocusFiles": null,
+      "SkipFiles": null,
+      "LabelFilter": "",
+      "FailOnPending": false,
+      "FailFast": false,
+      "FlakeAttempts": 0,
+      "EmitSpecProgress": false,
+      "DryRun": false,
+      "Timeout": 3592433034959,
+      "OutputInterceptorMode": "",
+      "ParallelProcess": 1,
+      "ParallelTotal": 1,
+      "ParallelHost": ""
+    },
+    "SpecReports": null
+  }
+]

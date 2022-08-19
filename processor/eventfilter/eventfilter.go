@@ -49,7 +49,7 @@ func GetSupportedMessageEvents(destination *backendconfig.DestinationT) ([]strin
 	//  		"conversions": "Credit Card Removed"
 	//	    }
 	// ]
-	if supportedEventsI, ok := destination.DestinationDefinition.Config["listOfConversions"]; ok {
+	if supportedEventsI, ok := destination.Config["listOfConversions"]; ok {
 		if supportedEvents, ok := supportedEventsI.([]interface{}); ok {
 			var supportedMessageEvents []string
 			for _, supportedEvent := range supportedEvents {

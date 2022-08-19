@@ -1681,15 +1681,12 @@ var _ = Describe("Static Function Tests", func() {
 			destinationConfig := backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"listOfConversions": []interface{}{
-							map[string]interface{}{"conversions": "Credit Card Added"},
-							map[string]interface{}{"conversions": "Credit Card Removed"},
-						},
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": "Credit Card Removed"},
 					},
 				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{},
 			}
 
 			events := []transformer.TransformerEventT{
@@ -1749,14 +1746,13 @@ var _ = Describe("Static Function Tests", func() {
 			destinationConfig := backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"listOfConversions": []interface{}{
-							map[string]interface{}{"conversions": "Credit Card Added"},
-							map[string]interface{}{"conversions": 1},
-						},
-					},
+					Config: map[string]interface{}{},
 				},
 			}
 
