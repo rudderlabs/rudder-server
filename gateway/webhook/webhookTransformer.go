@@ -73,6 +73,28 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	/*
 		expected response format
 		[
+			------Output to Gateway only---------
+			{
+				output: {
+					batch: [
+						{
+							context: {...},
+							properties: {...},
+							userId: "U123"
+						}
+					]
+				}
+			}
+
+			------Output to Source only---------
+			{
+				outputToSource: { 
+					"body": "eyJhIjoxfQ==", // base64 encode string
+					"contentType": "application/json"
+				}
+			}
+
+			------Output to Both Gateway and Source---------
 			{
 				output: {
 					batch: [
@@ -83,13 +105,18 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 						}
 					]
 				},
-				outputToSource: {
+				outputToSource: { 
 					"body": "eyJhIjoxfQ==", // base64 encode string
 					"contentType": "application/json"
 				}
-				statusCode: 400, // this will be 200 in case of success
-				error: "event type is not supported" // this will beempty in case of success
 			}
+			
+			------Error example---------
+			{
+				statusCode: 400, 
+				error: "event type is not supported"
+			}
+			
 		]
 	*/
 	var responses []transformerResponse
