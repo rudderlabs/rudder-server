@@ -240,6 +240,7 @@ type UploaderI interface {
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
 	GetLoadFileType() string
+	GetFirstLastEvent() (time.Time, time.Time)
 }
 
 type GetLoadFilesOptionsT struct {
@@ -951,4 +952,14 @@ func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, tim
 	}
 
 	return respBody, nil
+}
+
+func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
+	if (start == time.Time{} || end == time.Time{}) {
+		return
+	}
+	for d := start; d.After(end) == false; d = d.AddDate(0, 0, 1) {
+		dateRange = append(dateRange, d.Format(dateFormat))
+	}
+	return
 }
