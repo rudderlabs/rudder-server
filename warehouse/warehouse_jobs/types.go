@@ -3,16 +3,14 @@ package warehouse_jobs
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
-	JOB_TYPES = []string{"DELETE_BY_JOB_RUN_ID"}
+	JOB_TYPES = []string{"DELETE_BY_JOB_RUN_ID_TASK_RUN_ID"}
 )
 
 //For processing requests payload in handlers.go
@@ -24,16 +22,7 @@ type StartJobReqPayload struct {
 	StartTime     string `json:"starttime"`
 	JobRunID      string `json:"jobrunid"`
 	TaskRunID     string `json:"taskrunid"`
-}
-
-//For sending message payload to pgnotifier
-type asyncJobMessagePayload json.RawMessage
-
-type AsyncJobReqT struct {
-	WorkspaceID     string
-	SourceID        string
-	DestinationID   string
-	DestinationType string
+	AsyncJobType  string `json:"async_job_type"`
 }
 
 type AsyncJobWhT struct {
@@ -45,12 +34,7 @@ type AsyncJobWhT struct {
 	connectionsMap *map[string]map[string]warehouseutils.WarehouseT
 }
 
-type asyncJobT struct {
-	whManager       manager.ManagerI
-	asyncjobpayload AsyncJobPayloadT
-}
-
-//For creating job payload
+//For creating job payload to wh_async_jobs table
 type AsyncJobPayloadT struct {
 	Id            string `json:"id"`
 	SourceID      string `json:"sourceid"`
@@ -62,6 +46,7 @@ type AsyncJobPayloadT struct {
 	DestType      string `json:"destination_type"`
 	Namespace     string `json:"namespace"`
 	TableName     string `json:"tablename"`
+	AsyncJobType  string `json:"async_job_type"`
 }
 
 const (
@@ -70,3 +55,12 @@ const (
 	asyncJobCompleted  string = "completed"
 	asyncJobError      string = "error"
 )
+
+type WhStatusResponse struct {
+	Status string
+	Err    string
+}
+
+type WhAsyncJobRunnerI interface {
+	startAsyncJobRunner(context.Context)
+}

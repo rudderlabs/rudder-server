@@ -265,7 +265,8 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	return
 }
 
-func (dl *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+//Need to create a structure with delete parameters instead of simply adding a long list of params
+func (dl *HandleT) DeleteBy(tableNames []string, jobRunID string, startTime string, taskRunID string) (success bool, err error) {
 	return false, fmt.Errorf("delta lake err :not implemented")
 }
 

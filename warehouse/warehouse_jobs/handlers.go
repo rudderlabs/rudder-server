@@ -23,13 +23,13 @@ var (
 	pkgLogger = logger.NewLogger().Child("warehouse-asyncjob")
 )
 
-//The following handler gets called
+//The following handler gets called for adding async
 func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.Info("Got Async Job Request")
+	pkgLogger.Info("[WH-Jobs] Got Async Job Add Request")
 	pkgLogger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
+		pkgLogger.Errorf("[WH-Jobs]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
@@ -37,18 +37,18 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
+		pkgLogger.Errorf("[WH-Jobs]: Error unmarshalling body: %v", err)
 		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
 		return
 	}
 	if !AsyncJobWH.enabled {
-		pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized %v", err)
+		pkgLogger.Errorf("[WH-Jobs]: Error Warehouse Jobs API not initialized %v", err)
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	tableNames, err := AsyncJobWH.getTableNamesByJobRunID(startJobPayload.JobRunID)
+	tableNames, err := AsyncJobWH.getTableNamesByJobRunIDTaskRunID(startJobPayload.JobRunID, startJobPayload.TaskRunID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Error extracting tableNames for the job run id: %v", err)
+		pkgLogger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
 		return
 	}
@@ -62,18 +62,64 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 				DestinationID: startJobPayload.DestinationID,
 				TableName:     th,
 				DestType:      destType,
-				JobType:       "deleteByJobRunID",
+				JobType:       "async_job",
 				JobRunID:      startJobPayload.JobRunID,
 				TaskRunID:     startJobPayload.TaskRunID,
 				StartTime:     startJobPayload.StartTime,
+				AsyncJobType:  startJobPayload.AsyncJobType,
 			}
 			AsyncJobWH.addJobstoDB(&payload)
 		}
 	}
+	_, _ = w.Write([]byte(`{ "error":"" }`))
 
 }
 
 func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+	pkgLogger.Info("Got Async Job Status Request")
+	pkgLogger.LogRequest(r)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		pkgLogger.Errorf("[WH-Jobs]: Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	var startJobPayload StartJobReqPayload
+	err = json.Unmarshal(body, &startJobPayload)
+	pkgLogger.Infof("Got Payload jobrunid %s, taskrunid %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
+		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		return
+	}
+	if !AsyncJobWH.enabled {
+		pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized %v", err)
+		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
+		return
+	}
+
+	status, err := AsyncJobWH.getStatusAsyncJob(&startJobPayload)
+
+	var statusresponse WhStatusResponse
+	if err != nil {
+		statusresponse = WhStatusResponse{
+			Status: status,
+			Err:    err.Error(),
+		}
+	} else {
+		statusresponse = WhStatusResponse{
+			Status: status,
+			Err:    "",
+		}
+	}
+
+	writeResponse, err := json.Marshal(statusresponse)
+
+	if err != nil {
+		w.Write(writeResponse)
+	}
+	w.Write(writeResponse)
 
 }
 

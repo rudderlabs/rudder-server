@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
@@ -47,6 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
 )
 
 /*
@@ -930,27 +932,96 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 //Warehouse Async Job Handlers
-func (gateway *HandleT) warehouseJobStartHandler(w http.ResponseWriter, r *http.Request) {
+func (gateway *HandleT) warehouseJobAddHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.logger.LogRequest(r)
-	gateway.logger.Info("Warehouse Job Start Handler")
+	gateway.logger.Info("[GW] Warehouse Job Add Handler")
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		gateway.logger.Error("Error in reading payload in warehouseJobStartHandler")
+		gateway.logger.Error("[GW] Error in reading payload in warehouseJobAddHandler")
 		return
 	}
-	gateway.startWarehouseAsyncJob(payload)
+	err = gateway.addWarehouseAsyncJob(payload)
+	type respBody2 struct {
+		Error string `json:"error"`
+	}
+
+	var errRes respBody2
+	if err != nil {
+		errRes = respBody2{
+			Error: err.Error(),
+		}
+	} else {
+		errRes = respBody2{
+			Error: "",
+		}
+	}
+	resp, _ := json.Marshal(errRes)
+	_, _ = w.Write(resp)
 }
 
-func (gateway *HandleT) startWarehouseAsyncJob(payload []byte) bool {
-	uri := fmt.Sprintf(`%s/v1/warehouse/wh-jobs/start`, misc.GetWarehouseURL())
+func (gateway *HandleT) addWarehouseAsyncJob(payload []byte) error {
+	uri := fmt.Sprintf(`%s/v1/warehouse/wh-jobs/add`, misc.GetWarehouseURL())
 	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(payload))
 	if err != nil {
-		return false
+		return err
 	}
 
 	defer resp.Body.Close()
-	return true
+	type respBody struct {
+		Err string `json:"error"`
+	}
+	var res respBody
+	body1, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(body1, &res)
+	if err != nil {
+		return err
+	}
+	if res.Err != "" {
+		return errors.New(res.Err)
+	}
+	return nil
+}
+
+//Warehouse Async Job Handlers
+func (gateway *HandleT) warehouseJobStatusHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.logger.LogRequest(r)
+	gateway.logger.Info("[GW] Warehouse Job Add Handler")
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		gateway.logger.Error("[GW] Error in reading payload in warehouseJobStatusHandler")
+		return
+	}
+	val, errMessage := gateway.statusWarehouseAsyncJob(payload)
+	_, _ = w.Write([]byte(fmt.Sprintf("{ \"status\": \"%s\",\"error\":\"%s\" }", val, errMessage)))
+}
+
+func (gateway *HandleT) statusWarehouseAsyncJob(payload []byte) (string, string) {
+	uri := fmt.Sprintf(`%s/v1/warehouse/wh-jobs/status`, misc.GetWarehouseURL())
+	resp, err := gateway.netHandle.Post(uri, "application/json;charset=utf-8", bytes.NewBuffer(payload))
+	if err != nil {
+		return "error", err.Error()
+	}
+	defer resp.Body.Close()
+	var whStatusResponse warehouse_jobs.WhStatusResponse
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "error", err.Error()
+	}
+
+	err = json.Unmarshal(respData, &whStatusResponse)
+	if err != nil {
+		return "error", err.Error()
+	}
+
+	if whStatusResponse.Err != "" {
+		return "error", whStatusResponse.Err
+	}
+
+	return whStatusResponse.Status, whStatusResponse.Err
 }
 
 func getIntResponseFromBool(resp bool) int {
@@ -1404,7 +1475,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
 
 	//Warehouse Async Jobs API
-	srvMux.HandleFunc("/v1/wh-jobs/start", gateway.warehouseJobStartHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/wh-jobs/add", gateway.warehouseJobAddHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/wh-jobs/status", gateway.warehouseJobStatusHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/wh-jobs/stop", gateway.warehouseJobAddHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/wh-jobs/get", gateway.warehouseJobAddHandler).Methods("GET")
 
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")

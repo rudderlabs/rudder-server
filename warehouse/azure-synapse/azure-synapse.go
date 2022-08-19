@@ -611,11 +611,21 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (as *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+//Need to create a structure with delete parameters instead of simply adding a long list of params
+func (as *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
 	pkgLogger.Infof("AS: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, as.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s <> '%[6]s AND %[7]s='%[8]s'`,
+				as.Namespace,
+				tb,
+				"context_sources_job_run_id",
+				jobRunID,
+				"context_sources_task_run_id",
+				taskRunID,
+				"context_source_id",
+				sourceID,
+			)
 			pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 			_, err = as.Db.Exec(sqlStatement)
 			if err != nil {

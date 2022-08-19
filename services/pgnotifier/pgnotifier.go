@@ -71,13 +71,14 @@ type ResponseT struct {
 }
 
 type ClaimT struct {
-	ID        int64
-	BatchID   string
-	Status    string
-	Workspace string
-	Payload   json.RawMessage
-	Attempt   int
-	JobType   string
+	ID           int64
+	BatchID      string
+	Status       string
+	Workspace    string
+	Payload      json.RawMessage
+	Attempt      int
+	JobType      string
+	AsyncJobType string
 }
 
 type ClaimResponseT struct {
@@ -266,13 +267,6 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 						panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", stmt, err))
 					}
 
-					// finalOutput := AsyncOutput{
-					// 	JobID:     jobID,
-					// 	TableName: tablename,
-					// 	Output:    output.String,
-					// }
-
-					// Output, err := json.Marshal(finalOutput)
 					if err != nil {
 						panic(fmt.Errorf("failed to marshal async Output with Error : %w", err))
 					}

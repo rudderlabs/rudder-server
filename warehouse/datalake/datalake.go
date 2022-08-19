@@ -68,7 +68,8 @@ func (wh *HandleT) LoadTable(tableName string) error {
 	return nil
 }
 
-func (wh *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+//Need to create a structure with delete parameters instead of simply adding a long list of params
+func (wh *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
 	return false, fmt.Errorf("datalake err :not implemented")
 }
 

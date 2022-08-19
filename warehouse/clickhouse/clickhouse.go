@@ -378,7 +378,8 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
-func (ch *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+//Need to create a structure with delete parameters instead of simply adding a long list of params
+func (ch *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
 	return false, fmt.Errorf("click err :not implemented")
 }
 

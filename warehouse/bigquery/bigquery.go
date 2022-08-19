@@ -251,11 +251,21 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (bq *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, sourceID string) (success bool, err error) {
+//Need to create a structure with delete parameters instead of simply adding a long list of params
+func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = %[6]s`, bq.Namespace, tb, "context_sources_job_run_id", jobRunID, "context_source_id", sourceID)
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = '%[6]s' AND %[7]s <> '%[8]s'`,
+				bq.Namespace,
+				tb,
+				"context_sources_job_run_id",
+				jobRunID,
+				"context_source_id",
+				sourceID,
+				"context_sources_task_rund_id",
+				taskRunID,
+			)
 			pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
 			job, err1 := bq.Db.Query(sqlStatement).Run(bq.BQContext)
 			if err1 != nil {

@@ -235,11 +235,23 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (ms *HandleT) DeleteByJobRunID(tableNames []string, jobRunID string, startTime string) (success bool, err error) {
+func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s'`, ms.Namespace, tb, "context_sources_job_run_id", jobRunID)
+			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+			%[3]s <> '%[4]s' AND
+			%[5]s <> '%[6]s' AND
+			%[7]s = '%[8]s'`,
+				ms.Namespace,
+				tb,
+				"context_sources_job_run_id",
+				jobRunID,
+				"context_sources_task_run_id",
+				taskRunID,
+				"context_source_id",
+				sourceID,
+			)
 			pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 			_, err = ms.Db.Exec(sqlStatement)
 			if err != nil {
