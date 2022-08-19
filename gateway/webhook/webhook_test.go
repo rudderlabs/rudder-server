@@ -29,8 +29,9 @@ const (
 )
 
 var (
-	whStats *webhookStatsT
-	once    sync.Once
+	whStats           *webhookStatsT
+	once              sync.Once
+	transformerServer = httptest.NewServer(http.HandlerFunc(transformMockHandler))
 )
 
 func initWebhook() {
@@ -41,8 +42,7 @@ func initWebhook() {
 		Init()
 		stats.DefaultStats = &stats.HandleT{}
 		whStats = newWebhookStats()
-		srv := httptest.NewServer(http.HandlerFunc(transformMockHandler))
-		sourceTransformerURL = srv.URL
+		sourceTransformerURL = transformerServer.URL
 	})
 }
 
