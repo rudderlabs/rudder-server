@@ -56,3 +56,7 @@ func (job *WhAsyncJob) GetLoadFileGenStartTIme() time.Time {
 func (job *WhAsyncJob) GetLoadFileType() string {
 	return ""
 }
+
+func (job *WhAsyncJob) GetFirstLastEvent() (time.Time, time.Time) {
+	return time.Now(), time.Now()
+}

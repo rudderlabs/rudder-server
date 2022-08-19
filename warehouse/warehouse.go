@@ -17,10 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
