@@ -122,7 +122,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
 	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)}
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.lockMapWMutex = &sync.RWMutex{}
