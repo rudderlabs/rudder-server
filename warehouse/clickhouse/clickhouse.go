@@ -249,8 +249,8 @@ func loadConfig() {
 }
 
 /*
- registerTLSConfig will create a global map, use different names for the different tls config.
- clickhouse will access the config by mentioning the key in connection string
+registerTLSConfig will create a global map, use different names for the different tls config.
+clickhouse will access the config by mentioning the key in connection string
 */
 func registerTLSConfig(key, certificate string) {
 	tlsConfig := &tls.Config{}
@@ -756,9 +756,9 @@ func (ch *HandleT) createSchema() (err error) {
 }
 
 /*
- createUsersTable creates a users table with engine AggregatingMergeTree,
- this lets us choose aggregation logic before merging records with same user id.
- current behaviour is to replace user  properties with latest non null values
+createUsersTable creates a users table with engine AggregatingMergeTree,
+this lets us choose aggregation logic before merging records with same user id.
+current behaviour is to replace user  properties with latest non null values
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}

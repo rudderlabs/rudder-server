@@ -102,6 +102,7 @@ func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) 
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
@@ -116,7 +117,7 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 	return trimedUrl, nil
 }
 
-func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *DOSpacesManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	sess, err := manager.getSession()

@@ -152,7 +152,7 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 	req.SetBasicAuth(wc.Token, "")
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
