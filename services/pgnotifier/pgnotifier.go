@@ -71,14 +71,13 @@ type ResponseT struct {
 }
 
 type ClaimT struct {
-	ID           int64
-	BatchID      string
-	Status       string
-	Workspace    string
-	Payload      json.RawMessage
-	Attempt      int
-	JobType      string
-	AsyncJobType string
+	ID        int64
+	BatchID   string
+	Status    string
+	Workspace string
+	Payload   json.RawMessage
+	Attempt   int
+	JobType   string
 }
 
 type ClaimResponseT struct {
