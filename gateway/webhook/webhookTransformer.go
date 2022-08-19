@@ -88,7 +88,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 			------Output to Source only---------
 			{
-				outputToSource: { 
+				outputToSource: {
 					"body": "eyJhIjoxfQ==", // base64 encode string
 					"contentType": "application/json"
 				}
@@ -105,18 +105,18 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 						}
 					]
 				},
-				outputToSource: { 
+				outputToSource: {
 					"body": "eyJhIjoxfQ==", // base64 encode string
 					"contentType": "application/json"
 				}
 			}
-			
+
 			------Error example---------
 			{
-				statusCode: 400, 
+				statusCode: 400,
 				error: "event type is not supported"
 			}
-			
+
 		]
 	*/
 	var responses []transformerResponse
