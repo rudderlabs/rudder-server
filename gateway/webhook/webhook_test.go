@@ -55,6 +55,15 @@ func createWebhookHandler(gwHandle GatewayI) *HandleT {
 	}
 }
 
+func transformMockHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	reqBody, _ := io.ReadAll(r.Body)
+	_, err := w.Write(reqBody)
+	if err != nil {
+		pkgLogger.Error(err)
+	}
+}
+
 func TestWebhookRequestHandlerErrorCase(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
@@ -131,12 +140,6 @@ func TestWebhookRequestHandlerEmptyOutputCase(t *testing.T) {
 
 	assert.Equal(t, w.Result().StatusCode, http.StatusOK)
 	assert.Equal(t, strings.TrimSpace(w.Body.String()), response.Ok)
-}
-
-func transformMockHandler(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	reqBody, _ := io.ReadAll(r.Body)
-	w.Write(reqBody)
 }
 
 func TestBatchTransformLoopWithError(t *testing.T) {
