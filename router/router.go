@@ -2144,7 +2144,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.backgroundGroup = g
 	rt.backgroundCancel = cancel
 	rt.backgroundWait = g.Wait
-	rt.startEnded = make(chan struct{})
 	rt.initWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
@@ -2168,6 +2167,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 func (rt *HandleT) Start() {
 	rt.logger.Infof("Starting router: %s", rt.destName)
+	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
 	rt.backgroundGroup.Go(func() error {
@@ -2194,6 +2194,10 @@ func (rt *HandleT) Start() {
 }
 
 func (rt *HandleT) Shutdown() {
+	if rt.startEnded == nil {
+		// router is not started
+		return
+	}
 	rt.logger.Infof("Shutting down router: %s", rt.destName)
 	rt.backgroundCancel()
 
