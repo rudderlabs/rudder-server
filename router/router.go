@@ -125,13 +125,13 @@ type HandleT struct {
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
 
-	backgroundGroup      *errgroup.Group
-	backgroundCtx        context.Context
-	backgroundCancel     context.CancelFunc
-	backgroundWait       func() error
-	generatorLoopStarted chan struct{}
-	lastQueryRunTime     time.Time
-	timeGained           float64
+	backgroundGroup  *errgroup.Group
+	backgroundCtx    context.Context
+	backgroundCancel context.CancelFunc
+	backgroundWait   func() error
+	startEnded       chan struct{}
+	lastQueryRunTime time.Time
+	timeGained       float64
 
 	payloadLimit     int64
 	transientSources transientsource.Service
@@ -1239,7 +1239,6 @@ func (rt *HandleT) initWorkers() {
 			return nil
 		}))
 	}
-
 	rt.backgroundGroup.Go(func() error {
 		err := g.Wait()
 
@@ -1722,7 +1721,6 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			rt.stopWorkers()
 			rt.logger.Infof("Generator exiting for router %s", rt.destName)
 			return
 		case <-timeout:
@@ -2146,7 +2144,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.backgroundGroup = g
 	rt.backgroundCancel = cancel
 	rt.backgroundWait = g.Wait
-	rt.generatorLoopStarted = make(chan struct{})
 	rt.initWorkers()
 
 	g.Go(misc.WithBugsnag(func() error {
@@ -2169,9 +2166,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 }
 
 func (rt *HandleT) Start() {
-	rt.logger.Infof("Starting router : %s", rt.destName)
+	rt.logger.Infof("Starting router: %s", rt.destName)
+	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
+
 	rt.backgroundGroup.Go(func() error {
+		defer close(rt.startEnded) // always close the channel
+		defer rt.stopWorkers()     // workers are started before the generatorLoop, so always stop them
 		select {
 		case <-ctx.Done():
 			rt.logger.Infof("Router : %s start goroutine exited", rt.destName)
@@ -2188,15 +2189,19 @@ func (rt *HandleT) Start() {
 			}
 		}
 		rt.generatorLoop(ctx)
-		close(rt.generatorLoopStarted)
 		return nil
 	})
 }
 
 func (rt *HandleT) Shutdown() {
-	rt.logger.Infof("Shutting down router : %s", rt.destName)
+	if rt.startEnded == nil {
+		// router is not started
+		return
+	}
+	rt.logger.Infof("Shutting down router: %s", rt.destName)
 	rt.backgroundCancel()
-	<-rt.generatorLoopStarted
+
+	<-rt.startEnded
 	_ = rt.backgroundWait()
 }
 

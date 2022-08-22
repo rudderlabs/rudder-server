@@ -50,11 +50,12 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.NoError(t, err)
 
 	var (
-		group              errgroup.Group
-		etcdContainer      *thEtcd.Resource
-		postgresContainer  *destination.PostgresResource
-		serverInstanceID   = "1"
-		workspaceNamespace = "test-workspace-namespace"
+		group                errgroup.Group
+		etcdContainer        *thEtcd.Resource
+		postgresContainer    *destination.PostgresResource
+		transformerContainer *destination.TransformerResource
+		serverInstanceID     = "1"
+		workspaceNamespace   = "test-workspace-namespace"
 
 		hostedServiceSecret = "service-secret"
 	)
@@ -65,6 +66,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	})
 	group.Go(func() (err error) {
 		etcdContainer, err = thEtcd.Setup(pool, t)
+		return err
+	})
+	group.Go(func() (err error) {
+		transformerContainer, err = destination.SetupTransformer(pool, t)
 		return err
 	})
 	require.NoError(t, group.Wait())
@@ -126,7 +131,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
-	releaseName := t.Name()
+	releaseName := t.Name() + "_" + appType
 	t.Setenv("APP_TYPE", appType)
 	t.Setenv("INSTANCE_ID", serverInstanceID)
 	t.Setenv("RELEASE_NAME", releaseName)
@@ -144,6 +149,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 	t.Setenv("HOSTED_SERVICE_SECRET", multiTenantSvcSecret)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 
 	t.Setenv("HOSTED_SERVICE_SECRET", hostedServiceSecret)
 
@@ -176,7 +182,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 		if err = cmd.Wait(); err != nil {
 			if err.Error() != "signal: killed" {
-				t.Logf("Error running main.go: %v", err)
+				t.Errorf("Error running main.go: %v", err)
 				return
 			}
 		}
@@ -214,13 +220,16 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		t.Fatal("Timeout waiting for test-ack/1")
 	}
 
+	cleanupGwJobs := func() {
+		_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_job_status_1 WHERE job_id in (SELECT job_id from gw_jobs_1 WHERE workspace_id = $1)`, workspaceID)
+		_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_jobs_1 WHERE workspace_id = $1`, workspaceID)
+	}
+
 	// Test basic Gateway happy path
-	t.Run("EventsAreReceived", func(t *testing.T) {
+	t.Run("events are received in gateway", func(t *testing.T) {
 		require.Empty(t, webhook.Requests(), "webhook should have no requests before sending the events")
 		sendEventsToGateway(t, httpPort, writeKey)
-		t.Cleanup(func() {
-			_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_jobs_1 WHERE workspace_id = $1`, workspaceID)
-		})
+		t.Cleanup(cleanupGwJobs)
 
 		var (
 			eventPayload string
@@ -251,17 +260,43 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.Empty(t, webhook.Requests(), "webhook should have no requests because there is no processor")
 	})
 
-	// Trigger degraded mode, the Gateway should still work
-	t.Run("ServerModeDegraded", func(t *testing.T) {
-		serverModeReqKey := getETCDServerModeReqKey(releaseName, serverInstanceID)
-		t.Logf("Server mode ETCD key: %s", serverModeReqKey)
+	if appType == app.EMBEDDED {
+		// Triger normal mode for the processor to start
+		t.Run("switch to normal mode", func(t *testing.T) {
+			serverModeReqKey := getETCDServerModeReqKey(releaseName, serverInstanceID)
+			t.Logf("Server mode ETCD key: %s", serverModeReqKey)
 
-		_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
-		require.NoError(t, err)
-		t.Log("Triggering degraded mode")
+			_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"NORMAL","ack_key":"test-ack/normal"}`)
+			require.NoError(t, err)
+			t.Log("Triggering degraded mode")
 
-		switch appType {
-		case app.EMBEDDED:
+			select {
+			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
+				require.Len(t, ack.Events, 1)
+				require.Equal(t, "test-ack/normal", string(ack.Events[0].Kv.Key))
+				require.Equal(t, `{"status":"NORMAL"}`, string(ack.Events[0].Kv.Value))
+			case <-time.After(20 * time.Second):
+				t.Fatal("Timeout waiting for server-mode test-ack")
+			}
+			sendEventsToGateway(t, httpPort, writeKey)
+			t.Cleanup(cleanupGwJobs)
+			t.Logf("Message sent to gateway")
+			require.Eventually(t, func() bool {
+				pgcont := postgresContainer
+				_ = pgcont.Port
+				return len(webhook.Requests()) == 1
+			}, 60*time.Second, 100*time.Millisecond)
+		})
+
+		// Trigger degraded mode, the Gateway should still work
+		t.Run("switch to degraded mode", func(t *testing.T) {
+			serverModeReqKey := getETCDServerModeReqKey(releaseName, serverInstanceID)
+			t.Logf("Server mode ETCD key: %s", serverModeReqKey)
+
+			_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
+			require.NoError(t, err)
+			t.Log("Triggering degraded mode")
+
 			select {
 			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
 				require.Len(t, ack.Events, 1)
@@ -270,28 +305,22 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			case <-time.After(20 * time.Second):
 				t.Fatal("Timeout waiting for server-mode test-ack")
 			}
-		}
 
-		sendEventsToGateway(t, httpPort, writeKey)
-		t.Cleanup(func() {
-			_, _ = postgresContainer.DB.ExecContext(ctx, `DELETE FROM gw_jobs_1 WHERE workspace_id = $1`, workspaceID)
-		})
-		require.Eventually(t, func() bool {
+			sendEventsToGateway(t, httpPort, writeKey)
+			t.Cleanup(cleanupGwJobs)
 			var count int
-			err := postgresContainer.DB.QueryRowContext(ctx,
+			err = postgresContainer.DB.QueryRowContext(ctx,
 				"SELECT COUNT(*) FROM gw_jobs_1 WHERE workspace_id = $1", workspaceID,
 			).Scan(&count)
-			if err != nil {
-				return false
-			}
-			return count == 1
-		}, time.Minute, 50*time.Millisecond)
-	})
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+		})
+	}
 
 	// Checking that an empty WorkspaceChange is OK.
 	// For now, it will be up to the Proxy to do the routing properly until we make RudderServer aware of what
 	// workspaces it is serving.
-	t.Run("EmptyWorkspacesAreValid", func(t *testing.T) {
+	t.Run("empty workspaces are accepted", func(t *testing.T) {
 		_, err := etcdContainer.Client.Put(ctx,
 			etcdReqKey, `{"workspaces":"","ack_key":"test-ack/3"}`,
 		)
@@ -348,10 +377,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	)
 
 	req, err := http.NewRequest(method, url, payload)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
+	require.NoError(t, err)
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
@@ -359,20 +385,12 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	)))
 
 	res, err := httpClient.Do(req)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
+	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Logf("sendEvent error: %v", err)
-		return
-	}
-	if res.Status != "200 OK" {
-		return
-	}
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	t.Logf("Event Sent Successfully: (%s)", body)
 }

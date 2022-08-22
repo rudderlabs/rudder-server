@@ -18,7 +18,7 @@
                         "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
                         "name": "Dev WebHook Integration Test 1",
                         "enabled": true,
-                        "isProcessorEnabled": false,
+                        "isProcessorEnabled": true,
                         "config": {
                             "webhookUrl": "{{.webhookUrl}}",
                             "webhookMethod": "POST"

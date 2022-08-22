@@ -192,13 +192,13 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	gwDB := jobsdb.NewForReadWrite("gw")
-	defer gwDB.Close()
+	defer gwDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt")
-	defer rtDB.Close()
+	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
-	defer brtDB.Close()
+	defer brtDB.TearDown()
 	errDB := jobsdb.NewForReadWrite("proc_error")
-	defer errDB.Close()
+	defer errDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()
@@ -268,14 +268,13 @@ func TestDynamicClusterManager(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	wait := make(chan bool)
 	go func() {
 		err := dCM.Run(ctx)
 		if err != nil {
 			t.Logf("cluster runner stopped: %v", err)
 		}
-		close(wait)
 	}()
 
 	chACK := make(chan bool)
@@ -284,7 +283,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	}))
 	require.Eventually(t, func() bool {
 		return dCM.Mode() == servermode.NormalMode
-	}, time.Second, time.Millisecond)
+	}, 5*time.Second, time.Millisecond)
 
 	provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
 		close(chACK)
@@ -292,14 +291,14 @@ func TestDynamicClusterManager(t *testing.T) {
 	}))
 
 	require.Eventually(t, func() bool {
-		return dCM.Mode() == servermode.DegradedMode
-	}, 10*time.Second, time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		<-chACK
-		return true
-	}, time.Second, time.Millisecond)
-
-	cancel()
-	<-wait
+		if dCM.Mode() != servermode.DegradedMode {
+			return false
+		}
+		select {
+		case <-chACK:
+			return true
+		default:
+			return false
+		}
+	}, 30*time.Second, time.Millisecond)
 }
