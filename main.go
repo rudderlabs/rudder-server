@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -248,35 +249,43 @@ func Run(ctx context.Context) int {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return admin.StartServer(ctx)
+	g.Go(func() (err error) {
+		if err = admin.StartServer(ctx); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				pkgLogger.Errorf("Error in Admin server routine: %v", err)
+			}
+		}
+		return err
 	})
 
-	g.Go(func() error {
+	g.Go(func() (err error) {
 		p := &profiler.Profiler{}
-		return p.StartServer(ctx)
+		if err = p.StartServer(ctx); err != nil {
+			pkgLogger.Errorf("Error in Profiler server routine: %v", err)
+		}
+		return err
 	})
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
-		g.Go(misc.WithBugsnag(func() error {
-			return appHandler.StartRudderCore(ctx, options)
+		g.Go(misc.WithBugsnag(func() (err error) {
+			if err = appHandler.StartRudderCore(ctx, options); err != nil {
+				pkgLogger.Errorf("Error in Rudder Core routine: %v", err)
+			}
+			return err
 		}))
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return startWarehouseService(ctx, application)
+		g.Go(misc.WithBugsnagForWarehouse(func() (err error) {
+			if err = startWarehouseService(ctx, application); err != nil {
+				pkgLogger.Errorf("Error in Warehouse Service routine: %v", err)
+			}
+			return err
 		}))
 	}
-
-	g.Go(func() error {
-		<-ctx.Done()
-		backendconfig.DefaultBackendConfig.Stop()
-		return nil
-	})
 
 	shutdownDone := make(chan struct{})
 	go func() {
@@ -284,6 +293,8 @@ func Run(ctx context.Context) int {
 		if err != nil && err != context.Canceled {
 			pkgLogger.Error(err)
 		}
+
+		backendconfig.DefaultBackendConfig.Stop()
 		close(shutdownDone)
 	}()
 
