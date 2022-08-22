@@ -429,9 +429,9 @@ func (pq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 	for _, tb := range tableNames {
 		if tb != "rudder_discards" {
 			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-			%[3]s <> '%[4]s AND'
-			%[5]s <> '%[6]s AND
-			%[7]s = '%[8]s`,
+			%[3]s <> '%[4]s' AND
+			%[5]s <> '%[6]s' AND
+			%[7]s = '%[8]s'`,
 				pq.Namespace,
 				tb,
 				"context_sources_job_run_id",
