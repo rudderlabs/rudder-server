@@ -9,7 +9,7 @@ on:
 jobs:
   integration:
     name: Integrations
-    runs-on: 'ubuntu-18.04'
+    runs-on: 'ubuntu-20.04'
     strategy:
       matrix:
         FEATURES: [oss ,enterprise]
@@ -44,7 +44,7 @@ jobs:
 
   warehouse-integration:
     name: Warehouse Service Integration
-    runs-on: 'ubuntu-18.04'
+    runs-on: 'ubuntu-20.04'
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
@@ -75,7 +75,7 @@ jobs:
 
   unit:
     name: Unit
-    runs-on: 'ubuntu-18.04'
+    runs-on: 'ubuntu-20.04'
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
