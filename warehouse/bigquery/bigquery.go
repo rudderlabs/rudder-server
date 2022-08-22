@@ -605,7 +605,6 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 		if !customPartitionsEnabled {
 			partitionWhereClause = fmt.Sprintf(`DATE(_PARTITIONTIME) >= DATE_SUB(CURRENT_DATE,INTERVAL 1 MONTH) AND `)
-			columnNamesStr = fmt.Sprintf("_PARTITIONTIME,")
 			sqlStatement = fmt.Sprintf(`BEGIN TRANSACTION;
 			DELETE FROM %[1]s as original
 			where %[5]s EXISTS(SELECT 1 from %[2]s as staging where original.%[4]s = staging.%[4]s);
