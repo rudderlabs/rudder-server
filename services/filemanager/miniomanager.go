@@ -112,6 +112,10 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 }
 
 func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	if !manager.Config.IsTruncated {
+		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
+		return
+	}
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core
@@ -132,6 +136,7 @@ func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter
 	for idx := range result.Contents {
 		fileObjects = append(fileObjects, &FileObject{result.Contents[idx].Key, result.Contents[idx].LastModified})
 	}
+	manager.Config.IsTruncated = result.IsTruncated
 	manager.Config.ContinuationToken = result.NextContinuationToken
 	return
 }
@@ -201,6 +206,7 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		SecretAccessKey:   secretAccessKey,
 		UseSSL:            useSSL,
 		ContinuationToken: continuationToken,
+		IsTruncated:       true,
 	}
 }
 
@@ -230,4 +236,5 @@ type MinioConfig struct {
 	SecretAccessKey   string
 	UseSSL            bool
 	ContinuationToken string
+	IsTruncated       bool
 }

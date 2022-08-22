@@ -22,8 +22,6 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay").Child("dumpsLoader")
 }
 
-const MaxItems int64 = 1000
-
 // DumpsLoaderHandleT - dumps-loader handle
 type dumpsLoaderHandleT struct {
 	dbHandle      *jobsdb.HandleT
@@ -102,11 +100,12 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
 	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
 	var err error
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)
 
 	pkgLogger.Info("Fetching gw dump files list")
 	objects := make([]dbObjectT, 0)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, gwHandle.handle.prefix, gwHandle.handle.startAfterKey, MaxItems, &gwHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx, gwHandle.handle.prefix, gwHandle.handle.startAfterKey, maxItems, &gwHandle.handle.uploader)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "gw_jobs_") {
@@ -142,7 +141,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 				objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
 			}
 		}
-		if len(objects) >= int(MaxItems) {
+		if len(objects) >= int(maxItems) {
 			storeJobs(ctx, objects, gwHandle.handle.dbHandle)
 		}
 	}
@@ -161,8 +160,9 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]dbObjectT, 0)
 	pkgLogger.Info("Fetching proc err files list")
 	var err error
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, procHandle.handle.prefix, procHandle.handle.startAfterKey, MaxItems, &procHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx, procHandle.handle.prefix, procHandle.handle.startAfterKey, maxItems, &procHandle.handle.uploader)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "rudder-proc-err-logs") {
@@ -189,7 +189,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 			objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
 		}
-		if len(objects) >= int(MaxItems) {
+		if len(objects) >= int(maxItems) {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle)
 		}
 
