@@ -156,6 +156,7 @@ func IterateFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxI
 type ObjectIterator struct {
 	ctx        context.Context
 	err        error
+	item       *FileObject
 	items      []*FileObject
 	manager    *FileManager
 	maxItems   int64
@@ -172,17 +173,21 @@ func (it *ObjectIterator) Next() bool {
 			it.err = err
 			return false
 		}
+		if len(it.items) > 0 {
+			pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, it.items[0].Key, it.items[0].LastModified, it.items[len(it.items)-1].Key, it.items[len(it.items)-1].LastModified)
+		}
 	}
+
 	if len(it.items) > 0 {
-		pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, it.items[0].Key, it.items[0].LastModified, it.items[len(it.items)-1].Key, it.items[len(it.items)-1].LastModified)
+		it.item = it.items[0]
+		it.items = it.items[1:]
+		return true
 	}
-	return len(it.items) > 0
+	return false
 }
 
 func (it *ObjectIterator) Get() *FileObject {
-	item := it.items[0]
-	it.items = it.items[1:]
-	return item
+	return it.item
 }
 
 func (it *ObjectIterator) Err() error {
