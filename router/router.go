@@ -349,7 +349,7 @@ func (worker *workerT) workerProcess() {
 			var parameters JobParametersT
 			err := json.Unmarshal(job.Parameters, &parameters)
 			if err != nil {
-				worker.rt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+				worker.rt.logger.Errorf("Unmarshal of job parameters failed: %s", string(job.Parameters))
 			}
 
 			var isPrevFailedUser bool
@@ -1054,13 +1054,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		if worker.rt.guaranteeUserEventOrder {
 			if addToFailedMap {
 				//#JobOrder (see other #JobOrder comment)
-				worker.failedJobIDMutex.RLock()
+				worker.failedJobIDMutex.Lock()
 				_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
-				worker.failedJobIDMutex.RUnlock()
 				if !isPrevFailedUser && destinationJobMetadata.UserID != "" {
-					worker.rt.logger.Debugf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
-					worker.failedJobIDMutex.Lock()
 					worker.failedJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
+					worker.failedJobIDMutex.Unlock()
+					worker.rt.logger.Debugf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
+				} else {
 					worker.failedJobIDMutex.Unlock()
 				}
 			} else if addToAbortMap {
