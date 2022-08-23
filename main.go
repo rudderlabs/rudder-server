@@ -253,7 +253,7 @@ func Run(ctx context.Context) int {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
-		if err = admin.StartServer(ctx); err != nil {
+		if err = admin.StartServer(ctx); err != nil && ctx.Err() == nil {
 			if !errors.Is(err, context.Canceled) {
 				pkgLogger.Errorf("Error in Admin server routine: %v", err)
 			}
@@ -263,7 +263,7 @@ func Run(ctx context.Context) int {
 
 	g.Go(func() (err error) {
 		p := &profiler.Profiler{}
-		if err = p.StartServer(ctx); err != nil {
+		if err = p.StartServer(ctx); err != nil && ctx.Err() == nil {
 			pkgLogger.Errorf("Error in Profiler server routine: %v", err)
 		}
 		return err
@@ -273,7 +273,7 @@ func Run(ctx context.Context) int {
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() (err error) {
-			if err = appHandler.StartRudderCore(ctx, options); err != nil {
+			if err = appHandler.StartRudderCore(ctx, options); err != nil && ctx.Err() == nil {
 				pkgLogger.Errorf("Error in Rudder Core routine: %v", err)
 			}
 			return err
@@ -293,7 +293,7 @@ func Run(ctx context.Context) int {
 	shutdownDone := make(chan struct{})
 	go func() {
 		err := g.Wait()
-		if err != nil && err != context.Canceled {
+		if err != nil && ctx.Err() == nil {
 			pkgLogger.Error(err)
 		}
 
