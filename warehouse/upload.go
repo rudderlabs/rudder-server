@@ -610,7 +610,7 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 }
 
 func (job *UploadJobT) exportIdentities() (err error) {
-	// Load Identitties if enabled
+	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {

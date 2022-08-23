@@ -409,7 +409,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
+			err = errors.New(fmt.Sprintf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
 		}
 		return err
 	}

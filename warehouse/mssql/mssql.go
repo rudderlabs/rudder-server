@@ -647,7 +647,7 @@ func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace whereever possible
+	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
 }
