@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
