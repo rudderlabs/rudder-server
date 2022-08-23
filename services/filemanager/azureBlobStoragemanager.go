@@ -204,7 +204,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	var containerName, accountName, accountKey, prefix string
+	var containerName, accountName, accountKey, sasToken, prefix string
 	var endPoint *string
 	var forcePathStyle, disableSSL *bool
 	if config["containerName"] != nil {
@@ -223,6 +223,12 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		tmp, ok := config["accountName"].(string)
 		if ok {
 			accountName = tmp
+		}
+	}
+	if config["sasToken"] != nil {
+		tmp, ok := config["sasToken"].(string)
+		if ok {
+			sasToken = tmp
 		}
 	}
 	if config["accountKey"] != nil {
@@ -254,6 +260,7 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		Prefix:         prefix,
 		AccountName:    accountName,
 		AccountKey:     accountKey,
+		SASToken:       sasToken,
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
@@ -265,6 +272,7 @@ type AzureBlobStorageConfig struct {
 	Prefix         string
 	AccountName    string
 	AccountKey     string
+	SASToken       string
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
