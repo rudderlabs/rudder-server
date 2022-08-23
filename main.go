@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"net/http"
 	"os"
 	"os/signal"
@@ -162,6 +163,7 @@ func runAllInit() {
 	warehouse.Init5()
 	warehouse.Init6()
 	configuration_testing.Init()
+	datalake.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
