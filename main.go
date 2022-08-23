@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
@@ -162,6 +164,7 @@ func runAllInit() {
 	warehouse.Init5()
 	warehouse.Init6()
 	configuration_testing.Init()
+	datalake.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
