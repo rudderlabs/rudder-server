@@ -172,7 +172,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 
 	operation := func() error {
 		var err error
-		req, err := http.NewRequest("GET", urlStr, nil)
+		req, err := http.NewRequest("GET", urlStr, http.NoBody)
 		pkgLogger.Debugf("regulation service URL: %s", urlStr)
 		if err != nil {
 			return err

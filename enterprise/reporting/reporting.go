@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -409,7 +408,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = errors.New(fmt.Sprintf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
+			err = fmt.Errorf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
 		}
 		return err
 	}

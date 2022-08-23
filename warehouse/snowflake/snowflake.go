@@ -127,7 +127,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
 	}
-	return strings.Join(arr[:], ",")
+	return strings.Join(arr, ",")
 }
 
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.

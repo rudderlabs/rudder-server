@@ -159,10 +159,7 @@ func (imp *importerT) importProcess(importWorker *importWorkerT) {
 	for {
 		waitStat := stats.NewTaggedStat("import_worker_process_wait_time", stats.TimerType, stats.Tags{"migrationType": imp.statVal})
 		waitStat.Start()
-		var migrationCheckpoint jobsdb.MigrationCheckpointT
-		{
-			migrationCheckpoint = <-importWorker.channel
-		}
+		migrationCheckpoint := <-importWorker.channel
 		waitStat.End()
 
 		queryStat := stats.NewTaggedStat("import_worker_process_time", stats.TimerType, stats.Tags{"migrationType": imp.statVal})
@@ -204,8 +201,7 @@ func (imp *importerT) download(fileLocation string) string {
 	}
 
 	operation := func() error {
-		var downloadError error
-		downloadError = imp.migrator.fileManager.Download(context.TODO(), jsonFile, imp.migrator.fileManager.GetDownloadKeyFromFileLocation(fileLocation))
+		downloadError := imp.migrator.fileManager.Download(context.TODO(), jsonFile, imp.migrator.fileManager.GetDownloadKeyFromFileLocation(fileLocation))
 		return downloadError
 	}
 

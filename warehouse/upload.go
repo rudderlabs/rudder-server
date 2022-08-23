@@ -2044,10 +2044,7 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	if job.upload.SourceCategory == CloudSourceCateogry {
-		return true
-	}
-	return false
+	return job.upload.SourceCategory == CloudSourceCateogry
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {

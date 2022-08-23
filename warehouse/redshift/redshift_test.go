@@ -75,7 +75,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	// Dropping temporary schema
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
+			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, handle.Schema))
 			return
 		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
 	})
