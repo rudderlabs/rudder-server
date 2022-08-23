@@ -88,7 +88,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 			_ = json.Unmarshal(body, &requests)
 			responses := []transformerResponse{}
 			// return payload of length = len(requests) + 1
-			for i := 0; i < len(requests) + 1; i++ {
+			for i := 0; i < len(requests)+1; i++ {
 				responses = append(responses, transformerResponse{
 					Err:        sampleError,
 					StatusCode: http.StatusBadRequest,
@@ -115,6 +115,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	assert.Contains(t, strings.TrimSpace(w.Body.String()), response.SourceTransformerInvalidResponseFormat)
 	_ = webhookHandler.Shutdown()
 }
+
 func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
