@@ -49,7 +49,7 @@ func initWebhook() {
 	})
 }
 
-func TestWebhookRequestHandlerWithTransformerBatchError(t *testing.T) {
+func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
@@ -76,6 +76,45 @@ func TestWebhookRequestHandlerWithTransformerBatchError(t *testing.T) {
 	_ = webhookHandler.Shutdown()
 }
 
+func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mock_webhook.NewMockGatewayI(ctrl)
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			responses := []transformerResponse{}
+			// return payload of length = len(requests) + 1
+			for i := 0; i < len(requests) + 1; i++ {
+				responses = append(responses, transformerResponse{
+					Err:        sampleError,
+					StatusCode: http.StatusBadRequest,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	webhookHandler := Setup(mockGW, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformerURL = transformerServer.URL
+	})
+
+	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
+	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
+	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
+
+	webhookHandler.Register(sourceDefName)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+	w := httptest.NewRecorder()
+	webhookHandler.RequestHandler(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
+	assert.Contains(t, strings.TrimSpace(w.Body.String()), response.SourceTransformerInvalidResponseFormat)
+	_ = webhookHandler.Shutdown()
+}
 func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)

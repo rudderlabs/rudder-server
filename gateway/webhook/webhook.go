@@ -194,15 +194,16 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
-	} else {
-		payload := []byte(response.Ok)
-		if resp.OutputToSource != nil {
-			payload = resp.OutputToSource.Body
-			w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
-		}
-		pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
-		_, _ = w.Write(payload)
+		return
 	}
+
+	payload := []byte(response.Ok)
+	if resp.OutputToSource != nil {
+		payload = resp.OutputToSource.Body
+		w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
+	}
+	pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
+	_, _ = w.Write(payload)
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string) {
