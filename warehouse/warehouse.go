@@ -281,7 +281,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				wh.workerChannelMapLock.Lock()
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-				// to avoid creating goroutine for disabled sources/destiantions
+				// to avoid creating goroutine for disabled sources/destinations
 				if _, ok := wh.workerChannelMap[workerName]; !ok {
 					workerChan := wh.initWorker()
 					wh.workerChannelMap[workerName] = workerChan
@@ -793,9 +793,9 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 						%s t
 					WHERE
 						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
-				) grouped_uplaods
+				) grouped_uploads
 				WHERE
-					grouped_uplaods.row_number = 1
+					grouped_uploads.row_number = 1
 				ORDER BY
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
