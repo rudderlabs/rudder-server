@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -473,7 +472,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig,
 	)
 	if testing.Verbose() {
-		data, err := ioutil.ReadFile(workspaceConfigPath)
+		data, err := os.ReadFile(workspaceConfigPath)
 		require.NoError(t, err)
 		t.Logf("Workspace config: %s", string(data))
 	}
