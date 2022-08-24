@@ -351,10 +351,6 @@ func (jobRun *JobRunT) cleanup() {
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.Close()
-			if err != nil {
-				pkgLogger.Errorf("Error while closing load file %s : %v", writer.GetLoadFile().Name(), err)
-			}
 			misc.RemoveFilePaths(writer.GetLoadFile().Name())
 		}
 	}
@@ -464,6 +460,12 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
 
+		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
+			err = fmt.Errorf("WH: Staging file schema column limit exceeded")
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for staging file id %v at %s for %s", len(sortedTableColumnMap[tableName]), job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			return nil, err
+		}
+
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {
@@ -555,6 +557,12 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
+	for _, loadFile := range jobRun.outputFileWritersMap {
+		err = loadFile.Close()
+		if err != nil {
+			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
+		}
+	}
 	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
 	return loadFileUploadOutputs, err
 }
