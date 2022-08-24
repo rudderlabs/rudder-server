@@ -136,7 +136,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 					UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
 					Parameters:   []byte(`{}`),
 					CustomVal:    "replay",
-					EventPayload: []byte(fmt.Sprintf(`{"location": "%q"}`, object.Key)),
+					EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
 				}
 				objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
 			}
@@ -185,7 +185,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
 				Parameters:   []byte(`{}`),
 				CustomVal:    "replay",
-				EventPayload: []byte(fmt.Sprintf(`{"location": "%q"}`, object.Key)),
+				EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
 			}
 			objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
 		}
