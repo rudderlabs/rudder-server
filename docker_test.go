@@ -3,8 +3,6 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
-//go:build integration
-
 package main_test
 
 import (
