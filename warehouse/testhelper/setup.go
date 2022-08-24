@@ -180,7 +180,7 @@ func enhanceJobsDBWithSQLFunctions() {
 
 	err = txn.Commit()
 	if err != nil {
-		log.Panicf("error occurred with commiting txn with err %s", err.Error())
+		log.Panicf("error occurred with committing txn with err %s", err.Error())
 	}
 }
 

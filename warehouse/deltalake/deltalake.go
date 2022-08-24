@@ -723,11 +723,11 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		)
 	} else {
 		// Partition query
-		// Partition query
 		var partitionQuery string
 		partitionQuery, err = dl.partitionQuery(warehouseutils.UsersTable)
 		if err != nil {
 			err = fmt.Errorf("failed getting partition query during load users table, error: %w", err)
+			errorMap[warehouseutils.UsersTable] = err
 			return
 		}
 
