@@ -3,7 +3,7 @@ package migrator
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -190,7 +190,7 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 
 func (m *Migrator) importRequestHandler(importHandler func(jobsdb.MigrationCheckpointT) error) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, _ := ioutil.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
 		r.Body.Close()
 		migrationCheckpoint := jobsdb.MigrationCheckpointT{}
 		err := json.Unmarshal(body, &migrationCheckpoint)
