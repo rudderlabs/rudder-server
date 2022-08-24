@@ -38,13 +38,14 @@ const (
 
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
-	job                  PayloadT
+	job                  *PayloadT
 	stagingFilePath      string
 	uuidTS               time.Time
 	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
 	tableEventCountMap   map[string]int
 	stagingFileReader    *gzip.Reader
 	whIdentifier         string
+	stagingFileDIR       string
 }
 
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
@@ -73,7 +74,7 @@ func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bo
  */
 func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	job := jobRun.job
-	dirName := fmt.Sprintf(`/%s/_%s/`, misc.RudderWarehouseJsonUploadsTmp, strconv.Itoa(index))
+	dirName := fmt.Sprintf(`/%s/_%s/`, jobRun.stagingFileDIR, strconv.Itoa(index))
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
@@ -105,7 +106,7 @@ func (job *PayloadT) sendDownloadStagingFileFailedStat() {
 // Get fileManager
 func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fileManager, err := job.FileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
@@ -160,7 +161,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 
 	err := downloadTask(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
-		if PickupStagingConfiguration(&job) {
+		if PickupStagingConfiguration(job) {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
 			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
@@ -382,20 +383,18 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
-	processStartTime := time.Now()
-	jobRun := JobRunT{
-		job:          job,
-		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
-	}
+// TODO: job needs to be mocked when sent in for running in this function ?
+func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s",
+		job.StagingFileID,
+		job.StagingFileLocation,
+		warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID))
 
-	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	processStartTime := time.Now()
 	defer func() {
+		jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
 		jobRun.timerStat("staging_files_total_processing_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
 	}()
-	defer jobRun.cleanup()
-
-	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
@@ -446,8 +445,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
 		if lineBytesCounter > 10*maxStagingFileReadBufferCapacityInK*1024 {
+			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s",
+				lineBytesCounter,
+				job.StagingFileID,
+				job.StagingFileLocation,
+				jobRun.whIdentifier)
 			err = fmt.Errorf("WH: Staging file read buffer capacity exceeded")
-			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s", lineBytesCounter, job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 			return nil, err
 		}
 
@@ -545,6 +548,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
 		}
+
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
@@ -555,7 +559,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedJob(ctx context.Context, claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -576,8 +580,22 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		return
 	}
 	job.BatchID = claimedJob.BatchID
+	job.FileManagerFactory = filemanager.DefaultFileManagerFactory
+
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
-	loadFileOutputs, err := processStagingFile(job, workerIndex)
+	// TODO: This needs to be mocked for effective testing ?
+	jobRun := JobRunT{
+		job:            &job,
+		stagingFileDIR: misc.RudderWarehouseJsonUploadsTmp,
+		whIdentifier:   warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+	}
+
+	pkgLogger.Info("$$$$$$$$$ My Print $$$$$$$")
+	pkgLogger.Infof("%#v", job)
+
+	defer jobRun.cleanup()
+
+	loadFileOutputs, err := processStagingFile(ctx, &job, &jobRun, workerIndex)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -612,7 +630,7 @@ func setupSlave(ctx context.Context) error {
 				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 
 				// process job
-				processClaimedJob(claimedJob, idx)
+				processClaimedJob(ctx, claimedJob, idx)
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()
 			}
