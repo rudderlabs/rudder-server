@@ -235,7 +235,7 @@ func TestMainFlow(t *testing.T) {
 		messages, errors := consume(t, c, topics)
 
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt, os.Kill) // Get signal for finish
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM) // Get signal for finish
 
 		var (
 			msgCount      = 0 // Count how many message processed
