@@ -441,6 +441,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
+		if lineBytesCounter > 10*maxStagingFileReadBufferCapacityInK*1024 {
+			err = fmt.Errorf("WH: Staging file read buffer capacity exceeded")
+			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s", lineBytesCounter, job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			return nil, err
+		}
+
 		var batchRouterEvent BatchRouterEventT
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
@@ -450,6 +456,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
+
+		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
+			err = fmt.Errorf("WH: Staging file schema column limit exceeded")
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for staging file id %v at %s for %s", len(sortedTableColumnMap[tableName]), job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			return nil, err
+		}
 
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
