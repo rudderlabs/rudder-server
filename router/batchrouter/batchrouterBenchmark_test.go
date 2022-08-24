@@ -30,7 +30,7 @@ func Benchmark_GetStorageDateFormat(b *testing.B) {
 			destination.Source.ID = randomString()
 
 			mockFileManager.EXPECT().GetConfiguredPrefix().AnyTimes()
-			mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			_, _ = GetStorageDateFormat(mockFileManager, destination, folderName)
 		}
 	})

@@ -33,12 +33,15 @@ func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKe
 }
 
 // mergeableLTSQLStatement merge load table sql statement
-func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
+func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string, partitionQuery string) (sqlStatement string) {
 	pk := primaryKey(tableName)
+	if partitionQuery != "" {
+		partitionQuery += " AND"
+	}
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN
                                        USING ( %[3]s ) AS STAGING
-									   ON MAIN.%[4]s = STAGING.%[4]s
+									   ON %[8]s MAIN.%[4]s = STAGING.%[4]s
 									   WHEN MATCHED THEN UPDATE SET %[5]s
 									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
 		namespace,
@@ -48,6 +51,7 @@ func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, colu
 		columnsWithValues(columnKeys),
 		columnNames(columnKeys),
 		stagingColumnNames(columnKeys),
+		partitionQuery,
 	)
 	return
 }

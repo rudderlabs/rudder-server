@@ -198,7 +198,7 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 
 // IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
 // then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
-func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
 		return
@@ -218,7 +218,9 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, prefix string
 		// Delimiter: aws.String("/"),
 	}
 	// startAfter is to resume a paused task.
-	if manager.Config.StartAfter != "" {
+	if startAfter != "" {
+		listObjectsV2Input.StartAfter = aws.String(startAfter)
+	} else if manager.Config.StartAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
 

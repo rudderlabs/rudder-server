@@ -11,8 +11,9 @@ import (
 type Type string // skipcq: RVV-B0009
 
 const (
-	DedicatedType   Type = "DEDICATED"
-	MultiTenantType Type = "MULTITENANT"
+	DedicatedType   Type   = "DEDICATED"
+	MultiTenantType Type   = "MULTITENANT"
+	HostedNamespace string = "free-us-1" // Having it here to support legacy cp-router hosted
 )
 
 const defaultClusterType = DedicatedType
@@ -25,7 +26,7 @@ func GetFromEnv() (Type, error) {
 		t = defaultClusterType
 	}
 	if !t.Valid() {
-		return "", fmt.Errorf("Invalid deployment type: %q", t)
+		return "", fmt.Errorf("invalid deployment type: %q", t)
 	}
 
 	return t, nil
@@ -57,6 +58,11 @@ func GetConnectionIdentifier() (string, bool, error) {
 			if err != nil {
 				pkgLogger.Errorf("error getting workspace namespace: %s", err.Error())
 				return "", false, err
+			}
+			if connectionIdentifier == HostedNamespace {
+				// CP Router still has some things hardcoded for hosted
+				// which needs to be supported
+				connectionIdentifier = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 			}
 		} else {
 			connectionIdentifier, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")

@@ -2,7 +2,9 @@ package destination
 
 import (
 	_ "encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -43,8 +45,25 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 		}
 	})
 
-	return &TransformerResource{
+	tr := &TransformerResource{
 		TransformURL: fmt.Sprintf("http://localhost:%s", transformerContainer.GetPort("9090/tcp")),
 		Port:         transformerContainer.GetPort("9090/tcp"),
-	}, nil
+	}
+
+	err = pool.Retry(func() (err error) {
+		resp, err := http.Get(tr.TransformURL + "/health")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return errors.New(resp.Status)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return tr, nil
 }

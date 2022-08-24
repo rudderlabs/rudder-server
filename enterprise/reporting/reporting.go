@@ -295,7 +295,7 @@ func (handle *HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*
 
 func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 	tr := &http.Transport{}
-	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := handle.getTags(clientName)
 	mainLoopTimer := stats.NewTaggedStat(STAT_REPORTING_MAIN_LOOP_TIME, stats.TimerType, tags)
 	getReportsTimer := stats.NewTaggedStat(STAT_REPORTING_GET_REPORTS_TIME, stats.TimerType, tags)
@@ -409,7 +409,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
+			err = errors.New(fmt.Sprintf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
 		}
 		return err
 	}

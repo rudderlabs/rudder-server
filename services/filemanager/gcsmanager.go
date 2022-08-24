@@ -57,7 +57,7 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 	return UploadOutput{Location: manager.objectURL(attrs), ObjectName: fileName}, err
 }
 
-func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Create GCS storage client
@@ -133,6 +133,7 @@ func (manager *GCSManager) Download(ctx context.Context, output *os.File, key st
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://storage.googleapis.com/bucket-name/key - >> key
 */
 func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, error) {

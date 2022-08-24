@@ -427,14 +427,6 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	})
 	require.NoError(t, containersGroup.Wait())
 
-	health.WaitUntilReady(
-		context.Background(), t,
-		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
-		time.Minute,
-		time.Second,
-		"transformer",
-	)
-
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
 	}

@@ -505,7 +505,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error commiting transaction: %v`, err)
+		pkgLogger.Errorf(`IDR: Error committing transaction: %v`, err)
 		return
 	}
 	return

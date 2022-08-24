@@ -10,6 +10,7 @@ service Databricks {
   rpc FetchTables(FetchTablesRequest) returns (FetchTablesResponse) {}
   rpc FetchTableAttributes(FetchTableAttributesRequest) returns (FetchTableAttributesResponse) {}
   rpc FetchTotalCountInTable(FetchTotalCountInTableRequest) returns (FetchTotalCountInTableResponse) {}
+  rpc FetchPartitionColumns(FetchPartitionColumnsRequest) returns (FetchPartitionColumnsResponse) {}
   rpc Close(CloseRequest) returns (CloseResponse) {}
 }
 
@@ -114,6 +115,18 @@ message FetchTotalCountInTableRequest {
 
 message FetchTotalCountInTableResponse {
   int64 count = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchPartitionColumnsRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message FetchPartitionColumnsResponse {
+  repeated string columns = 1;
   string errorCode = 2;
   string errorMessage = 3;
 }

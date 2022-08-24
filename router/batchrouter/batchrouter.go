@@ -985,7 +985,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 	prefixes := []string{folderName, destination.Source.ID}
 	prefix := strings.Join(prefixes[0:2], "/")
 	fullPrefix := GetFullPrefix(manager, prefix)
-	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), fullPrefix, 5)
+	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), "", fullPrefix, 5)
 	if err != nil {
 		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
 		// Returning the earlier default as we might not able to fetch the list.
