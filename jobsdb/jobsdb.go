@@ -232,26 +232,26 @@ type JobsDB interface {
 
 	// GetUnprocessed finds unprocessed jobs. Unprocessed are new
 	// jobs whose state hasn't been marked in the database yet
-	GetUnprocessed(params GetQueryParamsT) JobsResult
+	GetUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetProcessed finds jobs in some state, i.e. not unprocessed
-	GetProcessed(params GetQueryParamsT) JobsResult
+	GetProcessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetToRetry finds jobs in failed state
-	GetToRetry(params GetQueryParamsT) JobsResult
+	GetToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetToRetry finds jobs in waiting state
-	GetWaiting(params GetQueryParamsT) JobsResult
+	GetWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetExecuting finds jobs in executing state
-	GetExecuting(params GetQueryParamsT) JobsResult
+	GetExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetImporting finds jobs in importing state
-	GetImporting(params GetQueryParamsT) JobsResult
+	GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(statMap map[string]map[string]int)
+	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
 
 	/* Admin */
 
@@ -494,7 +494,7 @@ func (jd *HandleT) registerBackUpSettings() {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.tablePrefix, jd.ownerType, jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
@@ -1906,11 +1906,16 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 	defer jd.dsListLock.RUnlock()
 
 	// Unprocessed jobs
-	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, GetQueryParamsT{})
-
+	unprocessedList, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
+	if err != nil {
+		return 0, err
+	}
 	// Jobs which haven't finished processing
-	retryList := jd.getProcessedJobsDS(srcDS, true,
+	retryList, err := jd.getProcessedJobsDS(ctx, srcDS, true,
 		GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
+	if err != nil {
+		return 0, err
+	}
 	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
 	noJobsMigrated = len(jobsToMigrate)
 
@@ -1934,10 +1939,12 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{}, nil)
+		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
 	})
-	jd.assertError(err)
-	return
+	if err != nil {
+		return 0, err
+	}
+	return noJobsMigrated, nil
 }
 
 func (jd *HandleT) postMigrateHandleDS(l lock.DSListLockToken, migrateFrom []dataSetT) error {
@@ -2174,12 +2181,13 @@ func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[st
 	}
 }
 
-func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
+func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
+	statMap := make(map[string]map[string]int)
 
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
@@ -2223,24 +2231,29 @@ func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
 		  group by
 			customVal,
 			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.Query(queryString)
-		jd.assertError(err)
+		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
+		if err != nil {
+			return nil, err
+		}
 
 		for rows.Next() {
 			var count sql.NullInt64
 			var customVal string
 			var workspace string
 			err := rows.Scan(&count, &customVal, &workspace)
-			jd.assertError(err)
+			if err != nil {
+				return statMap, err
+			}
 			if _, ok := statMap[workspace]; !ok {
 				statMap[workspace] = make(map[string]int)
 			}
 			statMap[workspace][customVal] += int(count.Int64)
 		}
 		if err = rows.Err(); err != nil {
-			jd.assertError(err)
+			return statMap, err
 		}
 	}
+	return statMap, nil
 }
 
 func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
@@ -2528,7 +2541,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryParamsT) JobsResult {
+func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll bool, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -2537,7 +2550,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 
 	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
@@ -2597,9 +2610,12 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
                                 WHERE jobs.job_id=job_latest_state.job_id`,
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
-		rows, err = jd.dbHandle.Query(sqlStatement)
-		jd.assertError(err)
+		rows, err = jd.dbHandle.QueryContext(ctx, sqlStatement)
+		if err != nil {
+			return JobsResult{}, err
+		}
 		defer rows.Close()
+
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
@@ -2643,12 +2659,18 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 			sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 		}
 
-		stmt, err := jd.dbHandle.Prepare(sqlStatement)
-		jd.assertError(err)
+		stmt, err := jd.dbHandle.PrepareContext(ctx, sqlStatement)
+		if err != nil {
+			return JobsResult{}, err
+		}
 		defer stmt.Close()
-		rows, err = stmt.Query(args...)
-		jd.assertError(err)
+
+		rows, err = stmt.QueryContext(ctx, args...)
+		if err != nil {
+			return JobsResult{}, err
+		}
 		defer rows.Close()
+
 	}
 
 	var runningEventCount int
@@ -2667,7 +2689,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
-		jd.assertError(err)
+		if err != nil {
+			return JobsResult{}, err
+		}
 
 		if !getAll { // if getAll is true, limits do not apply
 			if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
@@ -2707,7 +2731,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, params GetQueryP
 		LimitsReached: limitsReached,
 		PayloadSize:   payloadSize,
 		EventsCount:   eventCount,
-	}
+	}, nil
 }
 
 /*
@@ -2716,13 +2740,13 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQueryParamsT) JobsResult {
+func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order bool, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
 	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
@@ -2797,10 +2821,14 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) subquery WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	rows, err = jd.dbHandle.Query(sqlStatement, args...)
-	jd.assertError(err)
+	rows, err = jd.dbHandle.QueryContext(ctx, sqlStatement, args...)
+	if err != nil {
+		return JobsResult{}, err
+	}
 	defer rows.Close()
-
+	if err != nil {
+		return JobsResult{}, err
+	}
 	var runningEventCount int
 	var runningPayloadSize int64
 
@@ -2813,8 +2841,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 		var job JobT
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize)
-		jd.assertError(err)
-
+		if err != nil {
+			return JobsResult{}, err
+		}
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
 			// events limit overflow is triggered as long as we have read at least one job
 			limitsReached = true
@@ -2854,11 +2883,12 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, params GetQuery
 		LimitsReached: limitsReached,
 		PayloadSize:   payloadSize,
 		EventsCount:   eventCount,
-	}
+	}, nil
 }
 
 // copyJobStatusDS is expected to be called only during a migration
-func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+	var parameterFilters []ParameterFilterT
 	if len(statusList) == 0 {
 		return nil
 	}
@@ -3221,19 +3251,19 @@ func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) e
 	// backupDS is only called when BackupSettings.BackupEnabled is true
 	if jd.BackupSettings.FailedOnly {
 		jd.logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
-		_, err := jd.backupTable(ctx, backupDSRange, false)
+		err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
 			return err
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err := jd.backupTable(ctx, backupDSRange, false)
+		err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
 			return err
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err = jd.backupTable(ctx, backupDSRange, true)
+		err = jd.backupTable(ctx, backupDSRange, true)
 		if err != nil {
 			return err
 		}
@@ -3472,7 +3502,7 @@ func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }
 
-func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
+func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) error {
 	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -3524,7 +3554,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	if totalCount == 0 {
 		//  Do not record stat for this case?
 		jd.logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
-		return true, nil
+		return nil
 	}
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -3534,7 +3564,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	if err != nil {
-		return false, fmt.Errorf("creating gz file %q: %w", path, err)
+		return fmt.Errorf("creating gz file %q: %w", path, err)
 	}
 	defer os.Remove(path)
 	var offset int64
@@ -3554,7 +3584,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
 			_, err = gzWriter.Write(rawJSONRows)
 			if err != nil {
-				return false, fmt.Errorf("writing gz file %q: %w", path, err)
+				return fmt.Errorf("writing gz file %q: %w", path, err)
 			}
 			offset++
 		}
@@ -3565,7 +3595,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	}
 
 	if err := gzWriter.CloseGZ(); err != nil {
-		return false, fmt.Errorf("closing gz file %q: %w", path, err)
+		return fmt.Errorf("closing gz file %q: %w", path, err)
 	}
 	tableFileDumpTimeStat.End()
 
@@ -3589,13 +3619,13 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
-		return false, err
+		return err
 	}
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
 	totalTableDumpTimeStat.End()
 	jd.logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
-	return true, nil
+	return nil
 }
 
 func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
@@ -4104,26 +4134,26 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
-		return jd.getUnprocessed(params)
+		return queryResultWrapper(jd.getUnprocessed(ctx, params))
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).(JobsResult)
-	return res
+	res, _ := jd.executeDbRequest(newReadDbRequest("unprocessed", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
 }
 
 /*
 getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
@@ -4153,7 +4183,10 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
 
 	var completeUnprocessedJobs JobsResult
 	for _, ds := range dsList {
-		unprocessedJobs := jd.getUnprocessedJobsDS(ds, true, params)
+		unprocessedJobs, err := jd.getUnprocessedJobsDS(ctx, ds, true, params)
+		if err != nil {
+			return JobsResult{}, err
+		}
 		completeUnprocessedJobs.Jobs = append(completeUnprocessedJobs.Jobs, unprocessedJobs.Jobs...)
 		completeUnprocessedJobs.EventsCount += unprocessedJobs.EventsCount
 		completeUnprocessedJobs.PayloadSize += unprocessedJobs.PayloadSize
@@ -4174,28 +4207,28 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) JobsResult {
 		}
 	}
 	// Release lock
-	return completeUnprocessedJobs
+	return completeUnprocessedJobs, nil
 }
 
-func (jd *HandleT) GetImporting(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Importing.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
-		return jd.getImportingList(params)
+		return queryResultWrapper(jd.getImportingList(ctx, params))
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("importing", &tags, command)).(JobsResult)
-	return res
+	res, _ := jd.executeDbRequest(newReadDbRequest("importing", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
 }
 
 /*
 getImportingList returns events which need are Importing.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getImportingList(params GetQueryParamsT) JobsResult {
-	return jd.GetProcessed(params)
+func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	return jd.GetProcessed(ctx, params)
 }
 
 /*
@@ -4325,9 +4358,9 @@ realises on the caller to update it. That means that successive calls to GetProc
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
@@ -4354,12 +4387,15 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) JobsResult {
 	if params.PayloadSizeLimit > 0 {
 		limitByPayloadSize = true
 	} else if params.PayloadSizeLimit < 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 
 	var completeProcessedJobs JobsResult
 	for _, ds := range dsList {
-		processedJobs := jd.getProcessedJobsDS(ds, false, params)
+		processedJobs, err := jd.getProcessedJobsDS(ctx, ds, false, params)
+		if err != nil {
+			return JobsResult{}, err
+		}
 		completeProcessedJobs.Jobs = append(completeProcessedJobs.Jobs, processedJobs.Jobs...)
 		completeProcessedJobs.EventsCount += processedJobs.EventsCount
 		completeProcessedJobs.PayloadSize += processedJobs.PayloadSize
@@ -4380,77 +4416,89 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) JobsResult {
 		}
 	}
 
-	return completeProcessedJobs
+	return completeProcessedJobs, nil
+}
+
+type queryResult struct {
+	JobsResult
+	err error
+}
+
+func queryResultWrapper(res JobsResult, err error) queryResult {
+	return queryResult{
+		JobsResult: res,
+		err:        err,
+	}
 }
 
 /*
 GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetToRetry(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Failed.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
-		return jd.getToRetry(params)
+		return queryResultWrapper(jd.getToRetry(ctx, params))
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
-	return res
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
 }
 
 /*
 getToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getToRetry(params GetQueryParamsT) JobsResult {
-	return jd.GetProcessed(params)
+func (jd *HandleT) getToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	return jd.GetProcessed(ctx, params)
 }
 
 /*
 GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetWaiting(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Waiting.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
-		return jd.getWaiting(params)
+		return queryResultWrapper(jd.getWaiting(ctx, params))
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
-	return res
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
 }
 
 /*
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getWaiting(params GetQueryParamsT) JobsResult {
-	return jd.GetProcessed(params)
+func (jd *HandleT) getWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	return jd.GetProcessed(ctx, params)
 }
 
-func (jd *HandleT) GetExecuting(params GetQueryParamsT) JobsResult {
+func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
-		return JobsResult{}
+		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Executing.State}
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	command := func() interface{} {
-		return jd.getExecuting(params)
+		return queryResultWrapper(jd.getExecuting(ctx, params))
 	}
-	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(JobsResult)
-	return res
+	res, _ := jd.executeDbRequest(newReadDbRequest("processed", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
 }
 
 /*
 getExecuting returns events which  in executing state
 */
-func (jd *HandleT) getExecuting(params GetQueryParamsT) JobsResult {
-	return jd.GetProcessed(params)
+func (jd *HandleT) getExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	return jd.GetProcessed(ctx, params)
 }
 
 /*
@@ -4511,4 +4559,34 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 		v = []byte(`{}`)
 	}
 	return v
+}
+
+func QueryJobsWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) ([]*JobT, error)) ([]*JobT, error) {
+	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+		return f(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.([]*JobT), err
+}
+
+func QueryJobsResultWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (JobsResult, error)) (JobsResult, error) {
+	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+		return f(ctx)
+	})
+	if err != nil {
+		return JobsResult{}, err
+	}
+	return res.(JobsResult), err
+}
+
+func QueryWorkspacePileupWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (map[string]map[string]int, error)) (map[string]map[string]int, error) {
+	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+		return f(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(map[string]map[string]int), err
 }

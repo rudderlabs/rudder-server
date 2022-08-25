@@ -235,8 +235,8 @@ var _ = Describe("BatchRouter", func() {
 			}
 
 			payloadLimit := batchrouter.payloadLimit
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1).After(callRetry)
+			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}, nil).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {

@@ -42,7 +42,7 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 
 // getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
 // In place migration is not supported anymore, so this should suffice.
-func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
+func (jd *HandleT) getDsForNewEvents() dataSetT {
 	return dataSetT{JobTable: fmt.Sprintf("%s_jobs_1", jd.tablePrefix), JobStatusTable: fmt.Sprintf("%s_job_status_1", jd.tablePrefix), Index: "1"}
 }
 

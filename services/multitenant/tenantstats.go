@@ -3,11 +3,13 @@
 package multitenant
 
 import (
+	"context"
 	"math"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -30,7 +32,9 @@ type Stats struct {
 	routerLatencyMutex      sync.RWMutex
 	processorStageTime      time.Time
 	// have DBs also
-	RouterDBs map[string]jobsdb.MultiTenantJobsDB
+	RouterDBs                 map[string]jobsdb.MultiTenantJobsDB
+	jobdDBQueryRequestTimeout time.Duration
+	jobdDBMaxRetries          int
 }
 
 type MultiTenantI interface {
@@ -55,10 +59,19 @@ func (t *Stats) Start() error {
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
+
 	for dbPrefix := range t.RouterDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap := make(map[string]map[string]int)
-		t.RouterDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
+		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetries(context.Background(),
+			t.jobdDBQueryRequestTimeout,
+			t.jobdDBMaxRetries,
+			func(ctx context.Context) (map[string]map[string]int, error) {
+				return t.RouterDBs[dbPrefix].GetPileUpCounts(ctx)
+			})
+		if err != nil {
+			return err
+		}
+
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
 				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
@@ -83,14 +96,27 @@ func Init() {
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	t := Stats{}
+	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
 	t.RouterDBs = routerDBs
+
 	for dbPrefix := range routerDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap := make(map[string]map[string]int)
-		routerDBs[dbPrefix].GetPileUpCounts(pileUpStatMap)
+
+		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetries(context.Background(),
+			t.jobdDBQueryRequestTimeout,
+			t.jobdDBMaxRetries,
+			func(ctx context.Context) (map[string]map[string]int, error) {
+				return routerDBs[dbPrefix].GetPileUpCounts(ctx)
+			})
+		if err != nil {
+			pkgLogger.Error("Error while getting pile up counts", "error", err)
+			panic(err)
+		}
 		for workspace := range pileUpStatMap {
 			for destType := range pileUpStatMap[workspace] {
 				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
