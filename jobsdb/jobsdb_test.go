@@ -526,7 +526,7 @@ func insertStringInString(input, c string, times int) string {
 }
 
 func sanitizedJsonUsingStrings(input json.RawMessage) json.RawMessage {
-	return json.RawMessage(strings.Replace(string(input), `\u0000`, "", -1))
+	return json.RawMessage(strings.ReplaceAll(string(input), `\u0000`, ""))
 }
 
 func sanitizedJsonUsingBytes(input json.RawMessage) json.RawMessage {

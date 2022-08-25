@@ -165,7 +165,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 
 // columnNames returns joined column with comma separated
 func columnNames(keys []string) string {
-	return strings.Join(keys[:], ",")
+	return strings.Join(keys, ",")
 }
 
 // stagingColumnNames returns staging column names
@@ -455,7 +455,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 // sortedColumnNames returns sorted column names
 func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiffT) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
+		sortedColumnNames = strings.Join(sortedColumnKeys, ",")
 	} else {
 		// TODO: Explore adding headers to csv.
 		format := func(index int, value string) string {

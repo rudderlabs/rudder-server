@@ -167,7 +167,7 @@ func run(m *testing.M) int {
 	// getting list of files in `testData` directory while will be used to testing filemanager.
 	searchDir := "./goldenDirectory"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-		if regexRequiredSuffix.Match([]byte(path)) {
+		if regexRequiredSuffix.MatchString(path) {
 			fileList = append(fileList, path)
 		}
 		return nil

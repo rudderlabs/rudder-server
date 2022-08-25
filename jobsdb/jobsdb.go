@@ -116,9 +116,7 @@ type statTags struct {
 	StateFilters     []string
 }
 
-var getTimeNowFunc = func() time.Time {
-	return time.Now()
-}
+var getTimeNowFunc = time.Now
 
 // StoreSafeTx sealed interface
 type StoreSafeTx interface {
@@ -1234,7 +1232,7 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	var minJobCreatedAt sql.NullTime
-	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM "%s"`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&minJobCreatedAt)
 	if err != nil && err != sql.ErrNoRows {
