@@ -191,9 +191,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 		}
 		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{}, nil)
 	})
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
-		jobsDB.refreshDSList(l)
-	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
 		jobsDB.TearDown()

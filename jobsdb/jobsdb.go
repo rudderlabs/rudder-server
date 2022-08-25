@@ -1519,9 +1519,13 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 		return jd.createDSInTx(tx, newDS, l)
 	})
 	jd.assertError(err)
-	// to refresh the DS list in the cache after transaction has been committed.
-	_ = jd.refreshDSList(l)
-	_ = jd.refreshDSRangeList(l)
+
+	// In case of a migration, we don't yet update the in-memory list till we finish the migration
+	if l != nil {
+		// to get the updated DS list in the cache after createDS transaction has been committed.
+		_ = jd.refreshDSList(l)
+		_ = jd.refreshDSRangeList(l)
+	}
 }
 
 func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockToken) error {
@@ -1581,10 +1585,8 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 		return err
 	}
 
-	// In case of a migration, we don't yet update the in-memory list till
-	// we finish the migration
 	if l != nil {
-		err := jd.setSequenceNumberInTx(tx, l, newDS.Index)
+		err = jd.setSequenceNumberInTx(tx, l, newDS.Index)
 		if err != nil {
 			return err
 		}
@@ -1599,7 +1601,7 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 }
 
 func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, newDSIdx string) error {
-	dList := jd.refreshDSList(l)
+	dList := jd.getDSList()
 	var maxID sql.NullInt64
 
 	// Now set the min JobID for the new DS just added to be 1 more than previous max
