@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
@@ -396,9 +395,10 @@ func (proc *HandleT) Setup(
 	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
 
 	admin.RegisterStatusHandler("processor", proc)
-	if enableEventSchemasFeature {
+	pkgLogger.Info("enableEventSchemasFeature ", enableEventSchemasFeature)
+	/*if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
-	}
+	}*/
 	if enableDedup {
 		proc.dedupHandler = dedup.GetInstance(clearDB)
 	}
@@ -523,7 +523,9 @@ func loadConfig() {
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
+//
 //	updates the transformer feature map.
+//
 // It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
 func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 	for {
@@ -2295,10 +2297,10 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
-//`jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
-//`subJobMerger` func merges the split jobs into a single batch before writing to DB.
-//So, to keep track of sub-batch we have `hasMore` variable.
-//each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
+// `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
+// `subJobMerger` func merges the split jobs into a single batch before writing to DB.
+// So, to keep track of sub-batch we have `hasMore` variable.
+// each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
