@@ -13,22 +13,30 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type transformerResponseT struct {
-	output     []byte
-	err        string
-	statusCode int
+type outputToSource struct {
+	Body        []byte `json:"body"`
+	ContentType string `json:"contentType"`
+}
+
+// transformerResponse will be populated using JSON unmarshall
+// so we need to make fields public
+type transformerResponse struct {
+	Output         map[string]interface{} `json:"output"`
+	Err            string                 `json:"error"`
+	StatusCode     int                    `json:"statusCode"`
+	OutputToSource *outputToSource        `json:"outputToSource"`
 }
 
 type transformerBatchResponseT struct {
 	batchError error
-	responses  []transformerResponseT
+	responses  []transformerResponse
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponseT {
-	resp := transformerResponseT{
-		err:        response.GetStatus(reason),
-		statusCode: response.GetErrorStatusCode(reason),
+func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponse {
+	resp := transformerResponse{
+		Err:        response.GetStatus(reason),
+		StatusCode: response.GetErrorStatusCode(reason),
 	}
 	bt.stats.failedStat.Count(1)
 	return resp
@@ -39,7 +47,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	bt.stats.transformTimerStat.Start()
 
 	payload := misc.MakeJSONArray(events)
-	url := fmt.Sprintf(`%s/%s`, sourceTransformerURL, strings.ToLower(sourceType))
+	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
 	bt.stats.transformTimerStat.End()
@@ -65,6 +73,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	/*
 		expected response format
 		[
+			------Output to Gateway only---------
 			{
 				output: {
 					batch: [
@@ -75,15 +84,42 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 						}
 					]
 				}
-			},
-			// for event that give an error from source transformer
+			}
+
+			------Output to Source only---------
+			{
+				outputToSource: {
+					"body": "eyJhIjoxfQ==", // base64 encode string
+					"contentType": "application/json"
+				}
+			}
+
+			------Output to Both Gateway and Source---------
+			{
+				output: {
+					batch: [
+						{
+							context: {...},
+							properties: {...},
+							userId: "U123"
+						}
+					]
+				},
+				outputToSource: {
+					"body": "eyJhIjoxfQ==", // base64 encode string
+					"contentType": "application/json"
+				}
+			}
+
+			------Error example---------
 			{
 				statusCode: 400,
 				error: "event type is not supported"
 			}
+
 		]
 	*/
-	var responses []interface{}
+	var responses []transformerResponse
 	err = json.Unmarshal(respBody, &responses)
 
 	if err != nil {
@@ -92,60 +128,28 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 			statusCode: response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat),
 		}
 	}
-
-	batchResponse := transformerBatchResponseT{responses: make([]transformerResponseT, len(events))}
-
 	if len(responses) != len(events) {
-		panic("Source rudder-transformer response size does not equal sent events size")
+		pkgLogger.Errorf("source rudder-transformer response size does not equal sent events size")
+		return transformerBatchResponseT{
+			batchError: errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat)),
+			statusCode: response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat),
+		}
 	}
 
+	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
+
 	for idx, resp := range responses {
-		respElemMap, castOk := resp.(map[string]interface{})
-		if castOk {
-			if statusCode, found := respElemMap["statusCode"]; found && fmt.Sprintf("%v", statusCode) != "200" {
-				var errorMessage interface{}
-				var ok bool
-				code, _ := statusCode.(int)
-				if errorMessage, ok = respElemMap["error"]; !ok {
-					errorMessage = response.GetStatus(response.SourceTransformerResponseErrorReadFailed)
-				}
-				batchResponse.responses[idx] = transformerResponseT{
-					err:        fmt.Sprintf("%v", errorMessage),
-					statusCode: code,
-				}
-				bt.stats.failedStat.Count(1)
-				continue
-			}
-
-			outputInterface, ok := respElemMap["output"]
-			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerFailedToReadOutput)
-				continue
-			}
-
-			output, ok := outputInterface.(map[string]interface{})
-			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
-				continue
-			}
-
-			_, ok = output["batch"]
-			if !ok {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
-				continue
-			}
-
-			marshalledOutput, err := json.Marshal(output)
-			if err != nil {
-				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputJSON)
-				continue
-			}
-
-			bt.stats.receivedStat.Count(1)
-			batchResponse.responses[idx] = transformerResponseT{output: marshalledOutput}
-		} else {
-			batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidResponseFormat)
+		if resp.Err != "" {
+			batchResponse.responses[idx] = resp
+			bt.stats.failedStat.Count(1)
+			continue
 		}
+		if resp.Output == nil && resp.OutputToSource == nil {
+			batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerFailedToReadOutput)
+			continue
+		}
+		bt.stats.receivedStat.Count(1)
+		batchResponse.responses[idx] = resp
 	}
 	return batchResponse
 }
