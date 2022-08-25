@@ -1477,8 +1477,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	//Warehouse Async Jobs API
 	srvMux.HandleFunc("/v1/wh-jobs/add", gateway.warehouseJobAddHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/wh-jobs/status", gateway.warehouseJobStatusHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/wh-jobs/stop", gateway.warehouseJobAddHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/wh-jobs/get", gateway.warehouseJobAddHandler).Methods("GET")
+	//To be added endpoints
+	// srvMux.HandleFunc("/v1/wh-jobs/stop", gateway.warehouseJobStopHandler).Methods("POST")
+	// srvMux.HandleFunc("/v1/wh-jobs/get", gateway.warehouseJobGetHandler).Methods("GET")
 
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
