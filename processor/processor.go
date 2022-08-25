@@ -2224,12 +2224,12 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	}
 
 	eventSchemasStart := time.Now()
-	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
-		for _, unprocessedJob := range unprocessedList.Jobs {
-			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
-			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
-		}
-	}
+	//if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
+	//	for _, unprocessedJob := range unprocessedList.Jobs {
+	//		writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
+	//		proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
+	//	}
+	//}
 	eventSchemasTime := time.Since(eventSchemasStart)
 	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
