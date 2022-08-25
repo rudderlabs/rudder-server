@@ -1019,7 +1019,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			Parameters:   marshalledParams,
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
-			CustomVal:    commonMetaData.DestinationType,
+			CustomVal:    misc.GetRouterIdentifier(commonMetaData.DestinationID, commonMetaData.DestinationType),
 			UserID:       failedEvent.Metadata.RudderID,
 			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
 		}
@@ -2064,7 +2064,7 @@ func (proc *HandleT) transformSrcDest(
 				Parameters:   marshalledParams,
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
-				CustomVal:    destType,
+				CustomVal:    misc.GetRouterIdentifier(destID, destType),
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}

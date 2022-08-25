@@ -1726,7 +1726,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop(ctx context.Context) {
-	rt.logger.Info("Generator started")
+	rt.logger.Infof("Generator started for %s", rt.destName)
 
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
@@ -2086,11 +2086,11 @@ func Init() {
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 
-	destName := destinationDefinition.Name
+	destName := destinationConfig.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
@@ -2133,8 +2133,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	})
 	rt.failuresMetric = make(map[string]map[string]int)
 
-	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
-	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+	rt.destinationResponseHandler = New(destinationConfig.ResponseRules)
+	if value, ok := destinationConfig.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)

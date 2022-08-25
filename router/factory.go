@@ -1,6 +1,8 @@
 package router
 
 import (
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -17,11 +19,27 @@ type Factory struct {
 	RsourcesService  rsources.JobService
 }
 
-func (f *Factory) New(destinationDefinition backendconfig.DestinationDefinitionT) *HandleT {
+type destinationConfig struct {
+	Name          string
+	ResponseRules map[string]interface{}
+	Config        map[string]interface{}
+}
+
+func getRouterConfig(destination backendconfig.DestinationT) destinationConfig {
+	var destConfig destinationConfig
+
+	destConfig.Name = misc.GetRouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
+	destConfig.Config = destination.DestinationDefinition.Config
+	destConfig.ResponseRules = destination.DestinationDefinition.ResponseRules
+	return destConfig
+}
+
+func (f *Factory) New(destination backendconfig.DestinationT) (*HandleT, string) {
 	r := &HandleT{
 		Reporting:    f.Reporting,
 		MultitenantI: f.Multitenant,
 	}
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destinationDefinition, f.TransientSources, f.RsourcesService)
-	return r
+	destConfig := getRouterConfig(destination)
+	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destConfig, f.TransientSources, f.RsourcesService)
+	return r, destConfig.Name
 }
