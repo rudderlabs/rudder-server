@@ -241,6 +241,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 					timeRequired = 0
 				}
 				runningTimeCounter = runningTimeCounter - timeRequired
+				workspacePickUpCount[workspaceKey] = misc.MinInt(workspacePickUpCount[workspaceKey], runningJobCount)
 				runningJobCount = runningJobCount - workspacePickUpCount[workspaceKey]
 				usedLatencies[workspaceKey] = t.routerTenantLatencyStat[destType][workspaceKey].Value()
 				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Workspace : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRate : %v ,DestType : %v,InRateLoop ", timeRequired, runningTimeCounter, workspaceKey, runningJobCount, t.routerTenantLatencyStat[destType][workspaceKey].Value(), destTypeCount.Value(), destType)
