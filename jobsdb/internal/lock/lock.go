@@ -30,6 +30,21 @@ func (r *DSListLocker) WithLock(f func(l DSListLockToken)) {
 	f(&listLockToken{})
 }
 
+// AsyncLock acquires a lock unitl the token is returned to the receiving channel
+func (r *DSListLocker) AsyncLock() (DSListLockToken, chan<- DSListLockToken) {
+	acquireDsListLock := make(chan DSListLockToken)
+	releaseDsListLock := make(chan DSListLockToken)
+
+	go func() {
+		r.WithLock(func(l DSListLockToken) {
+			acquireDsListLock <- l
+			<-releaseDsListLock
+		})
+	}()
+	dsListLock := <-acquireDsListLock
+	return dsListLock, releaseDsListLock
+}
+
 type listLockToken struct{}
 
 func (*listLockToken) listLockToken() {

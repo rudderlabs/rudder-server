@@ -10,6 +10,12 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
+type AdvisoryLock int
+
+const (
+	JobsDBAddDsAdvisoryLock = 11
+)
+
 var (
 	host, user, password, sslmode string
 	port                          int
