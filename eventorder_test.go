@@ -171,6 +171,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 	for _, payload := range batches {
 		url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
 		req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+		require.NoError(t, err, "should be able to create a new request")
 		req.SetBasicAuth(writeKey, "password")
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
@@ -285,7 +286,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 		require.True(t, ok, "should be able to find the job spec for job: %d", jobID)
 		_, ok = wh.spec.done[jobID]
 		require.False(t, ok, "shouldn't receive a request for a job that is already done: %d", jobID)
-		times, _ := wh.spec.received[jobID]
+		times := wh.spec.received[jobID]
 		require.True(t, times < len(jobSpec.responses), "shouldn't receive more requests than the number of responses for job: %d", jobID)
 		responseCode := jobSpec.responses[times]
 		require.NotEqual(t, 0, responseCode, "should be able to find the next response code to send for job: %d", jobID)
