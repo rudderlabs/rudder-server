@@ -135,6 +135,7 @@ type HandleT struct {
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
+	routerSkipFailedFetch                  bool
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -1933,6 +1934,7 @@ func (rt *HandleT) readAndProcess() int {
 			JobsLimit:        totalPickupCount,
 		},
 		rt.maxDSQuerySize,
+		rt.routerSkipFailedFetch,
 	)
 
 	if len(combinedList) == 0 {
@@ -2247,6 +2249,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
+
+	routerSkipFailedFetch := []string{"Router." + rt.destName + "." + "routerSkipFailedFetch", "Router." + "routerSkipFailedFetch"}
+	config.RegisterBoolConfigVariable(false, &rt.routerSkipFailedFetch, true, routerSkipFailedFetch...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 

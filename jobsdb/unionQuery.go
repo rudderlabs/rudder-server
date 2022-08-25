@@ -16,7 +16,7 @@ type MultiTenantHandleT struct {
 }
 
 type MultiTenantJobsDB interface {
-	GetAllJobs(map[string]int, GetQueryParamsT, int) []*JobT
+	GetAllJobs(map[string]int, GetQueryParamsT, int, bool) []*JobT
 
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -60,7 +60,7 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 
 // All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
+func (mj *MultiTenantHandleT) GetAllJobs(workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int, _ bool) []*JobT {
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
