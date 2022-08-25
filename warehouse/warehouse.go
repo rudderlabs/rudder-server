@@ -1693,8 +1693,9 @@ func startWebHandler(ctx context.Context) error {
 			//Warehouse Async Job end-points
 			mux.HandleFunc("/v1/warehouse/wh-jobs/add", warehouse_jobs.AddWarehouseJobHandler)
 			mux.HandleFunc("/v1/warehouse/wh-jobs/status", warehouse_jobs.StatusWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/wh-jobs/stop", warehouse_jobs.StopWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/wh-jobs/get", warehouse_jobs.GetWarehouseJobHandler)
+			//To be added
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", warehouse_jobs.StopWarehouseJobHandler)
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", warehouse_jobs.GetWarehouseJobHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {

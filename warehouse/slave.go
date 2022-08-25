@@ -601,7 +601,6 @@ type AsyncJobRunResult struct {
 }
 
 func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
-	fmt.Printf("%v\n", asyncjob)
 	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
 	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
 	if err != nil {
