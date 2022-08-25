@@ -1082,6 +1082,10 @@ func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 	jd.datasetList = nil
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
+	// report table count metrics before shrinking the datasetList
+	jd.statTableCount.Gauge(len(jd.datasetList))
+	jd.statDSCount.Gauge(len(jd.datasetList))
+
 	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
 	// this shrank datasetList is used to compute DSRangeList
 	// This is done because, writers don't care about the left datasets in the sorted datasetList
@@ -1091,8 +1095,6 @@ func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 		}
 	}
 
-	jd.statTableCount.Gauge(len(jd.datasetList))
-	jd.statDSCount.Gauge(len(jd.datasetList))
 	return jd.datasetList
 }
 
