@@ -1,3 +1,4 @@
+// go:build integration
 package jobsdb_test
 
 import (
@@ -618,11 +619,12 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, int(2), jobDBInspector.DSListSize())
 		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 
-		jobsResult := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		jobsResult, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		fetchedJobs := jobsResult.Jobs
 		require.Equal(t, 1, len(fetchedJobs))
 

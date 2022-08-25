@@ -56,8 +56,6 @@ func (*Stats) Stop() {
 }
 
 func (t *Stats) Start() error {
-	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB." + "Multitenant." + "QueryRequestTimeout", "JobsDB." + "QueryRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
@@ -98,6 +96,9 @@ func Init() {
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	t := Stats{}
+	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
+	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)

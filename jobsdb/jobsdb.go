@@ -494,7 +494,7 @@ func (jd *HandleT) registerBackUpSettings() {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.tablePrefix, jd.ownerType, jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
@@ -1906,12 +1906,12 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 	defer jd.dsListLock.RUnlock()
 
 	// Unprocessed jobs
-	unprocessedList, err := jd.getUnprocessedJobsDS(context.TODO(), srcDS, false, GetQueryParamsT{})
+	unprocessedList, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
 	if err != nil {
 		return 0, err
 	}
 	// Jobs which haven't finished processing
-	retryList, err := jd.getProcessedJobsDS(context.TODO(), srcDS, true,
+	retryList, err := jd.getProcessedJobsDS(ctx, srcDS, true,
 		GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	if err != nil {
 		return 0, err
@@ -1939,7 +1939,7 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{}, nil)
+		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
 	})
 	if err != nil {
 		return 0, err
@@ -2541,7 +2541,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll bool, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll bool, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -2740,7 +2740,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order bool, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order bool, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
@@ -2887,7 +2887,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order 
 }
 
 // copyJobStatusDS is expected to be called only during a migration
-func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+	var parameterFilters []ParameterFilterT
 	if len(statusList) == 0 {
 		return nil
 	}
@@ -3250,19 +3251,19 @@ func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) e
 	// backupDS is only called when BackupSettings.BackupEnabled is true
 	if jd.BackupSettings.FailedOnly {
 		jd.logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
-		_, err := jd.backupTable(ctx, backupDSRange, false)
+		err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
 			return err
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err := jd.backupTable(ctx, backupDSRange, false)
+		err := jd.backupTable(ctx, backupDSRange, false)
 		if err != nil {
 			return err
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
-		_, err = jd.backupTable(ctx, backupDSRange, true)
+		err = jd.backupTable(ctx, backupDSRange, true)
 		if err != nil {
 			return err
 		}
@@ -3501,7 +3502,7 @@ func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }
 
-func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
+func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) error {
 	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -3553,7 +3554,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	if totalCount == 0 {
 		//  Do not record stat for this case?
 		jd.logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
-		return true, nil
+		return nil
 	}
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -3563,7 +3564,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 
 	gzWriter, err := misc.CreateGZ(path)
 	if err != nil {
-		return false, fmt.Errorf("creating gz file %q: %w", path, err)
+		return fmt.Errorf("creating gz file %q: %w", path, err)
 	}
 	defer os.Remove(path)
 	var offset int64
@@ -3583,7 +3584,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
 			_, err = gzWriter.Write(rawJSONRows)
 			if err != nil {
-				return false, fmt.Errorf("writing gz file %q: %w", path, err)
+				return fmt.Errorf("writing gz file %q: %w", path, err)
 			}
 			offset++
 		}
@@ -3594,7 +3595,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	}
 
 	if err := gzWriter.CloseGZ(); err != nil {
-		return false, fmt.Errorf("closing gz file %q: %w", path, err)
+		return fmt.Errorf("closing gz file %q: %w", path, err)
 	}
 	tableFileDumpTimeStat.End()
 
@@ -3618,13 +3619,13 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
-		return false, err
+		return err
 	}
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
 	totalTableDumpTimeStat.End()
 	jd.logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
-	return true, nil
+	return nil
 }
 
 func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
@@ -4133,7 +4134,7 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
 		return JobsResult{}, nil
 	}
@@ -4150,7 +4151,7 @@ func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (
 getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
 		return JobsResult{}, nil
 	}
@@ -4209,7 +4210,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	return completeUnprocessedJobs, nil
 }
 
-func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
 		return JobsResult{}, nil
 	}
@@ -4226,7 +4227,7 @@ func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (Jo
 getImportingList returns events which need are Importing.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	return jd.GetProcessed(ctx, params)
 }
 
@@ -4357,7 +4358,7 @@ realises on the caller to update it. That means that successive calls to GetProc
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit <= 0 {
 		return JobsResult{}, nil
 	}
@@ -4434,7 +4435,7 @@ func queryResultWrapper(res JobsResult, err error) queryResult {
 GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
 		return JobsResult{}, nil
 	}
@@ -4451,7 +4452,7 @@ func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (Jobs
 getToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getToRetry(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	return jd.GetProcessed(ctx, params)
 }
 
@@ -4459,7 +4460,7 @@ func (jd *HandleT) getToRetry(ctx context.Context, params GetQueryParamsT) (Jobs
 GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
-func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
 		return JobsResult{}, nil
 	}
@@ -4476,11 +4477,11 @@ func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (Jobs
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getWaiting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	return jd.GetProcessed(ctx, params)
 }
 
-func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	if params.JobsLimit == 0 {
 		return JobsResult{}, nil
 	}
@@ -4496,7 +4497,7 @@ func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (Jo
 /*
 getExecuting returns events which  in executing state
 */
-func (jd *HandleT) getExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) {
+func (jd *HandleT) getExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	return jd.GetProcessed(ctx, params)
 }
 

@@ -61,7 +61,7 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 
 // All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) ([]*JobT, error) {
+func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) ([]*JobT, error) { // skipcq: CRT-P0003
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
@@ -114,7 +114,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	return outJobs, nil
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, error) {
+func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, error) { // skipcq: CRT-P0003
 	var jobList []*JobT
 	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, conditions)
 

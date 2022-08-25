@@ -1172,12 +1172,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any()).Times(0)

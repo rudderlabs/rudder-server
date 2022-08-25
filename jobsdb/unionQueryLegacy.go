@@ -6,7 +6,7 @@ type MultiTenantLegacy struct {
 	*HandleT
 }
 
-func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, _ int) ([]*JobT, error) {
+func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, _ int) ([]*JobT, error) { // skipcq: CRT-P0003
 	var list []*JobT
 	toQuery := 0
 	for workspace := range workspaceCount {
