@@ -45,25 +45,6 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 
 	sortDnumList(jd, dnumList)
 
-	// If any service has crashed while creating DS, this may happen. Handling such case gracefully.
-	if len(jobNameMap) != len(jobStatusNameMap) {
-		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) - length of jobStatusNameMap(%d) is more than 1", len(jobNameMap), len(jobStatusNameMap)))
-		deletedDNum := removeExtraKey(jobNameMap, jobStatusNameMap)
-		// remove deletedDNum from dnumList
-		var idx int
-		var dnum string
-		var foundDeletedDNum bool
-		for idx, dnum = range dnumList {
-			if dnum == deletedDNum {
-				foundDeletedDNum = true
-				break
-			}
-		}
-		if foundDeletedDNum {
-			dnumList = remove(dnumList, idx)
-		}
-	}
-
 	// Create the structure
 	for _, dnum := range dnumList {
 		jobName, ok := jobNameMap[dnum]
@@ -73,7 +54,8 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 		datasetList = append(datasetList,
 			dataSetT{
 				JobTable:       jobName,
-				JobStatusTable: jobStatusName, Index: dnum,
+				JobStatusTable: jobStatusName,
+				Index:          dnum,
 			})
 	}
 

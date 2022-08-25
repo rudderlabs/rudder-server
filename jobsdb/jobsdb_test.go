@@ -10,16 +10,21 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -541,4 +546,48 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 
 func setSkipZeroAssertionForMultitenant(b bool) {
 	skipZeroAssertionForMultitenant = b
+}
+
+func TestRefreshDSList(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err, "Failed to create docker pool")
+	cleanup := &testhelper.Cleanup{}
+	defer cleanup.Run()
+
+	postgresResource, err := destination.SetupPostgres(pool, cleanup)
+	require.NoError(t, err)
+
+	{
+		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
+		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
+		t.Setenv("JOBS_DB_USER", postgresResource.User)
+		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+		initJobsDB()
+		stats.Setup()
+	}
+
+	migrationMode := ""
+
+	triggerAddNewDS := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+
+	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
+	// this will throw error if refreshDSList is called without lock
+	jobsDB.addDS(newDataSet("batch_rt", "2"))
+	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
+	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
+	})
 }

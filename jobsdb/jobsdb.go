@@ -1042,28 +1042,6 @@ func (jd *HandleT) Close() {
 	jd.dbHandle.Close()
 }
 
-// removeExtraKey : removes extra key present in map1 and not in map2
-// Assumption is keys in map1 and map2 are same, except that map1 has one key more than map2
-func removeExtraKey(map1, map2 map[string]string) string {
-	var deleteKey, key string
-	for key = range map1 {
-		if _, ok := map2[key]; !ok {
-			deleteKey = key
-			break
-		}
-	}
-
-	if deleteKey != "" {
-		delete(map1, deleteKey)
-	}
-
-	return deleteKey
-}
-
-func remove(slice []string, idx int) []string {
-	return append(slice[:idx], slice[idx+1:]...)
-}
-
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
@@ -1107,6 +1085,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 
 	// At this point we must have write-locked dsListLock
 	dsList := jd.refreshDSList(l)
+
 	jd.datasetRangeList = nil
 
 	for idx, ds := range dsList {
@@ -1142,7 +1121,8 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{
 					minJobID: minID.Int64,
-					maxJobID: maxID.Int64, ds: ds,
+					maxJobID: maxID.Int64,
+					ds:       ds,
 				})
 			prevMax = maxID.Int64
 		}
@@ -1533,11 +1513,31 @@ type transactionHandler interface {
 }
 
 func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
+	err := jd.WithTx(func(tx *sql.Tx) error {
+		return jd.createDSInTx(tx, newDS, l)
+	})
+	jd.assertError(err)
+
+	// In case of a migration, we don't yet update the in-memory list till we finish the migration
+	if l != nil {
+		// to get the updated DS list in the cache after createDS transaction has been committed.
+		_ = jd.refreshDSList(l)
+		_ = jd.refreshDSRangeList(l)
+	}
+}
+
+func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockToken) error {
 	// Mark the start of operation. If we crash somewhere here, we delete the
 	// DS being added
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
-	jd.assertError(err)
-	opID := jd.JournalMarkStart(addDSOperation, opPayload)
+	if err != nil {
+		return err
+	}
+
+	opID, err := jd.JournalMarkStartInTx(tx, addDSOperation, opPayload)
+	if err != nil {
+		return err
+	}
 
 	// Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %q (
@@ -1552,14 +1552,18 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                                       expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
+	_, err = tx.ExecContext(context.TODO(), sqlStatement)
+	if err != nil {
+		return err
+	}
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
 		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "customval_workspace_%s" ON %q (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
-		_, err = jd.dbHandle.Exec(sqlStatement)
-		jd.assertError(err)
+		_, err = tx.ExecContext(context.TODO(), sqlStatement)
+		if err != nil {
+			return err
+		}
 	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %q (
@@ -1573,38 +1577,48 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
                                      error_response JSONB DEFAULT '{}'::JSONB,
 									 parameters JSONB DEFAULT '{}'::JSONB,
 									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
 
-	// In case of a migration, we don't yet update the in-memory list till
-	// we finish the migration
-	if l != nil {
-		jd.setSequenceNumber(l, newDS.Index)
+	_, err = tx.ExecContext(context.TODO(), sqlStatement)
+	if err != nil {
+		return err
 	}
-	jd.JournalMarkDone(opID)
+
+	if l != nil {
+		err = jd.setSequenceNumberInTx(tx, l, newDS.Index)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = jd.journalMarkDoneInTx(tx, opID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (jd *HandleT) setSequenceNumber(l lock.DSListLockToken, newDSIdx string) dataSetT {
-	// Refresh the in-memory list. We only need to refresh the
-	// last DS, not the entire but we do it anyway.
-	// For the range list, we use the cached data. Internally
-	// it queries the new dataset which was added.
-	dList := jd.refreshDSList(l)
-	dRangeList := jd.refreshDSRangeList(l)
-
-	// We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
-	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
+func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, newDSIdx string) error {
+	dList := jd.getDSList()
+	var maxID sql.NullInt64
 
 	// Now set the min JobID for the new DS just added to be 1 more than previous max
-	if len(dRangeList) > 0 {
-		newDSMin := dRangeList[len(dRangeList)-1].maxJobID + 1
-		// jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
-		sqlStatement := fmt.Sprintf(`ALTER SEQUENCE "%[1]s_jobs_%[2]s_job_id_seq" MINVALUE %[3]d START %[3]d RESTART %[3]d`,
+	if len(dList) > 0 {
+		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %q`, dList[len(dList)-1].JobTable)
+		err := tx.QueryRowContext(context.TODO(), sqlStatement).Scan(&maxID)
+		if err != nil {
+			return err
+		}
+
+		newDSMin := maxID.Int64 + 1
+		sqlStatement = fmt.Sprintf(`ALTER SEQUENCE "%[1]s_jobs_%[2]s_job_id_seq" MINVALUE %[3]d START %[3]d RESTART %[3]d`,
 			jd.tablePrefix, newDSIdx, newDSMin)
-		_, err := jd.dbHandle.Exec(sqlStatement)
-		jd.assertError(err)
+		_, err = tx.ExecContext(context.TODO(), sqlStatement)
+		if err != nil {
+			return err
+		}
 	}
-	return dList[len(dList)-1]
+	return nil
 }
 
 /*
@@ -3039,7 +3053,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		var migrateDSProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
 		maxDSSize := *jd.MaxDSSize
-
 		for idx, ds := range dsList {
 
 			var idxCheck bool
