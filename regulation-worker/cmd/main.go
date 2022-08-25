@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -44,8 +46,12 @@ func main() {
 }
 
 func Run(ctx context.Context) {
+	admin.Init()
+	if err := backendconfig.Setup(nil); err != nil {
+		panic(fmt.Errorf("error while setting up backend config: %v", err))
+	}
 	dest := &destination.DestMiddleware{
-		Dest: &backendconfig.SingleWorkspaceConfig{},
+		Dest: backendconfig.DefaultBackendConfig,
 	}
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
@@ -54,7 +60,7 @@ func Run(ctx context.Context) {
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)},
+			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
 			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
@@ -66,7 +72,7 @@ func Run(ctx context.Context) {
 				FMFactory: &filemanager.FileManagerFactoryT{},
 			},
 			&api.APIManager{
-				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)},
+				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
 				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
 			}),
 	}
@@ -74,7 +80,7 @@ func Run(ctx context.Context) {
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
 	err = l.Loop(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}

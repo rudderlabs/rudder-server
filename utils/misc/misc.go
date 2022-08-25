@@ -59,7 +59,8 @@ var (
 
 const (
 	// RFC3339Milli with milli sec precision
-	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
+	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05"
 )
 
 const (
@@ -550,8 +551,8 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 	}
 }
 
-// Returns chronological timestamp of the event using the formula
-// timestamp = receivedAt - (sentAt - originalTimestamp)
+//  Returns chronological timestamp of the event using the formula
+//  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
@@ -1213,7 +1214,14 @@ func GetWarehouseURL() (url string) {
 
 func GetDatabricksVersion() (version string) {
 	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return
+	}
+	client := &http.Client{
+		Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second),
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
 		return
@@ -1247,8 +1255,7 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 	return func() {
 		if r := recover(); r != nil {
 			notifyOnce.Do(func() {
-				RecordAppError(fmt.Errorf("%v", r))
-				bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
 						"Number": runtime.NumGoroutine(),
 					},
@@ -1256,10 +1263,10 @@ func BugsnagNotify(ctx context.Context, team string) func() {
 						"Name": team,
 					},
 				})
+				RecordAppError(fmt.Errorf("%v", r))
+				pkgLogger.Fatal(r)
+				panic(r)
 			})
-
-			pkgLogger.Fatal(r)
-			panic(r)
 		}
 	}
 }
@@ -1307,7 +1314,6 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-//
 func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
 	var ok bool
 

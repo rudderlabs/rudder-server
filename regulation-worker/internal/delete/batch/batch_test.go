@@ -170,7 +170,7 @@ type mockFileManager struct {
 	listCalled         bool
 }
 
-func (fm *mockFileManager) SetTimeout(_ *time.Duration) {}
+func (fm *mockFileManager) SetTimeout(_ time.Duration) {}
 
 // Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
 func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {
@@ -229,7 +229,7 @@ func (fm *mockFileManager) DeleteObjects(ctx context.Context, keys []string) err
 }
 
 // given prefix & maxItems, return with list of Fileobject in the bucket.
-func (fm *mockFileManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*filemanager.FileObject, err error) {
+func (fm *mockFileManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*filemanager.FileObject, err error) {
 	if fm.listCalled {
 		return []*filemanager.FileObject{}, nil
 	}

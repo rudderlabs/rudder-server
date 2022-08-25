@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
@@ -20,6 +19,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -46,10 +46,7 @@ type Credentials struct {
 
 type Client struct {
 	service *sheets.Service
-	opts    Opts
-}
-type Opts struct {
-	Timeout time.Duration
+	opts    common.Opts
 }
 
 var pkgLogger logger.LoggerI
@@ -58,8 +55,12 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlesheets")
 }
 
+type GoogleSheetsProducer struct {
+	client *Client
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
+func NewProducer(destinationConfig interface{}, o common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -103,11 +104,11 @@ func NewProducer(destinationConfig interface{}, o Opts) (*Client, error) {
 	// Inserting header to the sheet
 	err = insertHeaderDataToSheet(client, config.SheetId, config.SheetName, headerRow)
 
-	return client, err
+	return &GoogleSheetsProducer{client}, err
 }
 
-func Produce(jsonData json.RawMessage, producer, _ interface{}) (statusCode int, respStatus, responseMessage string) {
-	client := producer.(*Client)
+func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+	client := producer.client
 	if client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
@@ -192,32 +193,35 @@ func insertRowDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, 
 // and we are storing the data into designated position in array based on transformer
 // mappings.
 // Example payload we have from transformer without batching:
-// {
-//		message:{
-//			1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//			2: { attributeKey: "Product Value, attributeValue: "5900"}
-//			..
-// 		}
-// }
-// Example Payload we have from transformer with batching:
-// {
-// 		batch:[
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
-//			},
-//			{
-//				message: {
-//					1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
-//					2: { attributeKey: "Product Value, attributeValue: "5900"}
-//					..
-// 				}
+//
+//	{
+//			message:{
+//				1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//				2: { attributeKey: "Product Value, attributeValue: "5900"}
+//				..
 //			}
-// 		]
-// }
+//	}
+//
+// Example Payload we have from transformer with batching:
+//
+//	{
+//			batch:[
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				},
+//				{
+//					message: {
+//						1: { attributeKey: "Product Purchased", attributeValue: "Realme C3" }
+//						2: { attributeKey: "Product Value, attributeValue: "5900"}
+//						..
+//					}
+//				}
+//			]
+//	}
 func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 	batch := source.Get("batch")
 	messages := batch.Array()

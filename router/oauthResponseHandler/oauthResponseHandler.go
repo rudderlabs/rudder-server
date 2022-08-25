@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -102,9 +102,10 @@ const (
 	INVALID_REFRESH_TOKEN_GRANT = "refresh_token_invalid_grant"
 )
 
+// This struct only exists for marshalling and sending payload to control-plane
 type RefreshTokenBodyParams struct {
-	HasExpired    bool   `json:"hasExpired"`
-	ExpiredSecret string `json:"expiredSecret"`
+	HasExpired    bool            `json:"hasExpired"`
+	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }
 
 type tokenProvider interface {
@@ -121,7 +122,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
 	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)}
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.lockMapWMutex = &sync.RWMutex{}
@@ -172,7 +173,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if router_utils.IsNotEmptyString(string(refTokenParams.Secret)) {
 		refTokenBody = RefreshTokenBodyParams{
 			HasExpired:    true,
-			ExpiredSecret: string(refTokenParams.Secret),
+			ExpiredSecret: refTokenParams.Secret,
 		}
 	}
 	accountMutex.RLock()
@@ -325,7 +326,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"rudderCategory":  authStats.rudderCategory,
 		"isCallToCpApi":   strconv.FormatBool(authStats.isCallToCpApi),
 		"authErrCategory": authStats.authErrCategory,
-		"destDefName":     authStats.destDefName,
+		"destType":        authStats.destDefName,
 	}).SendTiming(time.Since(startTime))
 }
 
@@ -338,7 +339,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"errorMessage":    refStats.errorMessage,
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
-		"destDefName":     refStats.destDefName,
+		"destType":        refStats.destDefName,
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 	}).Increment()
 }
@@ -434,7 +435,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
-		respData, ioUtilReadErr = ioutil.ReadAll(resp.Body)
+		respData, ioUtilReadErr = io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
@@ -460,7 +461,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		reqBody = bytes.NewBufferString(cpReq.Body)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
 	} else {
-		req, err = http.NewRequest(cpReq.Method, cpReq.Url, nil)
+		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)

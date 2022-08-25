@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -111,7 +112,6 @@ type RudderStats interface {
 
 	Start()
 	End()
-	DeferredTimer()
 	Observe(value float64)
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
@@ -203,18 +203,29 @@ func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 	}
 }
 
-// NewStat creates a new RudderStats with provided Name and Type
-// Deprecated: Use DefaultStats for managing stats instead
-func NewStat(Name, StatType string) (rStats RudderStats) {
-	return DefaultStats.NewStat(Name, StatType)
-}
-
 func (s *HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, 1)
 }
 
 func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
+}
+
+func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		pkgLogger.Errorf("error while getting deployment type: %w", err)
+		return tags
+	}
+
+	if deploymentType == deployment.MultiTenantType {
+		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
+		if !isNamespaced || (isNamespaced && strings.Contains(config.GetEnv("WORKSPACE_NAMESPACE", ""), "free")) {
+			delete(tags, key)
+		}
+	}
+
+	return tags
 }
 
 func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
@@ -227,6 +238,10 @@ func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rSta
 			dontProcess: true,
 		}
 	}
+
+	// Clean up tags based on deployment type. No need to send workspace id tag for free tier customers.
+	tags = CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
+
 	if tags == nil {
 		tags = make(Tags)
 	}
@@ -317,14 +332,6 @@ func (rStats *RudderStatsT) End() {
 		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
 	}
 	rStats.Timing.Send(rStats.Name)
-}
-
-// Deprecated: Use concurrent safe SendTiming() instead
-func (rStats *RudderStatsT) DeferredTimer() {
-	if !statsEnabled || rStats.dontProcess {
-		return
-	}
-	rStats.Client.NewTiming().Send(rStats.Name)
 }
 
 // Since sends the time elapsed since duration start. Only applies to TimerType stats

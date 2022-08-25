@@ -19,6 +19,9 @@
   <a href="https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/">
     <img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server">
   </a>
+  <a href="https://goreportcard.com/report/github.com/rudderlabs/rudder-server">
+    <img src="https://goreportcard.com/badge/github.com/rudderlabs/rudder-server">
+  </a>
   <a href="https://github.com/rudderlabs/rudder-server/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/rudderlabs/rudder-server">
   </a>

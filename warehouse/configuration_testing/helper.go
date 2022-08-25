@@ -59,7 +59,7 @@ func fileManager(req *DestinationValidationRequest) (fileManager filemanager.Fil
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
 		}),
 	})
-	fileManager.SetTimeout(&fileManagerTimeout)
+	fileManager.SetTimeout(fileManagerTimeout)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config for testing this destination id %s: err %v", destination.ID, err)
 		return

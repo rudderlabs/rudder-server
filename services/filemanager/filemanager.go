@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/router/rterror"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
+	pkgLogger                 logger.LoggerI
 	DefaultFileManagerFactory FileManagerFactory
 	ErrKeyNotFound            = errors.New("NoSuchKey")
 )
@@ -41,9 +44,9 @@ type FileManager interface {
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(ctx context.Context, keys []string) error
-	ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error)
+	ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
-	SetTimeout(timeout *time.Duration)
+	SetTimeout(timeout time.Duration)
 }
 
 // SettingsT sets configuration for FileManager
@@ -54,49 +57,38 @@ type SettingsT struct {
 
 func init() {
 	DefaultFileManagerFactory = &FileManagerFactoryT{}
+	pkgLogger = logger.NewLogger().Child("filemanager")
 }
 
 // New returns FileManager backed by configured provider
 func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
-	var timeout time.Duration
-
 	switch settings.Provider {
 	case "S3":
-		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.S3.timeout", "BatchRouter.timeout"}...)
 		return &S3Manager{
-			Config:  GetS3Config(settings.Config),
-			Timeout: &timeout,
+			Config: GetS3Config(settings.Config),
 		}, nil
 	case "GCS":
-		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.GCS.timeout", "BatchRouter.timeout"}...)
 		return &GCSManager{
-			Config:  GetGCSConfig(settings.Config),
-			Timeout: &timeout,
+			Config: GetGCSConfig(settings.Config),
 		}, nil
 	case "AZURE_BLOB":
-		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.AZURE_BLOB.timeout", "BatchRouter.timeout"}...)
 		return &AzureBlobStorageManager{
-			Config:  GetAzureBlogStorageConfig(settings.Config),
-			Timeout: &timeout,
+			Config: GetAzureBlogStorageConfig(settings.Config),
 		}, nil
 	case "MINIO":
-		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.MINIO.timeout", "BatchRouter.timeout"}...)
 		return &MinioManager{
-			Config:  GetMinioConfig(settings.Config),
-			Timeout: &timeout,
+			Config: GetMinioConfig(settings.Config),
 		}, nil
 	case "DIGITAL_OCEAN_SPACES":
-		config.RegisterDurationConfigVariable(120, &timeout, false, time.Second, []string{"BatchRouter.DIGITAL_OCEAN_SPACES.timeout", "BatchRouter.timeout"}...)
 		return &DOSpacesManager{
-			Config:  GetDOSpacesConfig(settings.Config),
-			Timeout: &timeout,
+			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
 	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
 }
 
-// GetProviderConfigFromEnv returns the provider config
-func GetProviderConfigFromEnv() map[string]interface{} {
+// GetProviderConfigForBackupsFromEnv returns the provider config
+func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
 	providerConfig := make(map[string]interface{})
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
@@ -106,6 +98,12 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
+		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
+		if providerConfig["iamRoleArn"] != "" {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
+		}
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
@@ -135,9 +133,11 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	return providerConfig
 }
 
-func getSafeTimeout(timeout *time.Duration) time.Duration {
-	if timeout == nil || *timeout == 0 {
-		return time.Second * 120
+func getBatchRouterDurationConfig(key, destType string, defaultValueInTimescaleUnits int64, timeScale time.Duration) time.Duration {
+	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
+	if destOverrideFound {
+		return config.GetDuration("BatchRouter."+destType+"."+key, defaultValueInTimescaleUnits, timeScale)
+	} else {
+		return config.GetDuration("BatchRouter."+key, defaultValueInTimescaleUnits, timeScale)
 	}
-	return *timeout
 }

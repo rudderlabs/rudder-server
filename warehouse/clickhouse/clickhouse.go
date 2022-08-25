@@ -249,8 +249,8 @@ func loadConfig() {
 }
 
 /*
- registerTLSConfig will create a global map, use different names for the different tls config.
- clickhouse will access the config by mentioning the key in connection string
+registerTLSConfig will create a global map, use different names for the different tls config.
+clickhouse will access the config by mentioning the key in connection string
 */
 func registerTLSConfig(key, certificate string) {
 	tlsConfig := &tls.Config{}
@@ -290,7 +290,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
-		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
+		arr = append(arr, fmt.Sprintf(`"%s" %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -595,7 +595,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
+	sortedColumnString := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
 	pkgLogger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
@@ -756,9 +756,9 @@ func (ch *HandleT) createSchema() (err error) {
 }
 
 /*
- createUsersTable creates a users table with engine AggregatingMergeTree,
- this lets us choose aggregation logic before merging records with same user id.
- current behaviour is to replace user  properties with latest non null values
+createUsersTable creates a users table with engine AggregatingMergeTree,
+this lets us choose aggregation logic before merging records with same user id.
+current behaviour is to replace user  properties with latest non null values
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
@@ -849,7 +849,7 @@ func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" %s ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" %s ADD COLUMN IF NOT EXISTS "%s" %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -946,6 +946,8 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		}
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
+		} else {
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 	return

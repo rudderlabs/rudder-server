@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -283,15 +284,17 @@ func TestFileManager(t *testing.T) {
 			for _, file := range fileList {
 				filePtr, err := os.Open(file)
 				require.NoError(t, err, "error while opening testData file to upload")
-				uploadOutput, err := fm.Upload(context.TODO(), filePtr)
+				uploadOutput, err := fm.Upload(context.TODO(), filePtr, "another-prefix1", "another-prefix2")
 				if err != nil {
 					t.Fatal(err)
 				}
+				require.Equal(t, path.Join("some-prefix/another-prefix1/another-prefix2/", path.Base(file)),
+					uploadOutput.ObjectName)
 				uploadOutputs = append(uploadOutputs, uploadOutput)
 				filePtr.Close()
 			}
 			// list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", 1000)
+			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", "", 1000)
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
 			require.NoError(t, err, "expected no error while listing files")
 
@@ -376,7 +379,7 @@ func TestFileManager(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", 1000)
+			newFileObject, err := fmNew.ListFilesWithPrefix(context.TODO(), "", "", 1000)
 			if err != nil {
 				fmt.Println("error while getting new file object: ", err)
 			}
@@ -411,7 +414,7 @@ func TestFileManager(t *testing.T) {
 				// fail to fetch file list
 				ctx1, cancel := context.WithTimeout(context.TODO(), time.Second*5)
 				cancel()
-				_, err = fm.ListFilesWithPrefix(ctx1, "", 1000)
+				_, err = fm.ListFilesWithPrefix(ctx1, "", "", 1000)
 				require.Error(t, err, "expected error while listing files")
 			}
 		})
@@ -427,7 +430,7 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 			"location": "US",
 			"bucketName": "my-bucket",
 			"prefix": "rudder",
-			"namespace": "namespace", 
+			"namespace": "namespace",
 			"credentials":"{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 			"syncFrequency": "1440",
 			"syncStartAt": "09:00"
@@ -436,12 +439,11 @@ func TestGCSManager_unsupported_credentials(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	manager := &filemanager.GCSManager{
-		Config:  filemanager.GetGCSConfig(config),
-		Timeout: nil,
+		Config: filemanager.GetGCSConfig(config),
 	}
-	_, err = manager.ListFilesWithPrefix(context.TODO(), "/tests", 100)
+	_, err = manager.ListFilesWithPrefix(context.TODO(), "", "/tests", 100)
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "Google Developers Console client_credentials.json file is not supported")
+	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
 
 func blockOnHold() {

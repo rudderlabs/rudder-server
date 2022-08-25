@@ -1,0 +1,3 @@
+{{range .Datasets}}
+    UPDATE "{{$.Prefix}}_jobs_{{.}}" SET "user_id" = split_part("{{$.Prefix}}_jobs_{{.}}"."user_id",'<<>>',2) || '<<>>' || split_part("{{$.Prefix}}_jobs_{{.}}"."user_id",'<<>>',2) WHERE split_part("{{$.Prefix}}_jobs_{{.}}"."user_id",'<<>>',1) = '';
+{{end}}

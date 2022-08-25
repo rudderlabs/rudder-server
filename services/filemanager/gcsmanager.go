@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -23,26 +24,14 @@ func (manager *GCSManager) objectURL(objAttrs *storage.ObjectAttrs) string {
 }
 
 func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
-	splitFileName := strings.Split(file.Name(), "/")
-	fileName := ""
-	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
-	}
-	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Prefix != "" {
-		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
-			fileName = manager.Config.Prefix + fileName
-		} else {
-			fileName = manager.Config.Prefix + "/" + fileName
-		}
-	}
+	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
 	client, err := manager.getClient(ctx)
 	if err != nil {
 		return UploadOutput{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	obj := client.Bucket(manager.Config.Bucket).Object(fileName)
@@ -68,7 +57,7 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 	return UploadOutput{Location: manager.objectURL(attrs), ObjectName: fileName}, err
 }
 
-func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Create GCS storage client
@@ -77,7 +66,7 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	// Create GCS Bucket handle
@@ -102,7 +91,7 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, prefix strin
 func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, error) {
 	var err error
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 	if manager.client != nil {
 		return manager.client, err
@@ -112,7 +101,7 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
 	}
-	if manager.Config.Credentials != "" {
+	if !googleutils.ShouldSkipCredentialsInit(manager.Config.Credentials) {
 		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
 			return manager.client, err
 		}
@@ -129,7 +118,7 @@ func (manager *GCSManager) Download(ctx context.Context, output *os.File, key st
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, getSafeTimeout(manager.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
 	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
@@ -144,6 +133,7 @@ func (manager *GCSManager) Download(ctx context.Context, output *os.File, key st
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://storage.googleapis.com/bucket-name/key - >> key
 */
 func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, error) {
@@ -162,11 +152,19 @@ func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) strin
 type GCSManager struct {
 	Config  *GCSConfig
 	client  *storage.Client
-	Timeout *time.Duration
+	timeout time.Duration
 }
 
-func (manager *GCSManager) SetTimeout(timeout *time.Duration) {
-	manager.Timeout = timeout
+func (manager *GCSManager) SetTimeout(timeout time.Duration) {
+	manager.timeout = timeout
+}
+
+func (manager *GCSManager) getTimeout() time.Duration {
+	if manager.timeout > 0 {
+		return manager.timeout
+	}
+
+	return getBatchRouterDurationConfig("timeout", "GCS", 120, time.Second)
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {

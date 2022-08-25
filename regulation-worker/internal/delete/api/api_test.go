@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -131,7 +130,7 @@ func TestDelete(t *testing.T) {
 			svr := httptest.NewServer(d.handler())
 
 			defer svr.Close()
-			os.Setenv("DEST_TRANSFORM_URL", svr.URL)
+			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
@@ -164,7 +163,9 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 
 	var resp api.JobRespSchema
 	resp.Status = string(d.respBodyStatus)
-	resp.Error = d.respBodyErr
+	if d.respBodyErr != nil {
+		resp.Error = d.respBodyErr.Error()
+	}
 
 	body, err := json.Marshal([]api.JobRespSchema{resp})
 	if err != nil {

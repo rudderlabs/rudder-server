@@ -37,7 +37,13 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 
 	// slow consumer
 	t.Log("slow consumer should consume only the latest one, 5")
+
 	v = <-slow
+
+	if v.Data.(int) < 5 { // due to pubsub internal channels, the slow consumer may consume yet another value before consuming 5
+		v = <-slow
+	}
+
 	if v.Data.(int) != 5 {
 		t.Errorf("Expected slow consumer to have consumed 5, instead got %d.", v.Data.(int))
 	}

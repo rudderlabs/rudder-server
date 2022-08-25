@@ -26,8 +26,8 @@ jobs:
             name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
           tags: |
             type=ref,event=branch
-            type=raw,value=1-alpine,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=1-alpine,enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=raw,value=${{ github.head_ref }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -59,15 +59,6 @@ jobs:
         name: Checkout
         uses: actions/checkout@v3
       -
-        name: Checkout enterprise
-        uses: actions/checkout@v3
-        with:
-          repository: rudderlabs/rudder-server-enterprise
-          path: enterprise
-          ref: master
-          token: ${{ secrets.GH_PAT }}
-      - run: make enterprise-init
-      -
         name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
@@ -77,7 +68,7 @@ jobs:
             name=rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
           tags: |
             type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=raw,value=${{ github.head_ref }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -102,3 +93,4 @@ jobs:
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+            ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}

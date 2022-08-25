@@ -80,7 +80,8 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 	return datasetList
 }
 
-/*sortDnumList Function to sort table suffixes. We should not have any use case
+/*
+sortDnumList Function to sort table suffixes. We should not have any use case
 for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
 but this sort handles the general case
 */

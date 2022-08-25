@@ -3,7 +3,7 @@ Package admin :
 - has a rpc over http server listening on a unix socket
 - support other packages to expose any admin functionality over the above server
 
-Example for registering admin handler from another package
+# Example for registering admin handler from another package
 
 // Add this while initializing the package in setup or init etc.
 admin.RegisterAdminHandler("PackageName", &PackageAdmin{})
@@ -14,18 +14,20 @@ type PackageAdmin struct {
 }
 
 // Status function is used for debug purposes by the admin interface
-func (p *PackageAdmin) Status() map[string]interface{} {
-	return map[string]interface{}{
-		"parameter-1"  : value,
-		"parameter-2"  : value,
+
+	func (p *PackageAdmin) Status() map[string]interface{} {
+		return map[string]interface{}{
+			"parameter-1"  : value,
+			"parameter-2"  : value,
+		}
 	}
-}
 
 // The following function can be called from rudder-cli using getUDSClient().Call("PackageName.SomeAdminFunction", &arg, &reply)
-func (p *PackageAdmin) SomeAdminFunction(arg *string, reply *string) error {
-	*reply = "admin function output"
-	return nil
-}
+
+	func (p *PackageAdmin) SomeAdminFunction(arg *string, reply *string) error {
+		*reply = "admin function output"
+		return nil
+	}
 */
 package admin
 
@@ -42,6 +44,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -258,8 +261,10 @@ func StartServer(ctx context.Context) error {
 		pkgLogger.Fatal("listen error:", e) // @TODO return?
 	}
 	defer func() {
-		if err := l.Close(); err != nil {
-			pkgLogger.Warn(err)
+		if l != nil {
+			if err := l.Close(); err != nil {
+				pkgLogger.Warn(err)
+			}
 		}
 	}()
 
@@ -267,7 +272,7 @@ func StartServer(ctx context.Context) error {
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 
-	srv := &http.Server{Handler: srvMux}
+	srv := &http.Server{Handler: srvMux, ReadHeaderTimeout: 3 * time.Second}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown

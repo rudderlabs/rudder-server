@@ -649,7 +649,7 @@ func (as *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace whereever possible
+	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
 }
@@ -783,6 +783,8 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
+		} else {
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 	return

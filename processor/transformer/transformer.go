@@ -59,7 +59,6 @@ type MetadataT struct {
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`
-	SessionID               string   `json:"sessionId,omitempty"`
 	ReceivedAt              string   `json:"receivedAt"`
 	EventName               string   `json:"eventName"`
 	EventType               string   `json:"eventType"`
@@ -71,7 +70,6 @@ type TransformerEventT struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    MetadataT                  `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
-	SessionID   string                     `json:"session_id,omitempty"`
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
@@ -119,7 +117,7 @@ func loadConfig() {
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
+	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, "HttpClient.procTransformer.timeout")
 }
 
 type TransformerResponseT struct {
@@ -140,8 +138,8 @@ type ValidationErrorT struct {
 // Setup initializes this class
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
-	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
+	trans.sentStat = stats.DefaultStats.NewStat("processor.transformer_sent", stats.CountType)
+	trans.receivedStat = stats.DefaultStats.NewStat("processor.transformer_received", stats.CountType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}

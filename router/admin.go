@@ -57,7 +57,7 @@ func (ra *Admin) Status() interface{} {
 		for _, worker := range router.workers {
 			worker.abortedUserMutex.RLock()
 			for k, v := range worker.abortedUserIDMap {
-				abortedUsersMap[k] = v
+				abortedUsersMap[k] = len(v)
 			}
 			worker.abortedUserMutex.RUnlock()
 		}
@@ -332,7 +332,8 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName, jobsD
 	return err
 }
 
-/*JobCountByConnections
+/*
+JobCountByConnections
 ================================================================================
 │───────│───────────────────────────────│───────────────────────────────│
 │ COUNT │ SOURCEID                      │ DESTINATIONID                 │

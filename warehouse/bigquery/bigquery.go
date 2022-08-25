@@ -123,7 +123,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return
 	}
 
-	if !isDedupEnabled {
+	if !dedupEnabled() {
 		err = bq.createTableView(tableName, columnMap)
 	}
 	return
@@ -134,7 +134,7 @@ func (bq *HandleT) DropTable(tableName string) (err error) {
 	if err != nil {
 		return
 	}
-	if !isDedupEnabled {
+	if !dedupEnabled() {
 		err = bq.DeleteTable(tableName + "_view")
 	}
 	return
@@ -353,7 +353,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		tableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
 		var tableColNames []string
 		for colName := range tableColMap {
-			tableColNames = append(tableColNames, colName)
+			tableColNames = append(tableColNames, fmt.Sprintf("`%s`", colName))
 		}
 
 		var stagingColumnNamesList, columnsWithValuesList []string
@@ -403,7 +403,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 		return
 	}
 
-	if !isDedupEnabled {
+	if !dedupEnabled() {
 		err = loadTableByAppend()
 		return
 	}
@@ -429,7 +429,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("BQ: Starting load for %s table", warehouseutils.UsersTable)
 
 	firstValueSQL := func(column string) string {
-		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
+		return fmt.Sprintf("FIRST_VALUE(`%[1]s` IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `%[1]s`", column)
 	}
 
 	loadedAtFilter := func() string {
@@ -456,7 +456,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
+		userColNames = append(userColNames, fmt.Sprintf("`%s`", colName))
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
@@ -472,7 +472,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", identifyLoadTable.partitionDate)
 	var identifiesFrom string
-	if isDedupEnabled {
+	if dedupEnabled() {
 		identifiesFrom = fmt.Sprintf(`%s WHERE user_id IS NOT NULL %s`, bqTable(identifyLoadTable.stagingTableName), loadedAtFilter())
 	} else {
 		identifiesFrom = fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
@@ -546,8 +546,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
 		defer bq.dropStagingTable(stagingTableName)
 
-		primaryKey := `ID`
-		columnNames := append([]string{`ID`}, userColNames...)
+		primaryKey := "ID"
+		columnNames := append([]string{"ID"}, userColNames...)
 		columnNamesStr := strings.Join(columnNames, ",")
 		var columnsWithValues, stagingColumnValues string
 		for idx, colName := range columnNames {
@@ -592,7 +592,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	if !isDedupEnabled {
+	if !dedupEnabled() {
 		loadUserTableByAppend()
 		return
 	}
@@ -607,10 +607,15 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
-	if err := googleutils.CompatibleGoogleCredentialsJSON([]byte(cred.Credentials)); err != nil {
-		return nil, err
+	opts := []option.ClientOption{}
+	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
+		credBytes := []byte(cred.Credentials)
+		if err := googleutils.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithCredentialsJSON(credBytes))
 	}
-	client, err := bigquery.NewClient(context, cred.ProjectID, option.WithCredentialsJSON([]byte(cred.Credentials)))
+	client, err := bigquery.NewClient(context, cred.ProjectID, opts...)
 	return client, err
 }
 
@@ -627,7 +632,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false) || isUsersTableDedupEnabled
+	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 }
 
 func Init() {
@@ -659,8 +664,12 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 	return
 }
 
+func dedupEnabled() bool {
+	return isDedupEnabled || isUsersTableDedupEnabled
+}
+
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	if !isDedupEnabled {
+	if !dedupEnabled() {
 		return
 	}
 	bq.Warehouse = warehouse
@@ -859,6 +868,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		if datatype, ok := dataTypesMapToRudder[bigquery.FieldType(cType)]; ok {
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
+		} else {
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
 

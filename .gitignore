@@ -8,7 +8,6 @@ dist/*
 workspaceConfig.json
 **/node_modules
 imports/enterprise.go
-enterprise
 *.coverprofile
 junit*.xml
 **/profile.out
@@ -22,3 +21,4 @@ coverage.html
 *.orig
 build/wait-for-go/wait-for-go
 **/gomock_reflect_*/*
+ginkgo.report

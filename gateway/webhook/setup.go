@@ -31,7 +31,7 @@ func Setup(gwHandle GatewayI) *HandleT {
 	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.timeout", 30, time.Second)
+	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
 	webhook.netClient.Logger = nil // to avoid debug logs
 	webhook.netClient.RetryWaitMin = webhookRetryWaitMin
 	webhook.netClient.RetryWaitMax = webhookRetryWaitMax
@@ -44,10 +44,10 @@ func Setup(gwHandle GatewayI) *HandleT {
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			wStats := webhookStatsT{}
-			wStats.sentStat = stats.NewStat("webhook.transformer_sent", stats.CountType)
-			wStats.receivedStat = stats.NewStat("webhook.transformer_received", stats.CountType)
-			wStats.failedStat = stats.NewStat("webhook.transformer_failed", stats.CountType)
-			wStats.transformTimerStat = stats.NewStat("webhook.transformation_time", stats.TimerType)
+			wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
+			wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
+			wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
+			wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
 			wStats.sourceStats = make(map[string]*webhookSourceStatT)
 			bt := batchWebhookTransformerT{
 				webhook: webhook,
