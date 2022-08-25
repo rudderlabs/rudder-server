@@ -11,10 +11,10 @@ mocks: install-tools ## Generate all mocks
 
 test: ## Run all unit tests
 ifdef package
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
+	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
 else
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
+	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./...
 endif
 	echo "mode: atomic" > coverage.txt
