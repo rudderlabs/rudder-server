@@ -14,7 +14,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
-func supressMinorErrors(err error) error {
+func suppressMinorErrors(err error) error {
 	if err != nil {
 		if serr, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
 			switch serr.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
@@ -105,7 +105,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 
 	if !manager.skipCreationOfContainers() {
 		_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
-		err = supressMinorErrors(err)
+		err = suppressMinorErrors(err)
 		if err != nil {
 			return UploadOutput{}, err
 		}
