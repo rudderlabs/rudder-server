@@ -43,6 +43,10 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 		Host:   fmt.Sprintf("%s.%s", manager.Config.AccountName, endpoint),
 	}
 
+	if manager.useSASTokens() {
+		baseURL.RawQuery = manager.Config.SASToken
+	}
+
 	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
 		baseURL.Host = endpoint
 		baseURL.Path = fmt.Sprintf("/%s/", manager.Config.AccountName)
@@ -51,18 +55,26 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	return &baseURL
 }
 
+func (manager *AzureBlobStorageManager) getCredentials() (azblob.Credential, error) {
+	if manager.useSASTokens() {
+		return azblob.NewAnonymousCredential(), nil
+	}
+
+	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
+	if len(accountName) == 0 || len(accountKey) == 0 {
+		return nil, errors.New("either the AccountName or AccountKey is not correct")
+	}
+
+	// Create a default request pipeline using your storage account name and account key.
+	return azblob.NewSharedKeyCredential(accountName, accountKey)
+}
+
 func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
 		return azblob.ContainerURL{}, errors.New("no container configured")
 	}
 
-	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if len(accountName) == 0 || len(accountKey) == 0 {
-		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
-	}
-
-	// Create a default request pipeline using your storage account name and account key.
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	credential, err := manager.getCredentials()
 	if err != nil {
 		return azblob.ContainerURL{}, err
 	}
@@ -77,6 +89,17 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	return containerURL, nil
 }
 
+func (manager *AzureBlobStorageManager) useSASTokens() bool {
+	return manager.Config.UseSASTokens != nil && *manager.Config.UseSASTokens
+}
+
+func (manager *AzureBlobStorageManager) skipCreationOfContainers() bool {
+	if manager.useSASTokens() {
+		return true
+	}
+	return false
+}
+
 // Upload passed in file to Azure Blob Storage
 func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (UploadOutput, error) {
 	containerURL, err := manager.getContainerURL()
@@ -87,10 +110,12 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
-	err = supressMinorErrors(err)
-	if err != nil {
-		return UploadOutput{}, err
+	if !manager.skipCreationOfContainers() {
+		_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
+		err = supressMinorErrors(err)
+		if err != nil {
+			return UploadOutput{}, err
+		}
 	}
 
 	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
@@ -105,7 +130,17 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 		return UploadOutput{}, err
 	}
 
-	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
+	return UploadOutput{Location: manager.blobLocation(&blobURL), ObjectName: fileName}, nil
+}
+
+func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobURL) string {
+	if manager.useSASTokens() {
+		blobURLParts := azblob.NewBlobURLParts(blobURL.URL())
+		blobURLParts.SAS = azblob.SASQueryParameters{}
+		newBlobURL := blobURLParts.URL()
+		return newBlobURL.String()
+	}
+	return blobURL.String()
 }
 
 func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
@@ -206,7 +241,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
 	var containerName, accountName, accountKey, sasToken, prefix string
 	var endPoint *string
-	var forcePathStyle, disableSSL *bool
+	var forcePathStyle, disableSSL, useSASTokens *bool
 	if config["containerName"] != nil {
 		tmp, ok := config["containerName"].(string)
 		if ok {
@@ -223,6 +258,12 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		tmp, ok := config["accountName"].(string)
 		if ok {
 			accountName = tmp
+		}
+	}
+	if config["useSASTokens"] != nil {
+		tmp, ok := config["useSASTokens"].(bool)
+		if ok {
+			useSASTokens = &tmp
 		}
 	}
 	if config["sasToken"] != nil {
@@ -260,6 +301,7 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		Prefix:         prefix,
 		AccountName:    accountName,
 		AccountKey:     accountKey,
+		UseSASTokens:   useSASTokens,
 		SASToken:       sasToken,
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
@@ -276,6 +318,7 @@ type AzureBlobStorageConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
+	UseSASTokens   *bool
 }
 
 func (manager *AzureBlobStorageManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
