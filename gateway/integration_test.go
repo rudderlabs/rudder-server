@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -136,16 +135,16 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		fmt.Sprintf("JOBS_DB_DB_NAME=%s", postgresContainer.Database),
 		fmt.Sprintf("JOBS_DB_PASSWORD=%s", postgresContainer.Password),
 		fmt.Sprintf("CONFIG_BACKEND_URL=%s", backendConfigSrv.URL),
-		fmt.Sprintf("RSERVER_GATEWAY_WEB_PORT=%s", strconv.Itoa(httpPort)),
-		fmt.Sprintf("RSERVER_GATEWAY_ADMIN_WEB_PORT=%s", strconv.Itoa(httpAdminPort)),
-		fmt.Sprintf("RSERVER_PROFILER_PORT=%s", strconv.Itoa(debugPort)),
+		fmt.Sprintf("RSERVER_GATEWAY_WEB_PORT=%d", httpPort),
+		fmt.Sprintf("RSERVER_GATEWAY_ADMIN_WEB_PORT=%d", httpAdminPort),
+		fmt.Sprintf("RSERVER_PROFILER_PORT=%d", debugPort),
 		fmt.Sprintf("RSERVER_ENABLE_STATS=%s", "false"),
 		fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir),
 		fmt.Sprintf("DEST_TRANSFORM_URL=%s", transformerContainer.TransformURL),
 		fmt.Sprintf("WORKSPACE_TOKEN=%s", workspaceToken),
 	}
 	if testing.Verbose() {
-		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+		envArr = append(envArr, "LOG_LEVEL=debug")
 	}
 
 	done := make(chan struct{})
