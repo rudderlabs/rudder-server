@@ -2,7 +2,9 @@ package jobsdb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"regexp"
@@ -10,18 +12,25 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	uuid "github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
@@ -526,7 +535,7 @@ func insertStringInString(input, c string, times int) string {
 }
 
 func sanitizedJsonUsingStrings(input json.RawMessage) json.RawMessage {
-	return json.RawMessage(strings.Replace(string(input), `\u0000`, "", -1))
+	return json.RawMessage(strings.ReplaceAll(string(input), `\u0000`, ""))
 }
 
 func sanitizedJsonUsingBytes(input json.RawMessage) json.RawMessage {
@@ -541,4 +550,134 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 
 func setSkipZeroAssertionForMultitenant(b bool) {
 	skipZeroAssertionForMultitenant = b
+}
+
+func TestRefreshDSList(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err, "Failed to create docker pool")
+	cleanup := &testhelper.Cleanup{}
+	defer cleanup.Run()
+
+	postgresResource, err := destination.SetupPostgres(pool, cleanup)
+	require.NoError(t, err)
+
+	{
+		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
+		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
+		t.Setenv("JOBS_DB_USER", postgresResource.User)
+		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+		initJobsDB()
+		stats.Setup()
+	}
+
+	migrationMode := ""
+
+	triggerAddNewDS := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
+	// this will throw error if refreshDSList is called without lock
+	jobsDB.addDS(newDataSet("batch_rt", "2"))
+	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
+	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
+	})
+}
+
+func TestJobsDBTimeout(t *testing.T) {
+	defaultWorkspaceID := "workspaceId"
+
+	initJobsDB()
+	stats.Setup()
+
+	maxDSSize := 10
+	jobDB := HandleT{
+		MaxDSSize: &maxDSSize,
+	}
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+
+	customVal := "MOCKDS"
+	err := jobDB.Setup(ReadWrite, false, customVal, "", true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
+	defer jobDB.TearDown()
+
+	sampleTestJob := JobT{
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  defaultWorkspaceID,
+		EventCount:   1,
+	}
+
+	err = jobDB.Store(context.Background(), []*JobT{&sampleTestJob})
+	require.NoError(t, err)
+
+	t.Run("Test jobsDB GET request context timeout & retry ", func(t *testing.T) {
+		tx, err := jobDB.dbHandle.Begin()
+		require.NoError(t, err, "Error in starting transaction to lock the table")
+		_, err = tx.Exec(`LOCK TABLE "MOCKDS_jobs_1" IN ACCESS EXCLUSIVE MODE;`)
+		require.NoError(t, err, "Error in locking the table")
+		defer func() { _ = tx.Rollback() }()
+
+		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
+		defer cancelCtx()
+
+		expectedRetries := 2
+		var errorsCount int
+
+		jobs, err := QueryJobsResultWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
+			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobsLimit:        1,
+				ParameterFilters: []ParameterFilterT{},
+			})
+			if err != nil {
+				errorsCount++
+			}
+			return jobs, err
+		})
+		require.True(t, len(jobs.Jobs) == 0, "Error in getting unprocessed jobs")
+		require.Error(t, err)
+		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
+		require.Equal(t, expectedRetries, errorsCount)
+	})
+
+	t.Run("Test jobsDB STORE request context timeout & retry ", func(t *testing.T) {
+		tx, err := jobDB.dbHandle.Begin()
+		require.NoError(t, err, "Error in starting transaction to lock the table")
+		_, err = tx.Exec(`LOCK TABLE "MOCKDS_jobs_1" IN ACCESS EXCLUSIVE MODE;`)
+		require.NoError(t, err, "Error in locking the table")
+		defer func() { _ = tx.Rollback() }()
+
+		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
+		defer cancelCtx()
+
+		expectedRetries := 2
+		var errorsCount int
+		err = misc.RetryWith(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) error {
+			err := jobDB.Store(ctx, []*JobT{&sampleTestJob})
+			if err != nil {
+				errorsCount++
+			}
+			return err
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
+		require.Equal(t, expectedRetries, errorsCount)
+	})
 }

@@ -168,7 +168,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
 	}
-	return strings.Join(arr[:], ",")
+	return strings.Join(arr, ",")
 }
 
 func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
@@ -252,7 +252,7 @@ func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d
 }
 
 func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		return
@@ -330,12 +330,11 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				if err == io.EOF {
 					pkgLogger.Debugf("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
-				} else {
-					pkgLogger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-					tags["stage"] = readCsvLoadFiles
-					runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
-					return
 				}
+				pkgLogger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
+				tags["stage"] = readCsvLoadFiles
+				runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
+				return
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
@@ -425,7 +424,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
-	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err := pg.Db.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
@@ -464,7 +463,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
 						  	select "%[1]s" from "%[3]s"."%[2]s" as staging_table
@@ -577,7 +576,7 @@ func (pg *HandleT) CreateSchema() (err error) {
 		pkgLogger.Infof("PG: Skipping creating schema: %s since it already exists", pg.Namespace)
 		return
 	}
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -599,7 +598,7 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 }
 
 func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS "%s" %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %q %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -607,7 +606,7 @@ func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 
 func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		return err
@@ -626,7 +625,7 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 
 func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		return err
@@ -827,10 +826,10 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 }
 
 func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,
-		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`%q, %q`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = pg.Db.Exec(sqlStatement)

@@ -1,5 +1,3 @@
-//go:build integration
-
 package jobsdb
 
 import (
@@ -26,7 +24,8 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		CustomVal: true,
 	}
 
-	jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err, "expected no error while jobsDB setup")
 	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
@@ -59,25 +58,27 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	workspaceCountMap := make(map[string]int)
 	workspaceCountMap[testWID] = 1
 	payloadLimit := 100 * bytesize.MB
-	unprocessedListEmpty := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
+	unprocessedListEmpty, err := jobDB.GetAllJobs(context.Background(), workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
-
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 0, len(unprocessedListEmpty))
-	err := jobDB.Store(context.Background(), []*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
+
+	err = jobDB.Store(context.Background(), []*JobT{&sampleTestJob1, &sampleTestJob2, &sampleTestJob3})
 	require.NoError(t, err)
 
 	payloadLimit = 100 * bytesize.MB
 	workspaceCountMap[testWID] = 3
-	unprocessedList := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
+	unprocessedList, err := jobDB.GetAllJobs(context.Background(), workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 3, len(unprocessedList))
 
 	status1 := JobStatusT{
@@ -108,11 +109,12 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 
 	payloadLimit = 100 * bytesize.MB
 	workspaceCountMap[testWID] = 3
-	jobs := jobDB.GetAllJobs(workspaceCountMap, GetQueryParamsT{
+	jobs, err := jobDB.GetAllJobs(context.Background(), workspaceCountMap, GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        3,
 		ParameterFilters: []ParameterFilterT{},
 		PayloadSizeLimit: payloadLimit,
 	}, 10)
+	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 3, len(jobs))
 }

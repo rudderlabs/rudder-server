@@ -169,10 +169,7 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 	for {
 		waitStat := stats.NewTaggedStat("upload_worker_wait_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
 		start := time.Now()
-		var jobList []*jobsdb.JobT
-		{
-			jobList = <-uploadWorker.channel
-		}
+		jobList := <-uploadWorker.channel
 		waitStat.Since(start)
 
 		queryStat := stats.NewTaggedStat("upload_worker_time", stats.TimerType, stats.Tags{"migrationType": exp.statVal})
@@ -206,7 +203,7 @@ func (exp *exporterT) uploadWorkerProcess(uploadWorker *uploadWorkerT) {
 
 		exp.logger.Info(destNodeID, len(jobList))
 
-		content := bytes.Join(contentSlice[:], []byte("\n"))
+		content := bytes.Join(contentSlice, []byte("\n"))
 
 		exportFileName := fmt.Sprintf(`%s_%s_%s_%d_%d_%d.gz`,
 			exp.migrator.jobsDB.GetTablePrefix(),

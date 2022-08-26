@@ -1,5 +1,3 @@
-//go:build integration
-
 package cluster_test
 
 import (
@@ -19,6 +17,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 
@@ -40,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -62,7 +60,8 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s", err)
+		return 1
 	}
 
 	database := "jobsdb"
@@ -73,7 +72,8 @@ func run(m *testing.M) int {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Printf("Could not start resource: %s", err)
+		return 1
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -99,7 +99,8 @@ func run(m *testing.M) int {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Printf("Could not connect to docker: %s", err)
+		return 1
 	}
 
 	code := m.Run()
@@ -120,17 +121,6 @@ func blockOnHold() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	<-c
-}
-
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
-}
-
-func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
-}
-
-func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
 }
 
 const (
@@ -202,15 +192,12 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
+	mtStat := multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
+		"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
+		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
+	})
 
-	mtStat := &multitenant.Stats{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
-		},
-	}
-
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reportingNOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
@@ -218,7 +205,7 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
-		Reporting:        &reportingNOOP{},
+		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         tDb,
@@ -227,7 +214,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        &reportingNOOP{},
+		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,

@@ -304,11 +304,10 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				if err == io.EOF {
 					pkgLogger.Debugf("MS: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
-				} else {
-					pkgLogger.Errorf("MS: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-					txn.Rollback()
-					return
 				}
+				pkgLogger.Errorf("MS: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
+				txn.Rollback()
+				return
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
@@ -647,7 +646,7 @@ func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace whereever possible
+	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
 }

@@ -6,13 +6,13 @@ import (
 	"io"
 )
 
-type jsonReader struct {
+type JsonReader struct {
 	scanner *bufio.Scanner
 }
 
 var maxStagingFileReadBufferCapacityInK int
 
-func (js *jsonReader) Read(columnNames []string) (record []string, err error) {
+func (js *JsonReader) Read(columnNames []string) (record []string, err error) {
 	ok := js.scanner.Scan()
 	if !ok {
 		err = js.scanner.Err()
@@ -36,12 +36,12 @@ func (js *jsonReader) Read(columnNames []string) (record []string, err error) {
 	return
 }
 
-func NewJSONReader(r io.Reader) *jsonReader {
+func NewJSONReader(r io.Reader) *JsonReader {
 	scanner := bufio.NewScanner(r)
 	// default scanner buffer maxCapacity is 64K
 	// set it to higher value to avoid read stop on read size error
 	maxCapacity := maxStagingFileReadBufferCapacityInK * 1024
 	buf := make([]byte, maxCapacity)
 	scanner.Buffer(buf, maxCapacity)
-	return &jsonReader{scanner: scanner}
+	return &JsonReader{scanner: scanner}
 }
