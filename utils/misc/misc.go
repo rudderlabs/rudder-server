@@ -511,7 +511,7 @@ func GetIPFromReq(req *http.Request) string {
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
-	return strings.Replace(addresses[0], " ", "", -1)
+	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
 func ContainsString(slice []string, str string) bool {
@@ -710,7 +710,7 @@ func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Durat
 }
 
 func IntArrayToString(a []int64, delim string) string {
-	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+	return strings.Trim(strings.ReplaceAll(fmt.Sprint(a), " ", delim), "[]")
 }
 
 func MakeJSONArray(bytesArray [][]byte) []byte {

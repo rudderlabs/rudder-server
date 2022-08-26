@@ -75,7 +75,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	// since everything is stored as a file in S3, above fileObjects list also has directory & not just *.json.gz files. So, need to remove those.
 	count := 0
 	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
+		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
 			count++
 		}
 	}
@@ -83,7 +83,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	gzFileObjects := make([]*filemanager.FileObject, count)
 	index := 0
 	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
+		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
 			gzFileObjects[index] = fileObjects[i]
 			index++
 		}

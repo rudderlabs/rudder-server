@@ -121,7 +121,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 
 func (uploadsReq *UploadsReqT) validateReq() error {
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
-		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+		return errors.New(`warehouse api's are not initialized`)
 	}
 	if uploadsReq.Limit < 1 {
 		uploadsReq.Limit = 10
@@ -405,7 +405,7 @@ func (uploadReq UploadReqT) validateReq() error {
 		return errors.New("warehouse api's are not initialized")
 	}
 	if uploadReq.UploadId < 1 {
-		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+		return errors.New(`upload_id is empty or should be greater than 0 `)
 	}
 	return nil
 }

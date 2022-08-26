@@ -1,5 +1,4 @@
 // go:build integration
-
 package jobsdb_test
 
 import (
@@ -192,21 +191,23 @@ func TestJobsDB(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
-	unprocessedJobEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJobEmpty, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "GetUnprocessed failed")
 	unprocessedListEmpty := unprocessedJobEmpty.Jobs
 	require.Equal(t, 0, len(unprocessedListEmpty))
 	err = jobDB.Store(context.Background(), []*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
-	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "GetUnprocessed failed")
 	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
@@ -225,11 +226,12 @@ func TestJobsDB(t *testing.T) {
 	err = jobDB.UpdateJobStatus(context.Background(), []*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 
-	uj := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	uj, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "GetUnprocessed failed")
 	unprocessedList = uj.Jobs
 	require.Equal(t, 0, len(unprocessedList))
 
@@ -248,21 +250,23 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		t.Log("GetUnprocessed with job count limit")
-		JobLimitJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		JobLimitJob, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		JobLimitList := JobLimitJob.Jobs
 		require.Equal(t, jobCount, len(JobLimitList))
 
 		t.Log("GetUnprocessed with event count limit")
-		eventLimitJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitJob, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		eventLimitList := eventLimitJob.Jobs
 		require.Equal(t, 20, len(eventLimitList))
 		t.Log("GetUnprocessed jobs should have the expected event count")
@@ -271,12 +275,13 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		t.Log("Repeat read")
-		eventLimitListRepeat := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitListRepeat, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		require.Equal(t, 20, len(eventLimitListRepeat.Jobs))
 		require.Equal(t, eventLimitList, eventLimitListRepeat.Jobs)
 
@@ -300,18 +305,20 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Log("GetUnprocessed with job count limit")
-		retryJobLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+		retryJobLimitList, err := jobDB.GetToRetry(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 		})
+		require.NoError(t, err, "GetToRetry failed")
 		require.Equal(t, jobCount, len(retryJobLimitList.Jobs))
 
 		t.Log("GetToRetry with event count limit")
-		retryEventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+		retryEventLimitList, err := jobDB.GetToRetry(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventsPerJob * 20,
 		})
+		require.NoError(t, err, "GetToRetry failed")
 		require.Equal(t, 20, len(retryEventLimitList.Jobs))
 		t.Log("GetToRetry jobs should have the expected event count")
 		for _, j := range eventLimitList {
@@ -353,22 +360,24 @@ func TestJobsDB(t *testing.T) {
 		t.Log("Using event count that will cause spill-over, not exact for ds1, but remainder suitable for ds2")
 		trickyEventCount := (eventsPerJob_ds1 * (jobCountPerDS - 1)) + eventsPerJob_ds2
 
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitList, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      trickyEventCount,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		requireSequential(t, eventLimitList.Jobs)
 		require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 
 		t.Log("Prepare GetToRetry")
 		{
-			allJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			allJobs, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        1000,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
+			require.NoError(t, err, "GetUnprocessed failed")
 
 			statuses := make([]*jobsdb.JobStatusT, len(allJobs.Jobs))
 			n := time.Now().Add(time.Hour * -1)
@@ -391,12 +400,13 @@ func TestJobsDB(t *testing.T) {
 
 		t.Log("Test spill over with GetToRetry")
 		{
-			eventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+			eventLimitList, err := jobDB.GetToRetry(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        100,
 				EventsLimit:      trickyEventCount,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
 			})
+			require.NoError(t, err, "GetToRetry failed")
 			requireSequential(t, eventLimitList.Jobs)
 			require.Equal(t, jobCountPerDS-1, len(eventLimitList.Jobs))
 		}
@@ -431,12 +441,13 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		payloadLimit := 3 * payloadSize
-		payloadLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		payloadLimitList, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			PayloadSizeLimit: payloadLimit,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 
 		requireSequential(t, payloadLimitList.Jobs)
 		require.Equal(t, 3, len(payloadLimitList.Jobs))
@@ -463,12 +474,13 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err)
 
 		payloadLimit := payloadSize / 2
-		payloadLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		payloadLimitList, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			PayloadSizeLimit: payloadLimit,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 
 		requireSequential(t, payloadLimitList.Jobs)
 		require.Equal(t, 1, len(payloadLimitList.Jobs))
@@ -493,12 +505,13 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
 		eventCountLimit := 1
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitList, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventCountLimit,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 
 		requireSequential(t, eventLimitList.Jobs)
 		require.Equal(t, 1, len(eventLimitList.Jobs))
@@ -534,12 +547,13 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		eventCountLimit := 10
-		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		eventLimitList, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			EventsLimit:      eventCountLimit,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 
 		requireSequential(t, eventLimitList.Jobs)
 		require.Equal(t, 3, len(eventLimitList.Jobs))
@@ -605,11 +619,12 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, int(2), jobDBInspector.DSListSize())
 		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 
-		jobsResult := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		jobsResult, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		fetchedJobs := jobsResult.Jobs
 		require.Equal(t, 1, len(fetchedJobs))
 
@@ -665,7 +680,8 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	require.NoError(t, jobDB.Store(context.Background(), jobs))
 	payloadSize, err := getPayloadSize(t, &jobDB, jobs[0])
 	require.NoError(t, err)
-	j := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 100}) // read to get Ids
+	j, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{JobsLimit: 100}) // read to get Ids
+	require.NoError(t, err, "failed to get unprocessed jobs")
 	jobs = j.Jobs
 	require.Equal(t, 30, len(jobs), "should get all 30 jobs")
 
@@ -677,42 +693,48 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 
 	t.Run("GetAllJobs with large limits", func(t *testing.T) {
 		params := jobsdb.GetQueryParamsT{JobsLimit: 30}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: 30}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: 30}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 30, len(allJobs), "should get all 30 jobs")
 	})
 
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: 10}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Truef(t, len(allJobs)-jobsLimit == 0, "should get %d jobs", jobsLimit)
 	})
 
 	t.Run("GetAllJobs with events limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: 10, EventsLimit: 3 * eventsPerJob}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
 	})
 
 	t.Run("GetAllJobs with events limit less than the events of the first job get one job", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, EventsLimit: eventsPerJob - 1}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
 	})
 
 	t.Run("GetAllJobs with payload limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: 3 * payloadSize}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
 	})
 
 	t.Run("GetAllJobs with payload limit less than the payload size should get one job", func(t *testing.T) {
 		jobsLimit := 10
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: payloadSize - 1}
-		allJobs := mtl.GetAllJobs(map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
 	})
 }
@@ -758,7 +780,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	jobs = genJobs(workspaceC, customVal, 30, eventsPerJob)
 	require.NoError(t, jobDB.Store(context.Background(), jobs))
 
-	unprocessedJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{JobsLimit: 90}) // read to get all Ids
+	unprocessedJobs, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{JobsLimit: 90}) // read to get all Ids
+	require.NoError(t, err, "failed to get unprocessed jobs")
 	allJobs := unprocessedJobs.Jobs
 	require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
 	workspaceAJobs := filterWorkspaceJobs(allJobs, workspaceA)
@@ -782,7 +805,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := jobsdb.GetQueryParamsT{JobsLimit: 90}
-		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
 	})
 
@@ -794,7 +818,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 0,
 		}
 		params := jobsdb.GetQueryParamsT{JobsLimit: jobsLimit * 2}
-		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Truef(t, len(allJobs)-2*jobsLimit == 0, "should get %d jobs", 2*jobsLimit)
 	})
 
@@ -805,7 +830,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := jobsdb.GetQueryParamsT{JobsLimit: 90, PayloadSizeLimit: 6 * payloadSize}
-		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 6+3, len(allJobs), "should get limit jobs +1 (overflow) per workspace")
 	})
 
@@ -816,7 +842,8 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := jobsdb.GetQueryParamsT{JobsLimit: 90, PayloadSizeLimit: payloadSize - 1}
-		allJobs := mtl.GetAllJobs(workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		require.NoError(t, err, "failed to get all jobs")
 		require.Equal(t, 3, len(allJobs), "should get limit+1 jobs")
 	})
 }
@@ -849,11 +876,12 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	}
 	err = jobDB.Store(context.Background(), []*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
-	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "should get unprocessed job")
 	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 	j := unprocessedList[0]
@@ -1016,11 +1044,13 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	for _, val := range errMap {
 		require.Equal(t, "", val)
 	}
-	unprocessedJob := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "should not error")
+
 	unprocessedList := unprocessedJob.Jobs
 	require.Equal(t, 1, len(unprocessedList))
 
@@ -1122,10 +1152,11 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *jobsdb.HandleT, totalJobs
 			g.Go(func() error {
 				start.Wait()
 				for {
-					unprocessedJob := jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+					unprocessedJob, err := jobsDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 						CustomValFilters: []string{customVal},
 						JobsLimit:        pageSize,
 					})
+					require.NoError(b, err, "failed to get unprocessed jobs")
 					unprocessedList := unprocessedJob.Jobs
 					status := make([]*jobsdb.JobStatusT, len(unprocessedList))
 					for i, j := range unprocessedList {
@@ -1142,7 +1173,7 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *jobsdb.HandleT, totalJobs
 						}
 					}
 
-					err := jobsDB.UpdateJobStatus(context.Background(), status, []string{customVal}, []jobsdb.ParameterFilterT{})
+					err = jobsDB.UpdateJobStatus(context.Background(), status, []string{customVal}, []jobsdb.ParameterFilterT{})
 					require.NoError(b, err)
 
 					for _, j := range unprocessedList {
@@ -1240,9 +1271,10 @@ func BenchmarkLifecycle(b *testing.B) {
 func consume(t testing.TB, db *jobsdb.HandleT, count int) {
 	t.Helper()
 
-	unprocessedList := db.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedList, err := db.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		JobsLimit: count,
 	})
+	require.NoError(t, err, "failed to get unprocessed jobs")
 
 	status := make([]*jobsdb.JobStatusT, len(unprocessedList.Jobs))
 	for i, j := range unprocessedList.Jobs {
@@ -1259,7 +1291,7 @@ func consume(t testing.TB, db *jobsdb.HandleT, count int) {
 		}
 	}
 
-	err := db.UpdateJobStatus(context.Background(), status, []string{}, []jobsdb.ParameterFilterT{})
+	err = db.UpdateJobStatus(context.Background(), status, []string{}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 }
 

@@ -3,8 +3,6 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
-//go:build integration
-
 package main_test
 
 import (
@@ -14,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -237,7 +234,7 @@ func TestMainFlow(t *testing.T) {
 		messages, errors := consume(t, c, topics)
 
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt, os.Kill) // Get signal for finish
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM) // Get signal for finish
 
 		var (
 			msgCount      = 0 // Count how many message processed
@@ -475,7 +472,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig,
 	)
 	if testing.Verbose() {
-		data, err := ioutil.ReadFile(workspaceConfigPath)
+		data, err := os.ReadFile(workspaceConfigPath)
 		require.NoError(t, err)
 		t.Logf("Workspace config: %s", string(data))
 	}

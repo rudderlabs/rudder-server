@@ -105,9 +105,8 @@ func evalBody(body string, rules []map[string]interface{}) bool {
 
 		if brokeOutOfLoop {
 			continue
-		} else {
-			return true
 		}
+		return true
 	}
 
 	return false

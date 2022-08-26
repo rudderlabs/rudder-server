@@ -54,10 +54,8 @@ func getRecoveryData() RecoveryDataT {
 	if os.IsNotExist(err) {
 		defaultRecoveryJSON := "{\"mode\":\"" + normalMode + "\"}"
 		data = []byte(defaultRecoveryJSON)
-	} else {
-		if err != nil {
-			panic(err)
-		}
+	} else if err != nil {
+		panic(err)
 	}
 	var recoveryData RecoveryDataT
 	err = json.Unmarshal(data, &recoveryData)
