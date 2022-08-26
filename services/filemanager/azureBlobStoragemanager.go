@@ -55,20 +55,6 @@ func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	return &baseURL
 }
 
-func (manager *AzureBlobStorageManager) getCredentials() (azblob.Credential, error) {
-	if manager.useSASTokens() {
-		return azblob.NewAnonymousCredential(), nil
-	}
-
-	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if accountName == "" || accountKey == "" {
-		return nil, errors.New("either the AccountName or AccountKey is not correct")
-	}
-
-	// Create a default request pipeline using your storage account name and account key.
-	return azblob.NewSharedKeyCredential(accountName, accountKey)
-}
-
 func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
 		return azblob.ContainerURL{}, errors.New("no container configured")
@@ -89,15 +75,22 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	return containerURL, nil
 }
 
-func (manager *AzureBlobStorageManager) useSASTokens() bool {
-	return manager.Config.UseSASTokens != nil && *manager.Config.UseSASTokens
+func (manager *AzureBlobStorageManager) getCredentials() (azblob.Credential, error) {
+	if manager.useSASTokens() {
+		return azblob.NewAnonymousCredential(), nil
+	}
+
+	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
+	if accountName == "" || accountKey == "" {
+		return nil, errors.New("either the AccountName or AccountKey is not correct")
+	}
+
+	// Create a default request pipeline using your storage account name and account key.
+	return azblob.NewSharedKeyCredential(accountName, accountKey)
 }
 
-func (manager *AzureBlobStorageManager) skipCreationOfContainers() bool {
-	if manager.useSASTokens() {
-		return true
-	}
-	return false
+func (manager *AzureBlobStorageManager) useSASTokens() bool {
+	return manager.Config.UseSASTokens != nil && *manager.Config.UseSASTokens
 }
 
 // Upload passed in file to Azure Blob Storage
@@ -131,6 +124,13 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	}
 
 	return UploadOutput{Location: manager.blobLocation(&blobURL), ObjectName: fileName}, nil
+}
+
+func (manager *AzureBlobStorageManager) skipCreationOfContainers() bool {
+	if manager.useSASTokens() {
+		return true
+	}
+	return false
 }
 
 func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobURL) string {
