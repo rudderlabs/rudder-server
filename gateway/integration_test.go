@@ -55,12 +55,17 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 	group.Go(func() (err error) {
 		postgresContainer, err = destination.SetupPostgres(pool, t)
-		return err
+		if err != nil {
+			return fmt.Errorf("could not start postgres: %v", err)
+		}
+		return nil
 	})
-
 	group.Go(func() (err error) {
 		transformerContainer, err = destination.SetupTransformer(pool, t)
-		return err
+		if err != nil {
+			return fmt.Errorf("could not start transformer: %v", err)
+		}
+		return nil
 	})
 	require.NoError(t, group.Wait())
 
@@ -121,22 +126,22 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
 	releaseName := t.Name() + "_" + appType
-	t.Setenv("APP_TYPE", appType)
-	t.Setenv("INSTANCE_ID", serverInstanceID)
-	t.Setenv("RELEASE_NAME", releaseName)
-	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-	t.Setenv("JOBS_DB_USER", postgresContainer.User)
-	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
-	t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
-	t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
-	t.Setenv("RSERVER_ENABLE_STATS", "false")
-	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
-	t.Setenv("WORKSPACE_TOKEN", workspaceToken)
-
+	// t.Setenv("APP_TYPE", appType)
+	// t.Setenv("INSTANCE_ID", serverInstanceID)
+	// t.Setenv("RELEASE_NAME", releaseName)
+	// t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	// t.Setenv("JOBS_DB_USER", postgresContainer.User)
+	// t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+	// t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
+	// t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
+	// t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
+	// t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	// t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
+	// t.Setenv("RSERVER_ENABLE_STATS", "false")
+	// t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
+	// t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	// t.Setenv("WORKSPACE_TOKEN", workspaceToken)
+	envArr := []string{fmt.Sprintf("APP_TYPE=%s", appType), fmt.Sprintf("INSTANCE_ID=%s", serverInstanceID), fmt.Sprintf("RELEASE_NAME=%s", releaseName), fmt.Sprintf("JOBS_DB_PORT=%s", postgresContainer.Port), fmt.Sprintf("JOBS_DB_USER=%s", postgresContainer.User), fmt.Sprintf("JOBS_DB_DB_NAME=%s", postgresContainer.Database), fmt.Sprintf("JOBS_DB_PASSWORD=%s", postgresContainer.Password), fmt.Sprintf("CONFIG_BACKEND_URL=%s", backendConfigSrv.URL), fmt.Sprintf("RSERVER_GATEWAY_WEB_PORT=%s", strconv.Itoa(httpPort)), fmt.Sprintf("RSERVER_GATEWAY_ADMIN_WEB_PORT=%s", strconv.Itoa(httpAdminPort)), fmt.Sprintf("RSERVER_PROFILER_PORT=%s", strconv.Itoa(debugPort)), fmt.Sprintf("RSERVER_ENABLE_STATS=%s", "false"), fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir), fmt.Sprintf("DEST_TRANSFORM_URL=%s", transformerContainer.TransformURL), fmt.Sprintf("WORKSPACE_TOKEN=%s", workspaceToken)}
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
@@ -146,8 +151,10 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		defer close(done)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "go", "run", "../main.go")
-		cmd.Env = os.Environ()
-
+		for i := range envArr {
+			t.Logf("Setting env var: %s", envArr[i])
+			cmd.Env = append(cmd.Env, envArr[i])
+		}
 		stdout, err := cmd.StdoutPipe()
 		require.NoError(t, err)
 		stderr, err := cmd.StderrPipe()
