@@ -16,7 +16,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
+	config "github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -139,6 +139,11 @@ type UploadColumnT struct {
 	Value  interface{}
 }
 
+type ColumnCount struct {
+	Limit     int
+	Temporary bool
+}
+
 const (
 	UploadStatusField          = "status"
 	UploadStartLoadFileIDField = "start_load_file_id"
@@ -159,7 +164,7 @@ var (
 
 var (
 	maxParallelLoads    map[string]int
-	columnCountLimitMap map[string]int
+	columnCountLimitMap map[string]ColumnCount
 )
 
 func init() {
@@ -176,14 +181,14 @@ func setMaxParallelLoads() {
 		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
-	columnCountLimitMap = map[string]int{
-		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
-		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
-		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
-		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
-		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
-		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
-		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountLimit", 5000),
+	columnCountLimitMap = map[string]ColumnCount{
+		warehouseutils.AZURE_SYNAPSE: ColumnCount{Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024), Temporary: false},
+		warehouseutils.BQ:            ColumnCount{Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000), Temporary: false},
+		warehouseutils.CLICKHOUSE:    ColumnCount{Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000), Temporary: false},
+		warehouseutils.MSSQL:         ColumnCount{Limit: config.GetInt("Warehouse.mssql.columnCountLimit", 1024), Temporary: false},
+		warehouseutils.POSTGRES:      ColumnCount{Limit: config.GetInt("Warehouse.postgres.columnCountLimit", 1600), Temporary: false},
+		warehouseutils.RS:            ColumnCount{Limit: config.GetInt("Warehouse.redshift.columnCountLimit", 1600), Temporary: false},
+		warehouseutils.SNOWFLAKE:     ColumnCount{Limit: config.GetInt("Warehouse.snowflake.columnCountLimit", 5000), Temporary: true},
 	}
 }
 
@@ -999,8 +1004,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		job.recordTableLoad(tName, numEvents)
 	}
 
-	if columnCountLimit, ok := columnCountLimitMap[job.warehouse.Type]; ok {
+	if columnCount, ok := columnCountLimitMap[job.warehouse.Type]; ok {
 		currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tName])
+		columnCountLimit := columnCount.Limit
 		if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
 			tags := []tag{
 				{
@@ -1008,6 +1014,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 				},
 				{
 					name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
+				},
+				{
+					name: "temporary", value: strconv.FormatBool(columnCount.Temporary),
 				},
 			}
 			job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
