@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -610,7 +611,7 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 }
 
 func (job *UploadJobT) exportIdentities() (err error) {
-	// Load Identitties if enabled
+	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
@@ -1557,6 +1558,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 }
 
 func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
+	if job.destinationValidator == nil {
+		return false, errors.New("failed to validate as destinationValidator is not set")
+	}
 	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
@@ -2052,10 +2056,7 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	if job.upload.SourceCategory == CloudSourceCateogry {
-		return true
-	}
-	return false
+	return job.upload.SourceCategory == CloudSourceCateogry
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {
@@ -2071,6 +2072,10 @@ func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
 
 func (job *UploadJobT) GetLoadFileType() string {
 	return job.upload.LoadFileType
+}
+
+func (job *UploadJobT) GetFirstLastEvent() (time.Time, time.Time) {
+	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
 /*

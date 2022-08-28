@@ -44,6 +44,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -260,8 +261,10 @@ func StartServer(ctx context.Context) error {
 		pkgLogger.Fatal("listen error:", e) // @TODO return?
 	}
 	defer func() {
-		if err := l.Close(); err != nil {
-			pkgLogger.Warn(err)
+		if l != nil {
+			if err := l.Close(); err != nil {
+				pkgLogger.Warn(err)
+			}
 		}
 	}()
 
@@ -269,7 +272,7 @@ func StartServer(ctx context.Context) error {
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 
-	srv := &http.Server{Handler: srvMux}
+	srv := &http.Server{Handler: srvMux, ReadHeaderTimeout: 3 * time.Second}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown

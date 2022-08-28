@@ -57,7 +57,7 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	}
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if len(accountName) == 0 || len(accountKey) == 0 {
+	if accountName == "" || accountKey == "" {
 		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
 	}
 

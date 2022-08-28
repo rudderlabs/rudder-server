@@ -513,9 +513,7 @@ var _ = Describe("Gateway", func() {
 				}).Return(nil)
 				c.mockJobsDB.
 					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
-						return jobsToJobsdbErrors(ctx, tx, jobs)
-					}).
+					DoAndReturn(jobsToJobsdbErrors).
 					Times(1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")

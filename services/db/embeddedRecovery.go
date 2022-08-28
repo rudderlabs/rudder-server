@@ -28,11 +28,9 @@ func HandleEmbeddedRecovery(forceNormal, forceDegraded bool, forceMigrationMode 
 	if forceMode != "" {
 		isForced = true
 		recoveryData.Mode = forceMode
-	} else {
+	} else if recoveryData.Mode == migrationMode {
 		// If no mode is forced (through env or cli) and if previous mode is migration then setting server mode to normal.
-		if recoveryData.Mode == migrationMode {
-			recoveryData.Mode = normalMode
-		}
+		recoveryData.Mode = normalMode
 	}
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 

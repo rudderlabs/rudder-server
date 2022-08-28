@@ -25,6 +25,7 @@ type DatabricksClient interface {
 	FetchTables(ctx context.Context, in *FetchTablesRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error)
 	FetchTableAttributes(ctx context.Context, in *FetchTableAttributesRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error)
 	FetchTotalCountInTable(ctx context.Context, in *FetchTotalCountInTableRequest, opts ...grpc.CallOption) (*FetchTotalCountInTableResponse, error)
+	FetchPartitionColumns(ctx context.Context, in *FetchPartitionColumnsRequest, opts ...grpc.CallOption) (*FetchPartitionColumnsResponse, error)
 	Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*CloseResponse, error)
 }
 
@@ -99,6 +100,15 @@ func (c *databricksClient) FetchTotalCountInTable(ctx context.Context, in *Fetch
 	return out, nil
 }
 
+func (c *databricksClient) FetchPartitionColumns(ctx context.Context, in *FetchPartitionColumnsRequest, opts ...grpc.CallOption) (*FetchPartitionColumnsResponse, error) {
+	out := new(FetchPartitionColumnsResponse)
+	err := c.cc.Invoke(ctx, "/proto.Databricks/FetchPartitionColumns", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *databricksClient) Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*CloseResponse, error) {
 	out := new(CloseResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/Close", in, out, opts...)
@@ -119,6 +129,7 @@ type DatabricksServer interface {
 	FetchTables(context.Context, *FetchTablesRequest) (*FetchTablesResponse, error)
 	FetchTableAttributes(context.Context, *FetchTableAttributesRequest) (*FetchTableAttributesResponse, error)
 	FetchTotalCountInTable(context.Context, *FetchTotalCountInTableRequest) (*FetchTotalCountInTableResponse, error)
+	FetchPartitionColumns(context.Context, *FetchPartitionColumnsRequest) (*FetchPartitionColumnsResponse, error)
 	Close(context.Context, *CloseRequest) (*CloseResponse, error)
 	mustEmbedUnimplementedDatabricksServer()
 }
@@ -147,6 +158,9 @@ func (UnimplementedDatabricksServer) FetchTableAttributes(context.Context, *Fetc
 }
 func (UnimplementedDatabricksServer) FetchTotalCountInTable(context.Context, *FetchTotalCountInTableRequest) (*FetchTotalCountInTableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchTotalCountInTable not implemented")
+}
+func (UnimplementedDatabricksServer) FetchPartitionColumns(context.Context, *FetchPartitionColumnsRequest) (*FetchPartitionColumnsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchPartitionColumns not implemented")
 }
 func (UnimplementedDatabricksServer) Close(context.Context, *CloseRequest) (*CloseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Close not implemented")
@@ -290,6 +304,24 @@ func _Databricks_FetchTotalCountInTable_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Databricks_FetchPartitionColumns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchPartitionColumnsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabricksServer).FetchPartitionColumns(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Databricks/FetchPartitionColumns",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabricksServer).FetchPartitionColumns(ctx, req.(*FetchPartitionColumnsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Databricks_Close_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CloseRequest)
 	if err := dec(in); err != nil {
@@ -342,6 +374,10 @@ var Databricks_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FetchTotalCountInTable",
 			Handler:    _Databricks_FetchTotalCountInTable_Handler,
+		},
+		{
+			MethodName: "FetchPartitionColumns",
+			Handler:    _Databricks_FetchPartitionColumns_Handler,
 		},
 		{
 			MethodName: "Close",

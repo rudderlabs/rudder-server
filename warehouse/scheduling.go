@@ -130,7 +130,7 @@ func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string,
 }
 
 func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime, windowEndTime string) bool {
-	if len(windowStartTime) == 0 || len(windowEndTime) == 0 {
+	if windowStartTime == "" || windowEndTime == "" {
 		return false
 	}
 	startTimeMins := timeutil.MinsOfDay(windowStartTime)

@@ -220,10 +220,9 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			if err != nil {
 				if err == io.EOF {
 					break
-				} else {
-					pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
-					return
 				}
+				pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
+				return
 			}
 			var recordInterface [5]interface{}
 			for idx, value := range record {
@@ -505,7 +504,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error commiting transaction: %v`, err)
+		pkgLogger.Errorf(`IDR: Error committing transaction: %v`, err)
 		return
 	}
 	return
