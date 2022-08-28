@@ -139,7 +139,7 @@ type UploadColumnT struct {
 	Value  interface{}
 }
 
-type ColumnCount struct {
+type ColumnCountInfo struct {
 	Limit     int
 	Temporary bool
 }
@@ -163,8 +163,8 @@ var (
 )
 
 var (
-	maxParallelLoads    map[string]int
-	columnCountLimitMap map[string]ColumnCount
+	maxParallelLoads   map[string]int
+	columnCountInfoMap map[string]ColumnCountInfo
 )
 
 func init() {
@@ -181,7 +181,7 @@ func setMaxParallelLoads() {
 		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
-	columnCountLimitMap = map[string]ColumnCount{
+	columnCountInfoMap = map[string]ColumnCountInfo{
 		warehouseutils.AZURE_SYNAPSE: {Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024), Temporary: false},
 		warehouseutils.BQ:            {Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000), Temporary: false},
 		warehouseutils.CLICKHOUSE:    {Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000), Temporary: false},
@@ -1004,25 +1004,29 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		job.recordTableLoad(tName, numEvents)
 	}
 
-	if columnCount, ok := columnCountLimitMap[job.warehouse.Type]; ok {
-		currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tName])
-		columnCountLimit := columnCount.Limit
+	job.columnCountStat(tName)
+	return
+}
+
+func (job *UploadJobT) columnCountStat(tableName string) {
+	if columnCountInfo, ok := columnCountInfoMap[job.warehouse.Type]; ok {
+		currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
+		columnCountLimit := columnCountInfo.Limit
 		if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
 			tags := []tag{
 				{
-					name: "tableName", value: strings.ToLower(tName),
+					name: "tableName", value: strings.ToLower(tableName),
 				},
 				{
 					name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
 				},
 				{
-					name: "temporary", value: strconv.FormatBool(columnCount.Temporary),
+					name: "temporary", value: strconv.FormatBool(columnCountInfo.Temporary),
 				},
 			}
 			job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
 		}
 	}
-	return
 }
 
 func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
